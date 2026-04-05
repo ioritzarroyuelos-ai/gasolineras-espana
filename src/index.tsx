@@ -36,114 +36,214 @@ function htmlPage(): string {
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" />
 
   <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
-    #map { height: calc(100vh - 60px); }
+    /* ===== RESET & BASE ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f8fafc; }
 
-    /* Sidebar */
-    .sidebar-panel { transition: transform 0.3s ease; }
+    /* ===== LAYOUT PRINCIPAL ===== */
+    #app-header {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 60px; z-index: 1000;
+      background: linear-gradient(135deg, #14532d 0%, #166534 40%, #16a34a 100%);
+      display: flex; align-items: center; padding: 0 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+    }
+    #app-body {
+      position: fixed; top: 60px; left: 0; right: 0; bottom: 0;
+      display: flex; overflow: hidden;
+    }
 
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: #f1f5f9; }
-    ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+    /* ===== SIDEBAR ===== */
+    #sidebar {
+      width: 288px; min-width: 288px;
+      background: #fff;
+      border-right: 1px solid #e2e8f0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.06);
+      z-index: 100;
+    }
+    #sidebar-filters {
+      padding: 12px; background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      overflow-y: auto; flex-shrink: 0;
+    }
+    #stats-bar {
+      padding: 8px 12px; background: #f0fdf4;
+      border-bottom: 1px solid #bbf7d0;
+      flex-shrink: 0; display: none;
+    }
+    #station-list {
+      flex: 1; overflow-y: auto;
+    }
 
-    /* Precio badge */
-    .badge { display:inline-block; border-radius:9999px; padding:2px 9px; font-weight:700; font-size:12px; color:#fff; }
+    /* ===== MAPA ===== */
+    #map-container {
+      flex: 1; position: relative; overflow: hidden;
+    }
+    #map {
+      position: absolute; inset: 0;
+      width: 100% !important; height: 100% !important;
+    }
+
+    /* ===== FORM CONTROLS ===== */
+    .form-label { display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }
+    .form-select, .form-input {
+      width: 100%; border: 1px solid #cbd5e1; border-radius: 8px;
+      padding: 6px 10px; font-size: 13px; background: #fff;
+      outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+      color: #1e293b;
+    }
+    .form-select:focus, .form-input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
+    .form-select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+    .form-group { margin-bottom: 10px; }
+    .input-icon-wrap { position: relative; }
+    .input-icon-wrap .icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:11px; }
+    .input-icon-wrap .form-input { padding-left: 28px; }
+
+    /* ===== BOTONES ===== */
+    .btn-primary {
+      background: #16a34a; color: #fff; border: none; border-radius: 8px;
+      padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: background 0.15s; display:inline-flex; align-items:center; gap:6px;
+    }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:active { background: #166534; }
+    .btn-icon { background:none; border:none; cursor:pointer; color:#16a34a; font-size:15px; padding:4px; transition:color 0.15s; }
+    .btn-icon:hover { color: #15803d; }
+
+    /* ===== BADGES PRECIO ===== */
+    .badge { display:inline-block; border-radius:9999px; padding:2px 9px; font-weight:700; font-size:12px; color:#fff; white-space:nowrap; }
     .badge-green  { background: #16a34a; }
     .badge-yellow { background: #d97706; }
     .badge-red    { background: #dc2626; }
     .badge-gray   { background: #9ca3af; }
 
-    /* Tarjeta */
-    .station-card { cursor:pointer; transition: background 0.12s; border-bottom: 1px solid #f1f5f9; }
-    .station-card:hover { background: #f0fdf4; }
-    .station-card.active { background: #dcfce7; border-left: 3px solid #16a34a; }
+    /* ===== STAT CHIPS ===== */
+    .stat-chip { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; }
+    .stat-chip.red    { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
+    .stat-chip.yellow { background:#fffbeb; color:#d97706; border-color:#fde68a; }
 
-    /* Loading */
-    .spinner { border:3px solid #e5e7eb; border-top:3px solid #16a34a; border-radius:50%; width:32px; height:32px; animation:spin 0.75s linear infinite; }
+    /* ===== TARJETAS LISTA ===== */
+    .station-card { cursor:pointer; transition:background 0.12s; border-bottom:1px solid #f1f5f9; padding:10px 12px; }
+    .station-card:hover  { background: #f0fdf4; }
+    .station-card.active { background: #dcfce7; border-left: 3px solid #16a34a; padding-left: 9px; }
+    .card-title   { font-size:13px; font-weight:600; color:#1e293b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .card-sub     { font-size:11px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px; }
+    .card-time    { font-size:10px; color:#94a3b8; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    /* ===== EMPTY STATE ===== */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:24px; color:#94a3b8; }
+    .empty-state .icon { font-size:48px; margin-bottom:12px; }
+    .empty-state p { font-size:14px; font-weight:500; color:#64748b; }
+    .empty-state small { font-size:12px; margin-top:4px; }
+
+    /* ===== LOADING OVERLAY ===== */
+    #loading {
+      position:absolute; inset:0; background:rgba(255,255,255,0.8);
+      backdrop-filter:blur(4px); display:none;
+      align-items:center; justify-content:center; z-index:500;
+    }
+    #loading.show { display:flex; }
+    .loading-box { background:#fff; border-radius:16px; box-shadow:0 8px 32px rgba(0,0,0,0.12); padding:24px 32px; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    .spinner { border:3px solid #e5e7eb; border-top:3px solid #16a34a; border-radius:50%; width:36px; height:36px; animation:spin 0.75s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* Popup */
-    .leaflet-popup-content { min-width: 230px; font-size: 13px; }
+    /* ===== LEYENDA ===== */
+    #legend { position:absolute; bottom:24px; right:12px; background:rgba(255,255,255,0.95); backdrop-filter:blur(4px); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); padding:12px 14px; z-index:400; border:1px solid #e2e8f0; min-width:130px; }
+    #legend h4 { font-size:12px; font-weight:700; color:#374151; margin-bottom:8px; text-align:center; }
+    .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; color:#4b5563; margin-bottom:4px; }
+    .legend-dot { width:13px; height:13px; border-radius:50%; flex-shrink:0; }
+
+    /* ===== LEAFLET OVERRIDES ===== */
+    .leaflet-popup-content-wrapper { border-radius:10px !important; box-shadow:0 4px 20px rgba(0,0,0,0.15) !important; }
+    .leaflet-popup-content { min-width:230px; max-width:290px; font-size:13px; margin:12px 14px !important; }
     .fuel-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; border-bottom:1px solid #f3f4f6; }
     .fuel-row:last-child { border-bottom:none; }
 
-    /* Custom marker icon */
-    .custom-marker { width:28px; height:36px; position:relative; }
+    /* ===== SCROLLBAR ===== */
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:#f1f5f9; }
+    ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+    ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
 
-    /* Stat chips */
-    .stat-chip { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; border-radius:6px; padding:2px 8px; font-size:11px; font-weight:600; }
-    .stat-chip.red { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
-    .stat-chip.yellow { background:#fffbeb; color:#d97706; border-color:#fde68a; }
-
-    /* Mobile sidebar toggle */
+    /* ===== MOBILE ===== */
+    #btn-toggle-sidebar { display:none; }
     @media (max-width: 768px) {
-      #sidebar { position:absolute; top:60px; left:0; height:calc(100vh - 60px); z-index:1000; transform:translateX(-100%); }
-      #sidebar.open { transform:translateX(0); }
+      #btn-toggle-sidebar { display:block; }
+      #sidebar {
+        position:absolute; top:0; left:0; height:100%;
+        transform:translateX(-100%); transition:transform 0.3s ease;
+      }
+      #sidebar.open { transform:translateX(0); box-shadow:4px 0 20px rgba(0,0,0,0.2); }
     }
+
+    /* ===== HEADER ELEMENTS ===== */
+    .header-logo { font-size:22px; margin-right:8px; }
+    .header-title { color:#fff; font-weight:700; font-size:15px; line-height:1.2; }
+    .header-sub { color:rgba(255,255,255,0.7); font-size:11px; line-height:1.2; }
+    .header-badge { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:600; border-radius:9999px; padding:3px 12px; }
+    .header-update { color:rgba(255,255,255,0.65); font-size:11px; }
+
+    /* ===== ROW LAYOUTS ===== */
+    .row { display:flex; gap:8px; align-items:flex-end; }
+    .row .flex-1 { flex:1; min-width:0; }
   </style>
 </head>
-<body class="bg-gray-100">
+<body>
 
 <!-- ============ HEADER ============ -->
-<header class="h-[60px] bg-gradient-to-r from-green-800 via-green-700 to-green-500 flex items-center px-4 shadow-lg relative z-50">
-  <!-- Mobile toggle -->
-  <button id="btn-toggle-sidebar" class="md:hidden mr-3 text-white text-lg">
-    <i class="fas fa-bars"></i>
+<header id="app-header">
+  <button id="btn-toggle-sidebar" title="Abrir filtros">
+    <i class="fas fa-bars" style="color:#fff;font-size:16px"></i>
   </button>
 
-  <div class="flex items-center gap-2 flex-1 min-w-0">
-    <span class="text-2xl">⛽</span>
-    <div class="min-w-0">
-      <h1 class="text-white font-bold text-base leading-tight truncate">Gasolineras España</h1>
-      <p class="text-green-200 text-[11px] leading-tight truncate">Precios oficiales · Ministerio de Industria y Energía</p>
-    </div>
+  <span class="header-logo">⛽</span>
+  <div style="flex:1;min-width:0">
+    <div class="header-title">Gasolineras España</div>
+    <div class="header-sub">Precios oficiales · Ministerio de Industria y Energía</div>
   </div>
 
-  <div class="flex items-center gap-2 flex-shrink-0">
-    <span id="lbl-update" class="text-green-200 text-[11px] hidden sm:block"></span>
-    <span id="lbl-count" class="bg-white/20 text-white text-xs font-semibold rounded-full px-3 py-1 hidden"></span>
+  <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+    <span id="lbl-update" class="header-update" style="display:none"></span>
+    <span id="lbl-count" class="header-badge" style="display:none"></span>
   </div>
 </header>
 
-<!-- ============ MAIN LAYOUT ============ -->
-<div class="flex h-[calc(100vh-60px)] relative">
+<!-- ============ CUERPO ============ -->
+<div id="app-body">
 
   <!-- ======= SIDEBAR ======= -->
-  <aside id="sidebar" class="sidebar-panel w-72 bg-white shadow-xl flex flex-col z-40 overflow-hidden border-r border-gray-200 md:relative">
+  <aside id="sidebar">
 
     <!-- FILTROS -->
-    <div class="p-3 space-y-2 bg-gray-50 border-b border-gray-200 overflow-y-auto">
-      <div class="flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700 flex items-center gap-1">
-          <i class="fas fa-sliders-h text-green-600"></i> Búsqueda
-        </h2>
-        <button id="btn-geolocate" title="Usar mi ubicación" class="text-green-600 hover:text-green-800 text-sm">
+    <div id="sidebar-filters">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-sliders-h" style="color:#16a34a"></i> Búsqueda
+        </span>
+        <button id="btn-geolocate" class="btn-icon" title="Usar mi ubicación">
           <i class="fas fa-crosshairs"></i>
         </button>
       </div>
 
-      <!-- Provincia -->
-      <div>
-        <label class="text-[11px] font-medium text-gray-500 mb-1 block uppercase tracking-wide">Provincia</label>
-        <select id="sel-provincia" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+      <div class="form-group">
+        <label class="form-label">Provincia</label>
+        <select id="sel-provincia" class="form-select">
           <option value="">— Selecciona —</option>
         </select>
       </div>
 
-      <!-- Municipio -->
-      <div>
-        <label class="text-[11px] font-medium text-gray-500 mb-1 block uppercase tracking-wide">Municipio</label>
-        <select id="sel-municipio" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400" disabled>
+      <div class="form-group">
+        <label class="form-label">Municipio</label>
+        <select id="sel-municipio" class="form-select" disabled>
           <option value="">— Todos —</option>
         </select>
       </div>
 
-      <!-- Combustible -->
-      <div>
-        <label class="text-[11px] font-medium text-gray-500 mb-1 block uppercase tracking-wide">Combustible</label>
-        <select id="sel-combustible" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+      <div class="form-group">
+        <label class="form-label">Combustible</label>
+        <select id="sel-combustible" class="form-select">
           <option value="Precio Gasolina 95 E5">🟢 Gasolina 95 E5</option>
           <option value="Precio Gasolina 98 E5">🔵 Gasolina 98 E5</option>
           <option value="Precio Gasoleo A">🟡 Gasóleo A (Diesel)</option>
@@ -156,88 +256,89 @@ function htmlPage(): string {
         </select>
       </div>
 
-      <!-- Búsqueda texto -->
-      <div>
-        <label class="text-[11px] font-medium text-gray-500 mb-1 block uppercase tracking-wide">Buscar rótulo o dirección</label>
-        <div class="relative">
-          <i class="fas fa-search absolute left-2.5 top-2.5 text-gray-400 text-xs"></i>
-          <input id="search-text" type="text" placeholder="Repsol, Cepsa, Calle..." class="w-full border border-gray-200 rounded-lg pl-7 pr-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-400" />
+      <div class="form-group">
+        <label class="form-label">Buscar rótulo o dirección</label>
+        <div class="input-icon-wrap">
+          <i class="fas fa-search icon"></i>
+          <input id="search-text" class="form-input" type="text" placeholder="Repsol, Cepsa, Calle..." />
         </div>
       </div>
 
-      <!-- Ordenar -->
-      <div class="flex gap-2 items-end">
+      <div class="row">
         <div class="flex-1">
-          <label class="text-[11px] font-medium text-gray-500 mb-1 block uppercase tracking-wide">Ordenar</label>
-          <select id="sel-orden" class="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400">
+          <label class="form-label">Ordenar</label>
+          <select id="sel-orden" class="form-select">
             <option value="asc">Precio ↑ (más barato)</option>
             <option value="desc">Precio ↓ (más caro)</option>
             <option value="az">Nombre A→Z</option>
           </select>
         </div>
-        <button id="btn-buscar" class="flex-shrink-0 bg-green-600 hover:bg-green-700 active:bg-green-800 text-white rounded-lg px-3 py-1.5 text-sm font-semibold transition-colors flex items-center gap-1.5">
+        <button id="btn-buscar" class="btn-primary">
           <i class="fas fa-search"></i> Buscar
         </button>
       </div>
     </div>
 
     <!-- STATS -->
-    <div id="stats-bar" class="hidden px-3 py-1.5 bg-green-50 border-b border-green-100">
-      <div class="flex flex-wrap gap-1.5 text-xs items-center">
-        <span class="text-gray-500"><i class="fas fa-map-marker-alt text-green-600 mr-1"></i><strong id="stat-n">0</strong> gasolineras</span>
-        <span class="stat-chip green">↓ <span id="stat-min">–</span></span>
+    <div id="stats-bar">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px">
+        <span style="color:#64748b"><i class="fas fa-map-marker-alt" style="color:#16a34a;margin-right:4px"></i><strong id="stat-n">0</strong> gasolineras</span>
+        <span class="stat-chip">↓ <span id="stat-min">–</span></span>
         <span class="stat-chip yellow">≈ <span id="stat-avg">–</span></span>
         <span class="stat-chip red">↑ <span id="stat-max">–</span></span>
       </div>
     </div>
 
     <!-- LISTA -->
-    <div id="station-list" class="flex-1 overflow-y-auto text-sm">
-      <div class="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6">
-        <div class="text-5xl mb-3">🗺️</div>
-        <p class="font-medium text-gray-500">Selecciona una provincia</p>
-        <p class="text-xs mt-1">Se cargarán todas las gasolineras con sus precios actualizados</p>
+    <div id="station-list">
+      <div class="empty-state">
+        <div class="icon">🗺️</div>
+        <p>Selecciona una provincia</p>
+        <small>Se cargarán todas las gasolineras con sus precios actualizados</small>
       </div>
     </div>
   </aside>
 
   <!-- ======= MAPA ======= -->
-  <div class="flex-1 relative">
-    <div id="map" class="w-full h-full z-0"></div>
+  <div id="map-container">
+    <div id="map"></div>
 
     <!-- Loading -->
-    <div id="loading" class="hidden absolute inset-0 bg-white/75 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-white rounded-2xl shadow-xl p-6 flex flex-col items-center gap-3">
+    <div id="loading">
+      <div class="loading-box">
         <div class="spinner"></div>
-        <p class="text-sm font-semibold text-gray-600">Cargando gasolineras...</p>
-        <p class="text-xs text-gray-400">Datos oficiales del Ministerio</p>
+        <p style="font-size:14px;font-weight:600;color:#374151">Cargando gasolineras...</p>
+        <p style="font-size:12px;color:#94a3b8">Datos oficiales del Ministerio</p>
       </div>
     </div>
 
     <!-- LEYENDA -->
-    <div class="absolute bottom-8 right-3 bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-3 z-40 border border-gray-200 text-xs">
-      <p class="font-bold text-gray-600 mb-2 text-center">Precio relativo</p>
-      <div class="space-y-1">
-        <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 rounded-full bg-green-500 inline-block"></span><span>Más barato</span></div>
-        <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 rounded-full bg-yellow-400 inline-block"></span><span>Precio medio</span></div>
-        <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 rounded-full bg-red-500 inline-block"></span><span>Más caro</span></div>
-        <div class="flex items-center gap-2"><span class="w-3.5 h-3.5 rounded-full bg-gray-400 inline-block"></span><span>Sin precio</span></div>
-      </div>
+    <div id="legend">
+      <h4>Precio relativo</h4>
+      <div class="legend-item"><span class="legend-dot" style="background:#16a34a"></span> Más barato</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#d97706"></span> Precio medio</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#dc2626"></span> Más caro</div>
+      <div class="legend-item" style="margin-bottom:0"><span class="legend-dot" style="background:#9ca3af"></span> Sin precio</div>
     </div>
   </div>
 
-</div><!-- end main layout -->
+</div><!-- end app-body -->
 
 <!-- ============ SCRIPT ============ -->
 <script>
 const API = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes';
 
-// ---- MAPA ----
-const map = L.map('map', { zoomControl: true }).setView([40.4, -3.7], 6);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-  maxZoom: 19
-}).addTo(map);
+// ---- MAPA — se inicializa después de que el DOM esté listo ----
+let map;
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([40.4, -3.7], 6);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19
+  }).addTo(map);
+  // Forzar recálculo de tamaño por si el contenedor cambió
+  setTimeout(() => { map.invalidateSize(true); }, 100);
+}
 
 let clusterGroup = null;
 let allStations = [];
@@ -351,7 +452,7 @@ function renderList(stations) {
   const fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text.replace(/^\\S+\\s*/, '');
 
   if (!stations.length) {
-    list.innerHTML = '<div class="flex flex-col items-center justify-center h-full text-center text-gray-400 p-6"><div class="text-4xl mb-2">🔍</div><p class="font-medium">Sin resultados</p><p class="text-xs mt-1">Prueba con otros filtros</p></div>';
+    list.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>Sin resultados</p><small>Prueba con otros filtros</small></div>';
     return;
   }
 
@@ -360,7 +461,7 @@ function renderList(stations) {
   const sMax = prices.length ? Math.max(...prices) : null;
   const sAvg = prices.length ? (prices.reduce((a, b) => a+b, 0)/prices.length) : null;
 
-  document.getElementById('stats-bar').classList.remove('hidden');
+  document.getElementById('stats-bar').style.display = 'block';
   document.getElementById('stat-n').textContent = stations.length;
   document.getElementById('stat-min').textContent = sMin ? sMin.toFixed(3) + ' €' : 'N/D';
   document.getElementById('stat-avg').textContent = sAvg ? sAvg.toFixed(3) + ' €' : 'N/D';
@@ -370,7 +471,7 @@ function renderList(stations) {
     const price = parsePrice(s[fuel]);
     const color = priceColor(price);
     const badgeCls = 'badge badge-' + color;
-    return '<div class="station-card px-3 py-2" data-idx="' + i + '" onclick="zoomTo(' + i + ')">'
+    return '<div class="station-card" data-idx="' + i + '" onclick="zoomTo(' + i + ')">';
       + '<div class="flex justify-between items-start gap-1">'
       + '<div style="min-width:0;flex:1">'
       + '<div class="font-semibold text-gray-800 truncate" style="font-size:13px">⛽ ' + (s['Rótulo'] || 'Gasolinera') + '</div>'
@@ -438,7 +539,7 @@ function applyFilters() {
 
   const lbl = document.getElementById('lbl-count');
   lbl.textContent = stations.length + ' gasolineras';
-  lbl.classList.remove('hidden');
+  lbl.style.display = 'inline-block';
 }
 
 // ---- API CALLS (directo al Ministerio) ----
@@ -478,8 +579,8 @@ async function loadStations() {
 
   if (!idProv) { alert('Selecciona una provincia primero.'); return; }
 
-  document.getElementById('loading').classList.remove('hidden');
-  document.getElementById('stats-bar').classList.add('hidden');
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('stats-bar').style.display = 'none';
 
   try {
     let url = idMun
@@ -492,7 +593,7 @@ async function loadStations() {
 
     if (data.Fecha) {
       document.getElementById('lbl-update').textContent = 'Actualizado: ' + data.Fecha;
-      document.getElementById('lbl-update').classList.remove('hidden');
+      document.getElementById('lbl-update').style.display = 'inline';
     }
 
     applyFilters();
@@ -500,7 +601,7 @@ async function loadStations() {
     console.error(err);
     alert('Error al cargar los datos. Inténtalo de nuevo.');
   } finally {
-    document.getElementById('loading').classList.add('hidden');
+    document.getElementById('loading').classList.remove('show');
   }
 }
 
@@ -543,7 +644,15 @@ document.getElementById('btn-toggle-sidebar').addEventListener('click', () => {
 });
 
 // ---- INIT ----
-loadProvincias();
+// Inicializar mapa al cargar la página completamente
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { initMap(); loadProvincias(); });
+} else {
+  initMap(); loadProvincias();
+}
+
+// Re-invalidar tamaño al cambiar dimensiones de ventana
+window.addEventListener('resize', () => { if (map) map.invalidateSize(true); });
 </script>
 </body>
 </html>`;

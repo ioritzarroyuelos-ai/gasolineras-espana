@@ -2211,41 +2211,42 @@ a:focus-visible {
   }
 
   #sidebar-scroll {
-    padding: 8px;
-    gap: 8px;
+    padding: 6px;
+    gap: 6px;
   }
 
   .panel-hero {
-    min-height: 146px;
-    padding: 12px;
+    min-height: 0;
+    padding: 10px 12px;
     border-radius: 16px;
   }
 
+  .panel-hero-top {
+    gap: 8px;
+  }
+
   .panel-kicker {
-    min-height: 26px;
-    padding: 0 10px;
-    font-size: 0.56rem;
+    min-height: 22px;
+    padding: 0 8px;
+    font-size: 0.54rem;
     letter-spacing: 0.12em;
   }
 
   .hero-locate {
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
   }
 
   .panel-title {
-    margin-top: 8px;
-    max-width: 5.5ch;
-    padding-right: 40px;
-    font-size: 1.18rem;
-    line-height: 0.98;
+    margin-top: 4px;
+    max-width: none;
+    padding-right: 36px;
+    font-size: 1rem;
+    line-height: 1;
   }
 
   .panel-copy {
-    margin-top: 8px;
-    max-width: 13rem;
-    font-size: 0.68rem;
-    line-height: 1.24;
+    display: none;
   }
 
   .panel-hero-pills {
@@ -2258,7 +2259,7 @@ a:focus-visible {
   }
 
   .panel-card-head {
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .panel-section-title {
@@ -2278,7 +2279,7 @@ a:focus-visible {
 
   .field-grid,
   .form-group {
-    gap: 6px;
+    gap: 4px;
   }
 
   .form-label {

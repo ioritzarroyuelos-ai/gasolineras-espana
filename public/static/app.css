@@ -231,16 +231,9 @@ a:focus-visible {
   border: 1px solid rgba(255, 255, 255, 0.5);
 }
 
-#sidebar[data-has-results='false'] {
-  height: auto;
-  min-height: 0;
-  align-self: start;
-  max-height: calc(100svh - var(--header-height) - 28px);
-}
-
 #sidebar[data-has-results='false'] #sidebar-scroll {
+  flex: 1 1 auto;
   overflow-y: auto;
-  max-height: calc(100svh - var(--header-height) - 28px);
   padding-bottom: 18px;
 }
 

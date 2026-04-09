@@ -63,9 +63,45 @@ describe('isOpenNow', () => {
     expect(isOpenNow('24H', new Date('2026-04-08T10:00:00'))).toBe(true)
   })
 
-  it('matches weekday schedules', () => {
+  it('matches weekday range schedules', () => {
+    // 2026-04-08 is a Wednesday (X)
     expect(isOpenNow('L-V: 08:00-20:00', new Date('2026-04-08T10:00:00'))).toBe(true)
     expect(isOpenNow('L-V: 08:00-20:00', new Date('2026-04-08T22:00:00'))).toBe(false)
+  })
+
+  it('returns false when today is outside the day range', () => {
+    // 2026-04-11 is a Saturday (S)
+    expect(isOpenNow('L-V: 08:00-20:00', new Date('2026-04-11T10:00:00'))).toBe(false)
+  })
+
+  it('matches single day schedules', () => {
+    // 2026-04-12 is a Sunday (D)
+    expect(isOpenNow('D: 09:00-14:00', new Date('2026-04-12T11:00:00'))).toBe(true)
+    expect(isOpenNow('D: 09:00-14:00', new Date('2026-04-12T15:00:00'))).toBe(false)
+  })
+
+  it('matches schedules with multiple blocks separated by semicolon', () => {
+    // L-V morning + S afternoon
+    // 2026-04-11 is Saturday
+    expect(isOpenNow('L-V: 08:00-14:00;S: 09:00-13:00', new Date('2026-04-11T10:00:00'))).toBe(true)
+    expect(isOpenNow('L-V: 08:00-14:00;S: 09:00-13:00', new Date('2026-04-11T14:00:00'))).toBe(false)
+  })
+
+  it('handles overnight schedules (wrap around midnight)', () => {
+    // 22:00-06:00 crosses midnight
+    expect(isOpenNow('L-D: 22:00-06:00', new Date('2026-04-08T23:00:00'))).toBe(true)
+    expect(isOpenNow('L-D: 22:00-06:00', new Date('2026-04-08T03:00:00'))).toBe(true)
+    expect(isOpenNow('L-D: 22:00-06:00', new Date('2026-04-08T12:00:00'))).toBe(false)
+  })
+
+  it('returns true when schedule is empty (benefit of the doubt)', () => {
+    expect(isOpenNow('')).toBe(true)
+    expect(isOpenNow(null)).toBe(true)
+    expect(isOpenNow(undefined)).toBe(true)
+  })
+
+  it('returns false for unrecognized schedule formats (no parseable blocks)', () => {
+    expect(isOpenNow('Consultar horario')).toBe(false)
   })
 })
 

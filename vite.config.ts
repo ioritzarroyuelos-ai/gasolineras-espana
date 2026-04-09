@@ -14,5 +14,10 @@ export default defineConfig({
       adapter,
       entry: 'src/index.tsx'
     })
-  ]
+  ],
+  test: {
+    include: ['tests/**/*.test.{js,ts}'],
+    environment: 'node',
+    reporters: ['verbose']
+  }
 })

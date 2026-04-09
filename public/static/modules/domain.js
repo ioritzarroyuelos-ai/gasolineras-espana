@@ -48,7 +48,7 @@ export function parseNumericPrice(value) {
 
 export function formatPrice(value) {
   if (value === null || value === undefined) return 'N/D'
-  return `${value.toFixed(3)} EUR`
+  return `${value.toFixed(3)} €/L`
 }
 
 export function getStationPrice(station, fuelId) {

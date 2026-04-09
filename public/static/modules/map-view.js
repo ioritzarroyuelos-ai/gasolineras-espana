@@ -248,7 +248,7 @@ export class MapView {
       weight: 2
     })
       .addTo(this.map)
-      .bindPopup('Tu ubicacion')
+      .bindPopup('Tu ubicación')
   }
 
   focusStation(station, { openPopup = false } = {}) {

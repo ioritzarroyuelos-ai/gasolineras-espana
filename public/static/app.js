@@ -108,18 +108,28 @@ function debounce(fn, delay = 180) {
   }
 }
 
-function fetchJson(url) {
+function fetchJson(url, timeoutMs = 15000) {
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+
   return fetch(url, {
-    headers: {
-      Accept: 'application/json'
-    }
-  }).then(async (response) => {
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(payload.error || 'No se pudo completar la operacion.')
-    }
-    return payload
+    signal: controller.signal,
+    headers: { Accept: 'application/json' }
   })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(payload.error || 'No se pudo completar la operación.')
+      }
+      return payload
+    })
+    .catch((error) => {
+      if (error.name === 'AbortError') {
+        throw new Error('La solicitud tardó demasiado. Comprueba tu conexión e inténtalo de nuevo.')
+      }
+      throw error
+    })
+    .finally(() => window.clearTimeout(timer))
 }
 
 function isMobileLayout() {
@@ -138,7 +148,7 @@ function setSidebarOpen(isOpen) {
 }
 
 function announce(message) {
-  dom.liveRegion.textContent = message
+  if (dom.liveRegion) dom.liveRegion.textContent = message
 }
 
 function setLoading(
@@ -257,7 +267,7 @@ function syncGeolocateButton() {
   const active = Boolean(state.userLocation)
   dom.btnGeolocate.classList.toggle('is-active', active)
   dom.btnGeolocate.setAttribute('aria-pressed', String(active))
-  dom.btnGeolocate.title = active ? 'Quitar filtro por ubicacion' : 'Usar mi ubicacion'
+  dom.btnGeolocate.title = active ? 'Quitar filtro por ubicación' : 'Usar mi ubicación'
 }
 
 function populateProvinceControls() {
@@ -709,19 +719,19 @@ async function useCurrentLocation() {
     mapView.setUserLocation(null)
     syncGeolocateButton()
     applyFilters({ fitMap: false, rerenderMap: true, resetPage: true })
-    announce('Se ha quitado el filtro por ubicacion.')
+    announce('Se ha quitado el filtro por ubicación.')
     return
   }
 
   if (!navigator.geolocation) {
-    announce('Este navegador no permite geolocalizacion.')
+    announce('Este navegador no permite geolocalización.')
     return
   }
 
   dom.btnGeolocate.disabled = true
   setLoading(
     true,
-    'Buscando tu ubicacion...',
+    'Buscando tu ubicación...',
     'Cuando la encontremos aplicaremos un radio aproximado de 10 km.'
   )
 
@@ -756,16 +766,29 @@ async function useCurrentLocation() {
         fitMap: true,
         preferredMunicipalityText: payload.municipalityName || payload.label || ''
       })
-      announce('Ubicacion aplicada. Estamos mostrando estaciones cercanas a ti.')
+      announce('Ubicación aplicada. Estamos mostrando estaciones cercanas a ti.')
     } else {
       applyFilters({ fitMap: false, rerenderMap: true, resetPage: true })
-      announce('Ubicacion detectada, pero no hemos podido asociarla a una provincia.')
+      announce('Ubicación detectada, pero no hemos podido asociarla a una provincia.')
     }
   } catch (error) {
     state.userLocation = null
     mapView.setUserLocation(null)
     syncGeolocateButton()
-    announce(error instanceof Error ? error.message : 'No se pudo obtener tu ubicacion.')
+
+    let geoMessage = 'No se pudo obtener tu ubicación.'
+    if (error instanceof GeolocationPositionError) {
+      if (error.code === GeolocationPositionError.PERMISSION_DENIED) {
+        geoMessage = 'Permiso de ubicación denegado. Actívalo en la configuración del navegador.'
+      } else if (error.code === GeolocationPositionError.POSITION_UNAVAILABLE) {
+        geoMessage = 'Ubicación no disponible en este momento. Inténtalo de nuevo.'
+      } else if (error.code === GeolocationPositionError.TIMEOUT) {
+        geoMessage = 'Se agotó el tiempo al obtener la ubicación. Inténtalo de nuevo.'
+      }
+    } else if (error instanceof Error) {
+      geoMessage = error.message
+    }
+    announce(geoMessage)
   } finally {
     dom.btnGeolocate.disabled = false
     setLoading(false)
@@ -909,8 +932,8 @@ async function init() {
 
   setLoading(
     true,
-    'Preparando la aplicacion...',
-    'Cargando configuracion y provincias disponibles.'
+    'Preparando la aplicación...',
+    'Cargando configuración y provincias disponibles.'
   )
 
   try {
@@ -938,11 +961,11 @@ async function init() {
   } catch (error) {
     dom.stationList.dataset.mode = 'error'
     dom.stationList.innerHTML = buildEmptyState(
-      'La aplicacion no ha podido arrancar',
-      error instanceof Error ? error.message : 'Revisa la conexion y vuelve a intentarlo.',
+      'La aplicación no ha podido arrancar',
+      error instanceof Error ? error.message : 'Revisa la conexión y vuelve a intentarlo.',
       'fa-plug-circle-xmark'
     )
-    announce('La aplicacion no ha podido arrancar.')
+    announce('La aplicación no ha podido arrancar.')
   } finally {
     setLoading(false)
   }

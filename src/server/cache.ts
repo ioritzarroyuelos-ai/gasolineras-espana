@@ -25,44 +25,60 @@ export async function fetchJsonWithTimeout<T>(
   }
 }
 
+const devCache = new Map<string, { data: unknown; expiresAt: number }>()
+
 export async function withEdgeCache<T>(
   c: Context,
   key: string,
   ttlSeconds: number,
   producer: () => Promise<T>
 ): Promise<CacheResult<T>> {
-  const cache = caches.default
-  const cacheUrl = new URL(c.req.url)
-  cacheUrl.pathname = `/__cache/${key}`
-  cacheUrl.search = ''
+  // In Cloudflare Workers the global `caches` object is available.
+  // In local dev (Vite/Node) it is not, so we fall back to an in-process Map.
+  const isWorker = typeof caches !== 'undefined'
 
-  const cacheRequest = new Request(cacheUrl.toString(), {
-    method: 'GET',
-    headers: { Accept: 'application/json' }
-  })
+  if (isWorker) {
+    const cache = caches.default
+    const cacheUrl = new URL(c.req.url)
+    cacheUrl.pathname = `/__cache/${key}`
+    cacheUrl.search = ''
 
-  const cached = await cache.match(cacheRequest)
-  if (cached) {
-    return {
-      cacheStatus: 'HIT',
-      data: (await cached.json()) as T
+    const cacheRequest = new Request(cacheUrl.toString(), {
+      method: 'GET',
+      headers: { Accept: 'application/json' }
+    })
+
+    const cached = await cache.match(cacheRequest)
+    if (cached) {
+      return {
+        cacheStatus: 'HIT',
+        data: (await cached.json()) as T
+      }
     }
+
+    const data = await producer()
+    const response = new Response(JSON.stringify(data), {
+      headers: {
+        'Cache-Control': `public, max-age=${ttlSeconds}`,
+        'Content-Type': 'application/json; charset=utf-8'
+      }
+    })
+
+    c.executionCtx.waitUntil(cache.put(cacheRequest, response))
+
+    return { cacheStatus: 'MISS', data }
+  }
+
+  // Dev fallback: in-process memory cache
+  const entry = devCache.get(key)
+  if (entry && entry.expiresAt > Date.now()) {
+    return { cacheStatus: 'HIT', data: entry.data as T }
   }
 
   const data = await producer()
-  const response = new Response(JSON.stringify(data), {
-    headers: {
-      'Cache-Control': `public, max-age=${ttlSeconds}`,
-      'Content-Type': 'application/json; charset=utf-8'
-    }
-  })
+  devCache.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 })
 
-  c.executionCtx.waitUntil(cache.put(cacheRequest, response))
-
-  return {
-    cacheStatus: 'MISS',
-    data
-  }
+  return { cacheStatus: 'MISS', data }
 }
 
 export function roundCoordinate(value: number, decimals = 4): number {

@@ -99,15 +99,6 @@ export class MapView {
 
     this.layers = { map: voyager, satellite }
 
-    window.L.control.layers(
-      {
-        Mapa: voyager,
-        Satélite: satellite
-      },
-      null,
-      { position: 'topright' }
-    ).addTo(this.map)
-
     this.clusterGroup = window.L.markerClusterGroup({
       showCoverageOnHover: false,
       maxClusterRadius: 55,

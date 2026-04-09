@@ -911,9 +911,10 @@ a:focus-visible {
 }
 
 .map-topbar {
-  top: 14px;
-  left: 14px;
-  right: auto;
+  bottom: 14px;
+  right: 14px;
+  top: auto;
+  left: auto;
   pointer-events: none;
 }
 
@@ -1381,9 +1382,10 @@ a:focus-visible {
   }
 
   .map-topbar {
-    left: 14px;
+    bottom: 14px;
     right: 14px;
-    top: 14px;
+    top: auto;
+    left: auto;
   }
 
   .map-panel {
@@ -2475,8 +2477,10 @@ a:focus-visible {
   }
 
   .map-topbar {
-    top: 10px;
-    left: 10px;
+    bottom: 10px;
+    right: 10px;
+    top: auto;
+    left: auto;
   }
 
   .map-panel {

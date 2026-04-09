@@ -235,10 +235,12 @@ a:focus-visible {
   height: auto;
   min-height: 0;
   align-self: start;
+  max-height: calc(100svh - var(--header-height) - 28px);
 }
 
 #sidebar[data-has-results='false'] #sidebar-scroll {
-  overflow: auto;
+  overflow-y: auto;
+  max-height: calc(100svh - var(--header-height) - 28px);
   padding-bottom: 18px;
 }
 

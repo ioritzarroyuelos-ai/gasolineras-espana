@@ -1553,9 +1553,13 @@ a:focus-visible {
   }
 
   #sidebar[data-has-results='false'] {
-    bottom: auto;
-    height: auto;
-    max-height: calc(100svh - var(--header-height) - 10px);
+    bottom: 0;
+    height: 100%;
+    max-height: none;
+  }
+
+  #sidebar[data-has-results='false'] #sidebar-scroll {
+    flex: 1 1 auto;
   }
 
   #sidebar-scroll {
@@ -1821,10 +1825,6 @@ a:focus-visible {
 @media (max-width: 720px) {
   #sidebar {
     width: min(312px, calc(100vw - 10px));
-  }
-
-  #sidebar[data-has-results='false'] {
-    max-height: calc(100svh - var(--header-height) - 6px);
   }
 
   .panel-hero {

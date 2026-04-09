@@ -4,11 +4,20 @@ import adapter from '@hono/vite-dev-server/cloudflare'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  server: {
+    host: '0.0.0.0',
+    port: 5173
+  },
   plugins: [
     build(),
     devServer({
       adapter,
       entry: 'src/index.tsx'
     })
-  ]
+  ],
+  test: {
+    include: ['tests/**/*.test.{js,ts}'],
+    environment: 'node',
+    reporters: ['verbose']
+  }
 })

@@ -471,14 +471,14 @@ function renderList(stations) {
     const price = parsePrice(s[fuel]);
     const color = priceColor(price);
     const badgeCls = 'badge badge-' + color;
-    return '<div class="station-card" data-idx="' + i + '" onclick="zoomTo(' + i + ')">';
-      + '<div class="flex justify-between items-start gap-1">'
+    return '<div class="station-card" data-idx="' + i + '" onclick="zoomTo(' + i + ')">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px">'
       + '<div style="min-width:0;flex:1">'
-      + '<div class="font-semibold text-gray-800 truncate" style="font-size:13px">⛽ ' + (s['Rótulo'] || 'Gasolinera') + '</div>'
-      + '<div class="text-gray-500 truncate" style="font-size:11px">📍 ' + s['Dirección'] + ', ' + s['Municipio'] + '</div>'
-      + '<div class="text-gray-400 truncate" style="font-size:10px">🕐 ' + ((s['Horario'] || '').slice(0,35) || '–') + '</div>'
+      + '<div class="card-title">⛽ ' + (s['Rótulo'] || 'Gasolinera') + '</div>'
+      + '<div class="card-sub">📍 ' + s['Dirección'] + ', ' + s['Municipio'] + '</div>'
+      + '<div class="card-time">🕐 ' + ((s['Horario'] || '').slice(0,35) || '–') + '</div>'
       + '</div>'
-      + '<div class="flex-shrink-0 text-right">'
+      + '<div style="flex-shrink:0;text-align:right">'
       + (price ? '<span class="' + badgeCls + '">' + price.toFixed(3) + ' €</span>' : '<span style="font-size:11px;color:#9ca3af">N/D</span>')
       + '<div style="font-size:10px;color:#9ca3af;margin-top:1px">' + fuelLabel.slice(0,18) + '</div>'
       + '</div></div></div>';

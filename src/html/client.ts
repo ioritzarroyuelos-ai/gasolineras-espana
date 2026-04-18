@@ -894,17 +894,6 @@ function showCacheIndicator(ts, stale) {
     lbl.textContent = '\u2713 ' + age;
   }
   lbl.style.display = 'inline';
-
-  // Espejo en el footer (texto accesible, sin HTML)
-  var foot = document.getElementById('footer-updated');
-  if (foot) {
-    try {
-      var d = new Date(ts);
-      var hh = String(d.getHours()).padStart(2,'0');
-      var mm = String(d.getMinutes()).padStart(2,'0');
-      foot.textContent = (stale ? 'Cache ' : 'Actualizado ') + hh + ':' + mm;
-    } catch(_){ foot.textContent = 'Actualizado ' + age; }
-  }
 }
 
 async function refreshInBackground(key, idProv, idMun) {

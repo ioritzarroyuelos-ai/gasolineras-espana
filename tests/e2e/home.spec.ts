@@ -47,14 +47,6 @@ test.describe('Home (/)', () => {
     }
   })
 
-  test('footer tiene enlaces a privacidad y cambios', async ({ page }) => {
-    await page.goto('/')
-    const footer = page.locator('#app-footer')
-    await expect(footer).toBeVisible()
-    await expect(footer.getByRole('link', { name: /privacidad/i })).toBeVisible()
-    await expect(footer.getByRole('link', { name: /cambios/i })).toBeVisible()
-  })
-
   test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {
     await page.goto('/')
     // Esperamos al bootstrap para auditar el DOM "real", no el esqueleto inicial.

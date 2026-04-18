@@ -655,28 +655,5 @@ export function getStyles(): string {
     #brand { outline: none; }
     #brand:focus-visible { outline: 2px solid #86efac; outline-offset: 2px; border-radius: 6px; }
 
-    /* ---- Footer legal / atribucion ---- */
-    #app-footer {
-      padding: 14px 14px 18px;
-      background: #f8fafc;
-      border-top: 1px solid #e2e8f0;
-      font-size: 11.5px;
-      color: #475569;
-      line-height: 1.55;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      margin-top: auto;
-    }
-    #app-footer a { color: #166534; text-decoration: none; font-weight: 500; }
-    #app-footer a:hover { text-decoration: underline; }
-    #app-footer .footer-attr { font-size: 11px; }
-    #app-footer .footer-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; color: #94a3b8; font-size: 10.5px; align-items: center; }
-    #app-footer .footer-sep { color: #cbd5e1; user-select: none; }
-    #app-footer #footer-version { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #64748b; }
-    body.dark #app-footer { background: #0f172a; border-top-color: #1e293b; color: #94a3b8; }
-    body.dark #app-footer a { color: #86efac; }
-    body.dark #app-footer .footer-sep { color: #334155; }
-    body.dark #app-footer #footer-version { color: #cbd5e1; }
   </style>`
 }

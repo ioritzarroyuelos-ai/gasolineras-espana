@@ -339,21 +339,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </div>
     </div>
 
-    <!-- FOOTER legal / atribucion -->
-    <footer id="app-footer" role="contentinfo">
-      <div class="footer-attr">
-        <strong>Datos:</strong> <a href="https://geoportalgasolineras.es" target="_blank" rel="noopener noreferrer">Ministerio para la Transición Ecológica y el Reto Demográfico</a>
-      </div>
-      <div class="footer-meta">
-        <span id="footer-updated">Actualizado: --</span>
-        <span class="footer-sep">·</span>
-        <a href="/privacidad">Privacidad</a>
-        <span class="footer-sep">·</span>
-        <a href="/cambios">Cambios</a>
-        <span class="footer-sep">·</span>
-        <span id="footer-version">v${APP_VERSION}</span>
-      </div>
-    </footer>
   </aside>
 
   <!-- Backdrop mobile -->

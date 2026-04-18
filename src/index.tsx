@@ -415,8 +415,17 @@ app.get('/cambios', c => {
 
 <h2>v${APP_VERSION}</h2>
 <ul>
+  <li>Eliminado el footer del sidebar (atribución, "Actualizado HH:MM", enlaces de Privacidad/Cambios y badge de versión). La cabecera del mapa ya comunica la frescura de los datos.</li>
+</ul>
+
+<h2>v1.4.2</h2>
+<ul>
   <li><strong>Fix radio de búsqueda</strong>: si el usuario tenía un municipio seleccionado (ej. Durango) y activaba "cerca + barato" con radio 20 km, solo se mostraban las estaciones del municipio. Ahora, en modo radio, se carga el pool provincial completo y se filtra por haversine.</li>
-  <li>El sidebar en móvil se apila correctamente sobre los controles del mapa (v1.4.1: Leaflet tapaba el botón de ubicación).</li>
+</ul>
+
+<h2>v1.4.1</h2>
+<ul>
+  <li>El sidebar en móvil se apila correctamente sobre los controles del mapa (Leaflet tapaba el botón de ubicación).</li>
   <li>Botón de geolocalización visible, tap target ≥ 40×40.</li>
   <li>Header mejorado en móvil: el título no se parte en 2 líneas, geocoder compacto que se expande al :focus.</li>
   <li>Formularios con más aire y font-size 16 px (evita zoom iOS).</li>

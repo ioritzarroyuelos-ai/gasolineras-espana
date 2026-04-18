@@ -343,39 +343,41 @@ function initMap() {
 // Capa propia de texto encima del mapa. Como los tiles vienen sin nombres,
 // pintamos nosotros solo lo que queremos ver (Espana) y en el idioma correcto.
 //
+// Estilo: imitamos a CartoDB Voyager — texto pequeno (10-12px), peso medio,
+// gris azulado con halo blanco. Mayusculas suaves para CCAA, sin transformar
+// para ciudades. Nada de titulos "ESPANA" gigantes en el centro.
+//
 // Cada entrada: { t: texto, p: [lat, lng], c: clase CSS, mn: zoom minimo,
-// mx: zoom maximo }. Tres niveles:
-//  - country (mn=5 mx=6):  "Espana" muy grande, solo al maximo zoom-out.
-//  - ccaa    (mn=6 mx=8):  comunidades autonomas.
-//  - city    (mn=8 mx=20): capitales y grandes nucleos.
-// Los rangos se solapan para que la transicion no deje huecos vacios.
+// mx: zoom maximo }. Rangos NO solapados (CCAA hasta 7, ciudades desde 8) para
+// que el mapa no se llene de texto a zoom intermedio.
+//
+// Nombres cortos en CCAA que coinciden con capital (Madrid, Murcia, La Rioja
+// comparten texto con la ciudad): solo la ciudad a zoom alto; a zoom bajo se
+// ven como region sin redundancia.
 var labelLayer = null;
 var SPAIN_LABELS = [
-  // Pais
-  { t: 'ESPAÑA', p: [40.2, -3.7], c: 'map-label-country', mn: 5, mx: 6 },
+  // Comunidades autonomas — zoom 5-7. Nombres cortos de uso comun.
+  { t: 'Galicia',            p: [42.75, -7.90], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Asturias',           p: [43.30, -6.00], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Cantabria',          p: [43.20, -4.00], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'País Vasco',         p: [43.05, -2.60], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'Navarra',            p: [42.70, -1.65], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'La Rioja',           p: [42.30, -2.50], c: 'map-label-ccaa', mn: 7, mx: 7 },
+  { t: 'Aragón',             p: [41.50, -0.70], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Cataluña',           p: [41.80,  1.50], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Castilla y León',    p: [41.80, -4.50], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Madrid',             p: [40.55, -3.70], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'Castilla-La Mancha', p: [39.55, -3.30], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Extremadura',        p: [39.20, -6.10], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'C. Valenciana',      p: [39.60, -0.70], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'Murcia',             p: [38.00, -1.80], c: 'map-label-ccaa', mn: 7, mx: 7 },
+  { t: 'Andalucía',          p: [37.40, -4.80], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Baleares',           p: [39.70,  3.00], c: 'map-label-ccaa', mn: 6, mx: 7 },
+  { t: 'Canarias',           p: [28.30,-15.80], c: 'map-label-ccaa', mn: 5, mx: 7 },
+  { t: 'Ceuta',              p: [35.89, -5.32], c: 'map-label-ccaa', mn: 8, mx: 10 },
+  { t: 'Melilla',            p: [35.29, -2.94], c: 'map-label-ccaa', mn: 8, mx: 10 },
 
-  // Comunidades Autonomas (+ ciudades autonomas)
-  { t: 'Galicia',               p: [42.75, -7.90], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Principado de Asturias',p: [43.30, -6.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Cantabria',             p: [43.20, -4.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'País Vasco',            p: [43.05, -2.60], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Navarra',               p: [42.70, -1.65], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'La Rioja',              p: [42.30, -2.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Aragón',                p: [41.50, -0.70], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Cataluña',              p: [41.80,  1.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Castilla y León',       p: [41.80, -4.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Comunidad de Madrid',   p: [40.55, -3.70], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Castilla-La Mancha',    p: [39.55, -3.30], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Extremadura',           p: [39.20, -6.10], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Comunidad Valenciana',  p: [39.60, -0.60], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Región de Murcia',      p: [38.00, -1.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Andalucía',             p: [37.40, -4.80], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Islas Baleares',        p: [39.70,  3.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Canarias',              p: [28.30,-15.80], c: 'map-label-ccaa', mn: 6, mx: 8 },
-  { t: 'Ceuta',                 p: [35.89, -5.32], c: 'map-label-ccaa', mn: 7, mx: 9 },
-  { t: 'Melilla',               p: [35.29, -2.94], c: 'map-label-ccaa', mn: 7, mx: 9 },
-
-  // Ciudades principales (capitales de provincia y grandes nucleos)
+  // Ciudades principales — zoom 8+. Capitales de provincia y grandes nucleos.
   { t: 'Madrid',     p: [40.4168, -3.7038], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Barcelona',  p: [41.3851,  2.1734], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Valencia',   p: [39.4699, -0.3763], c: 'map-label-city', mn: 8, mx: 20 },
@@ -398,7 +400,7 @@ var SPAIN_LABELS = [
   { t: 'Santa Cruz de Tenerife', p: [28.4636, -16.2518], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Santander',  p: [43.4623, -3.8099], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Toledo',     p: [39.8628, -4.0273], c: 'map-label-city', mn: 8, mx: 20 },
-  { t: 'San Sebastián', p: [43.3183, -1.9812], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'San Sebastián', p: [43.3183, -1.9812], c: 'map-label-city', mn: 9, mx: 20 },
   { t: 'Albacete',   p: [38.9943, -1.8585], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Jaén',       p: [37.7796, -3.7849], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Salamanca',  p: [40.9701, -5.6635], c: 'map-label-city', mn: 8, mx: 20 },

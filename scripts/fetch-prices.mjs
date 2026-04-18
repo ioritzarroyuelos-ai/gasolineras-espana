@@ -3,7 +3,7 @@
 // Pensado para ejecutarse desde GitHub Actions 2 veces al dia.
 // Si la descarga falla, NO sobrescribe el snapshot anterior (termina con exit 1).
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -70,6 +70,76 @@ async function main() {
     stationCount: stations.length
   }, null, 2))
   console.log(`  escrito ${metaPath}`)
+
+  // 4) Tendencia nacional: mediana hoy vs anterior (por combustible y por CCAA).
+  //    Guardamos en trends.json lo que el cliente leera para pintar el badge.
+  //    Rotacion: el "current" actual pasa a "previous" en el siguiente ciclo,
+  //    de forma que cada ejecucion del cron compara con 12h atras (las dos
+  //    horas de fetch: 07h y 19h UTC).
+  const trendsPath = resolve(DATA_DIR, 'trends.json')
+  const FUEL_KEYS = {
+    g95:    'Precio Gasolina 95 E5',
+    g98:    'Precio Gasolina 98 E5',
+    diesel: 'Precio Gasoleo A',
+    glp:    'Precio Gases licuados del petróleo'
+  }
+  function parseP(s) { const n = parseFloat(String(s || '').replace(',', '.')); return isFinite(n) && n > 0 ? n : null }
+  function median(arr) {
+    const vals = arr.filter(Boolean).sort((a, b) => a - b)
+    if (!vals.length) return null
+    const m = Math.floor(vals.length / 2)
+    return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2
+  }
+  const currentMedians = {}
+  for (const [label, key] of Object.entries(FUEL_KEYS)) {
+    currentMedians[label] = median(stations.map(s => parseP(s[key])))
+  }
+  // Por CCAA (para luego poder decir "En Bizkaia la gasolina esta 3c/L
+  // por debajo de la media nacional").
+  const byCcaa = {}
+  for (const s of stations) {
+    const ccaa = s.IDCCAA
+    if (!ccaa) continue
+    if (!byCcaa[ccaa]) byCcaa[ccaa] = { count: 0, fuel: {} }
+    byCcaa[ccaa].count++
+    for (const [label, key] of Object.entries(FUEL_KEYS)) {
+      (byCcaa[ccaa].fuel[label] = byCcaa[ccaa].fuel[label] || []).push(parseP(s[key]))
+    }
+  }
+  const ccaaMedians = {}
+  for (const [id, info] of Object.entries(byCcaa)) {
+    ccaaMedians[id] = { count: info.count, fuel: {} }
+    for (const [label, vals] of Object.entries(info.fuel)) {
+      ccaaMedians[id].fuel[label] = median(vals)
+    }
+  }
+  // Rotacion: current → previous.
+  let previous = null
+  if (existsSync(trendsPath)) {
+    try {
+      const prev = JSON.parse(readFileSync(trendsPath, 'utf8'))
+      previous = prev.current || null
+    } catch { /* corrupto → empezamos limpio */ }
+  }
+  const trends = {
+    generatedAt: new Date().toISOString(),
+    ministryDate: all.Fecha,
+    current: { ts: new Date().toISOString(), medians: currentMedians, ccaa: ccaaMedians },
+    previous
+  }
+  writeFileSync(trendsPath, JSON.stringify(trends))
+  console.log(`  escrito ${trendsPath}`)
+  if (previous) {
+    const deltas = []
+    for (const [k, v] of Object.entries(currentMedians)) {
+      const pv = previous.medians?.[k]
+      if (v != null && pv != null) {
+        const d = v - pv
+        deltas.push(`${k}: ${d >= 0 ? '+' : ''}${d.toFixed(3)} €`)
+      }
+    }
+    if (deltas.length) console.log('  deltas vs anterior: ' + deltas.join(', '))
+  }
 
   console.log('OK')
 }

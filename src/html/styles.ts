@@ -549,6 +549,47 @@ export function getStyles(): string {
       }
     }
 
+    /* ---- Tendencia nacional (hoy vs snapshot anterior) ----
+       Strip horizontal, no-intrusivo. Colores del delta:
+        - verde / flecha abajo si bajan los precios (bueno para el usuario)
+        - rojo / flecha arriba si suben
+        - gris / igual si la diferencia es <0.5 c/L (ruido). ---- */
+    #trend-strip {
+      background: #f1f5f9;
+      color: #334155;
+      padding: 6px 14px;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #e2e8f0;
+      position: relative;
+    }
+    #trend-strip[hidden] { display: none; }
+    .trend-strip-label { font-weight: 600; color: #64748b; }
+    .trend-strip-item { font-weight: 500; }
+    .trend-strip-item .dlt { font-weight: 700; margin-left: 4px; }
+    .trend-strip-item .dlt-down { color: #15803d; }
+    .trend-strip-item .dlt-up   { color: #b91c1c; }
+    .trend-strip-item .dlt-flat { color: #64748b; }
+    .trend-strip-sep { color: #cbd5e1; }
+    .trend-strip-close {
+      margin-left: auto;
+      background: none;
+      border: 0;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      color: #94a3b8;
+      padding: 0 4px;
+    }
+    .trend-strip-close:hover { color: #334155; }
+    body.dark #trend-strip { background: #0f172a; color: #cbd5e1; border-bottom-color: #334155; }
+    body.dark .trend-strip-label { color: #94a3b8; }
+    body.dark .trend-strip-item .dlt-down { color: #4ade80; }
+    body.dark .trend-strip-item .dlt-up   { color: #fca5a5; }
+    body.dark .trend-strip-close:hover { color: #e2e8f0; }
+
     /* ---- Sliders de ahorro / radio ---- */
     .range-group { display:flex; align-items:center; gap:8px; }
     .range-group input[type=range] {
@@ -720,6 +761,80 @@ export function getStyles(): string {
     }
     body.dark .map-label-ccaa { color: #94a3b8; }
     body.dark .map-label-city { color: #e2e8f0; }
+
+    /* ---- Filtros avanzados (details/summary) ----
+       Colapsado por defecto. Al abrirlo muestra los chips y el select de marca.
+       El chevron del details viene por defecto del navegador; lo ocultamos y
+       pintamos el nuestro para controlar el estilo. ---- */
+    details.adv-filters {
+      margin-top: 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #fff;
+    }
+    details.adv-filters summary.adv-filters-summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      user-select: none;
+    }
+    details.adv-filters summary.adv-filters-summary::-webkit-details-marker { display: none; }
+    details.adv-filters summary.adv-filters-summary::after {
+      content: '\\25BE';
+      margin-left: auto;
+      font-size: 11px;
+      transition: transform 0.15s;
+    }
+    details.adv-filters[open] summary.adv-filters-summary::after { transform: rotate(180deg); }
+    details.adv-filters summary.adv-filters-summary i { color: #16a34a; }
+    .adv-filters-count {
+      background: #16a34a;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      display: none;
+    }
+    .adv-filters-count.show { display: inline-block; }
+    .adv-filters-body { padding: 0 12px 12px; }
+
+    /* Chips con checkbox: el input real va oculto y pintamos el label */
+    .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chip-check {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #475569;
+      cursor: pointer;
+      user-select: none;
+      background: #fff;
+      transition: all 0.12s;
+    }
+    .chip-check input[type="checkbox"] { display: none; }
+    .chip-check:hover { border-color: #16a34a; color: #16a34a; }
+    .chip-check:has(input:checked) {
+      background: #dcfce7;
+      border-color: #16a34a;
+      color: #15803d;
+      font-weight: 600;
+    }
+
+    body.dark details.adv-filters { background: #1e293b; border-color: #334155; }
+    body.dark details.adv-filters summary.adv-filters-summary { color: #cbd5e1; }
+    body.dark .chip-check { background: #0f172a; border-color: #334155; color: #cbd5e1; }
+    body.dark .chip-check:hover { border-color: #22c55e; color: #22c55e; }
+    body.dark .chip-check:has(input:checked) { background: #14532d; border-color: #22c55e; color: #86efac; }
 
   </style>`
 }

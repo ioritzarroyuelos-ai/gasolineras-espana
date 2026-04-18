@@ -13,6 +13,7 @@ import {
   ProvinciaListSchema,
   safeValidate,
 } from './lib/schemas'
+import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
 
 type StationRecord = Record<string, string> & {
   IDProvincia?: string
@@ -271,29 +272,54 @@ async function verifyTurnstile(token: string | undefined, secret: string | undef
 }
 
 // ---- HTML pages ----
+// Headers compartidos (CSP + seguridad + preconnect). Factorizado porque los
+// usan tanto la home como las rutas provinciales.
+function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> {
+  return {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Security-Policy': buildCsp(nonce, turnstile),
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cache-Control': 'no-store',
+    'Link': [
+      '<https://sedeaplicaciones.minetur.gob.es>; rel=preconnect',
+      '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
+      '<https://unpkg.com>; rel=preconnect; crossorigin',
+      '<https://nominatim.openstreetmap.org>; rel=preconnect; crossorigin',
+    ].join(', '),
+  }
+}
+
 app.get('/', c => {
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
   return new Response(buildPage(nonce, c.req.url, {
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
-  }), {
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Content-Security-Policy': buildCsp(nonce, turnstile),
-      'Referrer-Policy': 'strict-origin-when-cross-origin',
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cache-Control': 'no-store',
-      'Link': [
-        '<https://sedeaplicaciones.minetur.gob.es>; rel=preconnect',
-        '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
-        '<https://unpkg.com>; rel=preconnect; crossorigin',
-        '<https://nominatim.openstreetmap.org>; rel=preconnect; crossorigin',
-      ].join(', '),
-    }
-  })
+  }), { headers: pageHeaders(nonce, turnstile) })
+})
+
+// ---- Rutas SEO por provincia ----
+// /gasolineras/madrid, /gasolineras/barcelona, ... → pre-renderizamos la app
+// con meta tags especificos y el cliente auto-selecciona esa provincia via
+// window.__SEO__. Si el slug no existe (ej. /gasolineras/atlantida), 404
+// pra evitar que Google indexe URLs inventadas.
+app.get('/gasolineras/:slug', c => {
+  const slug = c.req.param('slug')
+  const prov = provinciaBySlug(slug)
+  if (!prov) return c.notFound()
+  const nonce = genNonce()
+  const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  return new Response(buildPage(nonce, c.req.url, {
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+    seo: {
+      provinciaId: prov.id,
+      provinciaSlug: prov.slug,
+      provinciaName: prov.name,
+    },
+  }), { headers: pageHeaders(nonce, turnstile) })
 })
 
 // ---- security.txt (RFC 9116) ----
@@ -339,16 +365,21 @@ app.get('/robots.txt', c => {
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
 })
 
-// ---- SEO: sitemap.xml minimo ----
+// ---- SEO: sitemap.xml (home + 52 provincias + privacidad) ----
 app.get('/sitemap.xml', c => {
   const host = c.req.header('host') || 'gasolineras.pages.dev'
   const scheme = c.req.header('x-forwarded-proto') || 'https'
   const base = scheme + '://' + host
   const today = new Date().toISOString().slice(0, 10)
+  const entries: string[] = []
+  entries.push(`  <url><loc>${base}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
+  for (const p of PROVINCIAS) {
+    entries.push(`  <url><loc>${base}/gasolineras/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>`)
+  }
+  entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>${base}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
-  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
+${entries.join('\n')}
 </urlset>`
   return c.text(body, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' })
 })

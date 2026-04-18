@@ -2,10 +2,22 @@ import { getStyles } from './styles'
 import { getClientScript } from './client'
 import { APP_VERSION } from '../lib/version'
 
+export interface SeoContext {
+  // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
+  // version generica /. Si viene, sobreescribe title/description/canonical y
+  // expone window.__SEO__ en el cliente para que autoseleccione el dropdown.
+  provinciaId?: string
+  provinciaSlug?: string
+  provinciaName?: string
+  // Futuro: municipioId / municipioSlug / municipioName
+}
+
 export interface BuildPageOpts {
   // Site key publica de Cloudflare Turnstile. Si esta presente, inyectamos el
   // widget (invisible) para /api/ingest. En dev (sin claves) se omite.
   turnstileSiteKey?: string
+  // Contexto SEO (rutas /gasolineras/<slug>).
+  seo?: SeoContext
 }
 
 export function buildPage(
@@ -16,7 +28,21 @@ export function buildPage(
   // Base URL (origen) para meta tags canonicos / OG. En Workers reqUrl llega como absoluto.
   let origin = 'https://gasolineras.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
-  const canonical = origin + '/'
+  const seo = opts.seo
+  const pathname = seo?.provinciaSlug ? ('/gasolineras/' + seo.provinciaSlug) : '/'
+  const canonical = origin + pathname
+  const pageTitle = seo?.provinciaName
+    ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
+    : 'Gasolineras España · Precios oficiales en tiempo real'
+  const pageDesc = seo?.provinciaName
+    ? 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
+    : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica.'
+  const ogTitle = seo?.provinciaName
+    ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
+    : 'Gasolineras España · Precios en tiempo real'
+  const ogDesc = seo?.provinciaName
+    ? 'Mapa de precios de combustible en ' + seo.provinciaName + ', actualizados a diario. Datos oficiales.'
+    : 'Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario.'
   // Los crawlers de Twitter/Facebook/LinkedIn no renderizan SVG en previews: usamos PNG 1200x630.
   const ogImage   = origin + '/static/og.png'
   const logoUrl   = origin + '/static/logo.svg'
@@ -39,14 +65,35 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         nonce="${nonce}"></script>`
     : ''
 
+  // Contexto SEO expuesto al cliente: el script arranque autoseleccionara el
+  // dropdown de provincia si hay un provinciaId (via ruta /gasolineras/<slug>).
+  // Queda como window.__SEO__ y el cliente lo lee en initMap().
+  const seoScript = seo?.provinciaId
+    ? `<script nonce="${nonce}">window.__SEO__=${JSON.stringify({
+        provinciaId: seo.provinciaId,
+        provinciaSlug: seo.provinciaSlug,
+        provinciaName: seo.provinciaName,
+      })};</script>`
+    : ''
+
   // JSON-LD: declara la aplicacion como WebApplication + el dataset de precios.
+  // Breadcrumbs: solo en rutas provinciales. Ayuda a Google a entender la
+  // jerarquia y a pintar migas en los resultados.
+  const breadcrumbs = seo?.provinciaName ? [{
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Inicio', item: origin + '/' },
+      { '@type': 'ListItem', position: 2, name: 'Gasolineras en ' + seo.provinciaName, item: canonical },
+    ],
+  }] : []
   const jsonLd = JSON.stringify([
     {
       '@context': 'https://schema.org',
       '@type': 'WebApplication',
       name: 'Gasolineras España',
       url: canonical,
-      description: 'Precios oficiales de combustible en España en tiempo real. Mapa, filtros y favoritos.',
+      description: pageDesc,
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Any',
       inLanguage: 'es-ES',
@@ -57,13 +104,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     {
       '@context': 'https://schema.org',
       '@type': 'Dataset',
-      name: 'Precios de carburantes en España',
+      name: seo?.provinciaName ? 'Precios de carburantes en ' + seo.provinciaName : 'Precios de carburantes en España',
       description: 'Snapshot oficial de precios de estaciones de servicio terrestres.',
       license: 'https://datos.gob.es/es/catalogo/e05068001-precio-de-carburantes-en-las-gasolineras-espanolas',
       creator: { '@type': 'GovernmentOrganization', name: 'Ministerio para la Transición Ecológica y el Reto Demográfico' },
-      spatialCoverage: { '@type': 'Place', name: 'España' },
+      spatialCoverage: { '@type': 'Place', name: seo?.provinciaName || 'España' },
       inLanguage: 'es',
-    }
+    },
+    ...breadcrumbs,
   ])
 
   return `<!DOCTYPE html>
@@ -82,14 +130,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="application-name" content="Gasolineras España" />
   <meta name="author" content="Gasolineras España" />
   <meta name="generator" content="Hono + Cloudflare Pages" />
-  <meta name="description" content="Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica." />
-  <meta name="keywords" content="gasolineras, precios combustible, gasolina, diesel, España, mapa gasolineras, ahorro combustible" />
+  <meta name="description" content="${pageDesc}" />
+  <meta name="keywords" content="gasolineras, precios combustible, gasolina, diesel, España, mapa gasolineras, ahorro combustible${seo?.provinciaName ? ', ' + seo.provinciaName.toLowerCase() : ''}" />
 
   <!-- Open Graph / redes -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Gasolineras España" />
-  <meta property="og:title" content="Gasolineras España · Precios en tiempo real" />
-  <meta property="og:description" content="Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario." />
+  <meta property="og:title" content="${ogTitle}" />
+  <meta property="og:description" content="${ogDesc}" />
   <meta property="og:url" content="${canonical}" />
   <meta property="og:image" content="${ogImage}" />
   <meta property="og:image:alt" content="Gasolineras España · comparador de precios oficial" />
@@ -99,13 +147,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Gasolineras España · Precios en tiempo real" />
-  <meta name="twitter:description" content="Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio." />
+  <meta name="twitter:title" content="${ogTitle}" />
+  <meta name="twitter:description" content="${ogDesc}" />
   <meta name="twitter:image" content="${ogImage}" />
   <meta name="twitter:image:alt" content="Gasolineras España · comparador de precios oficial" />
 
   <link rel="canonical" href="${canonical}" />
-  <title>Gasolineras España · Precios oficiales en tiempo real</title>
+  <title>${pageTitle}</title>
 
   <!-- Favicon / PWA icons -->
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
@@ -164,6 +212,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <!-- JSON-LD para SEO / rich results -->
   <script type="application/ld+json" nonce="${nonce}">${jsonLd}</script>
 
+  ${seoScript}
   ${turnstileScripts}
 
   ${getStyles()}
@@ -210,6 +259,17 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <span id="stale-text">Los datos oficiales llevan más de 24 h sin actualizarse.</span>
 </div>
 
+<!-- Tendencia nacional: ultra-compacta, se puebla via JS con trends.json.
+     Oculta por defecto y solo se muestra cuando hay deltas computables
+     (segundo snapshot en adelante). -->
+<div id="trend-strip" role="status" aria-live="polite" hidden>
+  <span class="trend-strip-label">Hoy en España:</span>
+  <span class="trend-strip-item" id="trend-g95"></span>
+  <span class="trend-strip-sep">·</span>
+  <span class="trend-strip-item" id="trend-diesel"></span>
+  <button id="trend-strip-close" class="trend-strip-close" aria-label="Ocultar tendencia">&times;</button>
+</div>
+
 <!-- ============ CUERPO ============ -->
 <div id="app-body">
 
@@ -222,9 +282,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <span style="font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;gap:6px">
           <i class="fas fa-sliders-h" style="color:#16a34a" aria-hidden="true"></i> Búsqueda
         </span>
-        <button id="btn-geolocate" class="btn-icon" title="Usar mi ubicación" aria-label="Usar mi ubicación">
-          <i class="fas fa-crosshairs" aria-hidden="true"></i>
-        </button>
+        <div style="display:flex;gap:6px">
+          <button id="btn-share" class="btn-icon" title="Compartir búsqueda" aria-label="Compartir búsqueda actual">
+            <i class="fas fa-share-alt" aria-hidden="true"></i>
+          </button>
+          <button id="btn-geolocate" class="btn-icon" title="Usar mi ubicación" aria-label="Usar mi ubicación">
+            <i class="fas fa-crosshairs" aria-hidden="true"></i>
+          </button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -281,6 +346,55 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         </button>
       </div>
 
+      <!-- Filtros avanzados: operan sobre resultados ya cargados, por eso se
+           aplican en vivo (no requieren "Buscar" de nuevo). Van en una caja
+           colapsable para no saturar al usuario que no los necesita. -->
+      <details class="adv-filters" id="adv-filters">
+        <summary class="adv-filters-summary">
+          <i class="fas fa-filter" aria-hidden="true"></i>
+          <span>Filtros avanzados</span>
+          <span class="adv-filters-count" id="adv-filters-count" aria-hidden="true"></span>
+        </summary>
+        <div class="adv-filters-body">
+          <div class="chip-row">
+            <label class="chip-check">
+              <input type="checkbox" id="flt-abierto" />
+              <span>&#x1F7E2; Abierto ahora</span>
+            </label>
+            <label class="chip-check">
+              <input type="checkbox" id="flt-24h" />
+              <span>&#x1F319; 24 horas</span>
+            </label>
+          </div>
+          <div class="form-group" style="margin-top:10px;margin-bottom:0">
+            <label class="form-label" for="sel-marca">Marca</label>
+            <select id="sel-marca" class="form-select">
+              <option value="">-- Cualquiera --</option>
+              <option value="REPSOL">Repsol</option>
+              <option value="CEPSA">Cepsa</option>
+              <option value="MOEVE">Moeve</option>
+              <option value="GALP">Galp</option>
+              <option value="BALLENOIL">Ballenoil</option>
+              <option value="PLENERGY">Plenergy</option>
+              <option value="SHELL">Shell</option>
+              <option value="PETROPRIX">Petroprix</option>
+              <option value="PETRONOR">Petronor</option>
+              <option value="CARREFOUR">Carrefour</option>
+              <option value="BP">BP</option>
+              <option value="AVIA">Avia</option>
+              <option value="Q8">Q8</option>
+              <option value="CAMPSA">Campsa</option>
+              <option value="ESCLATOIL">Esclatoil</option>
+              <option value="ALCAMPO">Alcampo</option>
+              <option value="EROSKI">Eroski</option>
+              <option value="BONAREA">BonÀrea</option>
+              <option value="MEROIL">Meroil</option>
+              <option value="__LOWCOST__">Low-cost (sin marca conocida)</option>
+            </select>
+          </div>
+        </div>
+      </details>
+
       <!-- Radio de busqueda (cerca-de-mi) -->
       <div class="form-group" id="radius-group" style="display:none">
         <label class="form-label" for="in-radius">Radio de búsqueda</label>
@@ -315,7 +429,15 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
     <!-- Favoritos (se oculta si no hay) -->
     <section id="favs-section" aria-label="Gasolineras favoritas">
-      <h3>&#x2B50; Mis favoritas (<span id="fav-count">0</span>)</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
+        <h3 style="margin:0">&#x2B50; Mis favoritas (<span id="fav-count">0</span>)</h3>
+        <button id="btn-alerts-toggle" class="btn-icon"
+                title="Activar alertas de bajadas de precio"
+                aria-label="Activar alertas de bajadas de precio"
+                aria-pressed="false">
+          <i class="far fa-bell" id="btn-alerts-icon" aria-hidden="true"></i>
+        </button>
+      </div>
       <div id="fav-list" role="list"></div>
     </section>
 

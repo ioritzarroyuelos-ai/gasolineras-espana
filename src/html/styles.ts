@@ -675,5 +675,58 @@ export function getStyles(): string {
     #brand { outline: none; }
     #brand:focus-visible { outline: 2px solid #86efac; outline-offset: 2px; border-radius: 6px; }
 
+    /* ---- Etiquetas de lugar del mapa (capa propia, ver renderLabels en
+       client.ts). Tiles base vienen sin nombres; estas las pintamos nosotros
+       solo para Espana y en castellano. Usamos divIcon → leaflet los renderiza
+       como HTML; el transform:translate(-50%,-50%) centra el texto sobre las
+       coordenadas (el iconAnchor por defecto no lo hace bien con text libre).
+       El text-shadow cuadruplicado simula un "halo" blanco legible sobre
+       cualquier color del mapa (verde, azul, marron...) sin necesidad de
+       fondo — mas limpio visualmente que un rectangulo opaco. ---- */
+    .map-label {
+      background: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      color: #1e293b;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-weight: 700;
+      text-align: center;
+      white-space: nowrap;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      text-shadow:
+        0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff, 0 0 3px #fff,
+        1px 1px 2px rgba(255,255,255,0.9);
+      width: auto !important;
+      height: auto !important;
+    }
+    .map-label-country {
+      font-size: 22px;
+      letter-spacing: 0.25em;
+      color: #0f172a;
+      opacity: 0.75;
+    }
+    .map-label-ccaa {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #334155;
+      opacity: 0.9;
+    }
+    .map-label-city {
+      font-size: 12px;
+      color: #0f172a;
+    }
+    /* Modo oscuro: invertir el halo (ahora negro) y aclarar el texto. */
+    body.dark .map-label {
+      color: #f1f5f9;
+      text-shadow:
+        0 0 3px #000, 0 0 3px #000, 0 0 3px #000, 0 0 3px #000,
+        1px 1px 2px rgba(0,0,0,0.9);
+    }
+    body.dark .map-label-country { color: #e2e8f0; }
+    body.dark .map-label-ccaa    { color: #cbd5e1; }
+    body.dark .map-label-city    { color: #f8fafc; }
+
   </style>`
 }

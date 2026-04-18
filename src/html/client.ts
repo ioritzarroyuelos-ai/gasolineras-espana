@@ -296,16 +296,25 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Tiles CartoDB. noWrap=true evita que los tiles se repitan horizontalmente
-  // cuando el usuario intenta hacer zoom-out (sin esto, veria varios planetas).
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  // Tiles CartoDB *_nolabels*: el mapa base viene SIN nombres. Los nombres los
+  // pintamos nosotros con una capa propia (renderLabels) solo para Espana, en
+  // castellano. Asi evitamos dos cosas:
+  //  1) Ver "SPAIN" / "ANDALUSIA" / "CATALONIA" en ingles (CartoDB rotula en
+  //     ingles a nivel de pais/region; OSM seria local pero Carto es EN).
+  //  2) Ver nombres de Francia, Portugal, Marruecos o Argelia — el usuario
+  //     viene a consultar gasolineras en Espana, el resto es ruido visual.
+  // noWrap=true evita que los tiles se repitan horizontalmente cuando el
+  // usuario intenta hacer zoom-out (sin esto, veria varios planetas).
+  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
+  // El satelite de ESRI no tiene capa "nolabels" pero tampoco trae rotulos por
+  // defecto (es pura ortofoto), asi que vale tal cual.
   mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye',
     maxZoom: 19, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
@@ -321,7 +330,100 @@ function initMap() {
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
+  // Etiquetas en castellano (pais / CCAA / ciudades). Se repintan en cada
+  // zoomend para mostrar/ocultar segun el nivel actual.
+  labelLayer = L.layerGroup().addTo(map);
+  renderLabels();
+  map.on('zoomend', renderLabels);
+
   setTimeout(function() { map.invalidateSize(true); }, 100);
+}
+
+// ---- ETIQUETAS EN CASTELLANO ----
+// Capa propia de texto encima del mapa. Como los tiles vienen sin nombres,
+// pintamos nosotros solo lo que queremos ver (Espana) y en el idioma correcto.
+//
+// Cada entrada: { t: texto, p: [lat, lng], c: clase CSS, mn: zoom minimo,
+// mx: zoom maximo }. Tres niveles:
+//  - country (mn=5 mx=6):  "Espana" muy grande, solo al maximo zoom-out.
+//  - ccaa    (mn=6 mx=8):  comunidades autonomas.
+//  - city    (mn=8 mx=20): capitales y grandes nucleos.
+// Los rangos se solapan para que la transicion no deje huecos vacios.
+var labelLayer = null;
+var SPAIN_LABELS = [
+  // Pais
+  { t: 'ESPAÑA', p: [40.2, -3.7], c: 'map-label-country', mn: 5, mx: 6 },
+
+  // Comunidades Autonomas (+ ciudades autonomas)
+  { t: 'Galicia',               p: [42.75, -7.90], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Principado de Asturias',p: [43.30, -6.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Cantabria',             p: [43.20, -4.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'País Vasco',            p: [43.05, -2.60], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Navarra',               p: [42.70, -1.65], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'La Rioja',              p: [42.30, -2.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Aragón',                p: [41.50, -0.70], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Cataluña',              p: [41.80,  1.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Castilla y León',       p: [41.80, -4.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Comunidad de Madrid',   p: [40.55, -3.70], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Castilla-La Mancha',    p: [39.55, -3.30], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Extremadura',           p: [39.20, -6.10], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Comunidad Valenciana',  p: [39.60, -0.60], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Región de Murcia',      p: [38.00, -1.50], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Andalucía',             p: [37.40, -4.80], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Islas Baleares',        p: [39.70,  3.00], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Canarias',              p: [28.30,-15.80], c: 'map-label-ccaa', mn: 6, mx: 8 },
+  { t: 'Ceuta',                 p: [35.89, -5.32], c: 'map-label-ccaa', mn: 7, mx: 9 },
+  { t: 'Melilla',               p: [35.29, -2.94], c: 'map-label-ccaa', mn: 7, mx: 9 },
+
+  // Ciudades principales (capitales de provincia y grandes nucleos)
+  { t: 'Madrid',     p: [40.4168, -3.7038], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Barcelona',  p: [41.3851,  2.1734], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Valencia',   p: [39.4699, -0.3763], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Sevilla',    p: [37.3891, -5.9845], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Zaragoza',   p: [41.6488, -0.8891], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Málaga',     p: [36.7213, -4.4214], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Murcia',     p: [37.9922, -1.1307], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Palma',      p: [39.5696,  2.6502], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Las Palmas de Gran Canaria', p: [28.1235, -15.4363], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Bilbao',     p: [43.2630, -2.9350], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Alicante',   p: [38.3452, -0.4810], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Córdoba',    p: [37.8882, -4.7794], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Valladolid', p: [41.6523, -4.7245], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Vigo',       p: [42.2406, -8.7207], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Gijón',      p: [43.5322, -5.6611], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Granada',    p: [37.1773, -3.5986], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'A Coruña',   p: [43.3623, -8.4115], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Oviedo',     p: [43.3614, -5.8593], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Pamplona',   p: [42.8125, -1.6458], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Santa Cruz de Tenerife', p: [28.4636, -16.2518], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Santander',  p: [43.4623, -3.8099], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Toledo',     p: [39.8628, -4.0273], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'San Sebastián', p: [43.3183, -1.9812], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Albacete',   p: [38.9943, -1.8585], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Jaén',       p: [37.7796, -3.7849], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Salamanca',  p: [40.9701, -5.6635], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Logroño',    p: [42.4627, -2.4450], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Burgos',     p: [42.3439, -3.6969], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Cádiz',      p: [36.5271, -6.2886], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Almería',    p: [36.8340, -2.4637], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Badajoz',    p: [38.8794, -6.9707], c: 'map-label-city', mn: 8, mx: 20 }
+];
+
+function renderLabels() {
+  if (!labelLayer || !map) return;
+  labelLayer.clearLayers();
+  var z = map.getZoom();
+  for (var i = 0; i < SPAIN_LABELS.length; i++) {
+    var lab = SPAIN_LABELS[i];
+    if (z < lab.mn || z > lab.mx) continue;
+    var icon = L.divIcon({
+      className: 'map-label ' + lab.c,
+      html: lab.t,
+      iconSize: null,     // null = el CSS dimensiona segun el texto
+      iconAnchor: [0, 0]  // no centrar; el CSS aplica transform: translate(-50%, -50%)
+    });
+    L.marker(lab.p, { icon: icon, interactive: false, keyboard: false }).addTo(labelLayer);
+  }
 }
 
 var clusterGroup = null;

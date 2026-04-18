@@ -6,10 +6,17 @@
     "strict": true,
     "skipLibCheck": true,
     "lib": [
-      "ESNext"
+      "ESNext",
+      "DOM",
+      "DOM.Iterable",
+      "WebWorker"
     ],
     "types": ["vite/client"],
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx"
   },
+  "include": [
+    "src/**/*",
+    "tests/**/*"
+  ]
 }

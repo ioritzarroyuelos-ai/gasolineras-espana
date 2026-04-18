@@ -6,6 +6,32 @@
   "compatibility_flags": [
     "nodejs_compat"
   ]
+  // ---- Hardening adicional a configurar en el dashboard de Cloudflare ----
+  //
+  // 1) Rate Limiting Rules (distribuido, a nivel de red). El SlidingWindowLimiter
+  //    in-memory del Worker solo cubre una instancia — basta para bursts locales,
+  //    pero un atacante distribuido necesita rules reales.
+  //
+  //    Security → WAF → Rate limiting rules → Create
+  //      Name:      api-hammer-guard
+  //      If:        (http.request.uri.path starts with "/api/")
+  //      Action:    Block for 10s
+  //      Threshold: 60 requests per 10 seconds per IP (ajustar)
+  //
+  //    Otra regla mas agresiva para /api/ingest:
+  //      Name:      ingest-hammer-guard
+  //      If:        (http.request.uri.path eq "/api/ingest")
+  //      Threshold: 5 requests per 10 seconds per IP
+  //      Action:    Managed Challenge
+  //
+  // 2) Turnstile (opcional, activa /api/ingest):
+  //    Dashboard → Turnstile → Add Site → copia site key y secret key al
+  //    .env.example / Pages env. Sin secret, /api/ingest hace fail-open.
+  //
+  // 3) Logpush a R2/BigQuery para ingerir los slog('error', ...) estructurados
+  //    emitidos por index.tsx (schema_drift, health.stale, client.error, etc.).
+  //
+  // ---- Env vars (local o Dashboard → Pages → Settings → Environment) ----
   // "vars": {
   //   "MY_VAR": "my-variable"
   // },

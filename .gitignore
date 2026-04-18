@@ -31,3 +31,12 @@ lerna-debug.log*
 
 # misc
 .DS_Store
+
+# tests
+.lighthouseci/
+playwright-report/
+test-results/
+tests/e2e/.auth/
+
+# claude code metadata (worktrees, sessions, local-only)
+.claude/

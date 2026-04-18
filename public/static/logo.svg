@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Gasolineras España">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22c55e"/>
+      <stop offset="1" stop-color="#15803d"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <g fill="#ffffff">
+    <rect x="14" y="16" width="22" height="32" rx="3"/>
+    <rect x="17" y="19" width="16" height="10" rx="1.5" fill="#14532d"/>
+    <circle cx="21" cy="24" r="1.4" fill="#86efac"/>
+    <rect x="18" y="34" width="14" height="2.2" rx="1" fill="#bbf7d0"/>
+    <rect x="18" y="38" width="10" height="2.2" rx="1" fill="#bbf7d0"/>
+    <path d="M36 22 Q44 22 44 30 L44 42 Q44 48 50 48 L50 44 Q46 44 46 42 L46 30 Q46 20 36 20 Z"/>
+  </g>
+</svg>

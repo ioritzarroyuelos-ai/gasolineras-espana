@@ -274,26 +274,41 @@ var mapLayers = {};
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
+  // Limites geograficos de Espana: peninsula + Baleares + Canarias + Ceuta/Melilla.
+  // Leaflet los usa para:
+  //  - maxBounds: impide arrastrar el mapa fuera del bounding box.
+  //  - maxBoundsViscosity: 1.0 = el borde es "rigido" (no se puede salir ni con inercia).
+  //  - minZoom: por debajo de este nivel se ve media Europa / medio mundo → sin sentido.
+  var SPAIN_BOUNDS = L.latLngBounds(
+    [26.5, -19.0],  // SW — al sur de El Hierro y al oeste del mismo
+    [44.5,   5.5]   // NE — al norte del Cantabrico y al este de Menorca
+  );
+
   map = L.map('map', {
     zoomControl: false,
     attributionControl: false,
     zoomAnimation: true,
     fadeAnimation: true,
-    markerZoomAnimation: true
+    markerZoomAnimation: true,
+    minZoom: 5,
+    maxBounds: SPAIN_BOUNDS,
+    maxBoundsViscosity: 1.0,
+    worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Tiles CartoDB
+  // Tiles CartoDB. noWrap=true evita que los tiles se repitan horizontalmente
+  // cuando el usuario intenta hacer zoom-out (sin esto, veria varios planetas).
   mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
   mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye',
-    maxZoom: 19
+    maxZoom: 19, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
 
   // Activar capa segun tema actual

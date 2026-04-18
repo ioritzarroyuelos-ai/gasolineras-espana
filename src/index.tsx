@@ -415,7 +415,12 @@ app.get('/cambios', c => {
 
 <h2>v${APP_VERSION}</h2>
 <ul>
-  <li>Eliminado el footer del sidebar (atribución, "Actualizado HH:MM", enlaces de Privacidad/Cambios y badge de versión). La cabecera del mapa ya comunica la frescura de los datos.</li>
+  <li><strong>Fix móvil</strong>: el listado de gasolineras no se veía tras una búsqueda porque los filtros ocupaban toda la altura del sidebar. Ahora los filtros se capan a 50vh con scroll propio y la lista ocupa el resto (mínimo 30vh) con scroll independiente. El escritorio no cambia.</li>
+</ul>
+
+<h2>v1.4.3</h2>
+<ul>
+  <li>Eliminado el footer del sidebar (atribución, "Actualizado HH:MM", enlaces de Privacidad/Cambios y badge de versión).</li>
 </ul>
 
 <h2>v1.4.2</h2>

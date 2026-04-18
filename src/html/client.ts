@@ -1385,18 +1385,25 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
 });
 
 // ---- EVENTOS ----
+// Filosofia UX: los cambios en los filtros NO disparan carga ni render. El
+// usuario decide cuando mirar resultados pulsando "Buscar" (o "Mi ubicacion").
+// Asi evitamos que un usuario indeciso vea la lista bailar mientras ajusta 4
+// controles — y ahorramos llamadas innecesarias al Ministerio.
 document.getElementById('sel-provincia').addEventListener('change', async function(e) {
+  // Unica excepcion: al cambiar provincia hay que refrescar el dropdown de
+  // municipios (es un selector dependiente). No carga estaciones.
   await loadMunicipios(e.target.value);
-  if (e.target.value) loadStations();
 });
 document.getElementById('sel-municipio').addEventListener('change', function() {
-  if (document.getElementById('sel-provincia').value) loadStations();
+  // No-op: el render llega con "Buscar".
 });
 document.getElementById('sel-combustible').addEventListener('change', function() {
-  if (allStations.length) applyFilters();
+  // No-op: el render llega con "Buscar".
 });
 document.getElementById('sel-orden').addEventListener('change', function(e) {
-  // Mostrar slider de radio solo cuando tiene sentido
+  // Mostrar slider de radio solo cuando tiene sentido (cerca / distancia).
+  // Esto SI es puramente visual (muestra u oculta el slider), no renderiza
+  // estaciones — por eso se queda aunque no haya habido "Buscar".
   var needsRadius = (e.target.value === 'cerca' || e.target.value === 'dist');
   var rg = document.getElementById('radius-group');
   if (needsRadius && userPos) rg.style.display = 'block';
@@ -1404,17 +1411,7 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   else if (needsRadius && !userPos) {
     showToast('Pulsa el boton de ubicacion para usar esta ordenacion', 'warning');
   }
-  // Si hay municipio seleccionado y cambiamos a/desde modo radio, la
-  // granularidad de carga cambia (provincia vs municipio) — hay que recargar.
-  // loadStations respeta cache por clave (prov, mun) asi que es barato.
-  var idProv = document.getElementById('sel-provincia').value;
-  var idMun  = document.getElementById('sel-municipio').value;
-  var granularityChange = idProv && idMun && userPos && needsRadius;
-  if (granularityChange) {
-    loadStations();
-  } else if (allStations.length) {
-    applyFilters();
-  }
+  // El render de la lista llega con "Buscar" — no lo aplicamos aqui.
 });
 
 // ---- AUTOCOMPLETADO BUSQUEDA ----
@@ -1485,8 +1482,10 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   }
 
   input.addEventListener('input', function() {
+    // El autocomplete (dropdown de sugerencias) sigue funcionando en vivo —
+    // es una ayuda visual, no cambia el mapa. Pero NO reaplicamos filtros al
+    // vuelo: el usuario vera la lista filtrada cuando pulse "Buscar".
     showSuggestions(input.value.trim());
-    if (allStations.length) applyFilters();
   });
 
   box.addEventListener('mousedown', function(e) {

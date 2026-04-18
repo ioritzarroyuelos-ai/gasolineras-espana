@@ -415,6 +415,14 @@ app.get('/cambios', c => {
 
 <h2>v${APP_VERSION}</h2>
 <ul>
+  <li><strong>Mobile UX</strong>: el sidebar ahora se apila correctamente sobre los controles del mapa (antes Leaflet tapaba el botón de ubicación).</li>
+  <li>Botón de geolocalización más visible y accesible al tacto (tap target ≥ 40×40, fondo verde claro).</li>
+  <li>Más aire entre campos del formulario en móvil (padding, margins, font-size 16 px para evitar zoom en iOS).</li>
+  <li>Hamburger y toggle de tema con área de pulsación de 40×40 (Apple HIG).</li>
+</ul>
+
+<h2>v1.4.0</h2>
+<ul>
   <li>Validación <strong>zod</strong> en la frontera (Ministerio) con telemetría <code>ministry.schema_drift</code>.</li>
   <li>Watchdog de frescura: <code>/api/health</code> devuelve <strong>503</strong> si el snapshot supera las 24 h.</li>
   <li>Cloudflare <strong>Turnstile</strong> opcional en <code>/api/ingest</code> (gated por <code>TURNSTILE_SECRET_KEY</code>).</li>

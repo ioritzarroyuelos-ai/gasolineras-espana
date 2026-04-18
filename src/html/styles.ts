@@ -42,8 +42,12 @@ export function getStyles(): string {
     }
 
     /* ===== MAPA ===== */
+    /* z-index: 0 crea un stacking context — evita que los controles internos
+       de Leaflet (.leaflet-control con z-index:1000) escapen y tapen al
+       sidebar cuando se abre en overlay en movil. */
     #map-container {
       flex: 1; position: relative; overflow: hidden;
+      z-index: 0;
     }
     #map {
       position: absolute; inset: 0;
@@ -258,8 +262,11 @@ export function getStyles(): string {
     #sidebar { transition: width 0.28s ease, min-width 0.28s ease; }
 
     /* ===== BACKDROP MOBILE ===== */
+    /* z-index alto para cubrir controles Leaflet (z-index:1000 por defecto)
+       cuando el sidebar esta abierto en overlay. El sidebar queda encima
+       (z-index 1100 en la media query), el backdrop justo debajo. */
     #sidebar-backdrop {
-      display:none; position:fixed; inset:0; z-index:490;
+      display:none; position:fixed; inset:0; z-index:1050;
       background:rgba(0,0,0,0.45); backdrop-filter:blur(2px);
     }
     #sidebar-backdrop.show { display:block; }
@@ -285,9 +292,12 @@ export function getStyles(): string {
         position: fixed !important;
         top: 60px; left: 0;
         height: calc(100% - 60px);
-        width: min(320px, 88vw) !important;
+        width: min(340px, 92vw) !important;
         min-width: 0 !important;
-        z-index: 500;
+        /* z-index 1100: por encima de controles Leaflet (1000) y del header (1000)
+           para el area de overlap. El hamburger sigue en el header y permanece
+           accesible porque el sidebar empieza en top:60px (no tapa el header). */
+        z-index: 1100;
         transform: translateX(-110%);
         transition: transform 0.28s ease !important;
         box-shadow: none;
@@ -301,6 +311,28 @@ export function getStyles(): string {
       /* El mapa ocupa todo el ancho */
       #app-body { flex-direction: column; }
       #map-container { flex: 1; }
+
+      /* Geolocate mas visible en movil: mini-boton con fondo, ya no se
+         confunde con un icono. Tap target >= 40x40 (recomendacion Apple HIG). */
+      #btn-geolocate {
+        background: #dcfce7;
+        border: 1px solid #86efac;
+        border-radius: 10px;
+        min-width: 40px; min-height: 40px;
+        padding: 8px 10px; font-size: 16px;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      #btn-geolocate:hover, #btn-geolocate:active { background: #bbf7d0; color: #14532d; }
+      body.dark #btn-geolocate { background: #14532d; border-color: #166534; color: #86efac; }
+      body.dark #btn-geolocate:hover, body.dark #btn-geolocate:active { background: #166534; }
+
+      /* Hamburger con area de pulsacion accesible */
+      #btn-toggle-sidebar {
+        min-width: 40px; min-height: 40px;
+        display: inline-flex; align-items: center; justify-content: center;
+        padding: 8px;
+      }
+      #btn-toggle-sidebar i { font-size: 18px !important; }
     }
 
     /* ---- Sidebar inline: desktop >= 1024px ---- */
@@ -359,13 +391,29 @@ export function getStyles(): string {
     }
 
     /* ---- Formularios tactiles < 640px ---- */
+    /* Mas aire entre campos — el sidebar en overlay debe respirar. Apple HIG
+       recomienda >= 44px de altura para controles; aumentamos padding en
+       selects/inputs/botones para que todos cumplan. */
     @media (max-width: 639px) {
-      #sidebar-filters { padding: 10px; }
-      .form-group { margin-bottom: 8px; }
-      .form-select, .form-input { font-size: 15px; padding: 9px 10px; }
-      .btn-primary { padding: 10px 14px; font-size: 14px; }
-      .station-card { padding: 12px; }
+      #sidebar-filters { padding: 14px 14px 18px; }
+      .form-group { margin-bottom: 14px; }
+      .form-label { font-size: 12px; margin-bottom: 6px; }
+      .form-select, .form-input { font-size: 16px; padding: 11px 12px; }
+      .input-icon-wrap .form-input { padding-left: 34px; }
+      .btn-primary { padding: 11px 16px; font-size: 14px; min-height: 44px; }
+      .btn-ghost { padding: 10px 14px; font-size: 13px; min-height: 42px; }
+      .station-card { padding: 14px 12px; }
       .card-title { font-size: 14px; }
+      /* Separador visual entre titulo "Busqueda + geolocate" y los filtros */
+      #sidebar-filters > div:first-child {
+        padding-bottom: 10px;
+        margin-bottom: 14px !important;
+        border-bottom: 1px solid #e2e8f0;
+      }
+      body.dark #sidebar-filters > div:first-child { border-bottom-color: #334155; }
+      /* El slider de deposito no se puede quedar pegado al boton */
+      #in-tank, #in-radius { height: 6px; }
+      .range-group { gap: 12px; padding: 4px 0; }
     }
 
     /* =============================================================

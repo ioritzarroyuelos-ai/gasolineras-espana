@@ -1,6 +1,6 @@
-// /privacidad + /cambios: paginas legales estaticas. Tests mas simples que
-// la home — solo validamos que renderizan, tienen enlace de vuelta y no
-// violan reglas de axe (que deberian ser 0 porque son HTML semantico plano).
+// /privacidad: pagina legal estatica. Tests mas simples que la home — solo
+// validamos que renderiza, tiene enlace de vuelta y no viola reglas de axe
+// (que deberian ser 0 porque son HTML semantico plano).
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
@@ -28,11 +28,9 @@ test.describe('Páginas legales', () => {
     expect(severe).toEqual([])
   })
 
-  test('/cambios carga con historial de versiones', async ({ page }) => {
-    await page.goto('/cambios')
-    await expect(page).toHaveTitle(/Cambios/i)
-    // Al menos v1.4 o superior debe aparecer en el historial.
-    await expect(page.locator('body')).toContainText(/v1\.[4-9]/i)
+  test('/cambios devuelve 404 (ruta eliminada)', async ({ page }) => {
+    const res = await page.request.get('/cambios')
+    expect(res.status()).toBe(404)
   })
 
   test('/.well-known/security.txt sirve contenido RFC 9116', async ({ page }) => {

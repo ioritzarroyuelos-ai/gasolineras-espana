@@ -208,7 +208,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 <div id="stale-banner" role="status" aria-live="polite">
   <i class="fas fa-hourglass-half" aria-hidden="true" style="margin-right:6px"></i>
   <span id="stale-text">Los datos oficiales llevan más de 24 h sin actualizarse.</span>
-  <a href="/cambios" aria-label="Ver estado y cambios del servicio">Más info</a>
 </div>
 
 <!-- ============ CUERPO ============ -->

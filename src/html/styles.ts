@@ -301,13 +301,14 @@ export function getStyles(): string {
         transform: translateX(-110%);
         transition: transform 0.28s ease !important;
         box-shadow: none;
-        /* overflow: hidden para que el flex interno gestione scrolls separados
-           (filtros arriba con su propio scroll, lista abajo con el suyo). Antes
-           tenia overflow:auto y todo era un scroll unico gigante — el usuario
-           no llegaba a ver la lista porque los filtros ocupaban toda la altura. */
-        overflow: hidden !important;
-        display: flex !important;
-        flex-direction: column !important;
+        /* Scroll unico en movil: filtros + favs + stats + lista fluyen en
+           una misma columna scroleable. El usuario hace scroll hacia abajo y
+           ve todo (filtros arriba, lista de gasolineras debajo) — mismo
+           comportamiento visual que en escritorio pero adaptado al viewport
+           vertical del movil. */
+        overflow-y: auto !important;
+        overflow-x: hidden !important;
+        -webkit-overflow-scrolling: touch;
       }
       #sidebar.open {
         transform: translateX(0) !important;
@@ -317,24 +318,18 @@ export function getStyles(): string {
       #app-body { flex-direction: column; }
       #map-container { flex: 1; }
 
-      /* Reparto vertical dentro del sidebar en movil:
-         - Filtros: hasta 50vh con su propio scroll si no cabe todo.
-         - Favoritos + stats: altura natural (flex-shrink 0).
-         - Lista de gasolineras: ocupa el resto, minimo 30vh, con scroll propio.
-         Esto garantiza que la lista SIEMPRE es visible tras una busqueda,
-         incluso en iPhone mini/SE. */
+      /* En movil, filtros y lista no scrollean por separado — lo hace el
+         sidebar entero. Quitamos overflow/flex internos para que se
+         comporten como bloques estaticos uno encima del otro. */
       #sidebar-filters {
-        flex: 0 1 auto !important;
-        max-height: 50vh;
-        overflow-y: auto;
-      }
-      #favs-section, #stats-bar {
-        flex: 0 0 auto;
+        flex: 0 0 auto !important;
+        max-height: none !important;
+        overflow: visible !important;
       }
       #station-list {
-        flex: 1 1 0 !important;
-        min-height: 30vh;
-        overflow-y: auto;
+        flex: 0 0 auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
       }
 
       /* Geolocate mas visible en movil: mini-boton con fondo, ya no se

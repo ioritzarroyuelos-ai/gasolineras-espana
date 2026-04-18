@@ -53,7 +53,7 @@ const SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000  // 24 horas
 const MINISTRY = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes'
 
 // APP_VERSION se importa desde ./lib/version para romper el ciclo de imports
-// con ./html/shell. Se expone via /api/health y /cambios.
+// con ./html/shell. Se expone via /api/health.
 export { APP_VERSION }
 
 // ---- LOGGER estructurado (captado por Cloudflare Logpush / `wrangler tail`) ----
@@ -349,7 +349,6 @@ app.get('/sitemap.xml', c => {
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>${base}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
   <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
-  <url><loc>${base}/cambios</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.4</priority></url>
 </urlset>`
   return c.text(body, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' })
 })
@@ -404,75 +403,7 @@ app.get('/privacidad', c => {
 <p>No usamos cookies de seguimiento ni publicidad.</p>
 
 <h2>Contacto</h2>
-<p>Incidencias: <a href="/cambios">changelog</a> o issue en el repositorio.</p>
-`)
-  return c.html(html, 200, { 'Cache-Control': 'public, max-age=3600' })
-})
-
-app.get('/cambios', c => {
-  const html = legalPage('Cambios', `
-<h1>Historial de cambios</h1>
-
-<h2>v${APP_VERSION}</h2>
-<ul>
-  <li><strong>Fix móvil</strong>: el listado de gasolineras no se veía tras una búsqueda porque los filtros ocupaban toda la altura del sidebar. Ahora los filtros se capan a 50vh con scroll propio y la lista ocupa el resto (mínimo 30vh) con scroll independiente. El escritorio no cambia.</li>
-</ul>
-
-<h2>v1.4.3</h2>
-<ul>
-  <li>Eliminado el footer del sidebar (atribución, "Actualizado HH:MM", enlaces de Privacidad/Cambios y badge de versión).</li>
-</ul>
-
-<h2>v1.4.2</h2>
-<ul>
-  <li><strong>Fix radio de búsqueda</strong>: si el usuario tenía un municipio seleccionado (ej. Durango) y activaba "cerca + barato" con radio 20 km, solo se mostraban las estaciones del municipio. Ahora, en modo radio, se carga el pool provincial completo y se filtra por haversine.</li>
-</ul>
-
-<h2>v1.4.1</h2>
-<ul>
-  <li>El sidebar en móvil se apila correctamente sobre los controles del mapa (Leaflet tapaba el botón de ubicación).</li>
-  <li>Botón de geolocalización visible, tap target ≥ 40×40.</li>
-  <li>Header mejorado en móvil: el título no se parte en 2 líneas, geocoder compacto que se expande al :focus.</li>
-  <li>Formularios con más aire y font-size 16 px (evita zoom iOS).</li>
-</ul>
-
-<h2>v1.4.0</h2>
-<ul>
-  <li>Validación <strong>zod</strong> en la frontera (Ministerio) con telemetría <code>ministry.schema_drift</code>.</li>
-  <li>Watchdog de frescura: <code>/api/health</code> devuelve <strong>503</strong> si el snapshot supera las 24 h.</li>
-  <li>Cloudflare <strong>Turnstile</strong> opcional en <code>/api/ingest</code> (gated por <code>TURNSTILE_SECRET_KEY</code>).</li>
-  <li><code>/.well-known/security.txt</code> (RFC 9116) con canal de divulgación coordinada.</li>
-  <li>Tests <strong>E2E Playwright</strong> + <strong>axe-core</strong> (home + privacidad) en CI.</li>
-  <li>Docs profesionales: <code>README</code>, <code>LICENSE</code> MIT, <code>SECURITY.md</code>, <code>CONTRIBUTING.md</code>, <code>.env.example</code>.</li>
-  <li>Rate-limit en <code>/api/*</code> (120 req/min por IP).</li>
-  <li>Endpoint <code>/api/ingest</code> para telemetría de errores del cliente.</li>
-  <li>Endpoint <code>/api/health</code> para monitorización sintética.</li>
-  <li>Open Graph, Twitter Card, JSON-LD y <code>sitemap.xml</code>.</li>
-  <li>Páginas <code>/privacidad</code> y <code>/cambios</code>.</li>
-  <li>Pre-connect a hosts críticos, <code>defer</code> en Leaflet.</li>
-  <li>Tests unitarios (Vitest) + workflow de CI.</li>
-</ul>
-
-<h2>v1.3.0</h2>
-<ul>
-  <li>5 mejoras UX: ahorro por depósito, cerca-de-mí con radio, favoritos + sparkline, perfil del vehículo, accesibilidad AAA.</li>
-  <li>Bonus: <code>navigator.share</code>, copiar dirección, horario en vivo, toggle €/cént, atajos de teclado.</li>
-</ul>
-
-<h2>v1.2.0</h2>
-<ul>
-  <li>Refuerzo de seguridad: LRU con tope, validación SSRF, CSP con nonce, SRI SHA-384.</li>
-</ul>
-
-<h2>v1.1.0</h2>
-<ul>
-  <li>Snapshot estático vía GitHub Actions como fallback cuando la API del Ministerio está caída.</li>
-</ul>
-
-<h2>v1.0.0</h2>
-<ul>
-  <li>Lanzamiento inicial: mapa Leaflet, precios en tiempo real, PWA offline-ready.</li>
-</ul>
+<p>Incidencias: issue en el repositorio.</p>
 `)
   return c.html(html, 200, { 'Cache-Control': 'public, max-age=3600' })
 })

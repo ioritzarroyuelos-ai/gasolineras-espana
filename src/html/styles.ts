@@ -326,13 +326,12 @@ export function getStyles(): string {
       body.dark #btn-geolocate { background: #14532d; border-color: #166534; color: #86efac; }
       body.dark #btn-geolocate:hover, body.dark #btn-geolocate:active { background: #166534; }
 
-      /* Hamburger con area de pulsacion accesible */
-      #btn-toggle-sidebar {
-        min-width: 40px; min-height: 40px;
-        display: inline-flex; align-items: center; justify-content: center;
-        padding: 8px;
-      }
-      #btn-toggle-sidebar i { font-size: 18px !important; }
+      /* NOTA: NO tocar el hamburger (#btn-toggle-sidebar) aqui. Crecerlo a
+         40x40 comprime el resto del header (titulo + geocoder) en iPhone
+         y "Gasolineras España" se rompe en dos lineas. Queda con su
+         padding:6px original — es un icono de 16px, con target ~28x28,
+         suficiente ya que esta pegado al borde izquierdo (zona de Fitts
+         amplia) y es el unico elemento clickable en esa esquina. */
     }
 
     /* ---- Sidebar inline: desktop >= 1024px ---- */
@@ -371,9 +370,21 @@ export function getStyles(): string {
       #app-body   { top: 50px; }
       #sidebar    { top: 50px !important; height: calc(100% - 50px) !important; }
       .header-logo  { font-size: 18px; margin-right: 5px; }
-      .header-title { font-size: 13px; }
+      .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .header-sub   { display: none; }
       #lbl-count, #lbl-update { display: none !important; }
+      /* El geocoder se encoge para dejar espacio al titulo. Crece al hacer
+         focus (ya esta en las reglas base de #geocoder-input:focus). */
+      #geocoder-input { width: 110px !important; max-width: 28vw !important; font-size: 13px; padding: 6px 10px 6px 28px; }
+      #geocoder-input:focus { width: 60vw !important; max-width: 60vw !important; }
+      #geocoder-wrap { margin-right: 4px !important; }
+    }
+
+    /* ---- Muy compacto < 380px (iPhone SE, mini) ---- */
+    @media (max-width: 379px) {
+      .header-title { font-size: 12px; }
+      #geocoder-input { width: 90px !important; max-width: 24vw !important; }
+      .header-logo-img { width: 28px !important; height: 28px !important; }
     }
 
     /* ---- Header medio 640-1023px ---- */

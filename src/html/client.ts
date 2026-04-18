@@ -114,15 +114,160 @@ function toggleFav(station) {
   return true;
 }
 
+// ---- ALERTAS DE BAJADA DE PRECIO (localStorage + Notification API) ----
+// El usuario activa alertas con un click — al hacerlo, pedimos permiso de
+// notificaciones del navegador y marcamos el flag gs_alerts_on. Para cada
+// favorita guardamos un "baseline" (ultimo precio visto por combustible).
+// Cuando cargamos snapshot y encontramos una bajada >= ALERT_THRESHOLD_EUR,
+// disparamos una Notification local (y un toast de respaldo). Los baselines
+// se actualizan cada vez que vemos precio para que las alertas sean
+// progresivas ("cada vez que vuelva a bajar") y no spammeen.
+var ALERTS_ON_KEY    = 'gs_alerts_on';
+var ALERTS_BASE_KEY  = 'gs_alerts_base_v1';        // { "id|fuel": {p: 1.459, ts: 172...} }
+var ALERTS_LAST_KEY  = 'gs_alerts_last_v1';        // dedupe: { "id|fuel": tsUltimaNotif }
+var ALERT_THRESHOLD_EUR = 0.02;                    // 2 centimos de bajada
+var ALERT_COOLDOWN_MS   = 6 * 60 * 60 * 1000;      // no repetir la misma alerta en <6h
+
+function alertsEnabled() {
+  try { return localStorage.getItem(ALERTS_ON_KEY) === '1'; } catch(e) { return false; }
+}
+function setAlertsEnabled(on) {
+  try { localStorage.setItem(ALERTS_ON_KEY, on ? '1' : '0'); } catch(e) {}
+}
+function getAlertBaselines() {
+  try { return JSON.parse(localStorage.getItem(ALERTS_BASE_KEY) || '{}'); } catch(e) { return {}; }
+}
+function setAlertBaselines(b) {
+  try { localStorage.setItem(ALERTS_BASE_KEY, JSON.stringify(b)); } catch(e) {}
+}
+function getAlertLast() {
+  try { return JSON.parse(localStorage.getItem(ALERTS_LAST_KEY) || '{}'); } catch(e) { return {}; }
+}
+function setAlertLast(l) {
+  try { localStorage.setItem(ALERTS_LAST_KEY, JSON.stringify(l)); } catch(e) {}
+}
+
+// Dispara una notificacion local (no requiere service worker). Si el navegador
+// no da permiso o no soporta Notification, fallback a toast dentro de la app.
+function fireDropNotification(title, body) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      var n = new Notification(title, {
+        body: body,
+        icon: '/static/favicon-32.png',
+        badge: '/static/favicon-32.png',
+        tag: 'gs-price-drop',
+        // A pesar del tag dedupe, respetamos el cooldown por id+fuel.
+      });
+      // Al clic, enfoca la tab.
+      n.onclick = function() {
+        try { window.focus(); n.close(); } catch(_) {}
+      };
+      return true;
+    }
+  } catch(_) {}
+  // Fallback visual in-app
+  try { showToast('\u{1F514} ' + title + ' — ' + body, 'success'); } catch(_) {}
+  return false;
+}
+
+// Se llama despues de cada loadStations. Recorre favoritos, compara precios
+// actuales con baselines y notifica bajadas. Luego actualiza baselines.
+function checkPriceDropsAndUpdateBaselines(stations, fuel) {
+  if (!stations || !stations.length || !fuel) return;
+  var favs = getFavs();
+  if (!favs.length) return;
+  var favIds = {}; favs.forEach(function(f) { favIds[f.id] = f; });
+  var baselines = getAlertBaselines();
+  var lastNotif = getAlertLast();
+  var now = Date.now();
+  var enabled = alertsEnabled();
+
+  stations.forEach(function(s) {
+    var id = stationId(s);
+    if (!favIds[id]) return;
+    var p = parsePrice(s[fuel]);
+    if (!p) return;
+    var k = id + '|' + fuel;
+    var base = baselines[k];
+    if (!base) {
+      // Primera vez: establecer baseline, sin notificar (no hay referencia).
+      baselines[k] = { p: p, ts: now };
+      return;
+    }
+    // Si el precio ha bajado por encima del umbral...
+    if (enabled && base.p - p >= ALERT_THRESHOLD_EUR) {
+      // Dedup por cooldown.
+      if (!lastNotif[k] || now - lastNotif[k] > ALERT_COOLDOWN_MS) {
+        var drop = (base.p - p);
+        var fav = favIds[id];
+        var title = 'Precio en bajada: ' + (fav.rotulo || 'gasolinera');
+        var body = '-' + (drop * 100).toFixed(1) + 'c (ahora ' + p.toFixed(3) + ' \u20AC) en ' + (fav.municipio || '');
+        fireDropNotification(title, body);
+        lastNotif[k] = now;
+      }
+    }
+    // Actualizamos baseline al precio actual: asi el proximo test compara
+    // contra la observacion mas reciente y notifica "cada vez que vuelva a
+    // bajar" en lugar de repetir la misma bajada indefinidamente.
+    baselines[k] = { p: p, ts: now };
+  });
+
+  setAlertBaselines(baselines);
+  setAlertLast(lastNotif);
+}
+
 // ---- HISTORICO DE PRECIOS (14 dias, por estacion+combustible) ----
 // Estructura: { "idStation|fuel": [ {d:"2026-04-17", p:1.459}, ... ] }
+//
+// Criterio de grabacion: (favoritos) + (estaciones visitadas recientemente).
+// Una estacion se considera "visitada" cuando el usuario abre su popup en el
+// mapa o clica su tarjeta en la lista. Asi el historico se construye
+// organicamente segun el comportamiento del usuario, sin inflar storage
+// grabando miles de estaciones que nunca consultara.
 var HISTORY_KEY = 'gs_hist_v1';
+var VISITED_KEY = 'gs_visited_v1';
 var HISTORY_MAX_DAYS = 14;
+var VISITED_MAX = 150;              // tope duro de estaciones rastreadas
+var VISITED_TTL_DAYS = 30;          // se olvidan las que no se ven en 30 dias
 function getHistory() {
   try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '{}'); } catch(e) { return {}; }
 }
 function setHistory(h) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch(e) {}
+}
+function getVisited() {
+  try { return JSON.parse(localStorage.getItem(VISITED_KEY) || '{}'); } catch(e) { return {}; }
+}
+function setVisited(v) {
+  try { localStorage.setItem(VISITED_KEY, JSON.stringify(v)); } catch(e) {}
+}
+// Marca una estacion como visitada hoy. Mantenemos solo el ultimo timestamp
+// por id, y podamos LRU cuando superamos el tope.
+function markVisited(stId) {
+  if (!stId) return;
+  var v = getVisited();
+  v[stId] = Date.now();
+  var ids = Object.keys(v);
+  if (ids.length > VISITED_MAX) {
+    // LRU: ordenar por timestamp y dejar los VISITED_MAX mas recientes.
+    ids.sort(function(a,b){ return v[b] - v[a]; });
+    var kept = {};
+    for (var i = 0; i < VISITED_MAX; i++) kept[ids[i]] = v[ids[i]];
+    v = kept;
+  }
+  setVisited(v);
+}
+// Devuelve el set de ids "activos" (favoritos + visitados recientes) sobre los
+// que grabar historico. Los visitados caducados se ignoran pero no se borran
+// automaticamente (se reciclan via LRU cuando haga falta).
+function getTrackedIds() {
+  var ids = {};
+  try { getFavs().forEach(function(f) { if (f.id) ids[f.id] = true; }); } catch(_) {}
+  var v = getVisited();
+  var cutoff = Date.now() - VISITED_TTL_DAYS * 24 * 60 * 60 * 1000;
+  for (var k in v) { if (v[k] >= cutoff) ids[k] = true; }
+  return ids;
 }
 function pushHistoryPoint(stId, fuel, price) {
   if (!price || price <= 0) return;
@@ -138,17 +283,20 @@ function pushHistoryPoint(stId, fuel, price) {
   h[k] = arr;
   setHistory(h);
 }
-// Guarda un lote (tras cargar estaciones): solo para favoritos para no llenar storage.
-function recordHistoryForFavorites(stations, fuel) {
-  var favIds = {};
-  getFavs().forEach(function(f) { favIds[f.id] = true; });
+// Graba historial tras cargar snapshot de estaciones. Cubre favoritos y
+// visitados recientes (ver getTrackedIds). Se ejecuta en cada loadStations.
+function recordHistoryForTracked(stations, fuel) {
+  var ids = getTrackedIds();
   stations.forEach(function(s) {
     var id = stationId(s);
-    if (!favIds[id]) return;
+    if (!ids[id]) return;
     var p = parsePrice(s[fuel]);
     if (p) pushHistoryPoint(id, fuel, p);
   });
 }
+// Alias retro-compatible por si algun call-site antiguo persiste; ahora cubre
+// favoritos + visitados.
+var recordHistoryForFavorites = recordHistoryForTracked;
 
 // ---- HORARIO VIVO: parsea el string del Ministerio y decide si esta abierta ahora ----
 // Formato tipico: "L-V: 06:00-22:00; S: 07:00-14:00; D: cerrado"
@@ -717,7 +865,18 @@ function renderMarkers(stations) {
     var icon  = makeIcon(color, price);
     var marker = L.marker([lat, lng], { icon: icon, _price: price || 0 });
     marker.bindPopup(buildPopup(s), { maxWidth: 300, className: 'custom-popup' });
+    var stId = stationId(s);
     marker.on('click', function() { highlightCard(idx); });
+    // Marcamos la estacion como visitada al abrir el popup para que el
+    // proximo fetch incluya su precio en el historico (habilita sparkline).
+    marker.on('popupopen', function() {
+      markVisited(stId);
+      // Si ya tenemos precio hoy, grabamos ahora mismo en vez de esperar al
+      // proximo loadStations — mejora UX al mostrar un punto desde el primer
+      // click (aunque el sparkline necesite >=2 dias para pintarse).
+      var p = parsePrice(s[fuel]);
+      if (p) pushHistoryPoint(stId, fuel, p);
+    });
     clusterGroup.addLayer(marker);
     bounds.push([lat, lng]);
   });
@@ -880,11 +1039,29 @@ function zoomTo(idx) {
 }
 
 // ---- SORT & FILTER ----
+// Conjunto de marcas conocidas: para el filtro "low-cost" (cualquier rotulo
+// que NO este en esta lista se considera generico/low-cost). Lista espejo de
+// lo que aparece en el dropdown de marcas en shell.ts.
+var KNOWN_BRANDS = {
+  REPSOL:1, CEPSA:1, MOEVE:1, GALP:1, BALLENOIL:1, PLENERGY:1, SHELL:1,
+  PETROPRIX:1, PETRONOR:1, CARREFOUR:1, BP:1, AVIA:1, Q8:1, CAMPSA:1,
+  ESCLATOIL:1, ALCAMPO:1, EROSKI:1, BONAREA:1, MEROIL:1, VALCARCE:1,
+  ENI:1, GASEXPRESS:1, BEROIL:1, HAM:1, AGLA:1
+};
+
 function applyFilters() {
   var fuel  = document.getElementById('sel-combustible').value;
   var text  = document.getElementById('search-text').value.trim().toLowerCase();
   var orden = document.getElementById('sel-orden').value;
   var radius = parseInt(document.getElementById('in-radius').value, 10);
+
+  // Filtros avanzados (operan sobre resultados ya cargados, aplican en vivo)
+  var fltAbierto = document.getElementById('flt-abierto');
+  var flt24h     = document.getElementById('flt-24h');
+  var selMarca   = document.getElementById('sel-marca');
+  var onlyOpen  = fltAbierto ? fltAbierto.checked : false;
+  var only24h   = flt24h ? flt24h.checked : false;
+  var brand     = selMarca ? selMarca.value : '';
 
   var stations = allStations.slice();
 
@@ -903,6 +1080,31 @@ function applyFilters() {
       var pos = stationLatLng(s);
       if (!pos) return false;
       return distanceKm(userPos.lat, userPos.lng, pos.lat, pos.lng) <= radius;
+    });
+  }
+
+  // Filtros avanzados — se aplican entre radio y texto para minimizar el set
+  // antes del filtro mas caro (text, que hace normalize NFD por estacion).
+  if (only24h) {
+    stations = stations.filter(function(s) { return is24H(s['Horario']); });
+  } else if (onlyOpen) {
+    // 24h ⊂ abierto-ahora, por eso el else (evita double-filter cuando ambos on).
+    stations = stations.filter(function(s) {
+      var st = isOpenNow(s['Horario']);
+      return st && st.open;
+    });
+  }
+  if (brand) {
+    stations = stations.filter(function(s) {
+      var r = (s['Rotulo'] || '').toUpperCase().trim();
+      if (brand === '__LOWCOST__') {
+        // Low-cost: cualquier cosa que no matchee una marca conocida. Incluye
+        // rotulos vacios, regionales desconocidos y cadenas independientes.
+        // Hacemos indexOf en vez de match exacto por variantes "REPSOL EESS S.A."
+        for (var key in KNOWN_BRANDS) { if (r.indexOf(key) >= 0) return false; }
+        return true;
+      }
+      return r.indexOf(brand) >= 0;
     });
   }
 
@@ -959,8 +1161,12 @@ function applyFilters() {
   lbl.textContent = stations.length + ' gasolineras';
   lbl.style.display = 'inline-block';
 
-  // Guardar historico de precios (solo favoritos, evita llenar storage)
-  recordHistoryForFavorites(stations, fuel);
+  // Guardar historico de precios (favoritos + visitados recientes).
+  recordHistoryForTracked(stations, fuel);
+  // Alertas: comparamos el precio vs baseline y notificamos bajadas de
+  // favoritos. checkPriceDropsAndUpdateBaselines aisla el estado en
+  // localStorage y respeta el cooldown/consentimiento.
+  try { checkPriceDropsAndUpdateBaselines(stations, fuel); } catch(_) {}
   // Actualizar gasto mensual + panel favoritos
   updateMonthlyWidget();
   renderFavsPanel();
@@ -1418,6 +1624,26 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   if (allStations.length) applyFilters();
 });
 
+// Filtros avanzados: tambien se aplican en vivo (operan sobre el pool ya
+// cargado, no disparan fetch). Actualizar tambien el contador-chip para que el
+// usuario vea "Filtros avanzados (2)" cuando tenga varios activos.
+function updateAdvCountBadge() {
+  var cnt = 0;
+  if (document.getElementById('flt-abierto').checked) cnt++;
+  if (document.getElementById('flt-24h').checked) cnt++;
+  if (document.getElementById('sel-marca').value) cnt++;
+  var badge = document.getElementById('adv-filters-count');
+  if (cnt > 0) { badge.textContent = String(cnt); badge.classList.add('show'); }
+  else { badge.textContent = ''; badge.classList.remove('show'); }
+}
+function advFilterChanged() {
+  updateAdvCountBadge();
+  if (allStations.length) applyFilters();
+}
+document.getElementById('flt-abierto').addEventListener('change', advFilterChanged);
+document.getElementById('flt-24h').addEventListener('change', advFilterChanged);
+document.getElementById('sel-marca').addEventListener('change', advFilterChanged);
+
 // ---- AUTOCOMPLETADO BUSQUEDA ----
 (function() {
   var input  = document.getElementById('search-text');
@@ -1700,12 +1926,178 @@ window.addEventListener('resize', function() {
   } catch(e) {}
 })();
 
-// Inicializar mapa al cargar la pagina completamente
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', function() { initMap(); loadProvincias(); });
-} else {
-  initMap(); loadProvincias();
+// ---- URL SYNC + SEO SEED ----
+// Dos funcionalidades relacionadas:
+//   1) Al cargar, leemos query params (?prov=28&mun=XXX&fuel=...&order=asc
+//      &text=...&open=1&h24=1&brand=REPSOL&radius=5) para rehidratar el estado
+//      de los controles → habilita enlaces compartibles (?a un compa?ero).
+//   2) Tras una busqueda, reescribimos la URL con history.replaceState para
+//      que el "Compartir" funcione y refrescar la pagina no pierda contexto.
+// La seed via window.__SEO__ (rutas /gasolineras/<slug>) solo rellena la
+// provincia; los query params tienen prioridad sobre ella.
+var __urlSyncActive = false;   // evita que la rehidratacion dispare loadStations
+function readQueryState() {
+  var p = new URLSearchParams(location.search);
+  // Fallback: si la ruta es /gasolineras/<slug> y no hay ?prov, usamos __SEO__.
+  var seo = null;
+  try { seo = (window).__SEO__ || null; } catch(_) {}
+  return {
+    prov:   p.get('prov')   || (seo && seo.provinciaId) || '',
+    mun:    p.get('mun')    || '',
+    fuel:   p.get('fuel')   || '',
+    order:  p.get('order')  || '',
+    text:   p.get('text')   || '',
+    brand:  p.get('brand')  || '',
+    open:   p.get('open')   === '1',
+    h24:    p.get('h24')    === '1',
+    radius: p.get('radius') || ''
+  };
 }
+function writeQueryState() {
+  try {
+    var p = new URLSearchParams();
+    var prov  = document.getElementById('sel-provincia').value;
+    var mun   = document.getElementById('sel-municipio').value;
+    var fuel  = document.getElementById('sel-combustible').value;
+    var order = document.getElementById('sel-orden').value;
+    var text  = (document.getElementById('search-text').value || '').trim();
+    var radius= document.getElementById('in-radius').value;
+    var brand = (document.getElementById('sel-marca') || {}).value || '';
+    var open  = (document.getElementById('flt-abierto') || {}).checked;
+    var h24   = (document.getElementById('flt-24h')     || {}).checked;
+    if (prov)  p.set('prov',  prov);
+    if (mun)   p.set('mun',   mun);
+    // fuel por defecto es "Precio Gasolina 95 E5"; no lo escribimos para URLs limpias
+    if (fuel && fuel !== 'Precio Gasolina 95 E5') p.set('fuel', fuel);
+    if (order && order !== 'asc') p.set('order', order);
+    if (text)  p.set('text',  text);
+    if (brand) p.set('brand', brand);
+    if (open)  p.set('open',  '1');
+    if (h24)   p.set('h24',   '1');
+    // Radio solo se guarda en modos cerca/dist
+    if (radius && (order === 'cerca' || order === 'dist')) p.set('radius', radius);
+    var qs = p.toString();
+    var base = location.pathname;
+    // En rutas /gasolineras/<slug>, mantener la ruta pero anadir querys para
+    // filtros adicionales. La ruta ya codifica la provincia (no la duplicamos).
+    var seo = null; try { seo = (window).__SEO__ || null; } catch(_) {}
+    if (seo && seo.provinciaId && prov === seo.provinciaId) {
+      p.delete('prov');
+      qs = p.toString();
+    }
+    history.replaceState(null, '', base + (qs ? '?' + qs : ''));
+  } catch(_) {}
+}
+
+async function applyQueryState(state) {
+  // Orden: provincia (dispara loadMunicipios asincrono) → municipio → resto.
+  var selProv = document.getElementById('sel-provincia');
+  var selMun  = document.getElementById('sel-municipio');
+  var selFuel = document.getElementById('sel-combustible');
+  var selOrd  = document.getElementById('sel-orden');
+  var txt     = document.getElementById('search-text');
+  var selMk   = document.getElementById('sel-marca');
+  var fOpen   = document.getElementById('flt-abierto');
+  var f24     = document.getElementById('flt-24h');
+  var rg      = document.getElementById('radius-group');
+  var inR     = document.getElementById('in-radius');
+  var lblR    = document.getElementById('lbl-radius');
+
+  if (state.prov && selProv) {
+    selProv.value = state.prov;
+    // Aguardamos a que el dropdown de municipios se rellene antes de
+    // autoselecccionar uno (si procede).
+    try { await loadMunicipios(state.prov); } catch(_) {}
+  }
+  if (state.mun && selMun) {
+    // Solo intentamos seleccionar si la opcion existe (municipio del slug).
+    var match = false;
+    for (var i = 0; i < selMun.options.length; i++) {
+      if (selMun.options[i].value === state.mun) { match = true; break; }
+    }
+    if (match) selMun.value = state.mun;
+  }
+  if (state.fuel && selFuel)  selFuel.value = state.fuel;
+  if (state.order && selOrd)  selOrd.value  = state.order;
+  if (state.text && txt)      txt.value     = state.text;
+  if (state.brand && selMk)   selMk.value   = state.brand;
+  if (fOpen) fOpen.checked = !!state.open;
+  if (f24)   f24.checked   = !!state.h24;
+  if (state.radius && inR) {
+    inR.value = state.radius;
+    if (lblR) lblR.textContent = state.radius + ' km';
+  }
+  // Mostrar radius si order es cerca/dist y tenemos userPos (aunque userPos
+  // llega despues; el handler de sel-orden ya lo vuelve a evaluar).
+  if ((state.order === 'cerca' || state.order === 'dist') && rg && userPos) {
+    rg.style.display = 'block';
+  }
+  // Refrescamos el contador de filtros avanzados si existe.
+  try { if (typeof updateAdvCountBadge === 'function') updateAdvCountBadge(); } catch(_) {}
+}
+
+// Inicializar mapa + provincias + (opcional) aplicar query state y buscar.
+async function bootApp() {
+  initMap();
+  loadProvincias();
+  var st = readQueryState();
+  __urlSyncActive = true;
+  if (st.prov) {
+    // Rehidratacion completa: aplicamos estado y disparamos busqueda
+    // automaticamente para que la URL compartida funcione "en un click".
+    await applyQueryState(st);
+    try { await loadStations(); } catch(_) {}
+  }
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', function() { bootApp(); });
+} else {
+  bootApp();
+}
+
+// Tras cada busqueda, escribimos la URL. Hookeamos en el boton Buscar.
+(function() {
+  var btn = document.getElementById('btn-buscar');
+  if (btn) btn.addEventListener('click', function() {
+    // writeQueryState se ejecuta en el siguiente microtask para no interferir
+    // con el click handler original (loadStations).
+    setTimeout(writeQueryState, 0);
+  });
+  // Filtros avanzados: al cambiar, reescribimos tambien.
+  ['flt-abierto','flt-24h','sel-marca'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', function() { setTimeout(writeQueryState, 0); });
+  });
+})();
+
+// ---- BOTON SHARE ----
+// Usa Web Share API si esta disponible (movil) y cae a copiar-al-clipboard
+// en escritorio. Primero nos aseguramos de que la URL refleja el estado actual.
+(function() {
+  var btn = document.getElementById('btn-share');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    writeQueryState();
+    var url = location.href;
+    var title = document.title;
+    var text  = 'Precios de gasolineras actualizados';
+    if (navigator.share) {
+      navigator.share({ title: title, text: text, url: url }).catch(function(){});
+      return;
+    }
+    // Fallback: copy to clipboard
+    try {
+      navigator.clipboard.writeText(url).then(function() {
+        showToast('Enlace copiado al portapapeles', 'success');
+      }).catch(function() {
+        // Fallback del fallback: mostramos la URL en un prompt
+        try { window.prompt('Copia este enlace:', url); } catch(_) {}
+      });
+    } catch(_) {
+      try { window.prompt('Copia este enlace:', url); } catch(_) {}
+    }
+  });
+})();
 
 // Re-invalidar tamano al cambiar dimensiones de ventana
 window.addEventListener('resize', function() { if (map) map.invalidateSize(true); });
@@ -1737,7 +2129,14 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
     var card = target.closest('[data-zoom]');
     if (!card) return false;
     var idx = parseInt(card.getAttribute('data-idx'), 10);
-    if (!isNaN(idx)) zoomTo(idx);
+    if (!isNaN(idx)) {
+      // Clic en tarjeta cuenta como "visita" a efectos de historico.
+      try {
+        var st = filteredStations[idx];
+        if (st) markVisited(stationId(st));
+      } catch(_) {}
+      zoomTo(idx);
+    }
     return true;
   }
 
@@ -2077,12 +2476,149 @@ document.addEventListener('keydown', function(e) {
   } catch(e) {}
 })();
 
+// ---- TOGGLE DE ALERTAS (bell en el header de favoritos) ----
+// Primer click: pide permiso de Notification y marca alertas=ON si lo obtiene.
+// Click posterior: alterna on/off (no hace falta re-pedir permiso).
+(function() {
+  var btn = document.getElementById('btn-alerts-toggle');
+  if (!btn) return;
+  var icon = document.getElementById('btn-alerts-icon');
+
+  function syncUI() {
+    var on = alertsEnabled();
+    btn.setAttribute('aria-pressed', String(on));
+    btn.setAttribute('title', on ? 'Alertas activadas (click para desactivar)' : 'Activar alertas de bajadas');
+    if (icon) {
+      icon.className = on ? 'fas fa-bell' : 'far fa-bell';
+      icon.style.color = on ? '#16a34a' : '';
+    }
+  }
+
+  btn.addEventListener('click', async function() {
+    if (alertsEnabled()) {
+      setAlertsEnabled(false);
+      syncUI();
+      showToast('Alertas desactivadas', 'info');
+      return;
+    }
+    // Comprobamos soporte y pedimos permiso.
+    if (!('Notification' in window)) {
+      showToast('Tu navegador no soporta notificaciones; usaremos avisos dentro de la app', 'warning');
+      setAlertsEnabled(true);
+      syncUI();
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      setAlertsEnabled(true);
+      syncUI();
+      showToast('Alertas activadas \u{1F514}', 'success');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      showToast('Permiso de notificaciones bloqueado. Igualmente mostraremos avisos dentro de la app.', 'warning');
+      setAlertsEnabled(true);
+      syncUI();
+      return;
+    }
+    try {
+      var perm = await Notification.requestPermission();
+      if (perm === 'granted') {
+        setAlertsEnabled(true);
+        syncUI();
+        showToast('Alertas activadas \u{1F514}', 'success');
+      } else {
+        setAlertsEnabled(true);
+        syncUI();
+        showToast('Sin permiso del navegador — alertas solo dentro de la app', 'info');
+      }
+    } catch(_) {
+      setAlertsEnabled(true);
+      syncUI();
+    }
+  });
+  // Estado inicial.
+  syncUI();
+})();
+
 // ---- SERVICE WORKER (PWA) ----
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/sw.js').catch(function() {});
   });
 }
+
+// ---- TREND STRIP (tendencia nacional hoy vs ciclo anterior) ----
+// Lee /data/trends.json (generado por scripts/fetch-prices.mjs cada cron) y
+// pinta un strip horizontal con medianas nacionales de gasolina 95 + gasoleo A
+// mas delta vs la ejecucion anterior. Se oculta si no hay "previous" (primera
+// ejecucion) o si el usuario lo descarto en este ciclo (recordamos la
+// dismissal anclada al ministryDate para que vuelva a aparecer al dia
+// siguiente con nuevos datos).
+(function() {
+  var strip  = document.getElementById('trend-strip');
+  if (!strip) return;
+  var g95El  = document.getElementById('trend-g95');
+  var dslEl  = document.getElementById('trend-diesel');
+  var closer = document.getElementById('trend-strip-close');
+  var DISMISS_KEY = 'gs_trend_dismiss_v1';
+
+  function fmtPrice(v) { return v == null ? '--' : v.toFixed(3) + ' \u20AC'; }
+  function fmtDelta(d) {
+    if (d == null) return '';
+    // Mostramos en centimos porque el delta inter-ciclo es de decimas de cent.
+    var cents = d * 100;
+    var abs = Math.abs(cents);
+    if (abs < 0.5) return '<span class="dlt dlt-flat">\u2194 sin cambio</span>';
+    var arrow = cents < 0 ? '\u2193' : '\u2191';
+    var cls = cents < 0 ? 'dlt-down' : 'dlt-up';
+    return '<span class="dlt ' + cls + '">' + arrow + ' ' + abs.toFixed(1) + 'c</span>';
+  }
+  function paint(label, curr, prev, node) {
+    if (curr == null) { node.textContent = ''; return false; }
+    var delta = (prev != null) ? (curr - prev) : null;
+    node.innerHTML = label + ' <b>' + fmtPrice(curr) + '</b> ' + fmtDelta(delta);
+    return true;
+  }
+
+  try {
+    fetch('/data/trends.json', { cache: 'no-store' }).then(function(r) {
+      if (!r.ok) return null;
+      return r.json();
+    }).then(function(data) {
+      if (!data || !data.current) return;
+      // No mostramos el strip hasta tener un "previous" (primera ejecucion
+      // del cron no tiene con que comparar).
+      if (!data.previous) return;
+      var curr = data.current.medians || {};
+      var prev = data.previous.medians || {};
+      // Dismissal: si el usuario cerro este mismo snapshot, respetamos.
+      var dismissed = '';
+      try { dismissed = localStorage.getItem(DISMISS_KEY) || ''; } catch(_) {}
+      if (dismissed && dismissed === (data.ministryDate || '')) return;
+
+      var any = false;
+      any = paint('G95:',   curr.g95,    prev.g95,    g95El) || any;
+      any = paint('Di\u00E9sel:', curr.diesel, prev.diesel, dslEl) || any;
+      if (any) strip.hidden = false;
+    }).catch(function() { /* silenciar — strip es opcional */ });
+  } catch(_) {}
+
+  if (closer) {
+    closer.addEventListener('click', function() {
+      strip.hidden = true;
+      // Ancla la dismissal al ministryDate activo: al dia siguiente, cuando
+      // cambie el snapshot, volvera a aparecer.
+      try {
+        fetch('/data/trends.json', { cache: 'no-store' }).then(function(r) {
+          return r.ok ? r.json() : null;
+        }).then(function(data) {
+          if (!data) return;
+          try { localStorage.setItem(DISMISS_KEY, data.ministryDate || ''); } catch(_) {}
+        }).catch(function(){});
+      } catch(_) {}
+    });
+  }
+})();
 
 // ---- WATCHDOG DE FRESCURA ----
 // Si /api/health devuelve 503, significa que el snapshot del Ministerio

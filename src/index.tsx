@@ -415,10 +415,11 @@ app.get('/cambios', c => {
 
 <h2>v${APP_VERSION}</h2>
 <ul>
-  <li><strong>Mobile UX</strong>: el sidebar ahora se apila correctamente sobre los controles del mapa (antes Leaflet tapaba el botón de ubicación).</li>
-  <li>Botón de geolocalización más visible y accesible al tacto (tap target ≥ 40×40, fondo verde claro).</li>
-  <li>Más aire entre campos del formulario en móvil (padding, margins, font-size 16 px para evitar zoom en iOS).</li>
-  <li>Hamburger y toggle de tema con área de pulsación de 40×40 (Apple HIG).</li>
+  <li><strong>Fix radio de búsqueda</strong>: si el usuario tenía un municipio seleccionado (ej. Durango) y activaba "cerca + barato" con radio 20 km, solo se mostraban las estaciones del municipio. Ahora, en modo radio, se carga el pool provincial completo y se filtra por haversine.</li>
+  <li>El sidebar en móvil se apila correctamente sobre los controles del mapa (v1.4.1: Leaflet tapaba el botón de ubicación).</li>
+  <li>Botón de geolocalización visible, tap target ≥ 40×40.</li>
+  <li>Header mejorado en móvil: el título no se parte en 2 líneas, geocoder compacto que se expande al :focus.</li>
+  <li>Formularios con más aire y font-size 16 px (evita zoom iOS).</li>
 </ul>
 
 <h2>v1.4.0</h2>

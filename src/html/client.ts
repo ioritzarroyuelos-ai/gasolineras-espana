@@ -1076,9 +1076,18 @@ function renderSkeletons(count) {
 
 async function loadStations() {
   var idProv = document.getElementById('sel-provincia').value;
-  var idMun  = document.getElementById('sel-municipio').value;
+  var idMunSel = document.getElementById('sel-municipio').value;
+  var orden = document.getElementById('sel-orden').value;
 
   if (!idProv) { showToast('Selecciona una provincia primero', 'warning'); return; }
+
+  // Modo radio (cerca / distancia) con userPos: cargar SIEMPRE a nivel provincial
+  // para que el filtro haversine posterior tenga un pool grande. Si el usuario
+  // selecciono "Durango" (1 estacion) + radio 20km, cargar solo Durango hacia
+  // que el filtro sea un no-op. A nivel provincia (~150 estaciones en Bizkaia)
+  // el radio de 20km devuelve decenas.
+  var usingNearby = userPos && (orden === 'cerca' || orden === 'dist');
+  var idMun = usingNearby ? '' : idMunSel;
 
   document.getElementById('stats-bar').style.display = 'none';
   renderSkeletons(6);
@@ -1287,7 +1296,17 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   else if (needsRadius && !userPos) {
     showToast('Pulsa el boton de ubicacion para usar esta ordenacion', 'warning');
   }
-  if (allStations.length) applyFilters();
+  // Si hay municipio seleccionado y cambiamos a/desde modo radio, la
+  // granularidad de carga cambia (provincia vs municipio) — hay que recargar.
+  // loadStations respeta cache por clave (prov, mun) asi que es barato.
+  var idProv = document.getElementById('sel-provincia').value;
+  var idMun  = document.getElementById('sel-municipio').value;
+  var granularityChange = idProv && idMun && userPos && needsRadius;
+  if (granularityChange) {
+    loadStations();
+  } else if (allStations.length) {
+    applyFilters();
+  }
 });
 
 // ---- AUTOCOMPLETADO BUSQUEDA ----

@@ -7,7 +7,12 @@ on:
     # Dead-man (12h): chequea que el ultimo commit de snapshot no sea demasiado
     # viejo. Es barato y nos avisa antes de que /api/health devuelva 503.
     - cron: '30 */12 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Forzar deploy a Pages aunque no haya cambios en el snapshot'
+        type: boolean
+        default: false
 
 concurrency:
   group: fetch-prices
@@ -61,7 +66,10 @@ jobs:
   #  - Los secrets no estan configurados (el workflow no rompe, solo avisa)
   deploy:
     needs: fetch
-    if: needs.fetch.outputs.changed == 'true'
+    # Se ejecuta si:
+    #  - Hubo cambios reales en el snapshot (camino normal tras cron), o
+    #  - Se forzo manualmente via workflow_dispatch (inputs.force_deploy = true)
+    if: needs.fetch.outputs.changed == 'true' || github.event.inputs.force_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read

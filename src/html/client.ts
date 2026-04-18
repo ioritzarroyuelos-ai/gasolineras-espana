@@ -1402,8 +1402,6 @@ document.getElementById('sel-combustible').addEventListener('change', function()
 });
 document.getElementById('sel-orden').addEventListener('change', function(e) {
   // Mostrar slider de radio solo cuando tiene sentido (cerca / distancia).
-  // Esto SI es puramente visual (muestra u oculta el slider), no renderiza
-  // estaciones — por eso se queda aunque no haya habido "Buscar".
   var needsRadius = (e.target.value === 'cerca' || e.target.value === 'dist');
   var rg = document.getElementById('radius-group');
   if (needsRadius && userPos) rg.style.display = 'block';
@@ -1411,7 +1409,13 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   else if (needsRadius && !userPos) {
     showToast('Pulsa el boton de ubicacion para usar esta ordenacion', 'warning');
   }
-  // El render de la lista llega con "Buscar" — no lo aplicamos aqui.
+  // Excepcion a la regla "nada hasta Buscar": el orden SI se reaplica en vivo
+  // si ya hay estaciones cargadas. Motivo: ordenar es una operacion puramente
+  // de cliente (reordenar un array en memoria) — no dispara fetch ni cambia
+  // el conjunto de resultados, solo el orden. Si el usuario va a la lista y
+  // quiere ver "mas barato primero" en lugar de "A-Z", forzarle un click de
+  // Buscar extra seria absurdo.
+  if (allStations.length) applyFilters();
 });
 
 // ---- AUTOCOMPLETADO BUSQUEDA ----

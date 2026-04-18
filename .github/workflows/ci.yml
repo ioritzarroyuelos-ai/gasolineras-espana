@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (Vitest)
+        run: npm test -- --reporter=verbose
+
+      - name: Generate PNG icons
+        run: npm run icons
+
+      - name: Build (Cloudflare Pages)
+        run: npm run build
+
+      - name: Smoke · validar dist
+        run: |
+          test -f dist/_worker.js || { echo 'missing dist/_worker.js'; exit 1; }
+          test -f dist/manifest.json || { echo 'missing manifest.json'; exit 1; }
+          test -f dist/static/favicon.svg || { echo 'missing favicon.svg'; exit 1; }
+          test -f dist/static/og.svg || { echo 'missing og.svg'; exit 1; }
+          test -f dist/static/og.png || { echo 'missing og.png'; exit 1; }
+          test -f dist/static/apple-touch-icon.png || { echo 'missing apple-touch-icon.png'; exit 1; }
+          test -f dist/static/icon-192.png || { echo 'missing icon-192.png'; exit 1; }
+          test -f dist/static/icon-512.png || { echo 'missing icon-512.png'; exit 1; }
+          test -f dist/sw.js || { echo 'missing sw.js'; exit 1; }
+          echo 'dist artifacts OK'
+
+      - name: Upload dist (artefacto)
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  lighthouse:
+    name: Lighthouse budgets
+    needs: quality
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist
+
+      - name: Lighthouse CI autorun
+        run: npx @lhci/cli autorun --config=./lighthouserc.json
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
+
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-${{ github.sha }}
+          path: .lighthouseci/
+          retention-days: 14
+
+  e2e:
+    name: E2E Playwright + axe
+    needs: quality
+    runs-on: ubuntu-latest
+    # E2E es informativo mientras estabilizamos: si el Ministerio esta caido
+    # durante la hora del CI run, los tests que esperan listado de provincias
+    # fallan. Pasamos a required tras 2 semanas de verde sostenido.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright (chromium)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Playwright OS deps
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Download dist
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist
+
+      - name: Run Playwright tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-${{ github.sha }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

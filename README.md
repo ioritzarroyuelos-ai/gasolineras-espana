@@ -1,72 +1,134 @@
-# ⛽ Gasolineras España — Precios en tiempo real
+# Gasolineras España
 
-## Descripción
-Aplicación web que muestra los precios reales de las gasolineras en toda España, con datos oficiales actualizados directamente desde la API pública del **Ministerio de Industria, Comercio y Turismo** (MITECO).
+[![CI](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![Snapshot](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/fetch-prices.yml/badge.svg)](../../actions/workflows/fetch-prices.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-## Funcionalidades completadas
-- 🗺️ **Mapa interactivo** con Leaflet + clustering de marcadores
-- 🎨 **Marcadores por color** según precio relativo (verde = barato, rojo = caro)
-- 🔍 **Filtros** por provincia, municipio, tipo de combustible, rótulo y dirección
-- 📋 **Lista lateral** con precio, dirección y horario de cada estación
-- 📊 **Estadísticas** en tiempo real (precio mínimo, máximo y medio)
-- 📍 **Geolocalización** para centrar el mapa en tu posición
-- 📱 **Diseño responsive** para móvil y escritorio
-- 🕐 **Datos en tiempo real** — actualizados por el Ministerio cada hora
+PWA para consultar precios oficiales de gasolineras en España en tiempo real. Datos del **Ministerio para la Transición Ecológica y el Reto Demográfico**.
 
-## Combustibles disponibles
-| Tipo | Código MINETUR |
-|------|---------------|
-| Gasolina 95 E5 | `Precio Gasolina 95 E5` |
-| Gasolina 98 E5 | `Precio Gasolina 98 E5` |
-| Gasóleo A (Diesel) | `Precio Gasoleo A` |
-| Gasóleo Premium | `Precio Gasoleo Premium` |
-| GLP (Autogas) | `Precio Gases licuados del petróleo` |
-| Gas Natural (GNC) | `Precio Gas Natural Comprimido` |
-| Gas Natural (GNL) | `Precio Gas Natural Licuado` |
-| Hidrógeno | `Precio Hidrogeno` |
-| Diésel Renovable | `Precio Diésel Renovable` |
+> **Producción**: https://gasolineras.pages.dev (reemplaza por tu URL real)
 
-## API utilizada
-- **Fuente oficial**: [Ministerio de Industria - ServiciosRESTCarburantes](https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes)
-- **Sin API key necesaria** — datos abiertos con CORS habilitado
-- Actualización: cada hora aproximadamente
+## Qué hace
 
-## Arquitectura
-```
-Frontend (HTML+JS) → API MINETUR (directa, CORS habilitado) → Datos en tiempo real
-```
+- Mapa Leaflet con ~12.000 estaciones y clustering.
+- Filtros por provincia, municipio, marca, combustible.
+- **Cerca de mí** (Haversine) con radio configurable.
+- **Comparador de ahorro**: calcula €/depósito vs. mediana de la zona.
+- **Favoritos** con sparkline histórico en localStorage.
+- **PWA**: instalable, offline-ready con snapshot diario como fallback.
+- Accesibilidad AAA (navegación por teclado, ARIA, `prefers-reduced-motion`).
+- Atajos de teclado: `/` buscar, `g` geolocalizar, `d` tema, `f` lugar, `?` ayuda.
 
-- **Backend**: Hono + Cloudflare Workers (sirve el HTML)
-- **Frontend**: Vanilla JS + Leaflet + Tailwind CSS CDN + MarkerCluster
-- **Datos**: API REST pública del Ministerio de Industria de España
+## Stack
 
-## Stack técnico
-- **Framework**: [Hono](https://hono.dev) v4
-- **Runtime**: Cloudflare Workers / Pages
-- **Mapa**: [Leaflet](https://leafletjs.com) 1.9.4 + MarkerCluster
-- **Estilos**: Tailwind CSS (CDN)
-- **Build**: Vite + @hono/vite-cloudflare-pages
+- **Hono** sobre **Cloudflare Pages Functions** (Workers runtime).
+- **Vite** 6 con `@hono/vite-build` para SSR bundle.
+- **TypeScript** strict.
+- **Vitest** (tests unitarios) + **Playwright** + **axe-core** (E2E + a11y).
+- **Lighthouse CI** con budgets de performance/SEO/accesibilidad.
+- **Zod** para validación de esquemas en la frontera.
+- **@resvg/resvg-js** para generar PNGs desde SVG en pre-build (sin tooling nativo).
 
-## Desarrollo local
+## Arranque en local
+
 ```bash
-npm install
-npm run build
-pm2 start ecosystem.config.cjs  # o: npx wrangler pages dev dist --port 3000
+# Node 20+
+npm ci                 # instalar deps exactas
+npm run test           # 27 tests unitarios
+npm run typecheck      # tsc --noEmit
+npm run build          # genera iconos PNG + bundle en dist/
+npm run preview        # wrangler pages dev → http://127.0.0.1:8788
 ```
 
-## Despliegue en Cloudflare Pages
+Para desarrollo con HMR:
+
 ```bash
-npm run build
-npx wrangler pages deploy dist --project-name gasolineras-espana
+npm run dev            # vite → http://127.0.0.1:5173
 ```
 
-## Próximos pasos sugeridos
-- [ ] Filtro por precio máximo (slider)
-- [ ] Comparador de gasolineras seleccionadas
-- [ ] Vista de historial de precios por fecha
-- [ ] Notificaciones cuando el precio baje de un umbral
-- [ ] PWA (instalable en móvil)
-- [ ] Exportar lista a CSV/PDF
+## Tests E2E
 
-## Licencia de datos
-Datos proporcionados por el Ministerio de Industria, Comercio y Turismo de España bajo licencia de datos abiertos. Actualización horaria.
+Los tests Playwright se corren contra el servidor de `wrangler pages dev`.
+
+```bash
+npx playwright install chromium --with-deps   # primera vez
+npm run test:e2e                              # ejecuta la suite
+npm run test:e2e -- --headed                  # con navegador visible
+```
+
+## Snapshot de datos del Ministerio
+
+El endpoint `/api/*` proxea al Ministerio en tiempo real, pero si la API está caída se sirve un snapshot estático de fallback desde `public/data/stations.json`. Ese fichero se actualiza automáticamente dos veces al día por [`.github/workflows/fetch-prices.yml`](.github/workflows/fetch-prices.yml) (07:00 y 19:00 UTC). Si falla 3 ejecuciones seguidas, el **watchdog de freshness** marca el dataset como obsoleto y la UI muestra un banner amarillo.
+
+Actualizar manualmente:
+
+```bash
+node scripts/fetch-prices.mjs
+git add public/data && git commit -m "chore(data): snapshot manual"
+```
+
+## Deploy a Cloudflare Pages
+
+```bash
+wrangler login                          # una vez
+npm run build
+npm run deploy                          # wrangler pages deploy ./dist
+```
+
+Variables de entorno opcionales (define en el dashboard de Cloudflare Pages):
+
+| Variable | Uso | Por defecto |
+|---|---|---|
+| `TURNSTILE_SECRET_KEY` | Turnstile en `/api/ingest` (opcional) | sin reto |
+| `TURNSTILE_SITE_KEY` | Turnstile en cliente (opcional) | sin reto |
+
+Ver [`.env.example`](./.env.example).
+
+## Estructura
+
+```
+src/
+  index.tsx              # Hono app (rutas HTML + /api/*)
+  lib/
+    pure.ts              # LRU, validateId, originAllowed, haversine, isOpenNow, SlidingWindowLimiter
+    version.ts           # APP_VERSION
+    schemas.ts           # Zod: StationSchema, MinistryResponseSchema, MunicipiosSchema
+  html/
+    shell.ts             # buildPage(nonce, reqUrl) — HTML shell con CSP nonce
+    styles.ts            # CSS (getStyles)
+    client.ts            # JS cliente (getClientScript)
+public/
+  manifest.json          # PWA manifest
+  sw.js                  # Service Worker (caches v5)
+  data/                  # snapshot del Ministerio (auto-actualizado por Action)
+  static/                # favicon.svg, logo.svg, og.svg + PNGs generados
+scripts/
+  gen-icons.mjs          # Pre-build: SVG → PNG (apple-touch-icon, 192, 512, og)
+  fetch-prices.mjs       # Fetch snapshot del Ministerio
+tests/
+  pure.test.ts           # 27 tests unitarios
+  e2e/                   # Playwright + axe-core
+.github/workflows/
+  ci.yml                 # typecheck · test · build · Lighthouse · E2E
+  fetch-prices.yml       # snapshot diario (08:00 + 20:00 Madrid)
+```
+
+## Seguridad
+
+Ver [`SECURITY.md`](./SECURITY.md) para política de reporte de vulnerabilidades.
+
+Hardening aplicado:
+- CSP con nonce por request, sin `unsafe-inline` en scripts.
+- SRI SHA-384 en todas las dependencias CDN.
+- Validación estricta de IDs de entrada (regex `^\d{1,5}$`) — previene SSRF.
+- Rate limiting por IP: 120 req/min en `/api/*`, 20 req/min en `/api/ingest` (local por Worker) + reglas de Cloudflare Rate Limiting (ver [`wrangler.jsonc`](./wrangler.jsonc)).
+- Validación zod en la frontera: el servidor rechaza payloads del Ministerio que no casan con el esquema y emite `ministry.schema_drift` a los logs.
+- `/.well-known/security.txt` conforme a RFC 9116.
+
+## Contribuir
+
+Ver [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+## Licencia
+
+[MIT](./LICENSE) — los datos son del Ministerio, reutilización libre bajo sus condiciones.

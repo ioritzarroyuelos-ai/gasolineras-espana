@@ -1,0 +1,75 @@
+name: Fetch fuel prices snapshot
+
+on:
+  schedule:
+    # 07:00 y 19:00 UTC = 08:00 y 20:00 Madrid (invierno) / 09:00 y 21:00 (verano)
+    - cron: '0 7,19 * * *'
+    # Dead-man (12h): chequea que el ultimo commit de snapshot no sea demasiado
+    # viejo. Es barato y nos avisa antes de que /api/health devuelva 503.
+    - cron: '30 */12 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: fetch-prices
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    # El job "fetch" real solo corre en los cron de 07/19. El dead-man no lo
+    # dispara (seria duplicado de los dos fetchs principales).
+    if: github.event.schedule != '30 */12 * * *'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Fetch snapshot del Ministerio
+        run: node scripts/fetch-prices.mjs
+
+      - name: Commit snapshot si hay cambios
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el snapshot"
+          else
+            git commit -m "chore(data): actualizar snapshot de precios $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+          fi
+
+  # ---- Dead-man's switch ----
+  # Corre en un cron independiente y en los fetch para validacion cruzada.
+  # Falla (exit 1 → workflow rojo → email a mantenedores) si el ultimo commit
+  # sobre public/data/snapshot-meta.json tiene mas de 26 horas. Margen de 2h
+  # sobre las 24h del watchdog /api/health, para no disparar en solapes.
+  dead-man:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Verificar frescura del snapshot
+        run: |
+          LAST=$(git log -1 --format=%ct -- public/data/snapshot-meta.json || echo 0)
+          NOW=$(date +%s)
+          AGE=$(( NOW - LAST ))
+          MAX=$(( 26 * 3600 ))
+          echo "Ultimo commit snapshot: $(date -u -d @$LAST -Iseconds 2>/dev/null || echo '?')"
+          echo "Edad: ${AGE}s (maximo: ${MAX}s)"
+          if [ "$LAST" = "0" ]; then
+            echo "::error::No hay commits del snapshot en la historia."
+            exit 1
+          fi
+          if [ "$AGE" -gt "$MAX" ]; then
+            echo "::error::Snapshot sin actualizar en >26h. El fetch del Ministerio esta fallando."
+            exit 1
+          fi
+          echo "Snapshot fresco. OK."

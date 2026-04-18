@@ -1,0 +1,457 @@
+import { getStyles } from './styles'
+import { getClientScript } from './client'
+import { APP_VERSION } from '../lib/version'
+
+export interface BuildPageOpts {
+  // Site key publica de Cloudflare Turnstile. Si esta presente, inyectamos el
+  // widget (invisible) para /api/ingest. En dev (sin claves) se omite.
+  turnstileSiteKey?: string
+}
+
+export function buildPage(
+  nonce: string = '',
+  reqUrl: string = 'https://gasolineras.pages.dev/',
+  opts: BuildPageOpts = {},
+): string {
+  // Base URL (origen) para meta tags canonicos / OG. En Workers reqUrl llega como absoluto.
+  let origin = 'https://gasolineras.pages.dev'
+  try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
+  const canonical = origin + '/'
+  // Los crawlers de Twitter/Facebook/LinkedIn no renderizan SVG en previews: usamos PNG 1200x630.
+  const ogImage   = origin + '/static/og.png'
+  const logoUrl   = origin + '/static/logo.svg'
+
+  // Turnstile: solo inyectamos si hay site key. El widget se carga en modo
+  // invisible — auto-ejecuta en pageload y el resultado llega por callback
+  // (window.__onTsOk / window.__onTsExpired). Guardamos el token en
+  // window.__TS_TOKEN__ para que la telemetria de /api/ingest lo adjunte.
+  // El script se carga async con nonce (coincide con la CSP).
+  const tsKey = opts.turnstileSiteKey
+  const turnstileScripts = tsKey
+    ? `<script nonce="${nonce}">
+window.__TS_KEY__=${JSON.stringify(tsKey)};
+window.__TS_TOKEN__='';
+window.__onTsOk=function(t){ window.__TS_TOKEN__ = t || ''; };
+window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
+</script>
+<script defer async
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        nonce="${nonce}"></script>`
+    : ''
+
+  // JSON-LD: declara la aplicacion como WebApplication + el dataset de precios.
+  const jsonLd = JSON.stringify([
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebApplication',
+      name: 'Gasolineras España',
+      url: canonical,
+      description: 'Precios oficiales de combustible en España en tiempo real. Mapa, filtros y favoritos.',
+      applicationCategory: 'UtilitiesApplication',
+      operatingSystem: 'Any',
+      inLanguage: 'es-ES',
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'EUR' },
+      softwareVersion: APP_VERSION,
+      image: ogImage,
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Dataset',
+      name: 'Precios de carburantes en España',
+      description: 'Snapshot oficial de precios de estaciones de servicio terrestres.',
+      license: 'https://datos.gob.es/es/catalogo/e05068001-precio-de-carburantes-en-las-gasolineras-espanolas',
+      creator: { '@type': 'GovernmentOrganization', name: 'Ministerio para la Transición Ecológica y el Reto Demográfico' },
+      spatialCoverage: { '@type': 'Place', name: 'España' },
+      inLanguage: 'es',
+    }
+  ])
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#16a34a" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Gasolineras" />
+  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta name="application-name" content="Gasolineras España" />
+  <meta name="author" content="Gasolineras España" />
+  <meta name="generator" content="Hono + Cloudflare Pages" />
+  <meta name="description" content="Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica." />
+  <meta name="keywords" content="gasolineras, precios combustible, gasolina, diesel, España, mapa gasolineras, ahorro combustible" />
+
+  <!-- Open Graph / redes -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Gasolineras España" />
+  <meta property="og:title" content="Gasolineras España · Precios en tiempo real" />
+  <meta property="og:description" content="Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario." />
+  <meta property="og:url" content="${canonical}" />
+  <meta property="og:image" content="${ogImage}" />
+  <meta property="og:image:alt" content="Gasolineras España · comparador de precios oficial" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:locale" content="es_ES" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Gasolineras España · Precios en tiempo real" />
+  <meta name="twitter:description" content="Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio." />
+  <meta name="twitter:image" content="${ogImage}" />
+  <meta name="twitter:image:alt" content="Gasolineras España · comparador de precios oficial" />
+
+  <link rel="canonical" href="${canonical}" />
+  <title>Gasolineras España · Precios oficiales en tiempo real</title>
+
+  <!-- Favicon / PWA icons -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png" />
+  <link rel="mask-icon" href="/static/favicon.svg" color="#16a34a" />
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Preconnect a hosts criticos: reduce handshake en LCP -->
+  <link rel="preconnect" href="https://sedeaplicaciones.minetur.gob.es" />
+  <link rel="preconnect" href="https://a.basemaps.cartocdn.com" crossorigin />
+  <link rel="preconnect" href="https://b.basemaps.cartocdn.com" crossorigin />
+  <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossorigin />
+  <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossorigin />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin />
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="dns-prefetch" href="https://nominatim.openstreetmap.org" />
+
+  <!-- Leaflet CSS (critico para map) -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <!-- Leaflet JS (defer: parse HTML sin bloquear, ejecutar antes de DOMContentLoaded) -->
+  <script defer
+          src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
+  <!-- Marker Cluster -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"
+        integrity="sha384-lPzjPsFQL6te2x+VxmV6q1DpRxpRk0tmnl2cpwAO5y04ESyc752tnEWPKDfl1olr"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
+        integrity="sha384-5kMSQJ6S4Qj5i09mtMNrWpSi8iXw230pKU76xTmrpezGnNJQzj0NzXjQLLg+jE7k"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <script defer
+          src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"
+          integrity="sha384-RLIyj5q1b5XJTn0tqUhucRZe40nFTocRP91R/NkRJHwAe4XxnTV77FXy/vGLiec2"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
+  <!-- FontAwesome -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css"
+        integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+
+  <!-- JSON-LD para SEO / rich results -->
+  <script type="application/ld+json" nonce="${nonce}">${jsonLd}</script>
+
+  ${turnstileScripts}
+
+  ${getStyles()}
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header id="app-header">
+  <button id="btn-toggle-sidebar" title="Abrir filtros" aria-label="Abrir panel de filtros">
+    <i class="fas fa-bars" aria-hidden="true" style="color:#fff;font-size:16px"></i>
+  </button>
+
+  <a href="/" id="brand" aria-label="Gasolineras España · inicio" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;min-width:0;flex:1">
+    <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
+    <div style="min-width:0">
+      <div class="header-title">Gasolineras España</div>
+      <div class="header-sub">Precios oficiales · Ministerio de Industria y Energía</div>
+    </div>
+  </a>
+
+  <div id="geocoder-wrap" style="margin-right:6px">
+    <i class="fas fa-search-location" id="geocoder-icon" aria-hidden="true"></i>
+    <input id="geocoder-input" type="text" placeholder="Buscar lugar..." autocomplete="off" spellcheck="false" aria-label="Buscar un lugar por nombre" />
+    <div id="geocoder-results" role="listbox" aria-label="Resultados de busqueda"></div>
+  </div>
+
+  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+    <span id="lbl-update" class="header-update" style="display:none"></span>
+    <span id="lbl-count" class="header-badge" style="display:none"></span>
+    <button id="btn-unit" class="unit-toggle" title="Alternar entre euros y centimos" aria-label="Cambiar unidad de precio">&#x20AC;/L</button>
+    <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
+  </div>
+</header>
+
+<!-- Banner offline -->
+<div id="offline-banner" role="status" aria-live="polite">
+  <i class="fas fa-wifi" aria-hidden="true" style="margin-right:6px;opacity:0.8"></i>
+  <span id="offline-text">Sin conexión · mostrando datos guardados</span>
+</div>
+
+<!-- Banner datos desactualizados (>24h) -->
+<div id="stale-banner" role="status" aria-live="polite">
+  <i class="fas fa-hourglass-half" aria-hidden="true" style="margin-right:6px"></i>
+  <span id="stale-text">Los datos oficiales llevan más de 24 h sin actualizarse.</span>
+  <a href="/cambios" aria-label="Ver estado y cambios del servicio">Más info</a>
+</div>
+
+<!-- ============ CUERPO ============ -->
+<div id="app-body">
+
+  <!-- ======= SIDEBAR ======= -->
+  <aside id="sidebar">
+
+    <!-- FILTROS -->
+    <div id="sidebar-filters">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;gap:6px">
+          <i class="fas fa-sliders-h" style="color:#16a34a" aria-hidden="true"></i> Búsqueda
+        </span>
+        <button id="btn-geolocate" class="btn-icon" title="Usar mi ubicación" aria-label="Usar mi ubicación">
+          <i class="fas fa-crosshairs" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sel-provincia">Provincia</label>
+        <select id="sel-provincia" class="form-select">
+          <option value="">-- Selecciona --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sel-municipio">Municipio</label>
+        <select id="sel-municipio" class="form-select" disabled>
+          <option value="">-- Todos --</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="sel-combustible">Combustible</label>
+        <select id="sel-combustible" class="form-select">
+          <option value="Precio Gasolina 95 E5">Gasolina 95 E5</option>
+          <option value="Precio Gasolina 98 E5">Gasolina 98 E5</option>
+          <option value="Precio Gasoleo A">Gasoleo A (Diesel)</option>
+          <option value="Precio Gasoleo Premium">Gasoleo Premium</option>
+          <option value="Precio Gases licuados del petroleo">GLP (Autogas)</option>
+          <option value="Precio Gas Natural Comprimido">Gas Natural (GNC)</option>
+          <option value="Precio Gas Natural Licuado">Gas Natural (GNL)</option>
+          <option value="Precio Hidrogeno">Hidrogeno</option>
+          <option value="Precio Diesel Renovable">Diesel Renovable</option>
+        </select>
+      </div>
+
+      <div class="form-group" style="position:relative">
+        <label class="form-label" for="search-text">Buscar gasolinera</label>
+        <div class="input-icon-wrap">
+          <i class="fas fa-search icon" aria-hidden="true"></i>
+          <input id="search-text" class="form-input" type="text" placeholder="Repsol, BP, Cepsa..." autocomplete="off" />
+        </div>
+        <div id="search-suggestions" role="listbox"></div>
+      </div>
+
+      <div class="row">
+        <div class="flex-1">
+          <label class="form-label" for="sel-orden">Ordenar</label>
+          <select id="sel-orden" class="form-select">
+            <option value="asc">Precio &#x2191; (más barato)</option>
+            <option value="desc">Precio &#x2193; (más caro)</option>
+            <option value="cerca">Cerca + barato (mixto)</option>
+            <option value="dist">Distancia</option>
+            <option value="az">Nombre A&#x2192;Z</option>
+          </select>
+        </div>
+        <button id="btn-buscar" class="btn-primary" aria-label="Buscar gasolineras">
+          <i class="fas fa-search" aria-hidden="true"></i> Buscar
+        </button>
+      </div>
+
+      <!-- Radio de busqueda (cerca-de-mi) -->
+      <div class="form-group" id="radius-group" style="display:none">
+        <label class="form-label" for="in-radius">Radio de búsqueda</label>
+        <div class="range-group">
+          <input id="in-radius" type="range" min="1" max="50" step="1" value="10" aria-label="Radio en kilómetros" />
+          <span class="range-val" id="lbl-radius">10 km</span>
+        </div>
+      </div>
+
+      <!-- Deposito del vehiculo (para calculo de ahorro) -->
+      <div class="form-group">
+        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#94a3b8">(para calcular ahorro)</span></label>
+        <div class="range-group">
+          <input id="in-tank" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
+          <span class="range-val" id="lbl-tank">50 L</span>
+        </div>
+      </div>
+
+      <!-- Widget de gasto mensual (se activa tras onboarding) -->
+      <div id="monthly-widget" role="region" aria-label="Gasto estimado mensual">
+        <div class="mw-title">&#x1F4CA; Gasto estimado mensual</div>
+        <div class="mw-cost" id="mw-cost">--</div>
+        <div class="mw-sub" id="mw-sub">--</div>
+      </div>
+
+      <!-- Edit perfil -->
+      <button id="btn-profile" class="btn-ghost" style="width:100%;margin-top:4px;font-size:12px">
+        <i class="fas fa-user-cog" aria-hidden="true" style="margin-right:6px"></i>
+        <span id="btn-profile-label">Configurar mi vehículo</span>
+      </button>
+    </div>
+
+    <!-- Favoritos (se oculta si no hay) -->
+    <section id="favs-section" aria-label="Gasolineras favoritas">
+      <h3>&#x2B50; Mis favoritas (<span id="fav-count">0</span>)</h3>
+      <div id="fav-list" role="list"></div>
+    </section>
+
+    <!-- STATS -->
+    <div id="stats-bar">
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px">
+        <span style="color:#64748b"><i class="fas fa-map-marker-alt" style="color:#16a34a;margin-right:4px" aria-hidden="true"></i><strong id="stat-n">0</strong> gasolineras</span>
+        <span class="stat-chip">&#x2193; <span id="stat-min">--</span></span>
+        <span class="stat-chip yellow">&#x2248; <span id="stat-avg">--</span></span>
+        <span class="stat-chip red">&#x2191; <span id="stat-max">--</span></span>
+      </div>
+    </div>
+
+    <!-- LISTA -->
+    <div id="station-list" role="list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
+      <div class="empty-state">
+        <div class="icon" aria-hidden="true">&#x1F5FA;&#xFE0F;</div>
+        <p>Selecciona una provincia</p>
+        <small>Se cargarán todas las gasolineras con sus precios actualizados</small>
+      </div>
+    </div>
+
+    <!-- FOOTER legal / atribucion -->
+    <footer id="app-footer" role="contentinfo">
+      <div class="footer-attr">
+        <strong>Datos:</strong> <a href="https://geoportalgasolineras.es" target="_blank" rel="noopener noreferrer">Ministerio para la Transición Ecológica y el Reto Demográfico</a>
+      </div>
+      <div class="footer-meta">
+        <span id="footer-updated">Actualizado: --</span>
+        <span class="footer-sep">·</span>
+        <a href="/privacidad">Privacidad</a>
+        <span class="footer-sep">·</span>
+        <a href="/cambios">Cambios</a>
+        <span class="footer-sep">·</span>
+        <span id="footer-version">v${APP_VERSION}</span>
+      </div>
+    </footer>
+  </aside>
+
+  <!-- Backdrop mobile -->
+  <div id="sidebar-backdrop"></div>
+
+  <!-- ======= MAPA ======= -->
+  <div id="map-container">
+    <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
+
+    <!-- Loading -->
+    <div id="loading" role="status" aria-live="polite">
+      <div class="loading-box">
+        <div class="spinner" aria-hidden="true"></div>
+        <p style="font-size:14px;font-weight:600;color:#374151">Cargando gasolineras...</p>
+        <p style="font-size:12px;color:#94a3b8">Datos oficiales del Ministerio</p>
+      </div>
+    </div>
+
+    <!-- INFO CARD -->
+    <div id="map-info">
+      <div class="info-title">&#x26FD; Gasolineras en directo</div>
+      <div class="info-desc">Localiza estaciones al instante, revisa su contexto y compara el precio elegido con menos fricción.</div>
+    </div>
+
+    <!-- LEYENDA -->
+    <div id="legend" aria-label="Leyenda de precios">
+      <h4>LEYENDA</h4>
+      <div class="legend-item"><span class="legend-dot" style="background:#16a34a" aria-hidden="true"></span> Más barato</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#d97706" aria-hidden="true"></span> Intermedio</div>
+      <div class="legend-item"><span class="legend-dot" style="background:#dc2626" aria-hidden="true"></span> Más caro</div>
+      <div class="legend-item" style="margin-bottom:0"><span class="legend-dot" style="background:#9ca3af" aria-hidden="true"></span> Sin precio</div>
+    </div>
+  </div>
+
+</div><!-- end app-body -->
+
+<!-- ============ MODAL ONBOARDING / PERFIL ============ -->
+<div id="modal-profile" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-title">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="profile-title">&#x26FD; Personaliza tu experiencia</h2>
+      <p>Solo se guarda en tu navegador. Puedes cambiarlo cuando quieras.</p>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">&#x26FD; Qué combustible usas</label>
+        <div id="chips-fuel" class="chip-group" role="radiogroup" aria-label="Combustible">
+          <button class="chip" data-fuel="Precio Gasolina 95 E5"   role="radio">Gasolina 95</button>
+          <button class="chip" data-fuel="Precio Gasolina 98 E5"   role="radio">Gasolina 98</button>
+          <button class="chip" data-fuel="Precio Gasoleo A"        role="radio">Diesel</button>
+          <button class="chip" data-fuel="Precio Gasoleo Premium"  role="radio">Diesel Premium</button>
+          <button class="chip" data-fuel="Precio Gases licuados del petroleo" role="radio">GLP</button>
+          <button class="chip" data-fuel="Precio Hidrogeno"        role="radio">Hidrogeno</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">&#x1F6E3;&#xFE0F; Kilómetros que haces al mes</label>
+        <div id="chips-km" class="chip-group" role="radiogroup" aria-label="Kilómetros al mes">
+          <button class="chip" data-km="500"   role="radio">~500 km</button>
+          <button class="chip" data-km="1000"  role="radio">~1.000 km</button>
+          <button class="chip" data-km="1500"  role="radio">~1.500 km</button>
+          <button class="chip" data-km="2500"  role="radio">~2.500 km</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="in-consumo">&#x1F4A7; Consumo medio (L/100km)</label>
+        <div class="range-group">
+          <input id="in-consumo" type="range" min="3" max="15" step="0.5" value="6.5" aria-label="Consumo en litros por 100 kilómetros" />
+          <span class="range-val" id="lbl-consumo">6,5 L</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="in-tank-modal">&#x26FD; Capacidad del depósito</label>
+        <div class="range-group">
+          <input id="in-tank-modal" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
+          <span class="range-val" id="lbl-tank-modal">50 L</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-profile-skip"  class="btn-ghost">Ahora no</button>
+      <button id="btn-profile-save"  class="btn-primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intrusiva -->
+<div id="ts-widget"
+     class="cf-turnstile"
+     data-sitekey="${tsKey}"
+     data-size="invisible"
+     data-appearance="interaction-only"
+     data-callback="__onTsOk"
+     data-expired-callback="__onTsExpired"
+     aria-hidden="true"
+     style="position:fixed;bottom:0;right:0;width:1px;height:1px;pointer-events:none;opacity:0"></div>` : ''}
+
+${getClientScript(nonce, APP_VERSION)}
+</body>
+</html>`
+}

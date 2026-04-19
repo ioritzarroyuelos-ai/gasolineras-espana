@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   LRU,
   validateId,
+  isValidProvinciaId,
+  sanitizeGeocodeQuery,
+  sanitizeLatLng,
   originAllowed,
   haversineKm,
   median,
@@ -54,6 +57,67 @@ describe('validateId', () => {
     expect(validateId('')).toBeNull()
     expect(validateId(undefined)).toBeNull()
     expect(validateId('1234567')).toBeNull() // mas de 5 digitos
+  })
+})
+
+describe('isValidProvinciaId', () => {
+  it('acepta los 52 codigos INE validos', () => {
+    expect(isValidProvinciaId('01')).toBe(true)
+    expect(isValidProvinciaId('28')).toBe(true)  // Madrid
+    expect(isValidProvinciaId('08')).toBe(true)  // Barcelona
+    expect(isValidProvinciaId('52')).toBe(true)  // Melilla
+  })
+  it('rechaza codigos fuera de rango (bloquea amplificacion DoS)', () => {
+    expect(isValidProvinciaId('00')).toBe(false)
+    expect(isValidProvinciaId('53')).toBe(false)
+    expect(isValidProvinciaId('99')).toBe(false)
+    expect(isValidProvinciaId('99999')).toBe(false)
+    expect(isValidProvinciaId('1')).toBe(false)    // sin zero-pad
+    expect(isValidProvinciaId('28 ')).toBe(false)  // con espacios
+    expect(isValidProvinciaId(null)).toBe(false)
+    expect(isValidProvinciaId(undefined)).toBe(false)
+    expect(isValidProvinciaId('')).toBe(false)
+  })
+})
+
+describe('sanitizeGeocodeQuery', () => {
+  it('acepta queries espanolas tipicas', () => {
+    expect(sanitizeGeocodeQuery('Calle Mayor, Madrid')).toBe('Calle Mayor, Madrid')
+    expect(sanitizeGeocodeQuery("O'Donnell")).toBe("O'Donnell")
+    expect(sanitizeGeocodeQuery('Carrer de l\'Hospital')).toBe("Carrer de l'Hospital")
+    expect(sanitizeGeocodeQuery('Cádiz')).toBe('Cádiz')
+    expect(sanitizeGeocodeQuery('  foo   bar  ')).toBe('foo bar')  // colapsa whitespace
+  })
+  it('rechaza entradas peligrosas o vacias', () => {
+    expect(sanitizeGeocodeQuery('')).toBeNull()
+    expect(sanitizeGeocodeQuery('  ')).toBeNull()                    // solo whitespace
+    expect(sanitizeGeocodeQuery('a')).toBeNull()                     // <2 chars utiles
+    expect(sanitizeGeocodeQuery(null)).toBeNull()
+    expect(sanitizeGeocodeQuery(undefined)).toBeNull()
+    expect(sanitizeGeocodeQuery('a'.repeat(121))).toBeNull()         // >120 chars
+    expect(sanitizeGeocodeQuery('foo\x00bar')).toBeNull()            // control char
+    expect(sanitizeGeocodeQuery('foo<script>')).toBeNull()           // HTML-ish
+    expect(sanitizeGeocodeQuery('foo`cmd`')).toBeNull()              // backtick
+    expect(sanitizeGeocodeQuery('foo\\bar')).toBeNull()              // backslash
+  })
+})
+
+describe('sanitizeLatLng', () => {
+  it('formatea lat/lng validos a 6 decimales (estable para cache key)', () => {
+    expect(sanitizeLatLng('40.4168', '-3.7038')).toEqual({ lat: '40.416800', lng: '-3.703800' })
+    expect(sanitizeLatLng('40.41689999999', '-3.70380001')).toEqual({ lat: '40.416900', lng: '-3.703800' })
+    expect(sanitizeLatLng('0', '0')).toEqual({ lat: '0.000000', lng: '0.000000' })
+  })
+  it('rechaza valores no finitos o fuera de rango', () => {
+    expect(sanitizeLatLng('91', '0')).toBeNull()         // lat > 90
+    expect(sanitizeLatLng('-91', '0')).toBeNull()
+    expect(sanitizeLatLng('0', '181')).toBeNull()        // lng > 180
+    expect(sanitizeLatLng('0', '-181')).toBeNull()
+    expect(sanitizeLatLng('NaN', '0')).toBeNull()
+    expect(sanitizeLatLng('foo', 'bar')).toBeNull()
+    expect(sanitizeLatLng(null, '0')).toBeNull()
+    expect(sanitizeLatLng('0', undefined)).toBeNull()
+    expect(sanitizeLatLng('Infinity', '0')).toBeNull()
   })
 })
 

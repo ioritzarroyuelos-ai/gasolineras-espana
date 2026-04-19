@@ -474,6 +474,115 @@ export function getStyles(nonce: string = ''): string {
       font-size:10px; font-weight:700; margin-top:3px; white-space:nowrap;
     }
     body.dark .savings-badge { background:#14532d; color:#86efac; border-color:#166534; }
+    /* Variante para cuando el ahorro neto es negativo (el desvio cuesta mas
+       que el ahorro bruto). Ambar: el usuario lo ve pero no lo confunde con
+       "comprar aqui" verde. */
+    .savings-badge--negative { background:#fffbeb; color:#d97706; border-color:#fcd34d; }
+    body.dark .savings-badge--negative { background:#422006; color:#fcd34d; border-color:#a16207; }
+    .savings-sub { font-weight:500; opacity:0.85; }
+
+    /* ---- Predictor semanal badge (popup) ----
+       Placeholder + variantes good/neutral/bad. La logica vive en
+       classifyPriceVsCycle; aqui solo pintamos segun el verdict. ---- */
+    .predict-slot { min-height: 0; margin: 6px 0 0; }
+    .predict-slot:empty { display: none; }
+    .predict-badge {
+      display:inline-block; padding:3px 9px; border-radius:8px;
+      font-size:11px; font-weight:700; letter-spacing:0.02em;
+      border:1px solid transparent; white-space:nowrap;
+    }
+    .predict-badge--good    { background:#dcfce7; color:#15803d; border-color:#bbf7d0; }
+    .predict-badge--neutral { background:#fef3c7; color:#a16207; border-color:#fde68a; }
+    .predict-badge--bad     { background:#fee2e2; color:#b91c1c; border-color:#fca5a5; }
+    body.dark .predict-badge--good    { background:#14532d; color:#86efac; border-color:#166534; }
+    body.dark .predict-badge--neutral { background:#451a03; color:#fcd34d; border-color:#a16207; }
+    body.dark .predict-badge--bad     { background:#450a0a; color:#fca5a5; border-color:#991b1b; }
+
+    /* ---- Modal ruta A->B ----
+       Reutiliza estilos de .modal/.modal-body pero anade layout especifico
+       para los sugerencias del geocoder y la tabla de resultados. ---- */
+    .route-sug {
+      display:none; margin-top:4px; border:1px solid #e2e8f0; border-radius:8px;
+      background:#fff; max-height:200px; overflow-y:auto; font-size:12px;
+    }
+    .route-sug.show { display:block; }
+    .route-sug-item {
+      padding:6px 10px; cursor:pointer; border-bottom:1px solid #f1f5f9;
+      color:#334155;
+    }
+    .route-sug-item:hover, .route-sug-item.active { background:#f0fdf4; color:#15803d; }
+    .route-sug-item:last-child { border-bottom:0; }
+    body.dark .route-sug { background:#1e293b; border-color:#334155; }
+    body.dark .route-sug-item { color:#cbd5e1; border-bottom-color:#334155; }
+    body.dark .route-sug-item:hover, body.dark .route-sug-item.active { background:#14532d; color:#86efac; }
+
+    .route-status { font-size:12px; color:#64748b; margin:8px 0; min-height:16px; }
+    .route-status.error { color:#dc2626; }
+    body.dark .route-status { color:#94a3b8; }
+    body.dark .route-status.error { color:#fca5a5; }
+
+    .route-results { display:flex; flex-direction:column; gap:8px; }
+    .route-card {
+      padding:10px 12px; background:#f8fafc; border:1px solid #e2e8f0;
+      border-radius:10px; display:flex; justify-content:space-between; gap:10px;
+      cursor:pointer; transition:background 0.1s, border-color 0.1s;
+    }
+    .route-card:hover { background:#f0fdf4; border-color:#86efac; }
+    .route-card-info { flex:1; min-width:0; }
+    .route-card-title { font-size:13px; font-weight:700; color:#0f172a; margin-bottom:3px; }
+    .route-card-sub { font-size:11px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .route-card-right { text-align:right; }
+    .route-card-price { font-size:14px; font-weight:800; color:#16a34a; }
+    .route-card-off { font-size:11px; color:#64748b; margin-top:2px; }
+    body.dark .route-card { background:#0f172a; border-color:#334155; }
+    body.dark .route-card:hover { background:#14532d; border-color:#166534; }
+    body.dark .route-card-title { color:#f1f5f9; }
+    body.dark .route-card-sub, body.dark .route-card-off { color:#94a3b8; }
+
+    /* ---- Modal diario de repostajes ---- */
+    .diary-modal { max-width: 560px; }
+    .diary-stats {
+      display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:14px;
+    }
+    .diary-stat {
+      padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;
+      text-align:center;
+    }
+    .ds-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px; }
+    .ds-value { font-size:15px; font-weight:800; color:#15803d; }
+    body.dark .diary-stat { background:#14532d; border-color:#166534; }
+    body.dark .ds-label { color:#94a3b8; }
+    body.dark .ds-value { color:#86efac; }
+
+    .diary-subtitle { font-size:12px; color:#334155; margin:10px 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+    body.dark .diary-subtitle { color:#cbd5e1; }
+    .diary-form-row { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px; }
+    .diary-form { padding:10px 0; border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; margin:10px 0; }
+    body.dark .diary-form { border-color:#334155; }
+    .diary-list-wrap { margin-top:10px; }
+    .diary-list { display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
+    .diary-item {
+      padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+      display:flex; justify-content:space-between; align-items:center; gap:8px;
+      font-size:12px;
+    }
+    body.dark .diary-item { background:#0f172a; border-color:#334155; color:#e2e8f0; }
+    .diary-item-main { flex:1; min-width:0; }
+    .diary-item-date { font-weight:700; color:#0f172a; }
+    .diary-item-sub { font-size:10px; color:#64748b; margin-top:2px; }
+    body.dark .diary-item-date { color:#f1f5f9; }
+    body.dark .diary-item-sub { color:#94a3b8; }
+    .diary-item-del {
+      background:none; border:none; color:#dc2626; cursor:pointer; padding:4px 8px;
+      border-radius:6px; font-size:13px;
+    }
+    .diary-item-del:hover { background:#fef2f2; }
+    body.dark .diary-item-del:hover { background:#450a0a; }
+    .diary-footer { gap:6px; flex-wrap:wrap; }
+    @media (max-width: 480px) {
+      .diary-stats { grid-template-columns:repeat(2, 1fr); }
+      .diary-form-row { grid-template-columns:1fr; }
+    }
     .distance-chip {
       display:inline-block; background:#eff6ff; color:#2563eb;
       border:1px solid #bfdbfe; border-radius:6px; padding:1px 7px;

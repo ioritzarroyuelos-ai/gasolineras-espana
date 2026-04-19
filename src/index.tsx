@@ -9,6 +9,7 @@ import {
   originAllowed,
   SlidingWindowLimiter,
   tokensEqualConstTime,
+  classifyPriceVsCycle,
 } from './lib/pure'
 import { APP_VERSION } from './lib/version'
 import {
@@ -1100,6 +1101,136 @@ app.get('/api/history/province/:id', async c => {
       provinciaId: id,
       fuel,
       days,
+      err: String(err).slice(0, 300),
+    })
+    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+  }
+})
+
+// ---- PREDICTOR SEMANAL (D1 + classifyPriceVsCycle) ----
+// "¿Lleno ahora o espero?" — dada una estacion y combustible, lee los precios
+// observados en los ultimos 90 dias en el MISMO DIA DE LA SEMANA que hoy y
+// los compara con el precio actual. Devuelve un veredicto 'buy_now' / 'wait' /
+// 'neutral' + percentil + muestra de control.
+//
+// Respuesta (ejemplo):
+//   { station_id, fuel, verdict:"buy_now", percentile:15, sampleCount:12,
+//     tipicalEurL:1.589, confidence:"high", currentEurL:1.569 }
+//
+// El precio "actual" lo enviamos via query ?current=1.569 para evitar otra
+// ida y vuelta D1 (el cliente ya lo tiene del snapshot del Ministerio). El
+// servidor solo valida que sea finito + positivo + dentro de rango (0.5 .. 5).
+// Si no viene, intentamos inferirlo de la ultima muestra en D1.
+//
+// Cache-Control: public, max-age=3600 — la ventana cambia una vez al dia con
+// el cron de ingest, asi que 1h de CDN es seguro y corta cualquier viral hit.
+app.get('/api/predict/:stationId', async c => {
+  const key = clientKey(c)
+  const rl = histLimiter.check(key)
+  if (!rl.allowed) {
+    return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+
+  const stationId = c.req.param('stationId')
+  if (!stationId || !/^\d{1,10}$/.test(stationId)) {
+    return c.json({ error: 'invalid_station_id' }, 400)
+  }
+
+  const fuel = c.req.query('fuel') || ''
+  if (!FUEL_CODES.includes(fuel)) {
+    return c.json({ error: 'invalid_fuel' }, 400)
+  }
+
+  // Precio actual: opcional, pero si viene lo validamos. 0.5-5 €/L cubre
+  // cualquier combustible plausible (hidrogeno esta en ~9€/kg pero lo
+  // expresamos por L-equivalente, asi que acotamos generoso).
+  const curRaw = c.req.query('current')
+  let currentEurL: number | null = null
+  if (curRaw != null) {
+    const n = parseFloat(curRaw.replace(',', '.'))
+    if (!Number.isFinite(n) || n <= 0.1 || n > 10) {
+      return c.json({ error: 'invalid_current' }, 400)
+    }
+    currentEurL = n
+  }
+
+  if (!c.env.DB) {
+    return c.json({ error: 'predict_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+
+  const now = new Date()
+  const weekday = now.getUTCDay()      // 0=Dom .. 6=Sab (UTC — consistente con date UTC en D1)
+  const cutoff = new Date(now.getTime())
+  cutoff.setUTCDate(cutoff.getUTCDate() - 90)
+  const cutoffStr = cutoff.toISOString().slice(0, 10)
+
+  try {
+    // Lee los precios del mismo weekday en los ultimos 90d. SQLite no tiene
+    // DAYOFWEEK pero podemos usar strftime('%w', date) que devuelve 0-6 (0=Dom).
+    const stmt = c.env.DB
+      .prepare(
+        `SELECT date, price_cents
+         FROM price_history
+         WHERE station_id = ?
+           AND fuel_code  = ?
+           AND date       >= ?
+           AND CAST(strftime('%w', date) AS INTEGER) = ?
+         ORDER BY date ASC`
+      )
+      .bind(stationId, fuel, cutoffStr, weekday)
+    const { results } = await stmt.all<{ date: string; price_cents: number }>()
+
+    const weekdaySamples = results.map(r => centsToEuros(r.price_cents))
+
+    // Si no dieron precio actual, intentamos deducirlo de la ultima muestra
+    // cualquiera (no solo del weekday). Query separada para no contaminar las
+    // muestras del predictor.
+    if (currentEurL == null) {
+      const last = await c.env.DB
+        .prepare('SELECT price_cents FROM price_history WHERE station_id = ? AND fuel_code = ? ORDER BY date DESC LIMIT 1')
+        .bind(stationId, fuel)
+        .all<{ price_cents: number }>()
+      if (last.results.length > 0) {
+        currentEurL = centsToEuros(last.results[0].price_cents)
+      }
+    }
+
+    if (currentEurL == null) {
+      return c.json(
+        { station_id: stationId, fuel, verdict: null, sampleCount: 0, weekday },
+        200,
+        { 'Cache-Control': 'public, max-age=3600' },
+      )
+    }
+
+    const pred = classifyPriceVsCycle({ currentEurL, weekdaySamples })
+    if (!pred) {
+      return c.json(
+        { station_id: stationId, fuel, verdict: null, sampleCount: 0, weekday, currentEurL },
+        200,
+        { 'Cache-Control': 'public, max-age=3600' },
+      )
+    }
+
+    return c.json(
+      {
+        station_id: stationId,
+        fuel,
+        weekday,
+        currentEurL,
+        verdict:     pred.verdict,
+        percentile:  pred.percentile,
+        sampleCount: pred.sampleCount,
+        confidence:  pred.confidence,
+        tipicalEurL: pred.tipicalEurL,
+      },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    )
+  } catch (err) {
+    slog('error', 'predict.query_failed', {
+      stationId,
+      fuel,
       err: String(err).slice(0, 300),
     })
     return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })

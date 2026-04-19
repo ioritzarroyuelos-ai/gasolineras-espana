@@ -250,6 +250,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <span id="fav-badge" class="fav-badge" hidden>0</span>
     </button>
     <button id="btn-unit" class="unit-toggle" title="Alternar entre euros y centimos" aria-label="Cambiar unidad de precio">&#x20AC;/L</button>
+    <!-- Ruta optima A->B: abre modal para buscar las mas baratas del trayecto -->
+    <button id="btn-route" class="btn-header-fav" title="Ruta: mejores gasolineras del trayecto" aria-label="Planificar ruta con gasolineras">
+      <i class="fas fa-route" aria-hidden="true"></i>
+    </button>
+    <!-- Diario de repostajes: gasto mensual real + consumo real + top estaciones -->
+    <button id="btn-diary" class="btn-header-fav" title="Mi diario de repostajes" aria-label="Abrir diario de repostajes">
+      <i class="fas fa-book" aria-hidden="true"></i>
+    </button>
     <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
   </div>
 </header>
@@ -566,6 +574,110 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     </div>
     <div class="modal-footer">
       <button id="btn-favs-done" class="btn-primary">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL RUTA A->B ============ -->
+<!-- Busca la TOP-N de gasolineras mas baratas dentro de un corredor a lo
+     largo del trayecto entre dos puntos (origen + destino). Reutiliza
+     /api/geocode/search (Nominatim proxy) para resolver los nombres a
+     coordenadas; el filtrado corredor + ranking es 100% cliente. -->
+<div id="modal-route" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="route-title">
+  <div class="modal">
+    <div class="modal-header modal-header-row">
+      <div>
+        <h2 id="route-title">&#x1F6E3;&#xFE0F; Ruta: gasolineras baratas</h2>
+        <p>Top 5 mas baratas en un corredor de &plusmn;3 km alrededor de tu trayecto.</p>
+      </div>
+      <button id="btn-route-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label" for="route-from">Origen</label>
+        <input id="route-from" class="form-input" type="text" placeholder="Madrid, Valencia, ..." autocomplete="off" />
+        <div id="route-from-sug" class="route-sug" role="listbox"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="route-to">Destino</label>
+        <input id="route-to" class="form-input" type="text" placeholder="Barcelona, Sevilla, ..." autocomplete="off" />
+        <div id="route-to-sug" class="route-sug" role="listbox"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="route-width">Ancho del corredor</label>
+        <div class="range-group">
+          <input id="route-width" type="range" min="1" max="10" step="1" value="3" aria-label="Ancho del corredor en kilometros" />
+          <span class="range-val" id="route-width-lbl">3 km</span>
+        </div>
+      </div>
+      <div id="route-status" class="route-status" aria-live="polite"></div>
+      <div id="route-results" class="route-results"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-route-go" class="btn-primary">Buscar</button>
+      <button id="btn-route-done" class="btn-ghost">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL DIARIO DE REPOSTAJES ============ -->
+<!-- Registro local (localStorage) de cada repostaje: litros, €/L, km totales.
+     Calcula consumo real L/100km, gasto total, medias, y exporta CSV.
+     Privacidad total: nada sale del navegador. -->
+<div id="modal-diary" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="diary-title">
+  <div class="modal diary-modal">
+    <div class="modal-header modal-header-row">
+      <div>
+        <h2 id="diary-title">&#x1F4D6; Mi diario de repostajes</h2>
+        <p>Lleva la cuenta real de tu consumo y ahorro. Todo se guarda solo en tu navegador.</p>
+      </div>
+      <button id="btn-diary-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="diary-stats" class="diary-stats" aria-live="polite">
+        <div class="diary-stat"><div class="ds-label">Entradas</div><div class="ds-value" id="ds-entries">0</div></div>
+        <div class="diary-stat"><div class="ds-label">Gasto total</div><div class="ds-value" id="ds-spent">0 &euro;</div></div>
+        <div class="diary-stat"><div class="ds-label">Media &euro;/L</div><div class="ds-value" id="ds-avg">--</div></div>
+        <div class="diary-stat"><div class="ds-label">Km recorridos</div><div class="ds-value" id="ds-km">0</div></div>
+        <div class="diary-stat"><div class="ds-label">Consumo real</div><div class="ds-value" id="ds-cons">--</div></div>
+        <div class="diary-stat"><div class="ds-label">Litros cargados</div><div class="ds-value" id="ds-liters">0 L</div></div>
+      </div>
+
+      <div class="diary-form">
+        <h3 class="diary-subtitle">&#x2795; Nuevo repostaje</h3>
+        <div class="diary-form-row">
+          <div class="form-group">
+            <label class="form-label" for="diary-litros">Litros</label>
+            <input id="diary-litros" class="form-input" type="number" step="0.01" min="0.1" placeholder="40.00" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="diary-price">&euro;/L</label>
+            <input id="diary-price" class="form-input" type="number" step="0.001" min="0.1" placeholder="1.529" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="diary-km">Km totales</label>
+            <input id="diary-km" class="form-input" type="number" step="1" min="0" placeholder="42850" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="diary-date">Fecha</label>
+            <input id="diary-date" class="form-input" type="date" />
+          </div>
+        </div>
+        <button id="btn-diary-add" class="btn-primary">Guardar repostaje</button>
+      </div>
+
+      <div class="diary-list-wrap">
+        <h3 class="diary-subtitle">&#x1F5C3;&#xFE0F; Historial</h3>
+        <div id="diary-empty" class="favs-empty">
+          Aun no hay repostajes. Anade el primero arriba y cada vez que llenes.
+        </div>
+        <div id="diary-list" class="diary-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer diary-footer">
+      <button id="btn-diary-export" class="btn-ghost" title="Exportar CSV">&#x2B07;&#xFE0F; Exportar CSV</button>
+      <button id="btn-diary-clear" class="btn-ghost" title="Borrar todo el diario">&#x1F5D1;&#xFE0F; Borrar todo</button>
+      <button id="btn-diary-done" class="btn-primary">Cerrar</button>
     </div>
   </div>
 </div>

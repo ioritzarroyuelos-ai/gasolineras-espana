@@ -237,6 +237,279 @@ export function tokensEqualConstTime(a: string, b: string): boolean {
   return diff === 0
 }
 
+// ---- PREDICTOR SEMANAL: "Lleno ahora o espero?" ----
+// Modelo ultra-simple basado en el percentil del precio actual dentro de la
+// distribucion de precios OBSERVADOS EN EL MISMO DIA DE LA SEMANA. Razon:
+// los patrones de precios del Ministerio tienen estacionalidad semanal fuerte
+// (los lunes suelen ser mas baratos que los viernes en muchos mercados). Asi
+// evitamos comparar "sabado con lunes" y damos una recomendacion honesta.
+//
+// Input:
+//   currentEurL — precio actual €/L de esta estacion+combustible.
+//   weekdaySamples — array de €/L observados en el mismo weekday (0=domingo)
+//                    en los ultimos N dias (tipicamente 90d => ~12 muestras).
+//
+// Output:
+//   verdict: 'buy_now'  — percentil <=25 → mejor que el tipico para este dia
+//            'neutral'  — percentil 26-74
+//            'wait'     — percentil >=75 → peor que el tipico; probablemente bajara
+//   confidence: 'low' (<4 muestras) | 'mid' (4-7) | 'high' (>=8)
+//   percentile: numero [0,100] (0 = mas barato visto, 100 = mas caro)
+//   sampleCount: cuantas muestras se usaron
+//   tipicalEurL: mediana de las muestras (para mostrar "hoy suele estar en X")
+//
+// Devuelve null si no hay muestras o el precio actual no es valido — el
+// cliente lo interpreta como "sin prediccion disponible" y oculta el badge.
+export interface PredictInput {
+  currentEurL: number
+  weekdaySamples: number[]
+}
+export interface PredictResult {
+  verdict: 'buy_now' | 'neutral' | 'wait'
+  confidence: 'low' | 'mid' | 'high'
+  percentile: number
+  sampleCount: number
+  tipicalEurL: number
+}
+export function classifyPriceVsCycle(input: PredictInput): PredictResult | null {
+  const { currentEurL, weekdaySamples } = input
+  if (!Number.isFinite(currentEurL) || currentEurL <= 0) return null
+  const samples = (weekdaySamples || []).filter(v => Number.isFinite(v) && v > 0)
+  if (samples.length === 0) return null
+  const sorted = samples.slice().sort((a, b) => a - b)
+  // Percentil inclusivo: proporcion de muestras <= currentEurL.
+  let below = 0
+  for (const v of sorted) if (v <= currentEurL) below++
+  const percentile = Math.round((below / sorted.length) * 100)
+  const verdict: PredictResult['verdict'] =
+    percentile <= 25 ? 'buy_now' :
+    percentile >= 75 ? 'wait'    : 'neutral'
+  const confidence: PredictResult['confidence'] =
+    sorted.length >= 8 ? 'high' : sorted.length >= 4 ? 'mid' : 'low'
+  const tipicalEurL = sorted[Math.floor(sorted.length / 2)]
+  return {
+    verdict,
+    confidence,
+    percentile,
+    sampleCount: sorted.length,
+    tipicalEurL,
+  }
+}
+
+// ---- AHORRO NETO: precio bruto - coste de desvio ----
+// El ahorro mostrado en las cards ahora resta explicitamente el coste en
+// gasolina del desvio (ida y vuelta) desde la posicion del usuario. Si el
+// ahorro neto resulta negativo, el cliente la marca como "no merece la pena"
+// en vez de esconderla (util: el usuario quiere saber que esa barata esta
+// demasiado lejos).
+//
+// Modelo (conservador):
+//   consumoL100km: lo que gasta el coche del usuario.
+//   extraKm: distancia de ida y vuelta del desvio en km.
+//            Aproximamos con 2*haversine (atajo razonable sin routing real).
+//   fuelPriceEurL: el precio del combustible que va a usar en el desvio.
+//            Usamos el precio de la PROPIA estacion barata — asi no
+//            sobrestimamos el coste del desvio con el precio medio.
+//   tankL: deposito del usuario (ya se usa para calcular grossSavings).
+//
+//   grossSavingsEur  = (medianPrice - stationPrice) * tankL     (ya existente)
+//   detourCostEur    = (extraKm/100) * consumoL100km * fuelPriceEurL
+//   netSavingsEur    = grossSavingsEur - detourCostEur
+export interface NetSavingsInput {
+  grossSavingsEur: number
+  extraKm: number
+  consumoL100km: number
+  fuelPriceEurL: number
+}
+export interface NetSavingsResult {
+  detourCostEur: number
+  netEur: number
+  worthIt: boolean
+}
+export function netSavings(input: NetSavingsInput): NetSavingsResult {
+  const { grossSavingsEur, extraKm, consumoL100km, fuelPriceEurL } = input
+  const gross = Number.isFinite(grossSavingsEur) ? grossSavingsEur : 0
+  const km    = Number.isFinite(extraKm)        && extraKm        > 0 ? extraKm        : 0
+  const cons  = Number.isFinite(consumoL100km)  && consumoL100km  > 0 ? consumoL100km  : 0
+  const price = Number.isFinite(fuelPriceEurL)  && fuelPriceEurL  > 0 ? fuelPriceEurL  : 0
+  const detourCostEur = (km / 100) * cons * price
+  const netEur = gross - detourCostEur
+  // Umbral practico: consideramos "worth it" si despues del coste del desvio
+  // aun quedan al menos 50 centimos en la operacion. Por debajo es
+  // estadisticamente ruido (fluctuacion semanal, error del consumo declarado).
+  return {
+    detourCostEur,
+    netEur,
+    worthIt: netEur >= 0.5,
+  }
+}
+
+// ---- RUTA A→B: distancia perpendicular de un punto a un segmento ----
+// Para la feature "mejores gasolineras en mi trayecto", el cliente recibe dos
+// coordenadas (origen + destino) y necesita filtrar las estaciones que caen
+// en un corredor de ancho W a cada lado de la linea recta AB. Para distancias
+// tipicas (<800 km, que es toda Espana penisnsular), usar la proyeccion
+// equirectangular centrada en el punto medio da error <0.3% — perfectamente
+// aceptable para "esta esta a 2 km de la ruta" con margen de error de decenas
+// de metros.
+//
+// Algoritmo: pasamos lat/lng a metros locales respecto al punto medio (eje X
+// en km E-O corregido por cos(lat), eje Y en km N-S), y calculamos la
+// distancia minima del punto al segmento en ese plano.
+export interface LatLng { lat: number; lng: number }
+function llToXYkm(p: LatLng, center: LatLng): { x: number; y: number } {
+  const R = 6371
+  const toRad = (d: number) => d * Math.PI / 180
+  const x = toRad(p.lng - center.lng) * Math.cos(toRad(center.lat)) * R
+  const y = toRad(p.lat - center.lat) * R
+  return { x, y }
+}
+export function perpDistanceKm(point: LatLng, a: LatLng, b: LatLng): number {
+  // Punto medio para proyeccion equirectangular. Con distancias <800 km el
+  // error de la proyeccion es <0.3%, mas que suficiente para un filtro de
+  // corredor con granularidad de km.
+  const center: LatLng = {
+    lat: (a.lat + b.lat) / 2,
+    lng: (a.lng + b.lng) / 2,
+  }
+  const P = llToXYkm(point, center)
+  const A = llToXYkm(a, center)
+  const B = llToXYkm(b, center)
+  const dx = B.x - A.x
+  const dy = B.y - A.y
+  const len2 = dx * dx + dy * dy
+  if (len2 < 1e-9) {
+    // Origen = destino: caemos a distancia euclidea desde cualquiera.
+    const ex = P.x - A.x
+    const ey = P.y - A.y
+    return Math.sqrt(ex * ex + ey * ey)
+  }
+  // Proyeccion escalar (t en [0,1] = dentro del segmento).
+  let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2
+  if (t < 0) t = 0
+  else if (t > 1) t = 1
+  const cx = A.x + t * dx
+  const cy = A.y + t * dy
+  const ex = P.x - cx
+  const ey = P.y - cy
+  return Math.sqrt(ex * ex + ey * ey)
+}
+
+// Filtra estaciones dentro de un corredor de ancho W a cada lado del segmento
+// AB. Las ordena por (precio ascendente, distancia-al-corredor) y devuelve
+// top N. El callback extrae (lat, lng, price) de cada estacion para que esta
+// funcion sea agnostica de la forma exacta del record.
+export interface CorridorItem<T> {
+  item: T
+  offKm: number           // distancia perpendicular al segmento
+  priceEurL: number
+}
+export function stationsInCorridor<T>(
+  items: T[],
+  a: LatLng,
+  b: LatLng,
+  widthKm: number,
+  extract: (x: T) => { lat: number; lng: number; priceEurL: number | null } | null,
+  topN: number = 5,
+): CorridorItem<T>[] {
+  if (!Number.isFinite(widthKm) || widthKm <= 0) return []
+  const hits: CorridorItem<T>[] = []
+  for (const it of items) {
+    const e = extract(it)
+    if (!e) continue
+    if (e.priceEurL == null || !Number.isFinite(e.priceEurL) || e.priceEurL <= 0) continue
+    const off = perpDistanceKm({ lat: e.lat, lng: e.lng }, a, b)
+    if (off <= widthKm) hits.push({ item: it, offKm: off, priceEurL: e.priceEurL })
+  }
+  // Orden principal por precio (lo que busca el usuario que activa la feature);
+  // desempate por distancia al trayecto (menos desvio es mejor).
+  hits.sort((x, y) => (x.priceEurL - y.priceEurL) || (x.offKm - y.offKm))
+  return hits.slice(0, Math.max(1, topN))
+}
+
+// ---- DIARIO DE REPOSTAJES: consumo real L/100km ----
+// Dado una entrada del diario con litros cargados + km totales del coche al
+// repostar, y la entrada anterior con sus km_totales, calculamos el consumo
+// REAL del intervalo. Esto supera al "consumo declarado" del perfil porque
+// refleja la conduccion real (velocidad, carga, estilo).
+//
+//   L/100km = litros / (deltaKm / 100)
+//
+// Si la entrada anterior no existe (primer repostaje) o deltaKm <= 0
+// (odometro manipulado / repostaje antes de agotar), devolvemos null —
+// el cliente muestra "--" hasta tener un segundo repostaje valido.
+export function computeL100km(litros: number, kmNow: number, kmPrev: number): number | null {
+  if (!Number.isFinite(litros) || litros <= 0) return null
+  if (!Number.isFinite(kmNow) || !Number.isFinite(kmPrev)) return null
+  const dk = kmNow - kmPrev
+  if (dk <= 0) return null
+  return litros / (dk / 100)
+}
+
+// Dado un array de entradas del diario { date, litros, eurPerLitre, kmTotales }
+// ordenadas cronologicamente, calcula estadisticas agregadas utiles para el
+// widget: gasto total, media €/L, consumo medio L/100km, km recorridos.
+// Ignora la PRIMERA entrada para computar km/consumo (no tenemos baseline).
+export interface DiaryEntry {
+  date: string            // ISO YYYY-MM-DD
+  litros: number
+  eurPerLitre: number     // €/L al que repostaste
+  kmTotales: number       // odometro al repostar
+}
+export interface DiaryStats {
+  entries: number
+  totalLiters: number
+  totalSpentEur: number
+  avgEurPerLitre: number | null
+  totalKm: number            // km realmente recorridos entre entradas
+  avgL100km: number | null
+}
+export function diaryStats(entries: DiaryEntry[]): DiaryStats {
+  const clean = (entries || []).filter(e =>
+    e &&
+    typeof e.date === 'string' &&
+    Number.isFinite(e.litros)      && e.litros      > 0 &&
+    Number.isFinite(e.eurPerLitre) && e.eurPerLitre > 0 &&
+    Number.isFinite(e.kmTotales)   && e.kmTotales   >= 0
+  ).sort((a, b) => a.date.localeCompare(b.date))
+  if (clean.length === 0) {
+    return {
+      entries: 0,
+      totalLiters: 0,
+      totalSpentEur: 0,
+      avgEurPerLitre: null,
+      totalKm: 0,
+      avgL100km: null,
+    }
+  }
+  let totalLiters = 0
+  let totalSpent = 0
+  let sumEurPerLitre = 0
+  for (const e of clean) {
+    totalLiters += e.litros
+    totalSpent  += e.litros * e.eurPerLitre
+    sumEurPerLitre += e.eurPerLitre
+  }
+  // Km reales recorridos = diferencia entre primera y ultima lectura del odometro.
+  // No sumamos intervalos porque el odometro es monotono creciente.
+  const totalKm = clean[clean.length - 1].kmTotales - clean[0].kmTotales
+  // Consumo real: litros consumidos ENTRE repostajes (ignorando el litraje del
+  // primero, que reposto antes de empezar el diario) / km recorridos.
+  let litersForConsumption = 0
+  for (let i = 1; i < clean.length; i++) litersForConsumption += clean[i].litros
+  const avgL100km = totalKm > 0 && litersForConsumption > 0
+    ? litersForConsumption / (totalKm / 100)
+    : null
+  return {
+    entries: clean.length,
+    totalLiters,
+    totalSpentEur: totalSpent,
+    avgEurPerLitre: sumEurPerLitre / clean.length,
+    totalKm: totalKm > 0 ? totalKm : 0,
+    avgL100km,
+  }
+}
+
 // ---- Rate limiter en memoria (ventana deslizante por IP) ----
 // Aproximado: limpia entries caducadas al insertar. No sustituye a Cloudflare Rate
 // Limiting pero anade friccion basica sin depender de KV.

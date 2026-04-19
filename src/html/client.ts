@@ -74,6 +74,78 @@ function median(arr) {
   return vals.length % 2 ? vals[mid] : (vals[mid-1] + vals[mid]) / 2;
 }
 
+// ---- AHORRO NETO (desvio) ----
+// Duplica la logica de netSavings() en pure.ts para uso en cliente sin
+// bundler. Tranquilo: hay tests unitarios que verifican la version canonica.
+// Devuelve { detourCostEur, netEur, worthIt }. Si no tenemos userPos, el
+// cliente no muestra "net", solo el grossSavings historico.
+function computeNetSavings(grossSavingsEur, extraKm, consumoL100km, fuelPriceEurL) {
+  var gross = (typeof grossSavingsEur === 'number' && isFinite(grossSavingsEur)) ? grossSavingsEur : 0;
+  var km    = (typeof extraKm        === 'number' && isFinite(extraKm)        && extraKm        > 0) ? extraKm        : 0;
+  var cons  = (typeof consumoL100km  === 'number' && isFinite(consumoL100km)  && consumoL100km  > 0) ? consumoL100km  : 0;
+  var price = (typeof fuelPriceEurL  === 'number' && isFinite(fuelPriceEurL)  && fuelPriceEurL  > 0) ? fuelPriceEurL  : 0;
+  var detourCostEur = (km / 100) * cons * price;
+  var netEur = gross - detourCostEur;
+  return { detourCostEur: detourCostEur, netEur: netEur, worthIt: netEur >= 0.5 };
+}
+
+// Mapa de codigos cortos ('95', 'diesel', ...) para el endpoint /api/predict.
+// Mismo mapeo que src/lib/history.ts FUEL_MAP. No todos los combustibles del
+// dropdown tienen historico D1 (H2, GLP, etc.) — para esos no pedimos predict.
+var FUEL_CODES_BY_LABEL = {
+  'Precio Gasolina 95 E5':  '95',
+  'Precio Gasolina 98 E5':  '98',
+  'Precio Gasoleo A':       'diesel',
+  'Precio Gasoleo Premium': 'diesel_plus'
+};
+
+// Fetcher cacheado por session+estacion+combustible. Evita llamar al endpoint
+// dos veces si el usuario abre y cierra el popup (o ve la misma estacion en
+// card y popup). El cache es un objeto plano — perdura solo en memoria.
+var predictCache = {};
+function fetchPredict(stationIdStr, fuelLabel, currentEurL) {
+  var fuelCode = FUEL_CODES_BY_LABEL[fuelLabel];
+  if (!fuelCode) return Promise.resolve(null);
+  if (!stationIdStr || !/^\\d{1,10}$/.test(stationIdStr)) return Promise.resolve(null);
+  var k = stationIdStr + '|' + fuelCode;
+  if (predictCache[k]) return Promise.resolve(predictCache[k]);
+  var url = '/api/predict/' + encodeURIComponent(stationIdStr) + '?fuel=' + fuelCode;
+  if (currentEurL && currentEurL > 0) url += '&current=' + currentEurL.toFixed(3);
+  return fetch(url, { credentials: 'same-origin' }).then(function(r) {
+    if (r.status === 503) return null;
+    if (!r.ok) return null;
+    return r.json();
+  }).then(function(data) {
+    if (!data || !data.verdict) return null;
+    predictCache[k] = data;
+    return data;
+  }).catch(function() { return null; });
+}
+
+// Genera el HTML del badge predictor. Usa clases para que el estilo (verde /
+// amarillo / rojo) viva en CSS y podamos cambiar la apariencia sin tocar JS.
+function predictBadgeHTML(predict) {
+  if (!predict || !predict.verdict) return '';
+  var verdict = predict.verdict;  // 'buy_now' | 'neutral' | 'wait'
+  var label, cls, emoji;
+  if (verdict === 'buy_now') {
+    cls = 'predict-badge predict-badge--good';
+    emoji = '\u{1F7E2}';
+    label = 'Buen momento';
+  } else if (verdict === 'wait') {
+    cls = 'predict-badge predict-badge--bad';
+    emoji = '\u{1F534}';
+    label = 'Mejor esperar';
+  } else {
+    cls = 'predict-badge predict-badge--neutral';
+    emoji = '\u{1F7E1}';
+    label = 'Precio tipico';
+  }
+  var conf = predict.confidence === 'high' ? '' : (predict.confidence === 'mid' ? ' \u00B7 muestra media' : ' \u00B7 poca muestra');
+  var tip = 'Percentil ' + predict.percentile + ' en ' + predict.sampleCount + ' observaciones (mismo dia de la semana). Tipico: ' + predict.tipicalEurL.toFixed(3) + ' \u20AC/L.';
+  return '<span class="' + cls + '" title="' + esc(tip) + '" aria-label="' + esc(label + ' \u2014 ' + tip) + '">' + emoji + ' ' + label + conf + '</span>';
+}
+
 // ---- PERFIL DEL USUARIO (localStorage) ----
 var PROFILE_KEY = 'gs_profile_v1';
 function getProfile() {
@@ -935,22 +1007,50 @@ function buildPopup(s) {
       : '<span class="status-chip status-closed">\u25CF Cerrada' + (status.opensAt ? ' hasta ' + esc(status.opensAt) : '') + '</span>';
   }
 
-  // Ahorro
+  // Distancia (la calculamos antes del ahorro para que el ahorro neto pueda
+  // restar el coste del desvio).
+  var distHtml = '';
+  var extraKmPopup = null;
+  if (userPos && hasCoords) {
+    var kmPop = distanceKm(userPos.lat, userPos.lng, lat, lng);
+    extraKmPopup = kmPop * 2;  // ida + vuelta, conservador
+    var minsPop = Math.round(kmPop / 40 * 60); // 40 km/h urbano
+    distHtml = '<span class="distance-chip u-ml-6">\u{1F9ED} ' + kmPop.toFixed(1) + ' km &middot; ~' + minsPop + ' min</span>';
+  }
+
+  // Ahorro — ahora AHORRO NETO si tenemos userPos + perfil (resta el coste
+  // en gasolina del desvio ida-vuelta usando el consumo declarado). Si no
+  // hay datos, cae al bruto como antes.
   var savingsHtml = '';
   if (mainPrice && currentMedianPrice && currentMedianPrice > mainPrice) {
-    var tank = parseInt(localStorage.getItem('gs_tank') || '50', 10);
-    var saving = (currentMedianPrice - mainPrice) * tank;
-    if (saving >= 0.5) {
-      savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorras ' + saving.toFixed(2) + ' \u20AC / deposito ' + tank + 'L</div>';
+    var tankP = parseInt(localStorage.getItem('gs_tank') || '50', 10);
+    var grossP = (currentMedianPrice - mainPrice) * tankP;
+    var profP = getProfile();
+    if (extraKmPopup != null && profP && profP.consumo > 0) {
+      var netP = computeNetSavings(grossP, extraKmPopup, profP.consumo, mainPrice);
+      if (netP.worthIt) {
+        savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorro neto ' + netP.netEur.toFixed(2) + ' \u20AC / deposito ' + tankP + 'L'
+                    + ' <span class="savings-sub">(' + grossP.toFixed(2) + ' \u20AC \u2212 ' + netP.detourCostEur.toFixed(2) + ' desvio)</span></div>';
+      } else if (grossP >= 0.5) {
+        savingsHtml = '<div class="savings-badge savings-badge--negative u-mt-6">\u26A0 El desvio cuesta ' + netP.detourCostEur.toFixed(2) + ' \u20AC — no compensa (neto ' + netP.netEur.toFixed(2) + ' \u20AC)</div>';
+      }
+    } else if (grossP >= 0.5) {
+      savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorras ' + grossP.toFixed(2) + ' \u20AC / deposito ' + tankP + 'L</div>';
     }
   }
 
-  // Distancia
-  var distHtml = '';
-  if (userPos && hasCoords) {
-    var km = distanceKm(userPos.lat, userPos.lng, lat, lng);
-    var mins = Math.round(km / 40 * 60); // 40 km/h urbano
-    distHtml = '<span class="distance-chip u-ml-6">\u{1F9ED} ' + km.toFixed(1) + ' km &middot; ~' + mins + ' min</span>';
+  // Predictor: placeholder que carga asincrono en popupopen. Solo si hay
+  // mainPrice (si la estacion no tiene precio publicado, no hay nada que
+  // predecir). Marcamos el contenedor con data-predict-* para que el
+  // listener de popupopen dispare fetchPredict. Siempre pinta el combustible
+  // como codigo corto (95/98/diesel/diesel_plus) — el cliente filtra los que
+  // no estan en FUEL_CODES_BY_LABEL.
+  var predictPlaceholder = '';
+  if (mainPrice && FUEL_CODES_BY_LABEL[fuel]) {
+    predictPlaceholder = '<div class="predict-slot"'
+      + ' data-predict-station="' + esc(id) + '"'
+      + ' data-predict-fuel="' + esc(fuel) + '"'
+      + ' data-predict-current="' + mainPrice.toFixed(3) + '"></div>';
   }
 
   // Panel de historico asincrono. Renderizamos el placeholder en el HTML del
@@ -1027,6 +1127,7 @@ function buildPopup(s) {
     + '  <span class="popup-fuel-label">' + esc(fuelLabel) + '</span>'
     + '  ' + priceDisplay
     + '</div>'
+    + predictPlaceholder
     + savingsHtml
     // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia
     // de la de Evolucion, que es mb:2 por defecto)
@@ -1109,6 +1210,19 @@ function renderMarkers(stations) {
         if (!node) return;
         var panel = node.querySelector('[data-hist-station]');
         if (panel) renderHistoryPanel(panel, 30);
+        // Predictor: fetch asincrono del veredicto y reemplazo del placeholder
+        // sin bloquear la apertura del popup. Si el endpoint 503 o no hay
+        // datos suficientes, el placeholder se queda vacio (no rompemos nada).
+        var predSlot = node.querySelector('[data-predict-station]');
+        if (predSlot) {
+          var predSt = predSlot.getAttribute('data-predict-station');
+          var predFuel = predSlot.getAttribute('data-predict-fuel');
+          var predCur = parseFloat(predSlot.getAttribute('data-predict-current') || '');
+          fetchPredict(predSt, predFuel, isFinite(predCur) ? predCur : null).then(function(pred) {
+            if (!pred) { predSlot.innerHTML = ''; return; }
+            predSlot.innerHTML = predictBadgeHTML(pred);
+          });
+        }
       } catch (_) {}
     });
     clusterGroup.addLayer(marker);
@@ -1150,23 +1264,34 @@ function cardHTML(s, i, fuel, fuelLabel) {
     var rank = topCheapIds[id];
     medal = '<span class="medal" aria-hidden="true">' + (rank === 1 ? '\u{1F947}' : rank === 2 ? '\u{1F948}' : '\u{1F949}') + '</span>';
   }
-  var savingsHtml = '';
-  if (price && currentMedianPrice && currentMedianPrice > price) {
-    var tank = parseInt(localStorage.getItem('gs_tank') || '50', 10);
-    var saving = (currentMedianPrice - price) * tank;
-    if (saving >= 0.5) {
-      savingsHtml = '<span class="savings-badge" title="Ahorro frente a la mediana del listado">\u{1F4B0} ahorra ' + saving.toFixed(2) + ' \u20AC / dep.</span>';
+  // Distancia (calculada ANTES del ahorro para que el ahorro neto reste el
+  // coste del desvio ida-vuelta).
+  var distHtml = '';
+  var extraKmCard = null;
+  if (userPos) {
+    var posC = stationLatLng(s);
+    if (posC) {
+      var kmC = distanceKm(userPos.lat, userPos.lng, posC.lat, posC.lng);
+      extraKmCard = kmC * 2;
+      if (kmC < 1) distHtml = '<span class="distance-chip" aria-label="Distancia">' + Math.round(kmC*1000) + ' m</span>';
+      else distHtml = '<span class="distance-chip" aria-label="Distancia">' + kmC.toFixed(1) + ' km</span>';
     }
   }
 
-  // Distancia si tenemos userPos
-  var distHtml = '';
-  if (userPos) {
-    var pos = stationLatLng(s);
-    if (pos) {
-      var km = distanceKm(userPos.lat, userPos.lng, pos.lat, pos.lng);
-      if (km < 1) distHtml = '<span class="distance-chip" aria-label="Distancia">' + Math.round(km*1000) + ' m</span>';
-      else distHtml = '<span class="distance-chip" aria-label="Distancia">' + km.toFixed(1) + ' km</span>';
+  var savingsHtml = '';
+  if (price && currentMedianPrice && currentMedianPrice > price) {
+    var tankC = parseInt(localStorage.getItem('gs_tank') || '50', 10);
+    var grossC = (currentMedianPrice - price) * tankC;
+    var profC = getProfile();
+    if (extraKmCard != null && profC && profC.consumo > 0) {
+      var netC = computeNetSavings(grossC, extraKmCard, profC.consumo, price);
+      if (netC.worthIt) {
+        savingsHtml = '<span class="savings-badge" title="Ahorro - coste desvio">\u{1F4B0} neto ' + netC.netEur.toFixed(2) + ' \u20AC / dep.</span>';
+      } else if (grossC >= 0.5) {
+        savingsHtml = '<span class="savings-badge savings-badge--negative" title="El desvio cuesta mas que el ahorro">\u26A0 desvio no compensa</span>';
+      }
+    } else if (grossC >= 0.5) {
+      savingsHtml = '<span class="savings-badge" title="Ahorro frente a la mediana del listado">\u{1F4B0} ahorra ' + grossC.toFixed(2) + ' \u20AC / dep.</span>';
     }
   }
 
@@ -3398,6 +3523,442 @@ if ('serviceWorker' in navigator) {
       url: location.pathname,
       ver: APP_VER
     });
+  });
+})();
+
+// ============================================================
+// ===== RUTA OPTIMA A->B (Feature 4) =========================
+// ============================================================
+// Modal que acepta origen + destino (geocoder Nominatim) y muestra las TOP-5
+// gasolineras mas baratas dentro de un corredor configurable a lo largo del
+// trayecto en linea recta. Filtrado = perpDistanceKm (proyeccion equirectangular
+// local), ordenacion = (precio, offset). Solo usa estaciones ya disponibles
+// en allStations; si origen/destino caen en otra provincia, cargamos esa en
+// paralelo y mergeamos antes de filtrar.
+//
+// Limitaciones honestas:
+//  - No es routing real (no sigue carreteras). Para A->B separados por
+//    montana, el corredor puede cortar la linea recta. Compromiso
+//    aceptable: evitamos dependencia de OSRM / pago de Mapbox.
+//  - Para rutas muy largas (Madrid-Barcelona) cargamos solo provincias
+//    extremas — estaciones a mitad de camino (Zaragoza) no saldran. Caso de
+//    uso dominante: trayectos intra-provincia + a provincia vecina.
+(function() {
+  var modal     = document.getElementById('modal-route');
+  if (!modal) return;
+  var btnOpen   = document.getElementById('btn-route');
+  var btnClose  = document.getElementById('btn-route-close');
+  var btnDone   = document.getElementById('btn-route-done');
+  var btnGo     = document.getElementById('btn-route-go');
+  var inFrom    = document.getElementById('route-from');
+  var inTo      = document.getElementById('route-to');
+  var sugFrom   = document.getElementById('route-from-sug');
+  var sugTo     = document.getElementById('route-to-sug');
+  var inWidth   = document.getElementById('route-width');
+  var lblWidth  = document.getElementById('route-width-lbl');
+  var stat      = document.getElementById('route-status');
+  var res       = document.getElementById('route-results');
+
+  // Estado: guardamos la ultima seleccion confirmada de cada input (con
+  // {lat, lng} resueltos). Si el usuario cambia el texto sin seleccionar
+  // una sugerencia, lo invalidamos.
+  var fromSel = null;
+  var toSel   = null;
+
+  function openRoute() {
+    res.innerHTML = '';
+    stat.textContent = '';
+    stat.classList.remove('error');
+    modal.classList.add('show');
+    setTimeout(function(){ inFrom && inFrom.focus(); }, 50);
+  }
+  function closeRoute() { modal.classList.remove('show'); }
+
+  if (btnOpen) btnOpen.addEventListener('click', openRoute);
+  if (btnClose) btnClose.addEventListener('click', closeRoute);
+  if (btnDone) btnDone.addEventListener('click', closeRoute);
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeRoute(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeRoute();
+  });
+
+  inWidth.addEventListener('input', function() {
+    lblWidth.textContent = inWidth.value + ' km';
+  });
+
+  // Debounced geocoder search — reusa /api/geocode/search (Nominatim proxy).
+  // Cada input tiene su propio timer para evitar llamadas cruzadas.
+  function makeGeoSearch(input, container, onPick) {
+    var timer = null;
+    function hide() { container.classList.remove('show'); container.innerHTML = ''; }
+    input.addEventListener('input', function() {
+      var q = input.value.trim();
+      // Usuario modifica el texto -> invalida seleccion previa
+      onPick(null);
+      if (timer) clearTimeout(timer);
+      if (q.length < 3) { hide(); return; }
+      timer = setTimeout(function() {
+        fetch('/api/geocode/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(data) {
+            if (!data || !Array.isArray(data) || data.length === 0) { hide(); return; }
+            var html = data.slice(0, 5).map(function(item) {
+              var lat = parseFloat(item.lat);
+              var lon = parseFloat(item.lon);
+              var name = item.display_name || '';
+              return '<div class="route-sug-item" data-lat="' + lat + '" data-lng="' + lon + '">'
+                   + esc(name.length > 70 ? name.slice(0, 70) + '\u2026' : name)
+                   + '</div>';
+            }).join('');
+            container.innerHTML = html;
+            container.classList.add('show');
+          }).catch(hide);
+      }, 300);
+    });
+    container.addEventListener('click', function(e) {
+      var it = e.target.closest('.route-sug-item');
+      if (!it) return;
+      var lat = parseFloat(it.getAttribute('data-lat'));
+      var lng = parseFloat(it.getAttribute('data-lng'));
+      if (!isNaN(lat) && !isNaN(lng)) {
+        input.value = it.textContent;
+        onPick({ lat: lat, lng: lng, label: it.textContent });
+      }
+      hide();
+    });
+    input.addEventListener('blur', function() { setTimeout(hide, 200); });
+  }
+  makeGeoSearch(inFrom, sugFrom, function(p) { fromSel = p; });
+  makeGeoSearch(inTo,   sugTo,   function(p) { toSel   = p; });
+
+  // Duplicado local de perpDistanceKm (funcion pura en src/lib/pure.ts).
+  // En tests del pure tenemos cobertura — aqui es copia literal en JS plano.
+  function perpDistanceKm(point, a, b) {
+    var R = 6371;
+    var toRad = function(d) { return d * Math.PI / 180; };
+    var cLat = (a.lat + b.lat) / 2;
+    var cLng = (a.lng + b.lng) / 2;
+    function toXY(p) {
+      return {
+        x: toRad(p.lng - cLng) * Math.cos(toRad(cLat)) * R,
+        y: toRad(p.lat - cLat) * R
+      };
+    }
+    var P = toXY(point), A = toXY(a), B = toXY(b);
+    var dx = B.x - A.x, dy = B.y - A.y;
+    var len2 = dx*dx + dy*dy;
+    if (len2 < 1e-9) {
+      var ex0 = P.x - A.x, ey0 = P.y - A.y;
+      return Math.sqrt(ex0*ex0 + ey0*ey0);
+    }
+    var t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    var cx = A.x + t * dx, cy = A.y + t * dy;
+    var ex = P.x - cx, ey = P.y - cy;
+    return Math.sqrt(ex*ex + ey*ey);
+  }
+
+  // Dado un punto, intenta cargar las estaciones de su provincia si aun no
+  // estan en allStations. Devuelve el subset fetch-eado (o [] si ya las
+  // tenemos o falla el geocoder inverso).
+  async function ensureStationsForPoint(p) {
+    // Si allStations ya cubre este punto (la provincia actual contiene el
+    // punto), no hace falta fetch extra. Heuristica: vemos si HAY alguna
+    // estacion a <25 km del punto. Barato y suficiente.
+    for (var i = 0; i < allStations.length; i++) {
+      var pos = stationLatLng(allStations[i]);
+      if (!pos) continue;
+      if (distanceKm(p.lat, p.lng, pos.lat, pos.lng) < 25) return [];
+    }
+    // Resolver provinciaId via reverse geocoding + mapa local
+    var name = await reverseProvinciaFromLatLng(p.lat, p.lng);
+    var pid  = name ? provinciaIdByName(name) : '';
+    if (!pid) return [];
+    try {
+      var r = await fetch('/api/estaciones/provincia/' + pid, { credentials: 'same-origin' });
+      if (!r.ok) return [];
+      var data = await r.json();
+      return (data.ListaEESSPrecio || []).map(normalizeStation);
+    } catch(_) { return []; }
+  }
+
+  async function doSearch() {
+    if (!fromSel || !toSel) {
+      stat.textContent = 'Selecciona origen y destino de la lista de sugerencias.';
+      stat.classList.add('error');
+      return;
+    }
+    stat.classList.remove('error');
+    stat.textContent = 'Buscando estaciones en el trayecto\u2026';
+    res.innerHTML = '';
+    var width = parseInt(inWidth.value, 10);
+    var fuel = document.getElementById('sel-combustible').value;
+    var fuelLabel = (document.getElementById('sel-combustible').selectedOptions[0].text) || fuel;
+
+    // Intenta cargar estaciones extra para cada extremo si aun no estan.
+    // Ambos fetches en paralelo. Merge deduplicando por stationId.
+    try {
+      var extras = await Promise.all([
+        ensureStationsForPoint(fromSel),
+        ensureStationsForPoint(toSel),
+      ]);
+      var pool = allStations.slice();
+      var seen = {};
+      for (var j = 0; j < pool.length; j++) seen[stationId(pool[j])] = true;
+      extras.forEach(function(arr) {
+        arr.forEach(function(s) {
+          var id = stationId(s);
+          if (!seen[id]) { seen[id] = true; pool.push(s); }
+        });
+      });
+
+      if (pool.length === 0) {
+        stat.textContent = 'No hay gasolineras cargadas. Selecciona una provincia primero.';
+        stat.classList.add('error');
+        return;
+      }
+
+      // Filtrar por corredor + precio disponible, ordenar por (precio, offset)
+      var hits = [];
+      for (var k = 0; k < pool.length; k++) {
+        var s = pool[k];
+        var pos = stationLatLng(s);
+        if (!pos) continue;
+        var price = parsePrice(s[fuel]);
+        if (!price) continue;
+        var off = perpDistanceKm({ lat: pos.lat, lng: pos.lng }, fromSel, toSel);
+        if (off <= width) hits.push({ s: s, price: price, off: off });
+      }
+      hits.sort(function(a, b) {
+        return (a.price - b.price) || (a.off - b.off);
+      });
+      var top = hits.slice(0, 5);
+
+      if (top.length === 0) {
+        stat.textContent = 'Sin resultados a \u00B1' + width + ' km del trayecto para ' + fuelLabel + '.';
+        return;
+      }
+
+      stat.textContent = top.length + ' estaciones encontradas (' + hits.length + ' en el corredor).';
+
+      var html = top.map(function(h) {
+        var s = h.s;
+        var lat = stationLatLng(s);
+        var navUrl = lat
+          ? 'https://www.google.com/maps/dir/?api=1&destination=' + lat.lat.toFixed(6) + ',' + lat.lng.toFixed(6) + '&travelmode=driving'
+          : '#';
+        return '<a class="route-card" href="' + navUrl + '" target="_blank" rel="noopener">'
+          + '<div class="route-card-info">'
+          + '  <div class="route-card-title">\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+          + '  <div class="route-card-sub">\u{1F4CD} ' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
+          + '</div>'
+          + '<div class="route-card-right">'
+          + '  <div class="route-card-price">' + h.price.toFixed(3) + ' \u20AC/L</div>'
+          + '  <div class="route-card-off">+' + h.off.toFixed(1) + ' km del trayecto</div>'
+          + '</div>'
+          + '</a>';
+      }).join('');
+      res.innerHTML = html;
+    } catch (err) {
+      stat.textContent = 'Error al buscar. Prueba de nuevo.';
+      stat.classList.add('error');
+    }
+  }
+  btnGo.addEventListener('click', doSearch);
+})();
+
+// ============================================================
+// ===== DIARIO DE REPOSTAJES (Feature 5) =====================
+// ============================================================
+// Registro local (localStorage) de repostajes con calculo de consumo real
+// L/100km y gasto mensual. Exporta CSV. Privacidad total — nada sale del
+// navegador. La clave es 'gs_diary_v1': array de { date, litros, eurPerLitre,
+// kmTotales } ordenado cronologicamente.
+(function() {
+  var modal  = document.getElementById('modal-diary');
+  if (!modal) return;
+  var btnOpen   = document.getElementById('btn-diary');
+  var btnClose  = document.getElementById('btn-diary-close');
+  var btnDone   = document.getElementById('btn-diary-done');
+  var btnAdd    = document.getElementById('btn-diary-add');
+  var btnExport = document.getElementById('btn-diary-export');
+  var btnClear  = document.getElementById('btn-diary-clear');
+  var inL       = document.getElementById('diary-litros');
+  var inP       = document.getElementById('diary-price');
+  var inK       = document.getElementById('diary-km');
+  var inD       = document.getElementById('diary-date');
+  var listWrap  = document.getElementById('diary-list');
+  var emptyWrap = document.getElementById('diary-empty');
+
+  var DIARY_KEY = 'gs_diary_v1';
+  function getDiary() {
+    try { return JSON.parse(localStorage.getItem(DIARY_KEY) || '[]'); } catch(e) { return []; }
+  }
+  function setDiary(arr) {
+    try { localStorage.setItem(DIARY_KEY, JSON.stringify(arr)); } catch(e) {}
+  }
+
+  // Funcion pura duplicada — tests cubren la version canonica en pure.ts.
+  function diaryStats(entries) {
+    var clean = (entries || []).filter(function(e) {
+      return e && typeof e.date === 'string'
+        && isFinite(e.litros)      && e.litros      > 0
+        && isFinite(e.eurPerLitre) && e.eurPerLitre > 0
+        && isFinite(e.kmTotales)   && e.kmTotales   >= 0;
+    }).sort(function(a, b) { return a.date.localeCompare(b.date); });
+    if (clean.length === 0) {
+      return { entries: 0, totalLiters: 0, totalSpentEur: 0, avgEurPerLitre: null, totalKm: 0, avgL100km: null };
+    }
+    var tL = 0, tS = 0, sEpl = 0;
+    for (var i = 0; i < clean.length; i++) {
+      tL += clean[i].litros;
+      tS += clean[i].litros * clean[i].eurPerLitre;
+      sEpl += clean[i].eurPerLitre;
+    }
+    var totalKm = clean[clean.length - 1].kmTotales - clean[0].kmTotales;
+    var litersForCons = 0;
+    for (var j = 1; j < clean.length; j++) litersForCons += clean[j].litros;
+    var avgL100km = totalKm > 0 && litersForCons > 0 ? litersForCons / (totalKm / 100) : null;
+    return {
+      entries: clean.length,
+      totalLiters: tL,
+      totalSpentEur: tS,
+      avgEurPerLitre: sEpl / clean.length,
+      totalKm: totalKm > 0 ? totalKm : 0,
+      avgL100km: avgL100km
+    };
+  }
+
+  function fmtDate(iso) {
+    // Formatea YYYY-MM-DD a "dd/mm/yyyy" para display. Defensivo ante inputs raros.
+    if (!iso || iso.length < 10) return iso || '';
+    var y = iso.slice(0, 4), m = iso.slice(5, 7), d = iso.slice(8, 10);
+    return d + '/' + m + '/' + y;
+  }
+
+  function renderStats() {
+    var s = diaryStats(getDiary());
+    document.getElementById('ds-entries').textContent = s.entries;
+    document.getElementById('ds-spent').textContent   = s.totalSpentEur.toFixed(2) + ' \u20AC';
+    document.getElementById('ds-avg').textContent     = s.avgEurPerLitre ? s.avgEurPerLitre.toFixed(3) + ' \u20AC/L' : '--';
+    document.getElementById('ds-km').textContent      = s.totalKm.toFixed(0) + ' km';
+    document.getElementById('ds-cons').textContent    = s.avgL100km ? s.avgL100km.toFixed(1) + ' L/100km' : '--';
+    document.getElementById('ds-liters').textContent  = s.totalLiters.toFixed(1) + ' L';
+  }
+
+  function renderList() {
+    var entries = getDiary().slice().sort(function(a, b) { return b.date.localeCompare(a.date); });
+    if (entries.length === 0) {
+      emptyWrap.style.display = '';
+      listWrap.innerHTML = '';
+      return;
+    }
+    emptyWrap.style.display = 'none';
+    listWrap.innerHTML = entries.map(function(e) {
+      return '<div class="diary-item">'
+        + '<div class="diary-item-main">'
+        + '  <div class="diary-item-date">' + esc(fmtDate(e.date)) + ' \u00B7 ' + e.litros.toFixed(2) + ' L'
+        + '    <span class="diary-item-sub">a ' + e.eurPerLitre.toFixed(3) + ' \u20AC/L \u00B7 ' + (e.litros * e.eurPerLitre).toFixed(2) + ' \u20AC</span>'
+        + '  </div>'
+        + '  <div class="diary-item-sub">Odometro: ' + e.kmTotales.toFixed(0) + ' km</div>'
+        + '</div>'
+        + '<button class="diary-item-del" data-diary-del="' + esc(e.date + '|' + e.kmTotales) + '" aria-label="Borrar repostaje">\u2716</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  function openDiary() {
+    // Fecha por defecto: hoy (YYYY-MM-DD).
+    try { inD.value = new Date().toISOString().slice(0, 10); } catch(_) {}
+    renderStats();
+    renderList();
+    modal.classList.add('show');
+  }
+  function closeDiary() { modal.classList.remove('show'); }
+
+  btnOpen.addEventListener('click', openDiary);
+  btnClose.addEventListener('click', closeDiary);
+  btnDone.addEventListener('click', closeDiary);
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeDiary(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeDiary();
+  });
+
+  btnAdd.addEventListener('click', function() {
+    var l = parseFloat((inL.value || '').replace(',', '.'));
+    var p = parseFloat((inP.value || '').replace(',', '.'));
+    var k = parseFloat((inK.value || '').replace(',', '.'));
+    var d = (inD.value || '').trim();
+    if (!isFinite(l) || l <= 0) { showToast('Litros invalidos', 'warning'); return; }
+    if (!isFinite(p) || p <= 0) { showToast('Precio \u20AC/L invalido', 'warning'); return; }
+    if (!isFinite(k) || k < 0)  { showToast('Odometro invalido', 'warning'); return; }
+    if (!d || !/^\\d{4}-\\d{2}-\\d{2}$/.test(d)) { showToast('Fecha invalida', 'warning'); return; }
+    var arr = getDiary();
+    arr.push({ date: d, litros: l, eurPerLitre: p, kmTotales: k });
+    arr.sort(function(a, b) { return a.date.localeCompare(b.date); });
+    setDiary(arr);
+    inL.value = ''; inP.value = ''; inK.value = '';
+    renderStats();
+    renderList();
+    showToast('Repostaje guardado \u2713', 'success');
+  });
+
+  // Borrado via delegacion — data-diary-del="date|km" identifica la entrada
+  // sin inventar un id. Colisiones solo posibles si dos repostajes con mismo
+  // dia y mismo km total: casi imposible y sin consecuencias.
+  listWrap.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-diary-del]');
+    if (!btn) return;
+    var key = btn.getAttribute('data-diary-del') || '';
+    var parts = key.split('|');
+    if (parts.length !== 2) return;
+    var dt = parts[0], km = parseFloat(parts[1]);
+    var arr = getDiary();
+    var idx = -1;
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i].date === dt && Math.abs(arr[i].kmTotales - km) < 0.5) { idx = i; break; }
+    }
+    if (idx < 0) return;
+    arr.splice(idx, 1);
+    setDiary(arr);
+    renderStats();
+    renderList();
+    showToast('Repostaje eliminado', 'info');
+  });
+
+  btnExport.addEventListener('click', function() {
+    var entries = getDiary();
+    if (entries.length === 0) { showToast('No hay entradas para exportar', 'warning'); return; }
+    // CSV: cabeceras en castellano, separador coma, decimal punto (compatible
+    // con Excel en locale EN y la mayoria de herramientas). Escapamos strings
+    // con comillas si llevaran coma — nuestros campos son numericos/ISO asi que
+    // no hay riesgo actual.
+    var lines = ['fecha,litros,eur_por_litro,km_totales,coste_total_eur'];
+    entries.slice().sort(function(a, b) { return a.date.localeCompare(b.date); }).forEach(function(e) {
+      lines.push([
+        e.date,
+        e.litros.toFixed(2),
+        e.eurPerLitre.toFixed(3),
+        e.kmTotales.toFixed(0),
+        (e.litros * e.eurPerLitre).toFixed(2)
+      ].join(','));
+    });
+    var blob = new Blob([lines.join('\\n')], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'diario-repostajes-' + new Date().toISOString().slice(0,10) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() { URL.revokeObjectURL(url); a.remove(); }, 500);
+  });
+
+  btnClear.addEventListener('click', function() {
+    if (!confirm('Borrar todos los repostajes del diario? Esta accion no se puede deshacer.')) return;
+    setDiary([]);
+    renderStats();
+    renderList();
+    showToast('Diario borrado', 'info');
   });
 })();
 

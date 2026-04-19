@@ -12,6 +12,12 @@ import {
   SlidingWindowLimiter,
   estimateMonthly,
   tokensEqualConstTime,
+  classifyPriceVsCycle,
+  netSavings,
+  perpDistanceKm,
+  stationsInCorridor,
+  computeL100km,
+  diaryStats,
 } from '../src/lib/pure'
 
 describe('LRU', () => {
@@ -335,5 +341,350 @@ describe('tokensEqualConstTime', () => {
     expect(tokensEqualConstTime(null, null)).toBe(false)
     // @ts-expect-error
     expect(tokensEqualConstTime(123, '123')).toBe(false)
+  })
+})
+
+describe('classifyPriceVsCycle (predictor semanal)', () => {
+  it('buy_now cuando el precio actual es el mas bajo de la serie', () => {
+    const r = classifyPriceVsCycle({
+      currentEurL: 1.40,
+      weekdaySamples: [1.55, 1.52, 1.50, 1.48, 1.45, 1.60, 1.58, 1.50],
+    })
+    expect(r).not.toBeNull()
+    expect(r!.verdict).toBe('buy_now')
+    expect(r!.percentile).toBeLessThanOrEqual(25)
+    expect(r!.sampleCount).toBe(8)
+    expect(r!.confidence).toBe('high')
+  })
+
+  it('wait cuando el precio esta en el top 25% de caros', () => {
+    const r = classifyPriceVsCycle({
+      currentEurL: 1.70,
+      weekdaySamples: [1.50, 1.52, 1.48, 1.55, 1.60, 1.58, 1.62, 1.65],
+    })
+    expect(r).not.toBeNull()
+    expect(r!.verdict).toBe('wait')
+    expect(r!.percentile).toBeGreaterThanOrEqual(75)
+  })
+
+  it('neutral cuando el precio esta en el rango medio', () => {
+    const r = classifyPriceVsCycle({
+      currentEurL: 1.55,
+      weekdaySamples: [1.45, 1.48, 1.50, 1.55, 1.60, 1.62, 1.65, 1.70],
+    })
+    expect(r).not.toBeNull()
+    expect(r!.verdict).toBe('neutral')
+  })
+
+  it('confidence escala con el numero de muestras', () => {
+    const fewSamples = classifyPriceVsCycle({
+      currentEurL: 1.50,
+      weekdaySamples: [1.50, 1.55],
+    })
+    expect(fewSamples!.confidence).toBe('low')
+
+    const midSamples = classifyPriceVsCycle({
+      currentEurL: 1.50,
+      weekdaySamples: [1.50, 1.55, 1.48, 1.52, 1.60],
+    })
+    expect(midSamples!.confidence).toBe('mid')
+
+    const highSamples = classifyPriceVsCycle({
+      currentEurL: 1.50,
+      weekdaySamples: [1.50, 1.55, 1.48, 1.52, 1.60, 1.45, 1.58, 1.62, 1.50],
+    })
+    expect(highSamples!.confidence).toBe('high')
+  })
+
+  it('devuelve null si no hay muestras validas', () => {
+    expect(classifyPriceVsCycle({ currentEurL: 1.50, weekdaySamples: [] })).toBeNull()
+    expect(classifyPriceVsCycle({ currentEurL: 1.50, weekdaySamples: [NaN, 0, -1] })).toBeNull()
+  })
+
+  it('devuelve null si el precio actual es invalido', () => {
+    expect(classifyPriceVsCycle({ currentEurL: 0, weekdaySamples: [1.5] })).toBeNull()
+    expect(classifyPriceVsCycle({ currentEurL: -1, weekdaySamples: [1.5] })).toBeNull()
+    expect(classifyPriceVsCycle({ currentEurL: NaN, weekdaySamples: [1.5] })).toBeNull()
+  })
+
+  it('ignora muestras invalidas sin romper el calculo', () => {
+    const r = classifyPriceVsCycle({
+      currentEurL: 1.50,
+      weekdaySamples: [1.45, NaN, 1.55, 0, 1.50, -1, Infinity],
+    })
+    expect(r).not.toBeNull()
+    expect(r!.sampleCount).toBe(3)  // solo 1.45, 1.55, 1.50 son validos
+  })
+
+  it('tipicalEurL es coherente con la mediana de las muestras', () => {
+    const r = classifyPriceVsCycle({
+      currentEurL: 1.50,
+      weekdaySamples: [1.40, 1.45, 1.50, 1.55, 1.60],
+    })
+    expect(r!.tipicalEurL).toBeCloseTo(1.50, 3)
+  })
+})
+
+describe('netSavings (ahorro neto con coste de desvio)', () => {
+  it('resta correctamente el coste del desvio', () => {
+    // 20 km extra con 6.5 L/100km a 1.50 €/L = 1.95 €
+    const r = netSavings({
+      grossSavingsEur: 5.00,
+      extraKm: 20,
+      consumoL100km: 6.5,
+      fuelPriceEurL: 1.50,
+    })
+    expect(r.detourCostEur).toBeCloseTo(1.95, 3)
+    expect(r.netEur).toBeCloseTo(3.05, 3)
+    expect(r.worthIt).toBe(true)
+  })
+
+  it('marca worthIt=false si el neto no supera 0.50 €', () => {
+    const r = netSavings({
+      grossSavingsEur: 2.00,
+      extraKm: 20,
+      consumoL100km: 6.5,
+      fuelPriceEurL: 1.50,
+    })
+    // 2.00 - 1.95 = 0.05, por debajo del umbral
+    expect(r.netEur).toBeCloseTo(0.05, 3)
+    expect(r.worthIt).toBe(false)
+  })
+
+  it('neto negativo cuando el desvio supera el ahorro bruto', () => {
+    const r = netSavings({
+      grossSavingsEur: 1.00,
+      extraKm: 30,
+      consumoL100km: 7,
+      fuelPriceEurL: 1.60,
+    })
+    // desvio = 0.30 * 7 * 1.60 = 3.36
+    expect(r.detourCostEur).toBeCloseTo(3.36, 3)
+    expect(r.netEur).toBeCloseTo(-2.36, 3)
+    expect(r.worthIt).toBe(false)
+  })
+
+  it('sin desvio el neto es igual al bruto', () => {
+    const r = netSavings({
+      grossSavingsEur: 4.00,
+      extraKm: 0,
+      consumoL100km: 6.5,
+      fuelPriceEurL: 1.50,
+    })
+    expect(r.detourCostEur).toBe(0)
+    expect(r.netEur).toBe(4.00)
+    expect(r.worthIt).toBe(true)
+  })
+
+  it('trata valores invalidos como 0 (fail-safe, nunca NaN)', () => {
+    const r = netSavings({
+      grossSavingsEur: 3.00,
+      extraKm: NaN,
+      consumoL100km: -1,
+      fuelPriceEurL: 0,
+    })
+    expect(r.detourCostEur).toBe(0)
+    expect(r.netEur).toBe(3.00)
+  })
+})
+
+describe('perpDistanceKm (distancia al segmento)', () => {
+  // Madrid → Barcelona
+  const madrid = { lat: 40.4168, lng: -3.7038 }
+  const barcelona = { lat: 41.3851, lng: 2.1734 }
+
+  it('distancia 0 si el punto esta en el segmento', () => {
+    const mid = { lat: (madrid.lat + barcelona.lat) / 2, lng: (madrid.lng + barcelona.lng) / 2 }
+    expect(perpDistanceKm(mid, madrid, barcelona)).toBeLessThan(1)
+  })
+
+  it('distancia > 0 si el punto esta lejos del segmento', () => {
+    // Sevilla, muy al sur de la linea Madrid-Barcelona
+    const sevilla = { lat: 37.3891, lng: -5.9845 }
+    const d = perpDistanceKm(sevilla, madrid, barcelona)
+    expect(d).toBeGreaterThan(100)
+  })
+
+  it('se cierra en los extremos si la proyeccion cae fuera del segmento', () => {
+    // Un punto muy al oeste de Madrid: la "proyeccion" caeria antes de A,
+    // pero la funcion debe devolver la distancia directa a Madrid.
+    const puntoOeste = { lat: 40.4168, lng: -9.0 }
+    const d = perpDistanceKm(puntoOeste, madrid, barcelona)
+    const expected = haversineKm(puntoOeste.lat, puntoOeste.lng, madrid.lat, madrid.lng)
+    // La proyeccion equirectangular acumula error proporcional a la distancia:
+    // ~0.7% a 500+ km desde el centro del segmento. Toleramos 2% para este caso.
+    const relErr = Math.abs(d - expected) / expected
+    expect(relErr).toBeLessThan(0.02)
+  })
+
+  it('origen = destino → distancia euclidea al punto', () => {
+    const p = { lat: 40.5, lng: -3.5 }
+    const d = perpDistanceKm(p, madrid, madrid)
+    const expected = haversineKm(p.lat, p.lng, madrid.lat, madrid.lng)
+    expect(d).toBeCloseTo(expected, 0)
+  })
+
+  it('simetrico: A→B vs B→A da misma distancia', () => {
+    const p = { lat: 41.0, lng: -1.0 }
+    const d1 = perpDistanceKm(p, madrid, barcelona)
+    const d2 = perpDistanceKm(p, barcelona, madrid)
+    expect(d1).toBeCloseTo(d2, 6)
+  })
+})
+
+describe('stationsInCorridor (filtrar gasolineras en trayecto)', () => {
+  const madrid = { lat: 40.4168, lng: -3.7038 }
+  const barcelona = { lat: 41.3851, lng: 2.1734 }
+
+  type S = { id: string; lat: number; lng: number; price: number | null }
+  const extract = (s: S) => ({ lat: s.lat, lng: s.lng, priceEurL: s.price })
+
+  it('devuelve solo las estaciones dentro del ancho del corredor', () => {
+    const stations: S[] = [
+      { id: 'near1',  lat: 41.0,    lng: -1.0,    price: 1.50 },
+      { id: 'near2',  lat: 41.2,    lng: 0.0,     price: 1.48 },
+      { id: 'far',    lat: 37.3891, lng: -5.9845, price: 1.40 },  // Sevilla, fuera
+    ]
+    const r = stationsInCorridor(stations, madrid, barcelona, 50, extract, 5)
+    expect(r.length).toBe(2)
+    expect(r.map(x => x.item.id).sort()).toEqual(['near1', 'near2'])
+  })
+
+  it('ordena por precio ascendente (la mas barata primero)', () => {
+    const stations: S[] = [
+      { id: 'cara',   lat: 41.0, lng: -1.0, price: 1.80 },
+      { id: 'barata', lat: 41.1, lng: -0.5, price: 1.30 },
+      { id: 'media',  lat: 41.0, lng: 0.0,  price: 1.50 },
+    ]
+    const r = stationsInCorridor(stations, madrid, barcelona, 100, extract, 5)
+    expect(r.map(x => x.item.id)).toEqual(['barata', 'media', 'cara'])
+  })
+
+  it('desempata por distancia al corredor cuando el precio coincide', () => {
+    const stations: S[] = [
+      { id: 'lejos', lat: 40.0, lng: -3.0, price: 1.50 },
+      { id: 'cerca', lat: 40.5, lng: -3.0, price: 1.50 },
+    ]
+    const r = stationsInCorridor(stations, madrid, barcelona, 100, extract, 5)
+    expect(r[0].item.id).toBe('cerca')
+    expect(r[0].offKm).toBeLessThan(r[1].offKm)
+  })
+
+  it('limita a topN resultados', () => {
+    const stations: S[] = Array.from({ length: 20 }, (_, i) => ({
+      id: `s${i}`, lat: 41.0, lng: -1.0 + i * 0.1, price: 1.50 + i * 0.01,
+    }))
+    const r = stationsInCorridor(stations, madrid, barcelona, 200, extract, 5)
+    expect(r.length).toBeLessThanOrEqual(5)
+  })
+
+  it('ignora estaciones sin precio', () => {
+    const stations: S[] = [
+      { id: 'sin-precio', lat: 41.0, lng: -1.0, price: null },
+      { id: 'con-precio', lat: 41.0, lng: -1.0, price: 1.50 },
+    ]
+    const r = stationsInCorridor(stations, madrid, barcelona, 100, extract, 5)
+    expect(r.length).toBe(1)
+    expect(r[0].item.id).toBe('con-precio')
+  })
+
+  it('devuelve array vacio si widthKm es invalido', () => {
+    const stations: S[] = [{ id: 'x', lat: 41.0, lng: -1.0, price: 1.50 }]
+    expect(stationsInCorridor(stations, madrid, barcelona, 0, extract, 5)).toEqual([])
+    expect(stationsInCorridor(stations, madrid, barcelona, -1, extract, 5)).toEqual([])
+    expect(stationsInCorridor(stations, madrid, barcelona, NaN, extract, 5)).toEqual([])
+  })
+})
+
+describe('computeL100km (consumo real por intervalo)', () => {
+  it('calcula consumo correcto para un intervalo tipico', () => {
+    // 40 L repostados tras recorrer 600 km → 6.67 L/100km
+    expect(computeL100km(40, 12600, 12000)).toBeCloseTo(6.667, 2)
+  })
+
+  it('funciona con consumo alto', () => {
+    // SUV tragon: 80 L / 800 km = 10 L/100km
+    expect(computeL100km(80, 800, 0)).toBe(10)
+  })
+
+  it('devuelve null si no hay lectura previa valida (primer repostaje)', () => {
+    expect(computeL100km(40, 12000, NaN)).toBeNull()
+  })
+
+  it('devuelve null si delta de km es 0 o negativo', () => {
+    expect(computeL100km(40, 12000, 12000)).toBeNull()
+    expect(computeL100km(40, 12000, 12500)).toBeNull()  // odometro retrocedido
+  })
+
+  it('devuelve null con litros invalidos', () => {
+    expect(computeL100km(0, 12600, 12000)).toBeNull()
+    expect(computeL100km(-5, 12600, 12000)).toBeNull()
+    expect(computeL100km(NaN, 12600, 12000)).toBeNull()
+  })
+})
+
+describe('diaryStats (estadisticas del diario de repostajes)', () => {
+  it('agrega totales y medias de un diario tipico', () => {
+    const entries = [
+      { date: '2026-01-10', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-05', litros: 45, eurPerLitre: 1.45, kmTotales: 10600 },
+      { date: '2026-03-01', litros: 48, eurPerLitre: 1.55, kmTotales: 11300 },
+    ]
+    const s = diaryStats(entries)
+    expect(s.entries).toBe(3)
+    expect(s.totalLiters).toBe(143)
+    // 50*1.50 + 45*1.45 + 48*1.55 = 75 + 65.25 + 74.40 = 214.65
+    expect(s.totalSpentEur).toBeCloseTo(214.65, 2)
+    // media €/L = (1.50 + 1.45 + 1.55) / 3 = 1.50
+    expect(s.avgEurPerLitre).toBeCloseTo(1.50, 3)
+    // km recorridos = 11300 - 10000 = 1300
+    expect(s.totalKm).toBe(1300)
+    // consumo: (45 + 48) litros / (1300/100) = 93/13 = 7.154 L/100km
+    expect(s.avgL100km).toBeCloseTo(7.154, 2)
+  })
+
+  it('devuelve zeros y nulls con array vacio', () => {
+    const s = diaryStats([])
+    expect(s.entries).toBe(0)
+    expect(s.totalLiters).toBe(0)
+    expect(s.totalSpentEur).toBe(0)
+    expect(s.avgEurPerLitre).toBeNull()
+    expect(s.totalKm).toBe(0)
+    expect(s.avgL100km).toBeNull()
+  })
+
+  it('con una sola entrada: sin consumo calculable (falta baseline)', () => {
+    const s = diaryStats([
+      { date: '2026-01-10', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+    ])
+    expect(s.entries).toBe(1)
+    expect(s.totalLiters).toBe(50)
+    expect(s.totalSpentEur).toBeCloseTo(75, 3)
+    expect(s.avgEurPerLitre).toBeCloseTo(1.50, 3)
+    expect(s.totalKm).toBe(0)
+    expect(s.avgL100km).toBeNull()
+  })
+
+  it('ordena cronologicamente antes de calcular (tolerante a ordenes mezclados)', () => {
+    const entries = [
+      { date: '2026-03-01', litros: 48, eurPerLitre: 1.55, kmTotales: 11300 },
+      { date: '2026-01-10', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-05', litros: 45, eurPerLitre: 1.45, kmTotales: 10600 },
+    ]
+    const s = diaryStats(entries)
+    expect(s.totalKm).toBe(1300)  // primero=10000, ultimo=11300 tras ordenar
+  })
+
+  it('filtra entradas invalidas', () => {
+    const entries: any[] = [
+      { date: '2026-01-10', litros: 50,  eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-05', litros: -1,  eurPerLitre: 1.45, kmTotales: 10600 }, // litros invalido
+      { date: '2026-02-10', litros: 45,  eurPerLitre: 0,    kmTotales: 10700 }, // precio invalido
+      { date: '2026-02-20', litros: NaN, eurPerLitre: 1.50, kmTotales: 10800 }, // litros NaN
+      { date: '2026-03-01', litros: 48,  eurPerLitre: 1.55, kmTotales: 11300 },
+    ]
+    const s = diaryStats(entries)
+    expect(s.entries).toBe(2)
+    expect(s.totalLiters).toBe(98)
   })
 })

@@ -2,7 +2,7 @@
 // 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
 // cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
 // usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v7';
+const CACHE_NAME = 'gasolineras-v8';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cap defensivo contra crecimiento ilimitado de la cache de tiles (DoS de almacenamiento).
 const TILE_CACHE_MAX = 400;

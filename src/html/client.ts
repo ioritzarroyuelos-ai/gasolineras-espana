@@ -2455,6 +2455,29 @@ function enrichFav(id, patch) {
   return changed;
 }
 
+// Borra los campos de provincia/municipio previamente cacheados en una
+// favorita. Se usa cuando descubrimos que eran incorrectos (p.ej. reverse
+// geocode devolvio mal la provincia: Nominatim puede devolver la provincia
+// mas cercana si el lat/lng cae en un limite administrativo raro). Forzar
+// clear permite que el siguiente navigateToFav los vuelva a resolver de cero.
+function clearFavProvinceHints(id) {
+  if (!id) return;
+  var favs = getFavs();
+  var changed = false;
+  for (var i = 0; i < favs.length; i++) {
+    if (favs[i].id !== id) continue;
+    if (favs[i].provinciaId || favs[i].municipioId || favs[i].provincia || favs[i].municipio) {
+      delete favs[i].provinciaId;
+      delete favs[i].municipioId;
+      delete favs[i].provincia;
+      delete favs[i].municipio;
+      changed = true;
+    }
+    break;
+  }
+  if (changed) setFavs(favs);
+}
+
 // Navega el mapa+sidebar hasta la favorita indicada:
 //   1. Cierra el modal.
 //   2. Si tenemos provinciaId: fija el select de provincia, carga municipios,
@@ -2471,6 +2494,25 @@ async function navigateToFav(f) {
   var selProv = document.getElementById('sel-provincia');
   var selMun  = document.getElementById('sel-municipio');
   var inText  = document.getElementById('search-text');
+
+  // Clicar una favorita es un cambio de contexto explicito: olvidamos la
+  // GPS anterior (si el usuario habia pulsado "Mi ubicacion" antes en
+  // otra provincia, applyFilters despues filtraba por radio contra esas
+  // coords viejas y dejaba 0 resultados aunque cargaramos la provincia
+  // correcta).
+  clearGeolocationMode();
+
+  // Paso 0: centrar el mapa INMEDIATAMENTE sobre la ubicacion real de la
+  // favorita. Esto desacopla el feedback visual (siempre funciona si
+  // guardamos lat/lng) de la resolucion de provincia (que puede fallar o
+  // devolver dato equivocado). Si luego todo va bien, zoomTo() refinara el
+  // zoom y abrira el popup.
+  var favLat = parseFloat(f.lat);
+  var favLng = parseFloat(f.lng);
+  var haveFavCoords = !isNaN(favLat) && !isNaN(favLng) && (favLat !== 0 || favLng !== 0);
+  if (haveFavCoords) {
+    try { map.setView([favLat, favLng], 15); } catch(_) {}
+  }
 
   // --- Resolver provinciaId para favoritas legacy ---
   if (!f.provinciaId) {
@@ -2493,7 +2535,7 @@ async function navigateToFav(f) {
   if (!f.provinciaId) {
     // Atajo 2: reverse geocode por lat/lng y mapear nombre -> codigo INE.
     showToast('Resolviendo ubicacion de la favorita\u2026', 'info');
-    var provName = await reverseProvinciaFromLatLng(f.lat, f.lng);
+    var provName = await reverseProvinciaFromLatLng(favLat, favLng);
     var provId = provName ? provinciaIdByName(provName) : '';
     if (provId) {
       enrichFav(f.id, { provinciaId: provId, provincia: provName });
@@ -2502,56 +2544,82 @@ async function navigateToFav(f) {
     }
   }
   if (!f.provinciaId) {
-    // Ultimo recurso: si esta en el filtrado actual hacemos zoom; si no,
-    // damos un mensaje claro y abortamos.
-    for (var k = 0; k < filteredStations.length; k++) {
-      if (stationId(filteredStations[k]) === f.id) { zoomTo(k); return; }
+    // Sin provinciaId: si el mapa ya esta centrado en la favorita (paso 0),
+    // al menos el usuario la ve. Quitamos el search text (para no mentir
+    // con "Sin resultados") y damos un toast explicativo.
+    if (inText) inText.value = '';
+    applyFilters();
+    if (haveFavCoords) {
+      showToast('No pudimos resolver la provincia. Seleccionala manualmente — el mapa ya esta centrado en la favorita.', 'warning');
+    } else {
+      showToast('No hemos podido ubicar esta favorita. Quitala y guardala otra vez.', 'warning');
     }
-    showToast('No hemos podido ubicar esta favorita. Quitala y guardala otra vez.', 'warning');
     return;
   }
 
-  // --- A partir de aqui tenemos provinciaId seguro ---
-
-  // Si ya estamos en la provincia correcta y allStations tiene la estacion,
-  // saltamos el fetch y simplemente filtramos + zoom.
-  var alreadyThere = selProv && selProv.value === f.provinciaId && allStations.length > 0;
-
-  if (!alreadyThere) {
-    // 1) Fijar provincia y cargar su dropdown de municipios.
+  // Helper interno: carga las estaciones del provinciaId actual y devuelve
+  // si la favorita aparece en allStations. Evita repetir el bloque en el
+  // primer intento + el reintento de self-healing.
+  async function loadAndCheck() {
     if (selProv) selProv.value = f.provinciaId;
     try { await loadMunicipios(f.provinciaId); } catch(_) {}
-  }
-
-  // 2) Fijar municipio (si la favorita tiene uno y esta en el dropdown).
-  if (selMun && f.municipioId) {
-    var hasOpt = false;
-    for (var o = 0; o < selMun.options.length; o++) {
-      if (selMun.options[o].value === f.municipioId) { hasOpt = true; break; }
+    if (selMun && f.municipioId) {
+      var hasOpt = false;
+      for (var o = 0; o < selMun.options.length; o++) {
+        if (selMun.options[o].value === f.municipioId) { hasOpt = true; break; }
+      }
+      selMun.value = hasOpt ? f.municipioId : '';
+    } else if (selMun) {
+      selMun.value = '';
     }
-    if (hasOpt) selMun.value = f.municipioId;
-    else selMun.value = '';
-  } else if (selMun) {
-    selMun.value = '';
-  }
-
-  // 3) Rellenar la caja de busqueda con el rotulo para que applyFilters
-  //    deje solo esa favorita visible.
-  if (inText) inText.value = f.rotulo || '';
-
-  // 4) Cargar estaciones si no las tenemos ya.
-  if (!alreadyThere) {
     try { await loadStations(); } catch(_) {}
-  } else {
-    // Con la provincia ya cargada, basta con refiltrar.
-    applyFilters();
+    for (var p = 0; p < allStations.length; p++) {
+      if (stationId(allStations[p]) === f.id) return true;
+    }
+    return false;
   }
 
-  // 5) Enriquecer la favorita con los IDs correctos si ahora aparece en
-  //    allStations (caso legacy donde solo teniamos provincia por reverse).
-  for (var p = 0; p < allStations.length; p++) {
-    if (stationId(allStations[p]) === f.id) {
-      var st2 = allStations[p];
+  // --- A partir de aqui tenemos provinciaId (posiblemente incorrecto de un
+  // reverse anterior). Cargamos; si el fav NO aparece, lo tratamos como
+  // provinciaId corrupto, lo borramos y reintentamos con reverse fresco.
+  if (inText) inText.value = f.rotulo || '';
+  var found = await loadAndCheck();
+
+  if (!found && haveFavCoords) {
+    // Self-heal: la provinciaId cacheada es incorrecta. La borramos y
+    // pedimos un reverse geocode nuevo. Si la API devuelve una provincia
+    // distinta, reintentamos loadStations sobre esa.
+    var oldProvId = f.provinciaId;
+    clearFavProvinceHints(f.id);
+    f.provinciaId = '';
+    f.municipioId = '';
+    showToast('Re-resolviendo ubicacion de la favorita\u2026', 'info');
+    var provName2 = await reverseProvinciaFromLatLng(favLat, favLng);
+    var provId2 = provName2 ? provinciaIdByName(provName2) : '';
+    if (provId2 && provId2 !== oldProvId) {
+      enrichFav(f.id, { provinciaId: provId2, provincia: provName2 });
+      f.provinciaId = provId2;
+      f.provincia = provName2;
+      found = await loadAndCheck();
+    }
+  }
+
+  if (!found) {
+    // Ni con self-heal sale. Quitamos el filtro de texto (para que el
+    // usuario pueda mirar las de la provincia actual si ya esta), avisamos,
+    // y dejamos el mapa centrado en la favorita como hicimos en paso 0.
+    if (inText) inText.value = '';
+    applyFilters();
+    showToast('No encontramos "' + (f.rotulo || 'esta favorita') + '" en los datos actuales. El mapa esta centrado en su ubicacion.', 'warning');
+    return;
+  }
+
+  // Enriquecer la favorita con los IDs correctos ahora que sabemos que
+  // aparece en allStations (caso legacy donde solo teniamos provincia por
+  // reverse — ahora tambien capturamos municipio).
+  for (var p2 = 0; p2 < allStations.length; p2++) {
+    if (stationId(allStations[p2]) === f.id) {
+      var st2 = allStations[p2];
       enrichFav(f.id, {
         provinciaId: st2['IDProvincia'] || '',
         municipioId: st2['IDMunicipio'] || '',
@@ -2562,14 +2630,13 @@ async function navigateToFav(f) {
     }
   }
 
-  // 6) Buscar la estacion en el resultado filtrado y hacer zoom.
+  // Buscar la estacion en el resultado filtrado y hacer zoom. Si el filtro
+  // de combustible/avanzados la escondio del listado, applyFilters ya ha
+  // corrido desde loadStations — pero la favorita SI esta en allStations.
   for (var i = 0; i < filteredStations.length; i++) {
     if (stationId(filteredStations[i]) === f.id) { zoomTo(i); return; }
   }
-  // Si no aparece (precio o combustible filtrado la escondio), avisamos —
-  // pero la provincia/municipio ya estan fijados, asi que el usuario ve
-  // el contexto.
-  showToast('Esa gasolinera no aparece con los filtros actuales', 'info');
+  showToast('Esa gasolinera existe pero esta oculta por los filtros avanzados', 'info');
 }
 
 function openFavsModal() {

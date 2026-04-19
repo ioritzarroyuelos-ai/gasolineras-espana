@@ -3984,10 +3984,43 @@ function exitRouteMode() {
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.';
       plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm);
 
-      // 5. Entra en modo-ruta en el mapa: polilinea + SOLO las paradas
-      // recomendadas (no la top-5 del corredor: el usuario pidio
+      // 5. Si hay paradas, pide a OSRM una SEGUNDA ruta que pase por las
+      // gasolineras como waypoints intermedios. Asi la polilinea en el mapa
+      // hace el desvio por cada gasolinera en vez de ignorarla. OSRM une los
+      // tramos en una sola polilinea; la cacheamos 24h junto a la directa.
+      var finalCoords = coords;
+      var finalTotalKm = totalKm;
+      if (planResult.stops.length > 0) {
+        stat.textContent = 'Dibujando ruta con paradas\u2026';
+        try {
+          var stopsParam = planResult.stops.map(function(stop) {
+            var ll = stationLatLng(stop.item);
+            return ll ? (ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6)) : '';
+          }).filter(function(s) { return s; }).join(';');
+          if (stopsParam) {
+            var routeWithStopsUrl = '/api/route?fromLat=' + fromSel.lat.toFixed(6)
+                                  + '&fromLng=' + fromSel.lng.toFixed(6)
+                                  + '&toLat=' + toSel.lat.toFixed(6)
+                                  + '&toLng=' + toSel.lng.toFixed(6)
+                                  + '&stops=' + encodeURIComponent(stopsParam);
+            var rr2 = await fetch(routeWithStopsUrl, { credentials: 'same-origin' });
+            if (rr2.ok) {
+              var route2 = await rr2.json();
+              if (route2 && Array.isArray(route2.coordinates) && route2.coordinates.length >= 2) {
+                finalCoords = route2.coordinates;
+                if (typeof route2.distanceKm === 'number') finalTotalKm = route2.distanceKm;
+              }
+            }
+            // Si falla la segunda llamada (rate limit, 503), caemos a la ruta
+            // directa: mejor ensenar algo razonable que bloquear al usuario.
+          }
+        } catch (e) { /* fallback silencioso a coords originales */ }
+      }
+
+      // 6. Entra en modo-ruta en el mapa: polilinea (posiblemente ya con
+      // waypoints) + SOLO las paradas recomendadas (el usuario pidio
       // explicitamente ver solo las que debe repostar).
-      enterRouteMode(coords, planResult.stops);
+      enterRouteMode(finalCoords, planResult.stops);
 
       // Actualiza el texto del banner flotante con informacion de la ruta.
       var barText = document.getElementById('route-mode-bar-text');
@@ -4002,10 +4035,10 @@ function exitRouteMode() {
         } else {
           stopsLabel = planResult.stops.length + ' paradas recomendadas';
         }
-        barText.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + stopsLabel;
+        barText.textContent = 'Ruta ' + finalTotalKm.toFixed(0) + ' km \u00B7 ' + stopsLabel;
       }
 
-      // 6. Cierra el modal para que el usuario vea el mapa con la ruta.
+      // 7. Cierra el modal para que el usuario vea el mapa con la ruta.
       closeRoute();
     } catch (err) {
       stat.textContent = 'Error al buscar. Prueba de nuevo.';

@@ -304,7 +304,8 @@ const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por I
 // mismo par origen/destino. Un atacante con muchas IPs podria convertirnos en
 // amplificador, pero el payload es pequeno (~1-5 KB) y la policy no castiga
 // volumen moderado.
-const routeLimiter  = new SlidingWindowLimiter(10,  60_000)  // 10 req/min por IP
+const routeLimiter  = new SlidingWindowLimiter(20,  60_000)  // 20 req/min por IP
+                                                              // (cada plan hace 2 llamadas: ruta directa + ruta con waypoints)
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
@@ -917,6 +918,26 @@ async function upstreamRoute(url: string): Promise<RouteResponse | null> {
   }
 }
 
+// Parsea el parametro `stops` = "lat1,lng1;lat2,lng2;..." con validaciones.
+// Devuelve array de {lat,lng} formateados con sanitizeLatLng o null si el
+// input es invalido. Limita a MAX_STOPS puntos intermedios (rutas reales
+// nunca necesitan muchos; 8 cubre hasta 4000-5000 km peninsula con holgura).
+const MAX_ROUTE_STOPS = 8
+function parseStops(raw: string | undefined): { lat: string; lng: string }[] | null {
+  if (!raw) return []
+  if (raw.length > 400) return null  // limite duro al query string
+  const out: { lat: string; lng: string }[] = []
+  const parts = raw.split(';')
+  if (parts.length > MAX_ROUTE_STOPS) return null
+  for (const p of parts) {
+    const [latStr, lngStr] = p.split(',')
+    const ll = sanitizeLatLng(latStr, lngStr)
+    if (!ll) return null
+    out.push(ll)
+  }
+  return out
+}
+
 app.get('/api/route', async c => {
   const rl = routeLimiter.check(clientKey(c))
   if (!rl.allowed) {
@@ -925,15 +946,23 @@ app.get('/api/route', async c => {
   const from = sanitizeLatLng(c.req.query('fromLat'), c.req.query('fromLng'))
   const to   = sanitizeLatLng(c.req.query('toLat'),   c.req.query('toLng'))
   if (!from || !to) return c.json({ error: 'coordenadas invalidas' }, 400)
+  const stops = parseStops(c.req.query('stops'))
+  if (stops === null) return c.json({ error: 'parametro stops invalido' }, 400)
   // Validacion extra: bounds de Espana (nominal con margen generoso). OSRM
   // funciona globalmente pero aqui acotamos al caso de uso del producto.
   const inSpain = (lat: number, lng: number) =>
     lat >= 26 && lat <= 45 && lng >= -20 && lng <= 6
   if (!inSpain(Number(from.lat), Number(from.lng))) return c.json({ error: 'origen fuera de Espana' }, 400)
   if (!inSpain(Number(to.lat), Number(to.lng)))     return c.json({ error: 'destino fuera de Espana' }, 400)
+  for (const s of stops) {
+    if (!inSpain(Number(s.lat), Number(s.lng))) return c.json({ error: 'parada fuera de Espana' }, 400)
+  }
   if (from.lat === to.lat && from.lng === to.lng)   return c.json({ error: 'origen = destino' }, 400)
 
-  const cacheKey = from.lat + ',' + from.lng + '-' + to.lat + ',' + to.lng
+  // Clave de cache: incluye paradas para que rutas con distintos waypoints
+  // no colisionen con la ruta directa.
+  const stopsKey = stops.map(s => s.lat + ',' + s.lng).join(';')
+  const cacheKey = from.lat + ',' + from.lng + '-' + to.lat + ',' + to.lng + (stopsKey ? '|' + stopsKey : '')
   const hit = routeCache.get(cacheKey)
   if (hit && Date.now() - hit.ts < ROUTE_TTL_FRESH) {
     return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'HIT' })
@@ -945,14 +974,18 @@ app.get('/api/route', async c => {
   // renderizan a escala calle sin perder fidelidad.
   const out = await cachedJson('route-v3-' + encodeURIComponent(cacheKey), 86400, async () => {
     // OSRM: coordenadas en orden lng,lat (GeoJSON convention).
+    // Cadena de waypoints: from;stop1;stop2;...;to. OSRM devuelve una sola
+    // polilinea que pasa por todos ellos, con la distancia/duracion totales.
     // overview=full: geometria sin simplificar. Para rutas peninsulares devuelve
     // 3k-15k puntos que caben bajo el cap de 20k en upstreamRoute(). Necesario
     // para que la polilinea siga las curvas reales de la carretera a cualquier
     // zoom (con 'simplified' Leaflet conectaba puntos espaciados con rectas
     // que cruzaban autovias en diagonal).
-    const url = 'https://router.project-osrm.org/route/v1/driving/'
-      + encodeURIComponent(from.lng) + ',' + encodeURIComponent(from.lat) + ';'
-      + encodeURIComponent(to.lng)   + ',' + encodeURIComponent(to.lat)
+    const waypoints: { lat: string; lng: string }[] = [from, ...stops, to]
+    const coordsStr = waypoints
+      .map(w => encodeURIComponent(w.lng) + ',' + encodeURIComponent(w.lat))
+      .join(';')
+    const url = 'https://router.project-osrm.org/route/v1/driving/' + coordsStr
       + '?overview=full&geometries=geojson&alternatives=false&steps=false'
     return await upstreamRoute(url)
   })

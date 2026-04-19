@@ -15,6 +15,13 @@ permissions:
   actions: read             # para leer el artefacto de otro workflow_run
   deployments: write        # para que la UI muestre el deploy en "Environments"
 
+# Fuerza al runner a ejecutar las JS actions sobre Node 24. Node 20 queda
+# deprecado en junio 2026; con esto evitamos el warning "deprecated" en los
+# logs sin esperar a que cada action publique una version @v5 compatible.
+# Ref: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # Evita deploys concurrentes pisandose. Si entra otro push mientras este corre,
 # el nuevo cancela al antiguo (queremos el ultimo commit en prod, no mezcla).
 concurrency:

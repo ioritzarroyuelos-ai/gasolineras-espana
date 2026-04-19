@@ -5,12 +5,17 @@
 # forasteros, 404 generico, endpoints del Ministerio y de geocoding.
 #
 # Uso:
-#   # Con token desde variable de entorno (recomendado)
-#   $env:HEALTH_ADMIN_TOKEN = 'a7f5d80198654695a22cdab905e3ae973c8ee22cc0914c48ad1fe888b7d817e5'
+#   # Normal: el script carga el token desde .dev.vars (gitignored) automaticamente.
 #   .\scripts\verify-prod.ps1
 #
-#   # O pasandolo como parametro
-#   .\scripts\verify-prod.ps1 -Token 'TU_TOKEN' -BaseUrl 'https://webapp-3ft.pages.dev'
+#   # O pasandolo como parametro / variable de entorno:
+#   .\scripts\verify-prod.ps1 -Token 'TU_TOKEN'
+#   $env:HEALTH_ADMIN_TOKEN = 'TU_TOKEN'; .\scripts\verify-prod.ps1
+#
+# Para regenerar token en prod:
+#   $t = node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+#   echo $t | npx wrangler pages secret put HEALTH_ADMIN_TOKEN --project-name=webapp
+#   # Actualiza .dev.vars con el mismo valor.
 #
 # Compatible con Windows PowerShell 5.1 y PowerShell 7+.
 # El script imprime [PASS]/[FAIL] por cada comprobacion y un resumen al final.
@@ -21,6 +26,23 @@ param(
   [string]$BaseUrl = 'https://webapp-3ft.pages.dev',
   [string]$Token   = $env:HEALTH_ADMIN_TOKEN
 )
+
+# Auto-load .dev.vars (gitignored) si no se ha pasado token explicito ni variable
+# de entorno. Asi el script funciona "out of the box" despues de clonar el repo
+# y crear el .dev.vars local, sin tener que exportar nada cada vez.
+if (-not $Token) {
+  $devVarsPath = Join-Path $PSScriptRoot '..\.dev.vars'
+  if (Test-Path $devVarsPath) {
+    foreach ($line in Get-Content $devVarsPath) {
+      $trimmed = $line.Trim()
+      if ($trimmed -and -not $trimmed.StartsWith('#') -and $trimmed -match '^([^=]+)=(.*)$') {
+        $key = $matches[1].Trim()
+        $val = $matches[2].Trim().Trim('"').Trim("'")
+        if ($key -eq 'HEALTH_ADMIN_TOKEN' -and $val) { $Token = $val; break }
+      }
+    }
+  }
+}
 
 $ErrorActionPreference = 'Continue'
 $script:pass = 0
@@ -105,7 +127,10 @@ else {
 Write-Host ""
 Write-Host "[2] /api/health (con X-Admin-Token)" -ForegroundColor Cyan
 if (-not $Token) {
-  Warn "sin token definido (exporta HEALTH_ADMIN_TOKEN o pasa -Token)"
+  # Sin token no podemos ejecutar esta prueba, pero tampoco es un fallo
+  # de produccion (la constant-time comparison se valida en [3]). Lo marcamos
+  # como informativo para no inflar el contador de warnings.
+  Info "test omitido: define HEALTH_ADMIN_TOKEN en .dev.vars o pasa -Token para activarlo"
 } else {
   $r = Get-Resp -Url "$BaseUrl/api/health" -Headers @{ 'X-Admin-Token' = $Token }
   if (-not $r) { Bad "sin respuesta" }

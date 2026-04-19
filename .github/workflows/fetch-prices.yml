@@ -18,12 +18,8 @@ concurrency:
   group: fetch-prices
   cancel-in-progress: false
 
-# Fuerza al runner a ejecutar las JS actions sobre Node 24. Node 20 queda
-# deprecado en junio 2026; con esto evitamos el warning "deprecated" en los
-# logs sin esperar a que cada action publique una version @v5 compatible.
-# Ref: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# Actions pineadas a versiones Node 24: checkout@v5 y setup-node@v5. El deploy
+# usa `npx wrangler` directamente (no hay dependencia con wrangler-action).
 
 jobs:
   fetch:
@@ -39,9 +35,9 @@ jobs:
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
 
@@ -81,7 +77,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main  # el commit recien pusheado por el bot
 
@@ -97,7 +93,7 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         if: steps.secrets.outputs.present == 'true'
         with:
           node-version: '20'
@@ -133,7 +129,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
 
       - name: Verificar frescura del snapshot

@@ -29,21 +29,19 @@ concurrency:
 permissions:
   contents: read
 
-# Fuerza al runner a ejecutar las JS actions sobre Node 24. Node 20 queda
-# deprecado en junio 2026; con esto evitamos el warning "deprecated" en los
-# logs sin esperar a que cada action publique una version @v5 compatible.
-# Ref: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+# Actions pineadas a Node 24: checkout@v5, setup-node@v5. Gitleaks se instala
+# como binario nativo (la action oficial aun corre en Node 20). OSV-Scanner
+# corre en Docker (inmune a la deprecacion). CodeQL upload-sarif@v3 ya es
+# Node 24 nativo.
 
 jobs:
   npm-audit:
     name: npm audit (high+critical)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'npm'
@@ -60,19 +58,30 @@ jobs:
     name: gitleaks (secret scan)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           # Historial completo: queremos detectar secretos en commits antiguos
           # que alguien podria rotar sin limpiar el git log.
           fetch-depth: 0
 
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      # Instalamos el binario de gitleaks directamente en vez de usar
+      # gitleaks/gitleaks-action@v2 (que aun corre en Node 20). Asi evitamos la
+      # deprecacion sin perder funcionalidad. Pineamos la version para que un
+      # release sorpresa no rompa silenciosamente el scan.
+      - name: Install gitleaks (binary)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # GITLEAKS_LICENSE no es necesario para repos publicos.
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
-          GITLEAKS_ENABLE_SUMMARY: true
+          GITLEAKS_VERSION: '8.29.0'
+        run: |
+          set -euo pipefail
+          curl -sSLf "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Gitleaks scan (fail on any finding)
+        # --redact oculta el valor del secret en los logs (metadatos y path si,
+        # valor no). --no-banner silencia el ASCII art. Exit 1 si hay hallazgos.
+        run: gitleaks detect --source . --verbose --redact --no-banner
 
   osv-scan:
     name: OSV-Scanner (CVE lockfile)
@@ -83,10 +92,10 @@ jobs:
       actions: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run OSV-Scanner
-        uses: google/osv-scanner-action/osv-scanner-action@v2.0.0
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.5
         with:
           scan-args: |-
             --recursive

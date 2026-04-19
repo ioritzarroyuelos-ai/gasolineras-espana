@@ -1,0 +1,14 @@
+# Fingerprints de hallazgos conocidos de gitleaks que NO representan un
+# secret activo. Formato: <commit>:<file>:<rule>:<line>
+#
+# IMPORTANTE: cada entrada debe justificarse. Borrar aqui solo cuando el
+# objeto deje de ser alcanzable (git filter-repo + force push).
+
+# Token HEALTH_ADMIN_TOKEN que quedo hardcodeado en verify-prod.ps1 al
+# introducir el script. ROTADO el 2026-04-19 via `wrangler pages secret put`
+# inmediatamente despues de detectarlo; el valor historico es inservible
+# (la siguiente version en prod tiene un token distinto). Se mantiene en
+# .gitleaksignore en lugar de reescribir historia porque:
+#   - rotacion ya bloquea el uso del token,
+#   - force-push sobre main requiere coordinar con cualquier fork/clon.
+f64fc9455c8be23c1411d104b0e2e300796f1173:scripts/verify-prod.ps1:generic-api-key:9

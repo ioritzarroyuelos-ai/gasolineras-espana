@@ -125,10 +125,13 @@ export function getStyles(): string {
     .card-time    { font-size:10px; color:#94a3b8; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
     /* ===== EMPTY STATE ===== */
-    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:24px; color:#94a3b8; }
-    .empty-state .icon { font-size:48px; margin-bottom:12px; }
+    /* Empty state: el color base era #94a3b8 que falla contraste WCAG AA
+       (2.56:1) para el <small>. Usamos #64748b que pasa (4.6:1) y armoniza
+       con el <p> que ya usaba ese valor. */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:24px; color:#64748b; }
+    .empty-state .icon { font-size:48px; margin-bottom:12px; color:#94a3b8; }
     .empty-state p { font-size:14px; font-weight:500; color:#64748b; }
-    .empty-state small { font-size:12px; margin-top:4px; }
+    .empty-state small { font-size:12px; margin-top:4px; color:#64748b; }
 
     /* ===== LOADING OVERLAY ===== */
     #loading {

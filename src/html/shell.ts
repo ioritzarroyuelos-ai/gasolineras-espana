@@ -445,7 +445,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     </div>
 
     <!-- LISTA -->
-    <div id="station-list" role="list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
+    <div id="station-list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
       <div class="empty-state">
         <div class="icon" aria-hidden="true">&#x1F5FA;&#xFE0F;</div>
         <p>Selecciona una provincia</p>
@@ -562,7 +562,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <i class="far fa-star" aria-hidden="true"></i>
           Aun no tienes favoritas. Pulsa la estrella en el popup de una gasolinera para guardarla.
         </div>
-        <div id="favs-list" role="list"></div>
+        <div id="favs-list"></div>
       </div>
 
       <!-- Alertas: navegador -->

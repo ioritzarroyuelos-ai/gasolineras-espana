@@ -70,12 +70,30 @@ jobs:
       # `migrations apply` es idempotente: compara con la tabla interna
       # d1_migrations y solo ejecuta los .sql nuevos. Si no hay pendientes,
       # termina en ~2s sin tocar datos. Es seguro correrlo en cada deploy.
+      #
+      # Requiere que CLOUDFLARE_API_TOKEN tenga el permiso "Workers D1: Edit"
+      # (el de "Pages: Edit" no basta para D1). Si el token no lo tiene, el
+      # comando retorna code 7403; el script lo convierte en warning y deja
+      # el deploy continuar. Cuando llegue una migracion schema-breaking, el
+      # smoke test /api/health fallara y el deploy quedara rojo — asi el
+      # drift nunca llega silencioso a prod.
       - name: Aplicar migraciones D1 pendientes
         env:
           CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          npx --yes wrangler@4 d1 migrations apply gasolineras-history --remote
+          set +e
+          OUT=$(npx --yes wrangler@4 d1 migrations apply gasolineras-history --remote 2>&1)
+          RC=$?
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            if echo "$OUT" | grep -q 'code: 7403'; then
+              echo "::warning::D1 migrations skipped: CLOUDFLARE_API_TOKEN sin permiso 'Workers D1: Edit'. Regenera el token con ambos permisos (Pages + D1) y vuelve a guardarlo en GHA. El deploy de assets continua."
+              exit 0
+            fi
+            echo "::error::wrangler d1 migrations apply fallo con exit $RC"
+            exit $RC
+          fi
 
       # wrangler-action@v3 aun corre en Node 20. Como `npx wrangler` ya existe
       # en el runner, lo llamamos directamente: mismo resultado sin JS action

@@ -131,10 +131,24 @@ Cosas que **no** se automatizan porque son one-shot o requieren credenciales nue
 
 1. `npx wrangler d1 create gasolineras-history` + pegar `database_id` en `wrangler.jsonc`
 2. Secretos en Cloudflare Pages y GitHub Actions:
-   - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GHA → deploy)
+   - `CLOUDFLARE_API_TOKEN` (GHA) con permisos **Cloudflare Pages: Edit** + **Workers D1: Edit** (sin D1 el step de migraciones queda en warning en cada deploy).
+   - `CLOUDFLARE_ACCOUNT_ID` (GHA)
    - `CRON_TOKEN` (Pages + GHA, mismo valor)
    - `HEALTH_ADMIN_TOKEN` (Pages, opcional)
 3. Primer `npm run backfill:d1` + `wrangler d1 execute ... --file=migrations/9999_backfill.sql --remote` si quieres historico previo al primer cron-ingest
+
+**Regenerar el API token con permisos D1** (si el step `Aplicar migraciones D1 pendientes` de Deploy queda amarillo):
+
+```
+Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token
+  Permissions:
+    - Account | Cloudflare Pages     | Edit
+    - Account | Workers Scripts      | Edit   (opcional, para deploy directo)
+    - Account | D1                   | Edit   ← imprescindible para migraciones
+  Account Resources: Include | Specific account | <tu cuenta>
+  Zone Resources:    All zones from an account
+→ Copia el token y sobrescribe GHA repo secret CLOUDFLARE_API_TOKEN
+```
 
 ## Historico de precios (D1)
 

@@ -597,15 +597,9 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <div id="route-to-sug" class="route-sug" role="listbox"></div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="route-fuel-level">Combustible al salir</label>
-        <select id="route-fuel-level" class="form-input">
-          <option value="1.00">Dep&oacute;sito lleno</option>
-          <option value="0.75">3/4 (75%)</option>
-          <option value="0.50" selected>Medio (50%)</option>
-          <option value="0.25">1/4 (25%)</option>
-          <option value="0.10">Reserva (10%)</option>
-        </select>
-        <p class="form-help" id="route-autonomy-lbl">Configura tu coche en el perfil para calcular autonom&iacute;a.</p>
+        <label class="form-label" for="route-range-km">Autonom&iacute;a actual del coche (km)</label>
+        <input id="route-range-km" class="form-input" type="number" min="20" max="2000" step="10" value="500" inputmode="numeric" />
+        <p class="form-help" id="route-autonomy-lbl">Cu&aacute;ntos km puedes conducir antes de parar a repostar. Si sales con el dep&oacute;sito lleno, pon la autonom&iacute;a m&aacute;xima de tu coche.</p>
       </div>
       <div class="form-group">
         <label class="form-label" for="route-width">Ancho del corredor (desv&iacute;o m&aacute;ximo)</label>

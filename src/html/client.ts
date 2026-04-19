@@ -3476,8 +3476,7 @@ if ('serviceWorker' in navigator) {
   var sugTo     = document.getElementById('route-to-sug');
   var inWidth   = document.getElementById('route-width');
   var lblWidth  = document.getElementById('route-width-lbl');
-  var inFuel    = document.getElementById('route-fuel-level');
-  var lblAuto   = document.getElementById('route-autonomy-lbl');
+  var inRange   = document.getElementById('route-range-km');
   var stat      = document.getElementById('route-status');
   var plan      = document.getElementById('route-plan');
   var res       = document.getElementById('route-results');
@@ -3488,39 +3487,16 @@ if ('serviceWorker' in navigator) {
   var fromSel = null;
   var toSel   = null;
 
-  // Defaults conservadores si el perfil esta vacio. 50L + 6.5 L/100km es un
-  // coche medio (Seat Leon, Peugeot 308, etc.). Prefiero subestimar la
-  // autonomia que sobrestimarla.
-  var DEFAULT_TANK = 50;
-  var DEFAULT_CONS = 6.5;
-
-  function readVehicle() {
+  // Si el perfil tiene tank + consumo, precarga la autonomia maxima como
+  // valor inicial del input. Si no, deja el 500 del HTML como default.
+  function prefillRangeFromProfile() {
     var p = getProfile() || {};
-    // El perfil guarda 'consumo' (no 'consumoL100km'). El sidebar tambien
-    // mantiene 'gs_tank' como fuente secundaria por si el usuario solo
-    // tocara el slider del sidebar sin abrir el modal del perfil.
     var tank = p.tank;
     var cons = (typeof p.consumo === 'number') ? p.consumo : p.consumoL100km;
-    var usedDefault = false;
-    if (typeof tank !== 'number' || !isFinite(tank) || tank <= 0) {
-      var sidebarTank = parseInt(localStorage.getItem('gs_tank') || '0', 10);
-      if (sidebarTank > 0) { tank = sidebarTank; }
-      else { tank = DEFAULT_TANK; usedDefault = true; }
+    if (typeof tank === 'number' && tank > 0 && typeof cons === 'number' && cons > 0) {
+      var km = Math.round((tank / cons) * 100);
+      if (km > 0 && km < 2000) inRange.value = String(km);
     }
-    if (typeof cons !== 'number' || !isFinite(cons) || cons <= 0) { cons = DEFAULT_CONS; usedDefault = true; }
-    return { tank: tank, cons: cons, usedDefault: usedDefault };
-  }
-
-  function updateAutonomyLabel() {
-    var v = readVehicle();
-    var maxKm = Math.round((v.tank / v.cons) * 100);
-    var pct = parseFloat(inFuel.value);
-    var curKm = Math.round(maxKm * pct);
-    var note = v.usedDefault
-      ? ' (usando valores por defecto: ' + v.tank + ' L, ' + v.cons.toFixed(1) + ' L/100km \u2014 configura tu coche en el perfil)'
-      : '';
-    lblAuto.textContent = 'Autonom\u00EDa: ' + maxKm + ' km con dep\u00F3sito lleno \u00B7 '
-                       + curKm + ' km con el nivel actual.' + note;
   }
 
   function openRoute() {
@@ -3528,7 +3504,7 @@ if ('serviceWorker' in navigator) {
     plan.innerHTML = '';
     stat.textContent = '';
     stat.classList.remove('error');
-    updateAutonomyLabel();
+    prefillRangeFromProfile();
     modal.classList.add('show');
     setTimeout(function(){ inFrom && inFrom.focus(); }, 50);
   }
@@ -3545,40 +3521,57 @@ if ('serviceWorker' in navigator) {
   inWidth.addEventListener('input', function() {
     lblWidth.textContent = inWidth.value + ' km';
   });
-  inFuel.addEventListener('change', updateAutonomyLabel);
 
   // Debounced geocoder search — reusa /api/geocode/search (Nominatim proxy).
-  // Cada input tiene su propio timer para evitar llamadas cruzadas.
+  // Cada input tiene su propio timer para evitar llamadas cruzadas. Umbral
+  // bajo (2 chars, 180ms) para que las sugerencias aparezcan mientras el
+  // usuario escribe, sin saturar Nominatim — el server tiene cache y rate
+  // limit propio para ese caso. Si el usuario escribe la misma consulta de
+  // golpe ('Madrid'), el cache del server devuelve sin golpear Nominatim.
   function makeGeoSearch(input, container, onPick) {
     var timer = null;
+    var lastQ = '';
     function hide() { container.classList.remove('show'); container.innerHTML = ''; }
+    function runSearch(q) {
+      if (q === lastQ) return;  // dedupe
+      lastQ = q;
+      fetch('/api/geocode/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(data) {
+          if (input.value.trim() !== q) return;  // el usuario ya cambio el texto
+          if (!data || !Array.isArray(data) || data.length === 0) { hide(); return; }
+          var html = data.slice(0, 5).map(function(item) {
+            var lat = parseFloat(item.lat);
+            var lon = parseFloat(item.lon);
+            var name = item.display_name || '';
+            return '<div class="route-sug-item" data-lat="' + lat + '" data-lng="' + lon + '">'
+                 + esc(name.length > 70 ? name.slice(0, 70) + '\u2026' : name)
+                 + '</div>';
+          }).join('');
+          container.innerHTML = html;
+          container.classList.add('show');
+        }).catch(hide);
+    }
     input.addEventListener('input', function() {
       var q = input.value.trim();
       // Usuario modifica el texto -> invalida seleccion previa
       onPick(null);
       if (timer) clearTimeout(timer);
-      if (q.length < 3) { hide(); return; }
-      timer = setTimeout(function() {
-        fetch('/api/geocode/search?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(data) {
-            if (!data || !Array.isArray(data) || data.length === 0) { hide(); return; }
-            var html = data.slice(0, 5).map(function(item) {
-              var lat = parseFloat(item.lat);
-              var lon = parseFloat(item.lon);
-              var name = item.display_name || '';
-              return '<div class="route-sug-item" data-lat="' + lat + '" data-lng="' + lon + '">'
-                   + esc(name.length > 70 ? name.slice(0, 70) + '\u2026' : name)
-                   + '</div>';
-            }).join('');
-            container.innerHTML = html;
-            container.classList.add('show');
-          }).catch(hide);
-      }, 300);
+      if (q.length < 2) { hide(); lastQ = ''; return; }
+      timer = setTimeout(function() { runSearch(q); }, 180);
     });
-    container.addEventListener('click', function(e) {
+    // Al hacer focus en un input con texto >=2 chars, re-mostrar sugerencias
+    // sin esperar a teclear mas.
+    input.addEventListener('focus', function() {
+      var q = input.value.trim();
+      if (q.length >= 2) runSearch(q);
+    });
+    container.addEventListener('mousedown', function(e) {
+      // mousedown (no click) previene que el blur del input se dispare antes
+      // de poder registrar la seleccion.
       var it = e.target.closest('.route-sug-item');
       if (!it) return;
+      e.preventDefault();
       var lat = parseFloat(it.getAttribute('data-lat'));
       var lng = parseFloat(it.getAttribute('data-lng'));
       if (!isNaN(lat) && !isNaN(lng)) {
@@ -3717,19 +3710,17 @@ if ('serviceWorker' in navigator) {
     };
   }
 
-  function renderPlanSection(plan_result, fuelLabel, vehicle) {
-    var autoMax = Math.round(plan_result.maxAutonomyKm);
-    var autoInit = Math.round(plan_result.initialRangeKm);
+  function renderPlanSection(plan_result, fuelLabel, autonomyKm) {
     var header = '<div class="route-plan-title">&#x26FD; Plan de repostajes</div>'
-               + '<div class="route-plan-subtitle">Autonom\u00EDa inicial: ' + autoInit + ' km / ' + autoMax + ' km total</div>';
+               + '<div class="route-plan-subtitle">Autonom\u00EDa: ' + Math.round(autonomyKm) + ' km</div>';
 
     if (plan_result.unreachable) {
       return header + '<div class="route-plan-warning">\u26A0\uFE0F No hay gasolineras alcanzables desde tu posici\u00F3n. '
-           + 'Sal con m\u00E1s combustible o elige un corredor m\u00E1s ancho.</div>';
+           + 'Aumenta la autonom\u00EDa declarada o elige un corredor m\u00E1s ancho.</div>';
     }
     if (plan_result.stops.length === 0) {
       return header + '<div class="route-plan-success">\u2705 No necesitas repostar. '
-           + 'Puedes completar la ruta con el combustible actual.</div>';
+           + 'Puedes completar la ruta con la autonom\u00EDa actual.</div>';
     }
     var itemsHtml = plan_result.stops.map(function(stop, i) {
       var s = stop.item;
@@ -3751,11 +3742,7 @@ if ('serviceWorker' in navigator) {
         + '</div>'
         + '</a>';
     }).join('');
-    var cost = plan_result.totalCostEur;
-    var costLine = cost > 0
-      ? '<div class="route-plan-subtitle">Gasto estimado en ruta: ' + cost.toFixed(2) + ' \u20AC (' + fuelLabel + ')</div>'
-      : '';
-    return header + itemsHtml + costLine;
+    return header + itemsHtml;
   }
 
   async function doSearch() {
@@ -3764,6 +3751,16 @@ if ('serviceWorker' in navigator) {
       stat.classList.add('error');
       return;
     }
+    // Autonomia declarada por el usuario (km). Unico parametro del coche que
+    // usamos: planFuelStops asume que al repostar se rellena a esta misma
+    // autonomia — simplificacion razonable para "planifica mi ruta".
+    var autonomyKm = parseInt(inRange.value, 10);
+    if (!isFinite(autonomyKm) || autonomyKm < 20) {
+      stat.textContent = 'Pon una autonom\u00EDa v\u00E1lida (20\u20132000 km).';
+      stat.classList.add('error');
+      return;
+    }
+    if (autonomyKm > 2000) autonomyKm = 2000;  // sanity cap
     stat.classList.remove('error');
     stat.textContent = 'Cargando estaciones del trayecto\u2026';
     plan.innerHTML = '';
@@ -3771,8 +3768,6 @@ if ('serviceWorker' in navigator) {
     var width = parseInt(inWidth.value, 10);
     var fuel = document.getElementById('sel-combustible').value;
     var fuelLabel = (document.getElementById('sel-combustible').selectedOptions[0].text) || fuel;
-    var fuelPct = parseFloat(inFuel.value);
-    var vehicle = readVehicle();
 
     try {
       // 1. Bbox → /api/estaciones/bbox. Cubre todas las provincias intermedias.
@@ -3823,17 +3818,24 @@ if ('serviceWorker' in navigator) {
         return;
       }
 
-      // 3. Planifica paradas con el perfil del coche + nivel actual.
+      // 3. Planifica paradas usando la autonomia declarada por el usuario.
+      // planFuelStops internamente modela tank + consumo. Construimos un par
+      // ficticio (tank=50L, consumo derivado) que produce maxAutonomyKm =
+      // autonomyKm declarado. Esto es equivalente a "autonomia directa" para
+      // el proposito del planificador; el coste en € no se muestra al usuario
+      // porque no conocemos el consumo real.
+      var fakeTank = 50;
+      var fakeCons = (fakeTank * 100) / autonomyKm;  // L/100km tal que tank/cons*100 = autonomyKm
       var planResult = planFuelStops({
         routeKm: totalKm,
-        tankL: vehicle.tank,
-        consumoL100km: vehicle.cons,
-        currentFuelPct: fuelPct,
+        tankL: fakeTank,
+        consumoL100km: fakeCons,
+        currentFuelPct: 1.0,  // asumimos salida con la autonomia declarada completa
         stations: corridor
       });
 
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor.';
-      plan.innerHTML = renderPlanSection(planResult, fuelLabel, vehicle);
+      plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm);
 
       // 4. Secundario: top-5 mas baratas en el corredor (por si el usuario
       // quiere comparar o modificar la ruta).

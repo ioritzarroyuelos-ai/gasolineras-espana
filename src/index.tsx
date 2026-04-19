@@ -8,6 +8,7 @@ import {
   sanitizeLatLng,
   originAllowed,
   SlidingWindowLimiter,
+  tokensEqualConstTime,
 } from './lib/pure'
 import { APP_VERSION } from './lib/version'
 import {
@@ -42,10 +43,14 @@ type SnapshotMeta = {
 // ASSETS: binding automatico de Cloudflare Pages (sirve /public).
 // TURNSTILE_SITE_KEY / TURNSTILE_SECRET_KEY: opcionales. Si estan, /api/ingest
 //   exige token valido. Si faltan, el reto se omite (modo dev sin cuenta Cloudflare).
+// HEALTH_ADMIN_TOKEN: si se define, /api/health solo devuelve detalle (snapshot,
+//   cache sizes) cuando la peticion trae 'X-Admin-Token: <valor>'. Sin header,
+//   devuelve solo { ok, ts }. Sin env var, devuelve todo (modo dev).
 type Env = {
   ASSETS?: { fetch: (req: Request) => Promise<Response> }
   TURNSTILE_SITE_KEY?: string
   TURNSTILE_SECRET_KEY?: string
+  HEALTH_ADMIN_TOKEN?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -93,7 +98,55 @@ const GEO_TTL_STALE = 7  * 24 * 60 * 60 * 1000   // 7d si Nominatim cae
 const GEO_UPSTREAM_TIMEOUT = 5000                 // 5s corte al upstream para evitar slowloris
 // User-Agent identificable exigido por la Nominatim Usage Policy.
 // https://operations.osmfoundation.org/policies/nominatim/
-const GEO_USER_AGENT = 'gasolineras-espana/' + APP_VERSION + ' (+https://gasolineras.pages.dev/privacidad)'
+// El hostname se construye en runtime desde el request para evitar hardcode del
+// deployment URL.
+function buildUserAgent(host: string): string {
+  const h = (host && /^[a-zA-Z0-9.-]+$/.test(host)) ? host : 'pages.dev'
+  return 'gasolineras-espana/' + APP_VERSION + ' (+https://' + h + '/privacidad)'
+}
+
+// ---- CLOUDFLARE CACHE API (cache global compartido entre instancias) ----
+// El LRU in-memory es por-instancia: cada Worker arranca vacio. El Cache API
+// sobrevive entre fries y es compartido dentro de un colo → absorbe el grueso
+// del trafico sin golpear ni a la LRU ni al upstream. Se combina con el LRU:
+// LRU (instance-local, microsegundos) → Cache (colo, milisegundos) → upstream.
+// Las claves son URLs sinteticas para no chocar con recursos reales.
+function cfCache(): Cache | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const c = (caches as any)?.default
+    return c && typeof c.match === 'function' ? c : null
+  } catch { return null }
+}
+
+async function cachedJson<T>(key: string, ttlSec: number, fn: () => Promise<T>): Promise<T> {
+  const cache = cfCache()
+  const cacheUrl = 'https://cache.internal/' + key
+  const req = new Request(cacheUrl, { method: 'GET' })
+  if (cache) {
+    try {
+      const hit = await cache.match(req)
+      if (hit) {
+        const body = await hit.json() as T
+        return body
+      }
+    } catch { /* cache miss silencioso */ }
+  }
+  const data = await fn()
+  if (cache) {
+    try {
+      const res = new Response(JSON.stringify(data), {
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=' + ttlSec,
+        },
+      })
+      // No esperamos al put: respondemos al cliente ya y poblamos cache en background.
+      cache.put(req, res).catch(() => {})
+    } catch { /* put fallido: siguiente request lo intentara de nuevo */ }
+  }
+  return data
+}
 
 // Selecciona el schema zod apropiado segun la URL del Ministerio. Si no casa
 // con ninguno conocido devuelve null → salta validacion (datos pasan tal cual
@@ -172,9 +225,26 @@ function filterStations(snapshot: MinistryResponse | null, predicate: (s: Statio
 }
 
 // ---- CORS / ANTI-HOTLINK ----
-const ALLOWED_ORIGINS = new Set<string>([
-  'https://gasolineras.pages.dev',
-])
+// El allowlist explicito quedaba redundante con la regla de originAllowed() que
+// acepta cualquier subdominio *.pages.dev (dondoe vive el deploy) + localhost
+// (dev) + el propio host. Mantenerlo vacio deja la logica canonica en pure.ts y
+// evita hardcodear la URL de produccion en el codigo (todo derivable del request).
+const ALLOWED_ORIGINS: ReadonlySet<string> = new Set<string>()
+
+// Resuelve el hostname del request. Priorizamos el header Host (Cloudflare lo
+// inyecta siempre) y caemos a parsear c.req.url. El resultado se usa para
+// construir URLs canonicas (security.txt, robots, sitemap) sin hardcodear el
+// dominio de produccion.
+function resolveHost(c: { req: { header: (h: string) => string | undefined; url: string } }): string {
+  const h = c.req.header('host')
+  if (h && /^[a-zA-Z0-9.:\-]+$/.test(h)) return h
+  try { return new URL(c.req.url).host } catch { return 'localhost' }
+}
+function resolveScheme(c: { req: { header: (h: string) => string | undefined; url: string } }): string {
+  const proto = c.req.header('x-forwarded-proto')
+  if (proto === 'http' || proto === 'https') return proto
+  try { return new URL(c.req.url).protocol.replace(':', '') || 'https' } catch { return 'https' }
+}
 
 // ---- RATE LIMITING ----
 // Protege endpoints de consumo (evita que alguien martillee y agote el free tier
@@ -188,6 +258,10 @@ const ingestLimiter = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min p
 // que aqui somos mas estrictos: cache cubre el trafico normal y aun asi cada IP
 // puede pedir 15/min de cache-miss antes de ser bloqueada.
 const geoLimiter    = new SlidingWindowLimiter(15,  60_000)  // 15 req/min por IP
+// CSP report-uri: los navegadores pueden mandar muchos reports en rafaga
+// (varios por pageload si hay un XSS encadenado). Rate-limit agresivo para
+// evitar DoS via spam de informes desde navegador malicioso.
+const cspLimiter    = new SlidingWindowLimiter(30,  60_000)  // 30 reports/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   return c.req.header('cf-connecting-ip')
@@ -261,6 +335,12 @@ function buildCsp(nonce: string, turnstile = false): string {
     "form-action 'self'",
     "object-src 'none'",
     "upgrade-insecure-requests",
+    // Report-uri es legacy pero aun lo usan la mayoria de navegadores; report-to
+    // requiere un header Reporting-Endpoints complementario que tambien emitimos.
+    // Cualquier violacion (XSS intentado, recurso no autorizado) llega a nuestro
+    // endpoint /api/csp-report donde se lo loguea estructuradamente.
+    "report-uri /api/csp-report",
+    "report-to csp-endpoint",
   ].join('; ')
 }
 
@@ -300,12 +380,18 @@ function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> 
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
-    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()',
     'Cross-Origin-Opener-Policy': 'same-origin',
+    // CORP: impide que terceros embeban nuestras respuestas via <img>/<script>/
+    // etc desde otro origen. Reduce clases de side-channel como Spectre-web.
+    'Cross-Origin-Resource-Policy': 'same-origin',
     // HSTS: pages.dev ya fuerza HTTPS pero publicamos este header para que
     // navegadores y scanners de cumplimiento confirmen la postura. 2 anios +
     // subdominios. Sin preload porque eso afectaria a todo pages.dev.
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
+    // Reporting API: el mapa de endpoints para que los navegadores envien
+    // violaciones de CSP (v3). Complementa report-uri (v2 legacy).
+    'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'no-store',
     'Link': [
       '<https://sedeaplicaciones.minetur.gob.es>; rel=preconnect',
@@ -363,8 +449,8 @@ function buildSecurityTxt(host: string, scheme: string): string {
   ].join('\n')
 }
 app.get('/.well-known/security.txt', c => {
-  const host   = c.req.header('host') || 'gasolineras.pages.dev'
-  const scheme = c.req.header('x-forwarded-proto') || 'https'
+  const host   = resolveHost(c)
+  const scheme = resolveScheme(c)
   return c.text(buildSecurityTxt(host, scheme), 200, {
     'Content-Type': 'text/plain; charset=utf-8',
     'Cache-Control': 'public, max-age=86400',
@@ -374,8 +460,8 @@ app.get('/security.txt', c => c.redirect('/.well-known/security.txt', 301))
 
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {
-  const host = c.req.header('host') || 'gasolineras.pages.dev'
-  const scheme = c.req.header('x-forwarded-proto') || 'https'
+  const host = resolveHost(c)
+  const scheme = resolveScheme(c)
   const body = [
     'User-agent: *',
     'Allow: /',
@@ -389,8 +475,8 @@ app.get('/robots.txt', c => {
 
 // ---- SEO: sitemap.xml (home + 52 provincias + privacidad) ----
 app.get('/sitemap.xml', c => {
-  const host = c.req.header('host') || 'gasolineras.pages.dev'
-  const scheme = c.req.header('x-forwarded-proto') || 'https'
+  const host = resolveHost(c)
+  const scheme = resolveScheme(c)
   const base = scheme + '://' + host
   const today = new Date().toISOString().slice(0, 10)
   const entries: string[] = []
@@ -543,12 +629,12 @@ function pickSearchItem(raw: unknown): Record<string, unknown> | null {
   return out
 }
 
-async function upstreamGeo<T>(url: string): Promise<T | null> {
+async function upstreamGeo<T>(url: string, host: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
       signal: AbortSignal.timeout(GEO_UPSTREAM_TIMEOUT),
       headers: {
-        'User-Agent': GEO_USER_AGENT,
+        'User-Agent': buildUserAgent(host),
         'Accept-Language': 'es,en',
       },
     })
@@ -577,11 +663,19 @@ app.get('/api/geocode/search', async c => {
     return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'HIT' })
   }
 
-  const url = 'https://nominatim.openstreetmap.org/search?'
-    + 'format=json&limit=5&countrycodes=es&q=' + encodeURIComponent(q)
-  const raw = await upstreamGeo<unknown>(url)
+  const host = c.req.header('host') || ''
+  // cachedJson wrappea el Cache API de Cloudflare: la siguiente peticion al
+  // mismo colo se resuelve sin volver a golpear Nominatim aunque el Worker se
+  // haya reiniciado. TTL 1h es suficiente para direcciones espanolas.
+  const safe = await cachedJson('geo-search-' + encodeURIComponent(cacheKey), 3600, async () => {
+    const url = 'https://nominatim.openstreetmap.org/search?'
+      + 'format=json&limit=5&countrycodes=es&q=' + encodeURIComponent(q)
+    const raw = await upstreamGeo<unknown>(url, host)
+    if (!Array.isArray(raw)) return null
+    return raw.map(pickSearchItem).filter(x => x !== null).slice(0, 5)
+  })
 
-  if (!Array.isArray(raw)) {
+  if (!safe) {
     // Fallback stale: mejor una respuesta vieja que nada si Nominatim cae.
     if (hit && Date.now() - hit.ts < GEO_TTL_STALE) {
       return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
@@ -589,7 +683,6 @@ app.get('/api/geocode/search', async c => {
     return c.json([], 200, { 'Cache-Control': 'no-store' })
   }
 
-  const safe = raw.map(pickSearchItem).filter(x => x !== null).slice(0, 5)
   geoCache.set(cacheKey, { data: safe, ts: Date.now() })
   return c.json(safe, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
 })
@@ -608,51 +701,66 @@ app.get('/api/geocode/reverse', async c => {
     return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'HIT' })
   }
 
-  const url = 'https://nominatim.openstreetmap.org/reverse?'
-    + 'format=json&zoom=16&addressdetails=1'
-    + '&lat=' + encodeURIComponent(ll.lat)
-    + '&lon=' + encodeURIComponent(ll.lng)
-  const raw = await upstreamGeo<Record<string, unknown>>(url)
+  const host = c.req.header('host') || ''
+  const out = await cachedJson('geo-rev-' + encodeURIComponent(cacheKey), 3600, async () => {
+    const url = 'https://nominatim.openstreetmap.org/reverse?'
+      + 'format=json&zoom=16&addressdetails=1'
+      + '&lat=' + encodeURIComponent(ll.lat)
+      + '&lon=' + encodeURIComponent(ll.lng)
+    const raw = await upstreamGeo<Record<string, unknown>>(url, host)
+    if (!raw || typeof raw !== 'object') return null
 
-  if (!raw || typeof raw !== 'object') {
+    // Passthrough restrictivo: solo campos utiles al cliente.
+    const o: Record<string, unknown> = {}
+    if (typeof raw.display_name === 'string') {
+      o.display_name = raw.display_name.length > 300 ? raw.display_name.slice(0, 300) : raw.display_name
+    }
+    if (raw.address && typeof raw.address === 'object') {
+      const a = raw.address as Record<string, unknown>
+      const addrOut: Record<string, string> = {}
+      // Incluimos state_district y province porque el cliente los usa al adivinar
+      // la provincia espanola desde coordenadas (mas fiables que 'state' en Espana).
+      const addrKeys = [
+        'road','neighbourhood','suburb',
+        'village','town','city','municipality',
+        'county','state_district','province','state',
+        'postcode','country','country_code',
+      ]
+      for (const k of addrKeys) {
+        const v = a[k]
+        if (typeof v === 'string' && v.length <= 200) addrOut[k] = v
+      }
+      o.address = addrOut
+    }
+    if (typeof raw.lat === 'string') o.lat = raw.lat
+    if (typeof raw.lon === 'string') o.lon = raw.lon
+    return o
+  })
+
+  if (!out) {
     if (hit && Date.now() - hit.ts < GEO_TTL_STALE) {
       return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
     }
     return c.json({}, 200, { 'Cache-Control': 'no-store' })
   }
 
-  // Passthrough restrictivo: solo campos utiles al cliente.
-  const out: Record<string, unknown> = {}
-  if (typeof raw.display_name === 'string') {
-    out.display_name = raw.display_name.length > 300 ? raw.display_name.slice(0, 300) : raw.display_name
-  }
-  if (raw.address && typeof raw.address === 'object') {
-    const a = raw.address as Record<string, unknown>
-    const addrOut: Record<string, string> = {}
-    // Incluimos state_district y province porque el cliente los usa al adivinar
-    // la provincia espanola desde coordenadas (mas fiables que 'state' en Espana).
-    const addrKeys = [
-      'road','neighbourhood','suburb',
-      'village','town','city','municipality',
-      'county','state_district','province','state',
-      'postcode','country','country_code',
-    ]
-    for (const k of addrKeys) {
-      const v = a[k]
-      if (typeof v === 'string' && v.length <= 200) addrOut[k] = v
-    }
-    out.address = addrOut
-  }
-  if (typeof raw.lat === 'string') out.lat = raw.lat
-  if (typeof raw.lon === 'string') out.lon = raw.lon
   geoCache.set(cacheKey, { data: out, ts: Date.now() })
   return c.json(out, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
 })
 
 // ---- Health check (para monitorizacion sintetica) ----
+// Estrategia de exposicion de datos:
+//   - Publico (sin token):      { ok, ts }              (minimo imprescindible
+//                                                         para uptime monitors)
+//   - Con X-Admin-Token valido: { ok, ts, version, snapshot, caches, ... }
+//
+// Si HEALTH_ADMIN_TOKEN no esta definido (dev), devuelve todo sin gate — no
+// romper la experiencia local. En prod se configura el token y las herramientas
+// de diagnostico lo envian.
+//
 // Devuelve 503 si el snapshot del Ministerio es mas viejo que SNAPSHOT_STALE_MS
-// (24h). Esto permite que Cloudflare Health Checks / UptimeRobot / etc
-// dispare alertas cuando el Action de fetch falla en silencio.
+// (24h) para que health checks disparen alertas — este 503 es PUBLICO porque
+// un atacante no gana nada sabiendo que estamos stale (los usuarios ya lo ven).
 app.get('/api/health', async c => {
   const meta = await loadSnapshot<SnapshotMeta>(c.req.url, 'snapshot-meta.json', c.env.ASSETS)
   const now = Date.now()
@@ -671,25 +779,82 @@ app.get('/api/health', async c => {
     stale = true
   }
 
-  const body = {
-    ok: !stale,
-    version: APP_VERSION,
-    ts: new Date().toISOString(),
-    caches: {
-      srv: (srvCache as unknown as { size: number }).size,
-      snapshot: (snapshotCache as unknown as { size: number }).size,
-    },
-    snapshot: meta ?? null,
-    snapshotAgeMs,
-    stale,
-    staleThresholdMs: SNAPSHOT_STALE_MS,
-  }
+  const adminToken = c.env.HEALTH_ADMIN_TOKEN
+  const provided = c.req.header('x-admin-token') || ''
+  // Comparacion en tiempo constante para evitar que un atacante deduzca el
+  // token midiendo respuestas (timing attack). tokensEqualConstTime vive en pure.ts.
+  const isAdmin = !adminToken || (provided.length > 0 && tokensEqualConstTime(provided, adminToken))
+
+  const bodyPublic: Record<string, unknown> = { ok: !stale, ts: new Date().toISOString() }
+  const body = isAdmin
+    ? {
+        ...bodyPublic,
+        version: APP_VERSION,
+        caches: {
+          srv: (srvCache as unknown as { size: number }).size,
+          snapshot: (snapshotCache as unknown as { size: number }).size,
+          geo: (geoCache as unknown as { size: number }).size,
+        },
+        snapshot: meta ?? null,
+        snapshotAgeMs,
+        stale,
+        staleThresholdMs: SNAPSHOT_STALE_MS,
+      }
+    : bodyPublic
 
   if (stale) {
     slog('error', 'health.stale', { ageMs: snapshotAgeMs, meta })
     return c.json(body, 503, { 'Cache-Control': 'no-store' })
   }
   return c.json(body, 200, { 'Cache-Control': 'no-store' })
+})
+
+// ---- CSP violation report endpoint ----
+// Navegadores envian aqui cada violacion de Content-Security-Policy. Es la
+// senal mas temprana que tenemos de: (a) intentos de XSS, (b) extensiones
+// del usuario inyectando scripts, (c) errores en nuestra propia CSP.
+// Aceptamos ambos formatos: CSP Level 2 (content-type application/csp-report)
+// y CSP Level 3 (content-type application/reports+json). Rate-limit propio
+// para evitar DoS por spam de reports.
+app.post('/api/csp-report', async c => {
+  const key = clientKey(c)
+  const rl = cspLimiter.check(key)
+  if (!rl.allowed) return new Response(null, { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } })
+
+  const ct = (c.req.header('content-type') || '').toLowerCase()
+  const raw = await c.req.text()
+  if (raw.length === 0 || raw.length > 8192) {
+    slog('warn', 'csp.oversize_or_empty', { key, bytes: raw.length })
+    return new Response(null, { status: 204 })
+  }
+  let evt: unknown
+  try { evt = JSON.parse(raw) } catch { return new Response(null, { status: 204 }) }
+
+  // Extraemos solo los campos relevantes. Los navegadores incluyen mas
+  // metadata pero no la necesitamos y abulta logs.
+  const pick = (o: unknown, keys: string[]): Record<string, unknown> => {
+    if (!o || typeof o !== 'object') return {}
+    const src = o as Record<string, unknown>
+    const out: Record<string, unknown> = {}
+    for (const k of keys) {
+      const v = src[k]
+      if (typeof v === 'string') out[k] = v.slice(0, 500)
+      else if (typeof v === 'number') out[k] = v
+    }
+    return out
+  }
+  const interesting = ['document-uri','referrer','violated-directive','effective-directive','original-policy','disposition','blocked-uri','source-file','line-number','column-number','status-code']
+  let report: Record<string, unknown> = {}
+  if (ct.includes('csp-report') && evt && typeof evt === 'object' && 'csp-report' in (evt as Record<string, unknown>)) {
+    report = pick((evt as Record<string, unknown>)['csp-report'], interesting)
+  } else if (Array.isArray(evt)) {
+    // Reporting API v1 manda un array de reports
+    const first = evt.find(e => e && typeof e === 'object' && (e as Record<string, unknown>).type === 'csp-violation')
+    if (first) report = pick((first as Record<string, unknown>).body, interesting)
+  }
+
+  slog('warn', 'csp.violation', { key, ...report })
+  return new Response(null, { status: 204 })
 })
 
 // ---- Ingest de errores del cliente ----
@@ -740,6 +905,27 @@ app.post('/api/ingest', async c => {
     ver:  trim(evt.ver, 20),
   })
   return c.json({ ok: true })
+})
+
+// ---- Global error handler ----
+// Cualquier excepcion no capturada en un handler llega aqui. Hono por defecto
+// devuelve el mensaje + stack en el body: inaceptable para produccion (leak de
+// paths, nombres de funciones, dependencias). Devolvemos un 500 generico y
+// mandamos el detalle a logs server-side.
+app.onError((err, c) => {
+  slog('error', 'unhandled', {
+    path: c.req.path,
+    method: c.req.method,
+    err: String(err).slice(0, 300),
+  })
+  return c.json({ error: 'internal' }, 500, { 'Cache-Control': 'no-store' })
+})
+
+// 404 generico: cualquier ruta no registrada devuelve JSON estandar. Evita que
+// Hono renderice una pagina por defecto (potencialmente con detalles del route
+// tree) o que el Worker caiga en rutas de assets con fallback incontrolado.
+app.notFound(c => {
+  return c.json({ error: 'not_found' }, 404, { 'Cache-Control': 'no-store' })
 })
 
 export default app

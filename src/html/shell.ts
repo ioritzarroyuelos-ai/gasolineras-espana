@@ -413,7 +413,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
       <!-- Deposito del vehiculo (para calculo de ahorro) -->
       <div class="form-group">
-        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#94a3b8">(para calcular ahorro)</span></label>
+        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#64748b">(para calcular ahorro)</span></label>
         <div class="range-group">
           <input id="in-tank" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
           <span class="range-val" id="lbl-tank">50 L</span>
@@ -467,7 +467,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <div class="loading-box">
         <div class="spinner" aria-hidden="true"></div>
         <p style="font-size:14px;font-weight:600;color:#374151">Cargando gasolineras...</p>
-        <p style="font-size:12px;color:#94a3b8">Datos oficiales del Ministerio</p>
+        <p style="font-size:12px;color:#64748b">Datos oficiales del Ministerio</p>
       </div>
     </div>
 

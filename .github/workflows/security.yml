@@ -5,8 +5,11 @@
 # descubiertas contra versiones ya deployadas de nuestras deps).
 #
 # Policy de fallos (intencionada):
-#   - npm audit: solo falla con severity=high o critical. 'moderate' es ruidoso
-#     y muchas veces no afecta al runtime del Worker (dev deps).
+#   - npm audit: falla con severity=moderate+ en deps de RUNTIME (--omit=dev).
+#     El ruido de moderate en dev-deps (vitest, lhci, etc.) lo captura OSV-Scanner
+#     abajo con mejor contexto de paths. Aqui queremos que cualquier CVE moderate+
+#     que llegue al Worker de Cloudflare nos rompa el build: son pocas deps y el
+#     blast radius es directo.
 #   - gitleaks: cualquier hallazgo falla el job. Un secret commited es critico
 #     aunque despues se rote — el historial git lo preserva para siempre.
 #   - osv-scanner: falla si hay al menos una vuln de nivel HIGH/CRITICAL.
@@ -36,7 +39,7 @@ permissions:
 
 jobs:
   npm-audit:
-    name: npm audit (high+critical)
+    name: npm audit (moderate+ runtime)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -52,7 +55,11 @@ jobs:
         run: npm ci --no-audit --no-fund --omit=dev
 
       - name: Audit runtime deps
-        run: npm audit --omit=dev --audit-level=high
+        # Umbral moderate: en el bundle del Worker tenemos menos de 10 paquetes
+        # directos (hono, zod) y las transitivas son pocas. Un moderate ahi es
+        # accionable, no ruido. Si en algun momento un moderate transitivo no
+        # tiene fix upstream, se documenta la excepcion con `npm audit --exclude`.
+        run: npm audit --omit=dev --audit-level=moderate
 
   gitleaks:
     name: gitleaks (secret scan)

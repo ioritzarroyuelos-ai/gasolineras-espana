@@ -18,19 +18,22 @@
     "backfill:d1": "node scripts/backfill-d1.mjs"
   },
   "dependencies": {
-    "hono": "^4.12.10",
+    "hono": "^4.12.14",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
     "@hono/vite-build": "^1.2.0",
-    "@hono/vite-dev-server": "^0.18.2",
+    "@hono/vite-dev-server": "^0.25.1",
     "@lhci/cli": "^0.14.0",
     "@playwright/test": "^1.59.1",
     "@resvg/resvg-js": "^2.6.2",
     "typescript": "^5.9.3",
-    "vite": "^6.3.5",
+    "vite": "^6.4.2",
     "vitest": "^2.1.9",
-    "wrangler": "^4.4.0"
+    "wrangler": "^4.83.0"
+  },
+  "overrides": {
+    "@hono/node-server": ">=1.19.13"
   }
 }

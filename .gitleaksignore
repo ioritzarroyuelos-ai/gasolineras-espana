@@ -3,12 +3,23 @@
 #
 # IMPORTANTE: cada entrada debe justificarse. Borrar aqui solo cuando el
 # objeto deje de ser alcanzable (git filter-repo + force push).
+#
+# Revision periodica: cada 90 dias auditamos este archivo para confirmar que
+# (a) el secret sigue rotado en prod, (b) no hay reutilizacion del valor
+# historico en ningun otro sistema, (c) sigue mereciendo la pena no reescribir
+# la historia. Ultima auditoria: 2026-04-19.
 
 # Token HEALTH_ADMIN_TOKEN que quedo hardcodeado en verify-prod.ps1 al
 # introducir el script. ROTADO el 2026-04-19 via `wrangler pages secret put`
 # inmediatamente despues de detectarlo; el valor historico es inservible
-# (la siguiente version en prod tiene un token distinto). Se mantiene en
-# .gitleaksignore en lugar de reescribir historia porque:
+# (la siguiente version en prod tiene un token distinto, guardado solo en
+# .dev.vars local y en Cloudflare Pages secrets — nunca volvera al repo).
+# Se mantiene en .gitleaksignore en lugar de reescribir historia porque:
 #   - rotacion ya bloquea el uso del token,
-#   - force-push sobre main requiere coordinar con cualquier fork/clon.
+#   - force-push sobre main requiere coordinar con cualquier fork/clon,
+#   - el commit f64fc94 forma parte del historial de release y tiene un
+#     signed-off-by; reescribirlo invalidaria la cadena de firmas.
+# Verificacion pendiente: si en el futuro introducimos firma cryptographica
+# de commits (Sigstore, gitsign), evaluar si conviene filter-repo antes del
+# primer release firmado para limpiar la historia de una vez.
 f64fc9455c8be23c1411d104b0e2e300796f1173:scripts/verify-prod.ps1:generic-api-key:9

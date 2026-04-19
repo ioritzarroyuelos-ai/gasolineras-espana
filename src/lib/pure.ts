@@ -562,6 +562,75 @@ export function planFuelStops<T>(input: PlanFuelStopsInput<T>): PlanFuelStopsRes
   }
 }
 
+// ---- RUTA: proyeccion de un punto sobre una POLILINEA (ruta real OSRM) ----
+// Dada una polilinea [[lng, lat], ...] (formato GeoJSON), calcula:
+//   - cumulativePolylineKm(): array con las distancias acumuladas desde el
+//     origen hasta cada vertice. Util para convertir "proyeccion en segmento i
+//     con parametro t" en "km-desde-origen".
+//   - projectOnPolyline(): dado un punto, devuelve {offKm, kmFromOrigin}
+//     donde offKm es la distancia al segmento mas cercano y kmFromOrigin es
+//     la posicion temporal a lo largo de la ruta.
+//
+// Complejidad: O(N) por punto donde N = numero de vertices. Para rutas
+// Espana-peninsula OSRM devuelve ~1000-2000 vertices. Con 500 estaciones a
+// filtrar = ~1M ops, bien dentro del presupuesto JS (<50 ms).
+export function cumulativePolylineKm(coords: Array<[number, number]>): number[] {
+  // coords: [[lng, lat], ...]
+  const cum: number[] = [0]
+  for (let i = 1; i < coords.length; i++) {
+    const [lng1, lat1] = coords[i - 1]
+    const [lng2, lat2] = coords[i]
+    cum.push(cum[i - 1] + haversineKm(lat1, lng1, lat2, lng2))
+  }
+  return cum
+}
+
+export function projectOnPolyline(
+  point: LatLng,
+  coords: Array<[number, number]>,
+  cumKm?: number[],
+): { offKm: number; kmFromOrigin: number; totalKm: number } {
+  if (!Array.isArray(coords) || coords.length < 2) {
+    return { offKm: Infinity, kmFromOrigin: 0, totalKm: 0 }
+  }
+  const cum = cumKm && cumKm.length === coords.length ? cumKm : cumulativePolylineKm(coords)
+  const totalKm = cum[cum.length - 1]
+  let bestOff = Infinity
+  let bestKm = 0
+  // Para cada segmento, proyectamos el punto y nos quedamos con el minimo.
+  // Usamos proyeccion equirectangular centrada en el PUNTO MEDIO DEL SEGMENTO
+  // (no de la ruta entera) — esto mantiene el error <0.1% por segmento, clave
+  // para rutas >500 km donde una proyeccion global acumularia error visible.
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lng1, lat1] = coords[i]
+    const [lng2, lat2] = coords[i + 1]
+    const segLenKm = cum[i + 1] - cum[i]
+    if (segLenKm < 1e-6) continue  // segmento degenerado
+    const cLat = (lat1 + lat2) / 2
+    const cLng = (lng1 + lng2) / 2
+    const A = llToXYkm({ lat: lat1, lng: lng1 }, { lat: cLat, lng: cLng })
+    const B = llToXYkm({ lat: lat2, lng: lng2 }, { lat: cLat, lng: cLng })
+    const P = llToXYkm(point,                     { lat: cLat, lng: cLng })
+    const dx = B.x - A.x
+    const dy = B.y - A.y
+    const len2 = dx * dx + dy * dy
+    if (len2 < 1e-9) continue
+    let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2
+    if (t < 0) t = 0
+    else if (t > 1) t = 1
+    const cx = A.x + t * dx
+    const cy = A.y + t * dy
+    const ex = P.x - cx
+    const ey = P.y - cy
+    const off = Math.sqrt(ex * ex + ey * ey)
+    if (off < bestOff) {
+      bestOff = off
+      bestKm = cum[i] + t * segLenKm
+    }
+  }
+  return { offKm: bestOff, kmFromOrigin: bestKm, totalKm }
+}
+
 // ---- RUTA: proyeccion de un punto sobre el segmento A->B ----
 // Devuelve { offKm, kmFromOrigin } donde kmFromOrigin es la distancia desde A
 // hasta el punto proyectado (en km) sobre el segmento recto A->B.

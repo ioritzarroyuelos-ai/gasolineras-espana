@@ -558,6 +558,48 @@ export function getStyles(nonce: string = ''): string {
     body.dark .route-plan-warning { background:#450a0a; border-color:#991b1b; color:#fca5a5; }
     body.dark .route-plan-success { background:#14532d; border-color:#166534; color:#86efac; }
 
+    /* ---- Modo ruta: overlay flotante sobre el mapa ---- */
+    /* Cuando el usuario planifica una ruta, entramos en "modo ruta":
+       ocultamos el cluster de estaciones, dibujamos la polilinea + marcadores
+       grandes de las paradas recomendadas, y mostramos este banner flotante
+       para salir. */
+    .route-mode-bar {
+      position: fixed; z-index: 1200;
+      top: 12px; left: 50%; transform: translateX(-50%);
+      display: none; align-items: center; gap: 10px;
+      padding: 8px 14px; border-radius: 999px;
+      background: rgba(15, 118, 110, 0.96); color: #ecfeff;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      font-size: 13px; font-weight: 600;
+      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .route-mode-bar.show { display: inline-flex; }
+    .route-mode-bar-text { white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
+    .route-mode-bar-exit {
+      cursor: pointer; background: #0f766e; color: #ecfeff;
+      border: 1px solid rgba(255,255,255,0.25); border-radius: 999px;
+      padding: 4px 12px; font-size: 12px; font-weight: 700;
+      transition: background .15s ease;
+    }
+    .route-mode-bar-exit:hover { background: #134e4a; }
+    body.dark .route-mode-bar { background: rgba(6, 95, 70, 0.95); }
+    @media (max-width: 520px) {
+      .route-mode-bar { font-size: 12px; padding: 6px 10px; }
+      .route-mode-bar-text { max-width: 48vw; }
+    }
+    /* Marcador grande de parada: numero + icono de gasolinera.
+       Se superpone al mapa, con el numero de orden de la parada. */
+    .route-stop-marker {
+      display: flex; align-items: center; justify-content: center;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: #16a34a; color: white;
+      font-weight: 800; font-size: 15px;
+      border: 3px solid white;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    }
+    body.dark .route-stop-marker { border-color: #0f172a; }
+
     .form-help { font-size:11px; color:#64748b; margin-top:4px; }
     body.dark .form-help { color:#94a3b8; }
 

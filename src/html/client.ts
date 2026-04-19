@@ -660,6 +660,14 @@ var allStations = [];
 var filteredStations = [];
 var minP = 0, maxP = 0;
 
+// ---- MODO RUTA: estado del mapa cuando hay una ruta planificada ----
+// Al planificar A->B, dibujamos la polilinea real (OSRM) + marcadores de las
+// paradas recomendadas, y ocultamos el cluster general. Guardamos el layer
+// exacto para poder desmontarlo limpiamente al salir.
+var routeLayer = null;         // L.polyline con la ruta real
+var routeStopsLayer = null;    // L.layerGroup con los marcadores numerados de las paradas
+var routeModeActive = false;   // estado para evitar doble-entrada
+
 // Estado nuevo: posicion del usuario (tras geolocalizar), ahorro.
 var userPos = null;                         // { lat, lng } tras geolocate
 var userPosMarker = null;                   // circleMarker del usuario en el mapa (para removerlo al salir del modo geo)
@@ -3444,25 +3452,108 @@ if ('serviceWorker' in navigator) {
 // ============================================================
 // ===== RUTA OPTIMA A->B (Feature 4) =========================
 // ============================================================
-// Modal que acepta origen + destino (geocoder Nominatim), nivel de combustible
-// actual, y el ancho del corredor. Calcula:
-//   1. Bbox del trayecto (+margen) y fetchea /api/estaciones/bbox (cubre TODAS
-//      las provincias intermedias, no solo origen/destino).
-//   2. Para cada estacion del bbox, proyecta sobre el segmento A->B y
-//      conserva las que caen dentro del corredor (perpDistanceKm <= width).
-//   3. Aplica planFuelStops() con (tank, consumo L/100km, nivel actual) del
-//      perfil del usuario → decide EN QUE estacion parar para no quedarse
-//      sin gasolina, minimizando gasto (mas barata alcanzable).
-//   4. Ensena las paradas planificadas en orden + un secundario con las
-//      top-5 mas baratas del corredor.
+// Modal que acepta origen + destino (geocoder Nominatim), la autonomia del
+// coche y el ancho del corredor. Calcula:
+//   1. Pide a /api/route la ruta REAL por carretera (proxy OSRM): obtenemos
+//      la polilinea [[lng, lat], ...] y la distancia total en km.
+//   2. Fetchea /api/estaciones/bbox con la bbox que envuelve la polilinea
+//      (+margen). Cubre todas las provincias intermedias.
+//   3. Para cada estacion del bbox, proyecta sobre la POLILINEA (no sobre
+//      linea recta) y conserva las que caen dentro del corredor
+//      (offKm <= width).
+//   4. Aplica planFuelStops() con la autonomia declarada para decidir
+//      EN QUE estacion parar (la mas barata alcanzable en cada tramo).
+//   5. Entra en "modo ruta" en el mapa: oculta el cluster, dibuja la
+//      polilinea, pinta solo las paradas recomendadas con marcadores
+//      numerados, y muestra un banner flotante para salir.
 //
-// Limitaciones honestas:
-//  - No es routing real (no sigue carreteras). Para A->B separados por
-//    montana, el corredor puede cortar la linea recta. Compromiso
-//    aceptable: evitamos dependencia de OSRM / pago de Mapbox.
-//  - La autonomia se calcula con el consumo DECLARADO del perfil. Si el
-//    usuario no tiene perfil, usamos defaults conservadores (tank=50L,
-//    6.5 L/100km) y avisamos.
+// Por que routing real (y no linea recta como antes):
+//  - La linea recta Madrid-Barcelona pasa sobre los Pirineos. Las
+//    estaciones reales estan en la A-2 / AP-7, que serpentea por Zaragoza
+//    y Lleida. Con linea recta, una estacion "a 3 km del corredor" puede
+//    estar a 80 km por carretera.
+//  - El km-desde-origen en linea recta subestima la ruta real en 10-30%
+//    en trayectos reales, lo que mete paradas imposibles en el plan.
+//
+// La feature usa el demo publico de OSRM, cacheado 24h en el server: las
+// carreteras no cambian en horas, asi que 99% de las rutas sirven el
+// primer hit a la siguiente peticion identica.
+
+// Entra en modo-ruta: oculta los marcadores generales, dibuja la polilinea y
+// los marcadores numerados de las paradas recomendadas, y centra el mapa.
+// Guarda los layers para poder desmontarlos al salir.
+function enterRouteMode(coords, stops) {
+  if (!map) return;
+  // Oculta el cluster general; al salir lo volveremos a enganchar.
+  if (clusterGroup && map.hasLayer(clusterGroup)) {
+    map.removeLayer(clusterGroup);
+  }
+  // Limpia layers previos de una ruta anterior si existiera.
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  if (routeStopsLayer) { map.removeLayer(routeStopsLayer); routeStopsLayer = null; }
+
+  // Polilinea: coords viene como [[lng, lat], ...] (GeoJSON). Leaflet usa
+  // [lat, lng] en L.polyline, asi que le damos la vuelta.
+  var latLngs = coords.map(function(c) { return [c[1], c[0]]; });
+  routeLayer = L.polyline(latLngs, {
+    color: '#0f766e',
+    weight: 5,
+    opacity: 0.85,
+    lineJoin: 'round',
+    lineCap: 'round'
+  }).addTo(map);
+
+  // Marcadores numerados de las paradas.
+  routeStopsLayer = L.layerGroup();
+  (stops || []).forEach(function(stop, i) {
+    var s = stop.item;
+    var pos = stationLatLng(s);
+    if (!pos) return;
+    var icon = L.divIcon({
+      className: 'route-stop-divicon',
+      html: '<div class="route-stop-marker">' + (i + 1) + '</div>',
+      iconSize: [36, 36],
+      iconAnchor: [18, 18]
+    });
+    var m = L.marker([pos.lat, pos.lng], { icon: icon, zIndexOffset: 800 });
+    var nav = 'https://www.google.com/maps/dir/?api=1&destination=' + pos.lat.toFixed(6) + ',' + pos.lng.toFixed(6) + '&travelmode=driving';
+    var popup = '<div style="font-weight:700;margin-bottom:4px;">Parada ' + (i + 1) + ': ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+              + '<div style="font-size:12px;color:#475569;margin-bottom:4px;">' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
+              + '<div style="font-size:14px;font-weight:800;color:#16a34a;margin-bottom:6px;">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
+              + '<div style="font-size:11px;color:#475569;margin-bottom:8px;">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>'
+              + '<a href="' + nav + '" target="_blank" rel="noopener" style="display:inline-block;padding:6px 10px;background:#16a34a;color:white;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px;">Abrir en Google Maps</a>';
+    m.bindPopup(popup, { maxWidth: 280 });
+    routeStopsLayer.addLayer(m);
+  });
+  routeStopsLayer.addTo(map);
+
+  // Centra el mapa en la ruta completa.
+  try { map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] }); } catch (e) {}
+
+  // Banner flotante de estado.
+  var bar = document.getElementById('route-mode-bar');
+  if (bar) bar.classList.add('show');
+  routeModeActive = true;
+}
+
+// Sale de modo-ruta: quita polilinea + marcadores y restaura el cluster.
+function exitRouteMode() {
+  if (routeLayer) { try { map.removeLayer(routeLayer); } catch (e) {} routeLayer = null; }
+  if (routeStopsLayer) { try { map.removeLayer(routeStopsLayer); } catch (e) {} routeStopsLayer = null; }
+  if (map && clusterGroup && !map.hasLayer(clusterGroup)) {
+    map.addLayer(clusterGroup);
+  }
+  var bar = document.getElementById('route-mode-bar');
+  if (bar) bar.classList.remove('show');
+  routeModeActive = false;
+}
+
+// Hook del boton de salida del banner flotante (existe siempre en el DOM).
+(function() {
+  var exitBtn = document.getElementById('route-mode-bar-exit');
+  if (exitBtn) exitBtn.addEventListener('click', exitRouteMode);
+})();
+
 (function() {
   var modal     = document.getElementById('modal-route');
   if (!modal) return;
@@ -3585,9 +3676,9 @@ if ('serviceWorker' in navigator) {
   makeGeoSearch(inFrom, sugFrom, function(p) { fromSel = p; });
   makeGeoSearch(inTo,   sugTo,   function(p) { toSel   = p; });
 
-  // Duplicados locales de perpDistanceKm y projectOnRoute (funciones puras
-  // en src/lib/pure.ts). En tests del pure tenemos cobertura — aqui son
-  // copia literal en JS plano.
+  // Duplicados locales de cumulativePolylineKm / projectOnPolyline (funciones
+  // puras en src/lib/pure.ts). Los tests unitarios garantizan equivalencia;
+  // aqui son copia literal en JS plano.
   function _toXY(p, cLat, cLng) {
     var R = 6371;
     var toRad = function(d) { return d * Math.PI / 180; };
@@ -3596,28 +3687,55 @@ if ('serviceWorker' in navigator) {
       y: toRad(p.lat - cLat) * R
     };
   }
-  function projectOnRoute(point, a, b) {
-    var cLat = (a.lat + b.lat) / 2;
-    var cLng = (a.lng + b.lng) / 2;
-    var P = _toXY(point, cLat, cLng);
-    var A = _toXY(a, cLat, cLng);
-    var B = _toXY(b, cLat, cLng);
-    var dx = B.x - A.x, dy = B.y - A.y;
-    var len2 = dx*dx + dy*dy;
-    var totalKm = Math.sqrt(len2);
-    if (len2 < 1e-9) {
-      var ex0 = P.x - A.x, ey0 = P.y - A.y;
-      return { offKm: Math.sqrt(ex0*ex0 + ey0*ey0), kmFromOrigin: 0, totalKm: 0 };
+  function _haversineKm(lat1, lon1, lat2, lon2) {
+    var R = 6371;
+    var toRad = function(d) { return d * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2)
+          + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2))
+          * Math.sin(dLon/2) * Math.sin(dLon/2);
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function cumulativePolylineKm(coords) {
+    var cum = [0];
+    for (var i = 1; i < coords.length; i++) {
+      var p0 = coords[i - 1], p1 = coords[i];
+      cum.push(cum[i - 1] + _haversineKm(p0[1], p0[0], p1[1], p1[0]));
     }
-    var t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
-    if (t < 0) t = 0; else if (t > 1) t = 1;
-    var cx = A.x + t * dx, cy = A.y + t * dy;
-    var ex = P.x - cx, ey = P.y - cy;
-    return {
-      offKm: Math.sqrt(ex*ex + ey*ey),
-      kmFromOrigin: t * totalKm,
-      totalKm: totalKm
-    };
+    return cum;
+  }
+  function projectOnPolyline(point, coords, cumKm) {
+    if (!coords || coords.length < 2) {
+      return { offKm: Infinity, kmFromOrigin: 0, totalKm: 0 };
+    }
+    var cum = (cumKm && cumKm.length === coords.length) ? cumKm : cumulativePolylineKm(coords);
+    var totalKm = cum[cum.length - 1];
+    var bestOff = Infinity, bestKm = 0;
+    for (var i = 0; i < coords.length - 1; i++) {
+      var lng1 = coords[i][0], lat1 = coords[i][1];
+      var lng2 = coords[i+1][0], lat2 = coords[i+1][1];
+      var segLen = cum[i+1] - cum[i];
+      if (segLen < 1e-6) continue;
+      var cLat = (lat1 + lat2) / 2;
+      var cLng = (lng1 + lng2) / 2;
+      var A = _toXY({ lat: lat1, lng: lng1 }, cLat, cLng);
+      var B = _toXY({ lat: lat2, lng: lng2 }, cLat, cLng);
+      var P = _toXY(point, cLat, cLng);
+      var dx = B.x - A.x, dy = B.y - A.y;
+      var len2 = dx*dx + dy*dy;
+      if (len2 < 1e-9) continue;
+      var t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
+      if (t < 0) t = 0; else if (t > 1) t = 1;
+      var cx = A.x + t * dx, cy = A.y + t * dy;
+      var ex = P.x - cx, ey = P.y - cy;
+      var off = Math.sqrt(ex*ex + ey*ey);
+      if (off < bestOff) {
+        bestOff = off;
+        bestKm = cum[i] + t * segLen;
+      }
+    }
+    return { offKm: bestOff, kmFromOrigin: bestKm, totalKm: totalKm };
   }
 
   // Copia literal de planFuelStops() en pure.ts. Ver alli para la explicacion
@@ -3690,16 +3808,20 @@ if ('serviceWorker' in navigator) {
     };
   }
 
-  // Bbox del trayecto con margen. El cliente pide al servidor un rectangulo
-  // que cubre A->B + ~width km de buffer en cada direccion. 1 grado lat ~ 111 km;
-  // 1 grado lng ~ 111 * cos(lat) km. Anadimos x3 el width como seguridad.
-  function routeBbox(a, b, widthKm) {
-    var minLat = Math.min(a.lat, b.lat);
-    var maxLat = Math.max(a.lat, b.lat);
-    var minLng = Math.min(a.lng, b.lng);
-    var maxLng = Math.max(a.lng, b.lng);
+  // Bbox que envuelve la polilinea REAL de la ruta + margen. 1 grado lat
+  // ~ 111 km; 1 grado lng ~ 111 * cos(lat) km. Margen = max(width*3, 15 km).
+  function polylineBbox(coords, widthKm) {
+    var minLat = Infinity, maxLat = -Infinity;
+    var minLng = Infinity, maxLng = -Infinity;
+    for (var i = 0; i < coords.length; i++) {
+      var lng = coords[i][0], lat = coords[i][1];
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+    }
     var centerLat = (minLat + maxLat) / 2;
-    var marginKm = Math.max(widthKm * 3, 15);  // minimo 15 km de buffer
+    var marginKm = Math.max(widthKm * 3, 15);
     var dLat = marginKm / 111;
     var dLng = marginKm / (111 * Math.max(0.3, Math.cos(centerLat * Math.PI / 180)));
     return {
@@ -3762,7 +3884,7 @@ if ('serviceWorker' in navigator) {
     }
     if (autonomyKm > 2000) autonomyKm = 2000;  // sanity cap
     stat.classList.remove('error');
-    stat.textContent = 'Cargando estaciones del trayecto\u2026';
+    stat.textContent = 'Calculando ruta por carretera\u2026';
     plan.innerHTML = '';
     res.innerHTML = '';
     var width = parseInt(inWidth.value, 10);
@@ -3770,8 +3892,36 @@ if ('serviceWorker' in navigator) {
     var fuelLabel = (document.getElementById('sel-combustible').selectedOptions[0].text) || fuel;
 
     try {
-      // 1. Bbox → /api/estaciones/bbox. Cubre todas las provincias intermedias.
-      var bbox = routeBbox(fromSel, toSel, width);
+      // 1. /api/route → ruta real por carretera (proxy OSRM cacheado 24h).
+      var routeUrl = '/api/route?fromLat=' + fromSel.lat.toFixed(6)
+                   + '&fromLng=' + fromSel.lng.toFixed(6)
+                   + '&toLat=' + toSel.lat.toFixed(6)
+                   + '&toLng=' + toSel.lng.toFixed(6);
+      var rr = await fetch(routeUrl, { credentials: 'same-origin' });
+      if (!rr.ok) {
+        if (rr.status === 429) {
+          stat.textContent = 'Demasiadas peticiones de ruta. Espera un momento y prueba de nuevo.';
+        } else if (rr.status === 422) {
+          stat.textContent = 'No se pudo calcular la ruta entre esos puntos. Prueba otro origen/destino.';
+        } else {
+          stat.textContent = 'No se pudo calcular la ruta. Prueba de nuevo en unos segundos.';
+        }
+        stat.classList.add('error');
+        return;
+      }
+      var route = await rr.json();
+      var coords = route && Array.isArray(route.coordinates) ? route.coordinates : null;
+      if (!coords || coords.length < 2) {
+        stat.textContent = 'Ruta no disponible para ese trayecto.';
+        stat.classList.add('error');
+        return;
+      }
+      var cum = cumulativePolylineKm(coords);
+      var totalKm = cum[cum.length - 1];
+
+      // 2. Bbox que envuelve la polilinea real → /api/estaciones/bbox.
+      var bbox = polylineBbox(coords, width);
+      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km. Cargando estaciones del trayecto\u2026';
       var bboxUrl = '/api/estaciones/bbox?minLat=' + bbox.minLat.toFixed(4)
                   + '&maxLat=' + bbox.maxLat.toFixed(4)
                   + '&minLng=' + bbox.minLng.toFixed(4)
@@ -3791,18 +3941,17 @@ if ('serviceWorker' in navigator) {
         return;
       }
 
-      // 2. Para cada estacion del bbox: proyecta sobre A->B y conserva las
-      // que caen dentro del corredor (offKm <= width).
+      // 3. Para cada estacion del bbox: proyecta sobre la POLILINEA REAL (no
+      // sobre linea recta) y conserva las que caen dentro del corredor
+      // (offKm <= width).
       var corridor = [];
-      var totalKm = 0;
       for (var k = 0; k < pool.length; k++) {
         var s = pool[k];
         var pos = stationLatLng(s);
         if (!pos) continue;
         var price = parsePrice(s[fuel]);
         if (!price) continue;
-        var proj = projectOnRoute({ lat: pos.lat, lng: pos.lng }, fromSel, toSel);
-        totalKm = proj.totalKm;
+        var proj = projectOnPolyline({ lat: pos.lat, lng: pos.lng }, coords, cum);
         if (proj.offKm <= width) {
           corridor.push({
             item: s,
@@ -3818,50 +3967,46 @@ if ('serviceWorker' in navigator) {
         return;
       }
 
-      // 3. Planifica paradas usando la autonomia declarada por el usuario.
-      // planFuelStops internamente modela tank + consumo. Construimos un par
-      // ficticio (tank=50L, consumo derivado) que produce maxAutonomyKm =
-      // autonomyKm declarado. Esto es equivalente a "autonomia directa" para
-      // el proposito del planificador; el coste en € no se muestra al usuario
-      // porque no conocemos el consumo real.
+      // 4. Planifica paradas usando la autonomia declarada. planFuelStops
+      // internamente modela tank + consumo. Construimos un par ficticio
+      // (tank=50L, consumo derivado) que produce maxAutonomyKm = autonomyKm.
+      // Equivalente a "autonomia directa" para el proposito del planificador.
       var fakeTank = 50;
-      var fakeCons = (fakeTank * 100) / autonomyKm;  // L/100km tal que tank/cons*100 = autonomyKm
+      var fakeCons = (fakeTank * 100) / autonomyKm;
       var planResult = planFuelStops({
         routeKm: totalKm,
         tankL: fakeTank,
         consumoL100km: fakeCons,
-        currentFuelPct: 1.0,  // asumimos salida con la autonomia declarada completa
+        currentFuelPct: 1.0,
         stations: corridor
       });
 
-      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor.';
+      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.';
       plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm);
 
-      // 4. Secundario: top-5 mas baratas en el corredor (por si el usuario
-      // quiere comparar o modificar la ruta).
-      corridor.sort(function(a, b) {
-        return (a.priceEurL - b.priceEurL) || (a.offKm - b.offKm);
-      });
-      var top = corridor.slice(0, 5);
-      var secHeader = '<div class="route-plan-title" style="margin-top:16px;">Top 5 m\u00E1s baratas en el corredor</div>';
-      var html = top.map(function(h) {
-        var s = h.item;
-        var lat = stationLatLng(s);
-        var navUrl = lat
-          ? 'https://www.google.com/maps/dir/?api=1&destination=' + lat.lat.toFixed(6) + ',' + lat.lng.toFixed(6) + '&travelmode=driving'
-          : '#';
-        return '<a class="route-card" href="' + navUrl + '" target="_blank" rel="noopener">'
-          + '<div class="route-card-info">'
-          + '  <div class="route-card-title">\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
-          + '  <div class="route-card-sub">\u{1F4CD} ' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
-          + '</div>'
-          + '<div class="route-card-right">'
-          + '  <div class="route-card-price">' + h.priceEurL.toFixed(3) + ' \u20AC/L</div>'
-          + '  <div class="route-card-off">km ' + Math.round(h.kmFromOrigin) + ' \u00B7 +' + h.offKm.toFixed(1) + ' km</div>'
-          + '</div>'
-          + '</a>';
-      }).join('');
-      res.innerHTML = secHeader + html;
+      // 5. Entra en modo-ruta en el mapa: polilinea + SOLO las paradas
+      // recomendadas (no la top-5 del corredor: el usuario pidio
+      // explicitamente ver solo las que debe repostar).
+      enterRouteMode(coords, planResult.stops);
+
+      // Actualiza el texto del banner flotante con informacion de la ruta.
+      var barText = document.getElementById('route-mode-bar-text');
+      if (barText) {
+        var stopsLabel;
+        if (planResult.unreachable) {
+          stopsLabel = 'ruta no completable con tu autonom\u00EDa';
+        } else if (planResult.stops.length === 0) {
+          stopsLabel = 'sin paradas (autonom\u00EDa suficiente)';
+        } else if (planResult.stops.length === 1) {
+          stopsLabel = '1 parada recomendada';
+        } else {
+          stopsLabel = planResult.stops.length + ' paradas recomendadas';
+        }
+        barText.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + stopsLabel;
+      }
+
+      // 6. Cierra el modal para que el usuario vea el mapa con la ruta.
+      closeRoute();
     } catch (err) {
       stat.textContent = 'Error al buscar. Prueba de nuevo.';
       stat.classList.add('error');

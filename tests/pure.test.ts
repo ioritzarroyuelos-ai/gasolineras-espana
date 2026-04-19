@@ -20,6 +20,8 @@ import {
   diaryStats,
   planFuelStops,
   projectOnRoute,
+  cumulativePolylineKm,
+  projectOnPolyline,
 } from '../src/lib/pure'
 
 describe('LRU', () => {
@@ -804,6 +806,140 @@ describe('projectOnRoute (proyeccion sobre segmento)', () => {
     const r = projectOnRoute({ lat: 41, lng: 0 }, madrid, madrid)
     expect(r.totalKm).toBe(0)
     expect(r.kmFromOrigin).toBe(0)
+  })
+})
+
+describe('cumulativePolylineKm (distancias acumuladas vertice-a-vertice)', () => {
+  it('empieza en 0 y tiene longitud igual al numero de vertices', () => {
+    const coords: Array<[number, number]> = [
+      [-3.70, 40.42],
+      [-2.00, 40.80],
+      [0.00, 41.00],
+      [2.17, 41.39],
+    ]
+    const cum = cumulativePolylineKm(coords)
+    expect(cum).toHaveLength(4)
+    expect(cum[0]).toBe(0)
+  })
+
+  it('es monotona creciente', () => {
+    const coords: Array<[number, number]> = [
+      [-3.70, 40.42],
+      [-2.00, 40.80],
+      [0.00, 41.00],
+      [2.17, 41.39],
+    ]
+    const cum = cumulativePolylineKm(coords)
+    for (let i = 1; i < cum.length; i++) {
+      expect(cum[i]).toBeGreaterThan(cum[i - 1])
+    }
+  })
+
+  it('el ultimo valor iguala la suma de haversines por segmento', () => {
+    const coords: Array<[number, number]> = [
+      [-3.70, 40.42],
+      [-2.00, 40.80],
+      [2.17, 41.39],
+    ]
+    const cum = cumulativePolylineKm(coords)
+    const expected =
+      haversineKm(40.42, -3.70, 40.80, -2.00) +
+      haversineKm(40.80, -2.00, 41.39, 2.17)
+    expect(cum[cum.length - 1]).toBeCloseTo(expected, 3)
+  })
+
+  it('con un solo vertice devuelve [0]', () => {
+    const cum = cumulativePolylineKm([[-3.70, 40.42]])
+    expect(cum).toEqual([0])
+  })
+
+  it('con dos vertices iguales el total es 0', () => {
+    const cum = cumulativePolylineKm([[-3.70, 40.42], [-3.70, 40.42]])
+    expect(cum[1]).toBeCloseTo(0, 6)
+  })
+})
+
+describe('projectOnPolyline (proyeccion sobre polilinea OSRM)', () => {
+  // Ruta Madrid -> Zaragoza -> Barcelona (aproximacion via 3 vertices).
+  // Polilinea en formato GeoJSON [lng, lat].
+  const madridLL = { lat: 40.4168, lng: -3.7038 }
+  const zaragozaLL = { lat: 41.6488, lng: -0.8891 }
+  const barcelonaLL = { lat: 41.3851, lng: 2.1734 }
+  const polyline: Array<[number, number]> = [
+    [madridLL.lng, madridLL.lat],
+    [zaragozaLL.lng, zaragozaLL.lat],
+    [barcelonaLL.lng, barcelonaLL.lat],
+  ]
+
+  it('punto = vertice origen tiene kmFromOrigin ~ 0 y offKm ~ 0', () => {
+    const r = projectOnPolyline(madridLL, polyline)
+    expect(r.kmFromOrigin).toBeCloseTo(0, 1)
+    expect(r.offKm).toBeLessThan(0.5)
+  })
+
+  it('punto = vertice destino tiene kmFromOrigin ~ totalKm y offKm ~ 0', () => {
+    const r = projectOnPolyline(barcelonaLL, polyline)
+    expect(r.kmFromOrigin).toBeCloseTo(r.totalKm, 0)
+    expect(r.offKm).toBeLessThan(0.5)
+  })
+
+  it('punto = vertice intermedio proyecta cerca de su posicion acumulada', () => {
+    const r = projectOnPolyline(zaragozaLL, polyline)
+    const cum = cumulativePolylineKm(polyline)
+    expect(r.kmFromOrigin).toBeCloseTo(cum[1], 0)
+    expect(r.offKm).toBeLessThan(0.5)
+  })
+
+  it('totalKm iguala la suma de haversines de la polilinea', () => {
+    const r = projectOnPolyline(madridLL, polyline)
+    const cum = cumulativePolylineKm(polyline)
+    expect(r.totalKm).toBeCloseTo(cum[cum.length - 1], 3)
+  })
+
+  it('punto fuera de la ruta tiene offKm >> 0 pero kmFromOrigin dentro de [0, totalKm]', () => {
+    // Valencia (al sur-este, lejos de la ruta).
+    const valencia = { lat: 39.47, lng: -0.38 }
+    const r = projectOnPolyline(valencia, polyline)
+    expect(r.offKm).toBeGreaterThan(100)
+    expect(r.kmFromOrigin).toBeGreaterThanOrEqual(0)
+    expect(r.kmFromOrigin).toBeLessThanOrEqual(r.totalKm)
+  })
+
+  it('punto proximo al camino tiene offKm pequeno', () => {
+    // Soria (desviado un poco al norte del tramo Madrid-Zaragoza).
+    const soria = { lat: 41.76, lng: -2.47 }
+    const r = projectOnPolyline(soria, polyline)
+    expect(r.offKm).toBeLessThan(80)
+    expect(r.kmFromOrigin).toBeGreaterThan(0)
+    expect(r.kmFromOrigin).toBeLessThan(r.totalKm)
+  })
+
+  it('acepta cumKm precalculado para reutilizar calculo', () => {
+    const cum = cumulativePolylineKm(polyline)
+    const r1 = projectOnPolyline(zaragozaLL, polyline)
+    const r2 = projectOnPolyline(zaragozaLL, polyline, cum)
+    expect(r2.kmFromOrigin).toBeCloseTo(r1.kmFromOrigin, 3)
+    expect(r2.offKm).toBeCloseTo(r1.offKm, 3)
+    expect(r2.totalKm).toBeCloseTo(r1.totalKm, 3)
+  })
+
+  it('con coords invalido o <2 vertices devuelve offKm=Infinity', () => {
+    expect(projectOnPolyline(madridLL, []).offKm).toBe(Infinity)
+    expect(projectOnPolyline(madridLL, [[-3.70, 40.42]]).offKm).toBe(Infinity)
+  })
+
+  it('coords de 2 puntos funciona como segmento recto A-B', () => {
+    const straight: Array<[number, number]> = [
+      [madridLL.lng, madridLL.lat],
+      [barcelonaLL.lng, barcelonaLL.lat],
+    ]
+    const mid = {
+      lat: (madridLL.lat + barcelonaLL.lat) / 2,
+      lng: (madridLL.lng + barcelonaLL.lng) / 2,
+    }
+    const r = projectOnPolyline(mid, straight)
+    expect(r.kmFromOrigin).toBeCloseTo(r.totalKm / 2, 0)
+    expect(r.offKm).toBeLessThan(1)
   })
 })
 

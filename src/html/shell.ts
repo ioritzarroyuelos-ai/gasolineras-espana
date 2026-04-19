@@ -463,6 +463,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div id="map-container">
     <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
 
+    <!-- Banner "modo ruta" flotante sobre el mapa. Se activa al planificar
+         una ruta y se oculta al cerrar el modo. -->
+    <div id="route-mode-bar" class="route-mode-bar" role="status" aria-live="polite">
+      <span class="route-mode-bar-text" id="route-mode-bar-text">Modo ruta activo</span>
+      <button id="route-mode-bar-exit" class="route-mode-bar-exit" type="button">Salir de la ruta</button>
+    </div>
+
     <!-- Loading -->
     <div id="loading" role="status" aria-live="polite">
       <div class="loading-box">

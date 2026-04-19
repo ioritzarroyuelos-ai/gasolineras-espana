@@ -121,6 +121,7 @@ function slog(level: LogLevel, event: string, fields: Record<string, unknown> = 
 const srvCache      = new LRU<unknown>(200)
 const snapshotCache = new LRU<unknown>(10)
 const geoCache      = new LRU<unknown>(500)      // Nominatim: cache agresivo, las direcciones cambian poco
+const routeCache    = new LRU<unknown>(300)      // OSRM: cache muy agresivo, las carreteras no cambian
 const SRV_TTL_FRESH = 4 * 60 * 60 * 1000         // 4h: datos fresquisimos
 const SRV_TTL_STALE = 30 * 24 * 60 * 60 * 1000   // 30d: ultimo recurso en memoria
 const SNAP_TTL      = 10 * 60 * 1000             // 10 min en memoria, luego re-leer del asset
@@ -298,6 +299,12 @@ const cspLimiter    = new SlidingWindowLimiter(30,  60_000)  // 30 reports/min p
 // margen ancho y aun asi frena scrapers que intenten paginar todas las
 // gasolineras (11k estaciones / 60 req-min = 3 horas de scrapeo visible).
 const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por IP
+// Routing: OSRM demo server tiene policy propia (~1 req/s). Limitamos la
+// misma IP a 10/min de cache-miss. El cache global absorbe re-fetches del
+// mismo par origen/destino. Un atacante con muchas IPs podria convertirnos en
+// amplificador, pero el payload es pequeno (~1-5 KB) y la policy no castiga
+// volumen moderado.
+const routeLimiter  = new SlidingWindowLimiter(10,  60_000)  // 10 req/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
@@ -830,6 +837,118 @@ app.get('/api/geocode/search', async c => {
 
   geoCache.set(cacheKey, { data: safe, ts: Date.now() })
   return c.json(safe, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
+})
+
+// ---- Routing proxy (OSRM public demo) ----
+// Feature "ruta A->B": el cliente necesita la geometria real por carretera
+// (no linea recta) para: (1) dibujarla en el mapa, (2) proyectar estaciones
+// sobre el trayecto real al planificar paradas.
+//
+// Usamos el demo publico de OSRM (router.project-osrm.org). Policy: "light
+// use"; tenemos rate limit (10/min por IP) + cache agresivo (24h en LRU + 30d
+// en Cache API). Las carreteras no cambian en 24h, asi que los TTL largos son
+// seguros.
+//
+// Seguridad:
+//   - Validacion estricta de lat/lng (sanitizeLatLng) para evitar
+//     inyectar '?foo=bar' o query strings en el URL de OSRM.
+//   - Timeout 8s al upstream.
+//   - Respuesta filtrada: solo exponemos distance/duration + coordinates
+//     simplificadas (nada de metadata de OSRM que pudiera cambiar).
+const ROUTE_TTL_FRESH = 24 * 60 * 60 * 1000       // 24h en memoria
+const ROUTE_TTL_STALE = 30 * 24 * 60 * 60 * 1000  // 30d fallback
+const ROUTE_UPSTREAM_TIMEOUT = 8000                // OSRM suele responder <2s
+
+interface RouteResponse {
+  distanceKm: number
+  durationSec: number
+  coordinates: [number, number][]  // [lng, lat]
+}
+
+async function upstreamRoute(url: string): Promise<RouteResponse | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(ROUTE_UPSTREAM_TIMEOUT),
+      headers: { 'Accept': 'application/json' },
+    })
+    if (!res.ok) {
+      slog('warn', 'route.upstream_status', { status: res.status })
+      return null
+    }
+    const raw = await res.json() as Record<string, unknown>
+    if (raw.code !== 'Ok') return null
+    const routes = raw.routes as Array<Record<string, unknown>> | undefined
+    if (!Array.isArray(routes) || routes.length === 0) return null
+    const r = routes[0]
+    const distMeters = typeof r.distance === 'number' ? r.distance : 0
+    const durSeconds = typeof r.duration === 'number' ? r.duration : 0
+    const geom = r.geometry as Record<string, unknown> | undefined
+    if (!geom || geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) return null
+    // Passthrough restrictivo: validamos cada coord. Capamos a 5000 puntos
+    // como safety net (una ruta Espana peninsular completa tiene ~2000 puntos).
+    const coords: [number, number][] = []
+    const raw_coords = geom.coordinates as unknown[]
+    for (let i = 0; i < raw_coords.length && i < 5000; i++) {
+      const p = raw_coords[i]
+      if (!Array.isArray(p) || p.length < 2) continue
+      const lng = Number(p[0])
+      const lat = Number(p[1])
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
+      coords.push([lng, lat])
+    }
+    if (coords.length < 2) return null
+    return {
+      distanceKm: distMeters / 1000,
+      durationSec: Math.round(durSeconds),
+      coordinates: coords,
+    }
+  } catch (e) {
+    slog('warn', 'route.upstream_err', { err: String(e).slice(0, 200) })
+    return null
+  }
+}
+
+app.get('/api/route', async c => {
+  const rl = routeLimiter.check(clientKey(c))
+  if (!rl.allowed) {
+    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+  const from = sanitizeLatLng(c.req.query('fromLat'), c.req.query('fromLng'))
+  const to   = sanitizeLatLng(c.req.query('toLat'),   c.req.query('toLng'))
+  if (!from || !to) return c.json({ error: 'coordenadas invalidas' }, 400)
+  // Validacion extra: bounds de Espana (nominal con margen generoso). OSRM
+  // funciona globalmente pero aqui acotamos al caso de uso del producto.
+  const inSpain = (lat: number, lng: number) =>
+    lat >= 26 && lat <= 45 && lng >= -20 && lng <= 6
+  if (!inSpain(Number(from.lat), Number(from.lng))) return c.json({ error: 'origen fuera de Espana' }, 400)
+  if (!inSpain(Number(to.lat), Number(to.lng)))     return c.json({ error: 'destino fuera de Espana' }, 400)
+  if (from.lat === to.lat && from.lng === to.lng)   return c.json({ error: 'origen = destino' }, 400)
+
+  const cacheKey = from.lat + ',' + from.lng + '-' + to.lat + ',' + to.lng
+  const hit = routeCache.get(cacheKey)
+  if (hit && Date.now() - hit.ts < ROUTE_TTL_FRESH) {
+    return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'HIT' })
+  }
+
+  const out = await cachedJson('route-' + encodeURIComponent(cacheKey), 86400, async () => {
+    // OSRM: coordenadas en orden lng,lat (GeoJSON convention).
+    const url = 'https://router.project-osrm.org/route/v1/driving/'
+      + encodeURIComponent(from.lng) + ',' + encodeURIComponent(from.lat) + ';'
+      + encodeURIComponent(to.lng)   + ',' + encodeURIComponent(to.lat)
+      + '?overview=full&geometries=geojson&alternatives=false&steps=false'
+    return await upstreamRoute(url)
+  })
+
+  if (!out) {
+    if (hit && Date.now() - hit.ts < ROUTE_TTL_STALE) {
+      return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
+    }
+    return c.json({ error: 'routing no disponible' }, 503)
+  }
+
+  routeCache.set(cacheKey, { data: out, ts: Date.now() })
+  return c.json(out, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'MISS' })
 })
 
 app.get('/api/geocode/reverse', async c => {

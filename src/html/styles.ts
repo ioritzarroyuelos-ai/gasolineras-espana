@@ -562,9 +562,12 @@ export function getStyles(nonce: string = ''): string {
        para salir. */
     .route-mode-bar {
       position: fixed; z-index: 1200;
-      top: 12px; left: 50%; transform: translateX(-50%);
+      /* top:72px = 60px del header + 12px de margen. Antes estaba en 12px
+         y quedaba VISUALMENTE detras del header (aunque por z-index estaba
+         delante): el usuario no lo encontraba. */
+      top: 72px; left: 50%; transform: translateX(-50%);
       display: none; align-items: center; gap: 10px;
-      padding: 8px 14px; border-radius: 999px;
+      padding: 8px 12px 8px 14px; border-radius: 999px;
       background: rgba(15, 118, 110, 0.96); color: #ecfeff;
       box-shadow: 0 6px 18px rgba(0,0,0,0.25);
       font-size: 13px; font-weight: 600;
@@ -583,24 +586,38 @@ export function getStyles(nonce: string = ''): string {
     body.dark .route-mode-bar { background: rgba(6, 95, 70, 0.95); }
 
     /* Bloque de deep-links a apps de navegacion, en el banner flotante.
-       Se oculta si no hay origen/destino confirmado. */
-    .route-mode-bar-nav { display: inline-flex; gap: 4px; }
+       Se oculta si no hay origen/destino confirmado. Colores de marca para
+       que sean inmediatamente reconocibles sobre el banner teal. */
+    .route-mode-bar-nav { display: inline-flex; gap: 6px; align-items: center; }
+    .route-mode-bar-nav::before {
+      content: 'Abrir ruta:';
+      font-size: 11px; font-weight: 600; opacity: .85;
+      margin-right: 2px;
+    }
     .route-mode-bar-nav a {
       display: inline-flex; align-items: center; justify-content: center;
-      padding: 4px 9px; border-radius: 999px;
-      font-size: 11px; font-weight: 700;
-      text-decoration: none;
-      background: rgba(255,255,255,0.15); color: white;
+      padding: 5px 10px; border-radius: 999px;
+      font-size: 12px; font-weight: 800;
+      text-decoration: none; color: white;
       border: 1px solid rgba(255,255,255,0.25);
-      transition: background .15s ease, transform .1s ease;
+      transition: filter .15s ease, transform .1s ease;
+      white-space: nowrap;
     }
-    .route-mode-bar-nav a:hover { background: rgba(255,255,255,0.3); }
+    .route-mode-bar-nav a#nav-gmaps { background: #4285F4; }
+    .route-mode-bar-nav a#nav-amaps { background: #111827; }
+    .route-mode-bar-nav a#nav-waze  { background: #33ccff; color: #0b1220; }
+    .route-mode-bar-nav a:hover { filter: brightness(1.08); }
     .route-mode-bar-nav a:active { transform: scale(.96); }
 
-    @media (max-width: 520px) {
-      .route-mode-bar { font-size: 12px; padding: 6px 10px; gap: 6px; flex-wrap: wrap; }
+    @media (max-width: 640px) {
+      .route-mode-bar {
+        font-size: 12px; padding: 6px 10px; gap: 6px;
+        flex-wrap: wrap; max-width: calc(100vw - 16px);
+      }
       .route-mode-bar-text { max-width: 100%; flex: 1 0 100%; text-align: center; }
-      .route-mode-bar-nav a { padding: 3px 7px; font-size: 10px; }
+      .route-mode-bar-nav { flex-wrap: wrap; justify-content: center; width: 100%; }
+      .route-mode-bar-nav a { padding: 4px 8px; font-size: 11px; }
+      .route-mode-bar-nav::before { display: none; }
     }
 
     /* Botonera "Abrir ruta en..." dentro del panel del plan. */

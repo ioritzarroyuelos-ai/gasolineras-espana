@@ -509,6 +509,58 @@ export function getStyles(nonce: string = ''): string {
     body.dark .route-card-title { color:#f1f5f9; }
     body.dark .route-card-sub, body.dark .route-card-off { color:#94a3b8; }
 
+    /* ---- Plan de paradas (fuel stops) ----
+       Bloque destacado con las paradas RECOMENDADAS en orden. Cada parada
+       lleva numeracion (#1, #2...) y la distancia desde origen. ---- */
+    .route-plan { display:flex; flex-direction:column; gap:10px; margin:8px 0 16px 0; }
+    .route-plan-title {
+      font-size:12px; font-weight:700; color:#0f172a; text-transform:uppercase;
+      letter-spacing:0.5px; margin-bottom:4px;
+    }
+    .route-plan-subtitle {
+      font-size:12px; color:#16a34a; font-weight:600; margin-bottom:6px;
+    }
+    .route-plan-stop {
+      padding:12px 14px; background:#ecfdf5; border:2px solid #86efac;
+      border-radius:12px; display:flex; justify-content:space-between; gap:10px;
+      cursor:pointer; transition:background 0.1s, border-color 0.1s;
+      align-items:center;
+    }
+    .route-plan-stop:hover { background:#d1fae5; border-color:#22c55e; }
+    .route-plan-badge {
+      display:inline-block; min-width:28px; height:28px; line-height:28px;
+      text-align:center; background:#16a34a; color:#fff; border-radius:50%;
+      font-weight:800; font-size:13px; margin-right:10px;
+    }
+    .route-plan-info { flex:1; min-width:0; display:flex; align-items:center; }
+    .route-plan-main { flex:1; min-width:0; }
+    .route-plan-title2 { font-size:14px; font-weight:700; color:#0f172a; margin-bottom:3px; }
+    .route-plan-sub { font-size:11px; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .route-plan-right { text-align:right; flex-shrink:0; }
+    .route-plan-price { font-size:16px; font-weight:800; color:#16a34a; }
+    .route-plan-km { font-size:11px; color:#475569; margin-top:2px; font-weight:600; }
+    .route-plan-warning {
+      padding:10px 12px; background:#fef2f2; border:1px solid #fca5a5;
+      border-radius:10px; color:#991b1b; font-size:13px;
+    }
+    .route-plan-success {
+      padding:10px 12px; background:#f0fdf4; border:1px solid #86efac;
+      border-radius:10px; color:#166534; font-size:13px; font-weight:600;
+    }
+    body.dark .route-plan-title { color:#f1f5f9; }
+    body.dark .route-plan-subtitle { color:#86efac; }
+    body.dark .route-plan-stop { background:#14532d; border-color:#166534; }
+    body.dark .route-plan-stop:hover { background:#166534; border-color:#22c55e; }
+    body.dark .route-plan-badge { background:#22c55e; color:#052e16; }
+    body.dark .route-plan-title2 { color:#f1f5f9; }
+    body.dark .route-plan-sub, body.dark .route-plan-km { color:#cbd5e1; }
+    body.dark .route-plan-price { color:#86efac; }
+    body.dark .route-plan-warning { background:#450a0a; border-color:#991b1b; color:#fca5a5; }
+    body.dark .route-plan-success { background:#14532d; border-color:#166534; color:#86efac; }
+
+    .form-help { font-size:11px; color:#64748b; margin-top:4px; }
+    body.dark .form-help { color:#94a3b8; }
+
     /* ---- Modal diario de repostajes ---- */
     .diary-modal { max-width: 560px; }
     .diary-stats {

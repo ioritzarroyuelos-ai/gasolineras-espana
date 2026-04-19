@@ -580,8 +580,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div class="modal">
     <div class="modal-header modal-header-row">
       <div>
-        <h2 id="route-title">&#x1F6E3;&#xFE0F; Ruta: gasolineras baratas</h2>
-        <p>Top 5 mas baratas en un corredor de &plusmn;3 km alrededor de tu trayecto.</p>
+        <h2 id="route-title">&#x1F6E3;&#xFE0F; Ruta: d&oacute;nde repostar</h2>
+        <p>Te decimos en qu&eacute; gasolineras parar seg&uacute;n tu autonom&iacute;a y el precio.</p>
       </div>
       <button id="btn-route-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
     </div>
@@ -597,17 +597,29 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <div id="route-to-sug" class="route-sug" role="listbox"></div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="route-width">Ancho del corredor</label>
+        <label class="form-label" for="route-fuel-level">Combustible al salir</label>
+        <select id="route-fuel-level" class="form-input">
+          <option value="1.00">Dep&oacute;sito lleno</option>
+          <option value="0.75">3/4 (75%)</option>
+          <option value="0.50" selected>Medio (50%)</option>
+          <option value="0.25">1/4 (25%)</option>
+          <option value="0.10">Reserva (10%)</option>
+        </select>
+        <p class="form-help" id="route-autonomy-lbl">Configura tu coche en el perfil para calcular autonom&iacute;a.</p>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="route-width">Ancho del corredor (desv&iacute;o m&aacute;ximo)</label>
         <div class="range-group">
           <input id="route-width" type="range" min="1" max="10" step="1" value="3" aria-label="Ancho del corredor en kilometros" />
           <span class="range-val" id="route-width-lbl">3 km</span>
         </div>
       </div>
       <div id="route-status" class="route-status" aria-live="polite"></div>
+      <div id="route-plan" class="route-plan" aria-live="polite"></div>
       <div id="route-results" class="route-results"></div>
     </div>
     <div class="modal-footer">
-      <button id="btn-route-go" class="btn-primary">Buscar</button>
+      <button id="btn-route-go" class="btn-primary">Planificar</button>
       <button id="btn-route-done" class="btn-ghost">Cerrar</button>
     </div>
   </div>

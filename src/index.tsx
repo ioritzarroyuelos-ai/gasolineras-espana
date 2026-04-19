@@ -671,6 +671,66 @@ app.get('/api/estaciones/provincia/:idProv', async c => {
   }
 })
 
+// Bbox: devuelve todas las estaciones dentro de un rectangulo geografico.
+// Para la feature "ruta A->B", el cliente necesita estaciones de multiples
+// provincias simultaneamente (un Madrid->Barcelona cruza 5+ provincias). Ir
+// provincia por provincia seria lento y fragil; leemos directamente del
+// snapshot estatico (ya en memoria del Worker) y filtramos por lat/lng.
+//
+// Limites de seguridad:
+//   - bbox maxima 6°x6° (~660x660 km) — cubre con holgura la diagonal de
+//     Espana peninsular (Coruna-Cartagena ~950 km, pero en pedazos de 600 km
+//     podemos paginar si hiciera falta).
+//   - rechaza coordenadas fuera de Espana (bbox nominal 27-44N, -19 a 5E).
+//   - cap blando: si el filtro devuelve mas de MAX_STATIONS_PER_BBOX, truncamos.
+app.get('/api/estaciones/bbox', async c => {
+  const minLat = Number(c.req.query('minLat'))
+  const maxLat = Number(c.req.query('maxLat'))
+  const minLng = Number(c.req.query('minLng'))
+  const maxLng = Number(c.req.query('maxLng'))
+  if (![minLat, maxLat, minLng, maxLng].every(v => Number.isFinite(v))) {
+    return c.json({ error: 'bbox invalido' }, 400)
+  }
+  if (minLat >= maxLat || minLng >= maxLng) {
+    return c.json({ error: 'bbox invertido' }, 400)
+  }
+  // Spain nominal bbox (peninsula + Baleares + Canarias). Rechaza todo fuera
+  // con margen para evitar que un atacante fuerce filtros absurdos (N Pole, etc).
+  if (minLat < 26 || maxLat > 45 || minLng < -20 || maxLng > 6) {
+    return c.json({ error: 'bbox fuera de Espana' }, 400)
+  }
+  // Area maxima razonable: 6°x6° (~400k km²). Un Madrid-Barcelona cabe en
+  // 3°x6° largos. Para rutas mas largas, el cliente puede trocear.
+  if ((maxLat - minLat) > 6 || (maxLng - minLng) > 6) {
+    return c.json({ error: 'bbox demasiado grande (max 6 grados por lado)' }, 400)
+  }
+
+  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  if (!snap) return c.json({ error: 'snapshot no disponible' }, 503)
+
+  const MAX_STATIONS_PER_BBOX = 4000  // ~4k * ~300 bytes = <2 MB, seguro
+  const filtered = filterStations(snap, s => {
+    // Ministerio devuelve lat/lng como string con coma decimal. Fail-safe:
+    // si no parsea, se descarta (no cuenta).
+    const lat = Number(String(s['Latitud'] ?? '').replace(',', '.'))
+    const lng = Number(String(s['Longitud (WGS84)'] ?? '').replace(',', '.'))
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
+    return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng
+  })
+  if (!filtered) return c.json({ error: 'snapshot corrupto' }, 503)
+  if (Array.isArray(filtered.ListaEESSPrecio) && filtered.ListaEESSPrecio.length > MAX_STATIONS_PER_BBOX) {
+    filtered.ListaEESSPrecio = filtered.ListaEESSPrecio.slice(0, MAX_STATIONS_PER_BBOX)
+  }
+  // Cacheable 1h: el snapshot se regenera cada mananas, un bbox que devuelve
+  // las mismas estaciones durante todo el dia es razonable. Los precios
+  // dentro del snapshot pueden estar desactualizados pero esto es aceptable
+  // para una feature de planificacion de ruta (precios cambian pocas veces/dia).
+  return c.json(filtered, 200, {
+    'Cache-Control': 'public, max-age=3600',
+    'X-Data-Source': 'snapshot',
+  })
+})
+
 app.get('/api/estaciones/municipio/:idMun', async c => {
   const idMun = validateId(c.req.param('idMun'))
   if (!idMun) return c.json({ error: 'ID de municipio invalido' }, 400)

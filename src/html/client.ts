@@ -3444,20 +3444,25 @@ if ('serviceWorker' in navigator) {
 // ============================================================
 // ===== RUTA OPTIMA A->B (Feature 4) =========================
 // ============================================================
-// Modal que acepta origen + destino (geocoder Nominatim) y muestra las TOP-5
-// gasolineras mas baratas dentro de un corredor configurable a lo largo del
-// trayecto en linea recta. Filtrado = perpDistanceKm (proyeccion equirectangular
-// local), ordenacion = (precio, offset). Solo usa estaciones ya disponibles
-// en allStations; si origen/destino caen en otra provincia, cargamos esa en
-// paralelo y mergeamos antes de filtrar.
+// Modal que acepta origen + destino (geocoder Nominatim), nivel de combustible
+// actual, y el ancho del corredor. Calcula:
+//   1. Bbox del trayecto (+margen) y fetchea /api/estaciones/bbox (cubre TODAS
+//      las provincias intermedias, no solo origen/destino).
+//   2. Para cada estacion del bbox, proyecta sobre el segmento A->B y
+//      conserva las que caen dentro del corredor (perpDistanceKm <= width).
+//   3. Aplica planFuelStops() con (tank, consumo L/100km, nivel actual) del
+//      perfil del usuario → decide EN QUE estacion parar para no quedarse
+//      sin gasolina, minimizando gasto (mas barata alcanzable).
+//   4. Ensena las paradas planificadas en orden + un secundario con las
+//      top-5 mas baratas del corredor.
 //
 // Limitaciones honestas:
 //  - No es routing real (no sigue carreteras). Para A->B separados por
 //    montana, el corredor puede cortar la linea recta. Compromiso
 //    aceptable: evitamos dependencia de OSRM / pago de Mapbox.
-//  - Para rutas muy largas (Madrid-Barcelona) cargamos solo provincias
-//    extremas — estaciones a mitad de camino (Zaragoza) no saldran. Caso de
-//    uso dominante: trayectos intra-provincia + a provincia vecina.
+//  - La autonomia se calcula con el consumo DECLARADO del perfil. Si el
+//    usuario no tiene perfil, usamos defaults conservadores (tank=50L,
+//    6.5 L/100km) y avisamos.
 (function() {
   var modal     = document.getElementById('modal-route');
   if (!modal) return;
@@ -3471,7 +3476,10 @@ if ('serviceWorker' in navigator) {
   var sugTo     = document.getElementById('route-to-sug');
   var inWidth   = document.getElementById('route-width');
   var lblWidth  = document.getElementById('route-width-lbl');
+  var inFuel    = document.getElementById('route-fuel-level');
+  var lblAuto   = document.getElementById('route-autonomy-lbl');
   var stat      = document.getElementById('route-status');
+  var plan      = document.getElementById('route-plan');
   var res       = document.getElementById('route-results');
 
   // Estado: guardamos la ultima seleccion confirmada de cada input (con
@@ -3480,10 +3488,47 @@ if ('serviceWorker' in navigator) {
   var fromSel = null;
   var toSel   = null;
 
+  // Defaults conservadores si el perfil esta vacio. 50L + 6.5 L/100km es un
+  // coche medio (Seat Leon, Peugeot 308, etc.). Prefiero subestimar la
+  // autonomia que sobrestimarla.
+  var DEFAULT_TANK = 50;
+  var DEFAULT_CONS = 6.5;
+
+  function readVehicle() {
+    var p = getProfile() || {};
+    // El perfil guarda 'consumo' (no 'consumoL100km'). El sidebar tambien
+    // mantiene 'gs_tank' como fuente secundaria por si el usuario solo
+    // tocara el slider del sidebar sin abrir el modal del perfil.
+    var tank = p.tank;
+    var cons = (typeof p.consumo === 'number') ? p.consumo : p.consumoL100km;
+    var usedDefault = false;
+    if (typeof tank !== 'number' || !isFinite(tank) || tank <= 0) {
+      var sidebarTank = parseInt(localStorage.getItem('gs_tank') || '0', 10);
+      if (sidebarTank > 0) { tank = sidebarTank; }
+      else { tank = DEFAULT_TANK; usedDefault = true; }
+    }
+    if (typeof cons !== 'number' || !isFinite(cons) || cons <= 0) { cons = DEFAULT_CONS; usedDefault = true; }
+    return { tank: tank, cons: cons, usedDefault: usedDefault };
+  }
+
+  function updateAutonomyLabel() {
+    var v = readVehicle();
+    var maxKm = Math.round((v.tank / v.cons) * 100);
+    var pct = parseFloat(inFuel.value);
+    var curKm = Math.round(maxKm * pct);
+    var note = v.usedDefault
+      ? ' (usando valores por defecto: ' + v.tank + ' L, ' + v.cons.toFixed(1) + ' L/100km \u2014 configura tu coche en el perfil)'
+      : '';
+    lblAuto.textContent = 'Autonom\u00EDa: ' + maxKm + ' km con dep\u00F3sito lleno \u00B7 '
+                       + curKm + ' km con el nivel actual.' + note;
+  }
+
   function openRoute() {
     res.innerHTML = '';
+    plan.innerHTML = '';
     stat.textContent = '';
     stat.classList.remove('error');
+    updateAutonomyLabel();
     modal.classList.add('show');
     setTimeout(function(){ inFrom && inFrom.focus(); }, 50);
   }
@@ -3500,6 +3545,7 @@ if ('serviceWorker' in navigator) {
   inWidth.addEventListener('input', function() {
     lblWidth.textContent = inWidth.value + ' km';
   });
+  inFuel.addEventListener('change', updateAutonomyLabel);
 
   // Debounced geocoder search — reusa /api/geocode/search (Nominatim proxy).
   // Cada input tiene su propio timer para evitar llamadas cruzadas.
@@ -3546,55 +3592,170 @@ if ('serviceWorker' in navigator) {
   makeGeoSearch(inFrom, sugFrom, function(p) { fromSel = p; });
   makeGeoSearch(inTo,   sugTo,   function(p) { toSel   = p; });
 
-  // Duplicado local de perpDistanceKm (funcion pura en src/lib/pure.ts).
-  // En tests del pure tenemos cobertura — aqui es copia literal en JS plano.
-  function perpDistanceKm(point, a, b) {
+  // Duplicados locales de perpDistanceKm y projectOnRoute (funciones puras
+  // en src/lib/pure.ts). En tests del pure tenemos cobertura — aqui son
+  // copia literal en JS plano.
+  function _toXY(p, cLat, cLng) {
     var R = 6371;
     var toRad = function(d) { return d * Math.PI / 180; };
+    return {
+      x: toRad(p.lng - cLng) * Math.cos(toRad(cLat)) * R,
+      y: toRad(p.lat - cLat) * R
+    };
+  }
+  function projectOnRoute(point, a, b) {
     var cLat = (a.lat + b.lat) / 2;
     var cLng = (a.lng + b.lng) / 2;
-    function toXY(p) {
-      return {
-        x: toRad(p.lng - cLng) * Math.cos(toRad(cLat)) * R,
-        y: toRad(p.lat - cLat) * R
-      };
-    }
-    var P = toXY(point), A = toXY(a), B = toXY(b);
+    var P = _toXY(point, cLat, cLng);
+    var A = _toXY(a, cLat, cLng);
+    var B = _toXY(b, cLat, cLng);
     var dx = B.x - A.x, dy = B.y - A.y;
     var len2 = dx*dx + dy*dy;
+    var totalKm = Math.sqrt(len2);
     if (len2 < 1e-9) {
       var ex0 = P.x - A.x, ey0 = P.y - A.y;
-      return Math.sqrt(ex0*ex0 + ey0*ey0);
+      return { offKm: Math.sqrt(ex0*ex0 + ey0*ey0), kmFromOrigin: 0, totalKm: 0 };
     }
     var t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2;
     if (t < 0) t = 0; else if (t > 1) t = 1;
     var cx = A.x + t * dx, cy = A.y + t * dy;
     var ex = P.x - cx, ey = P.y - cy;
-    return Math.sqrt(ex*ex + ey*ey);
+    return {
+      offKm: Math.sqrt(ex*ex + ey*ey),
+      kmFromOrigin: t * totalKm,
+      totalKm: totalKm
+    };
   }
 
-  // Dado un punto, intenta cargar las estaciones de su provincia si aun no
-  // estan en allStations. Devuelve el subset fetch-eado (o [] si ya las
-  // tenemos o falla el geocoder inverso).
-  async function ensureStationsForPoint(p) {
-    // Si allStations ya cubre este punto (la provincia actual contiene el
-    // punto), no hace falta fetch extra. Heuristica: vemos si HAY alguna
-    // estacion a <25 km del punto. Barato y suficiente.
-    for (var i = 0; i < allStations.length; i++) {
-      var pos = stationLatLng(allStations[i]);
-      if (!pos) continue;
-      if (distanceKm(p.lat, p.lng, pos.lat, pos.lng) < 25) return [];
+  // Copia literal de planFuelStops() en pure.ts. Ver alli para la explicacion
+  // completa del algoritmo.
+  function planFuelStops(input) {
+    var routeKm = input.routeKm;
+    var tankL = input.tankL;
+    var cons = input.consumoL100km;
+    var fuelPct = input.currentFuelPct;
+    var safety = input.safetyPct != null ? input.safetyPct : 0.10;
+    var stations = input.stations || [];
+    var empty = { stops: [], unreachable: false, maxAutonomyKm: 0, initialRangeKm: 0, totalCostEur: 0 };
+    if (!isFinite(routeKm)  || routeKm  <= 0) return empty;
+    if (!isFinite(tankL)    || tankL    <= 0) return empty;
+    if (!isFinite(cons)     || cons     <= 0) return empty;
+    if (!isFinite(fuelPct)) fuelPct = 0;
+    if (fuelPct < 0) fuelPct = 0; else if (fuelPct > 1) fuelPct = 1;
+    if (!isFinite(safety)) safety = 0.10;
+    if (safety < 0) safety = 0; else if (safety > 0.5) safety = 0.5;
+
+    var maxAutonomyKm = (tankL / cons) * 100;
+    var safetyKm = maxAutonomyKm * safety;
+    var initialRangeKm = maxAutonomyKm * fuelPct;
+
+    var pool = stations.filter(function(s) {
+      return s && isFinite(s.kmFromOrigin) && s.kmFromOrigin >= 0
+          && s.kmFromOrigin <= routeKm
+          && isFinite(s.priceEurL) && s.priceEurL > 0;
+    }).slice().sort(function(a, b) { return a.kmFromOrigin - b.kmFromOrigin; });
+
+    var pos = 0;
+    var rangeKm = initialRangeKm;
+    var stops = [];
+    var totalCost = 0;
+
+    for (var iter = 0; iter < 50; iter++) {
+      var remaining = routeKm - pos;
+      if (rangeKm - safetyKm >= remaining) break;
+      var windowStart = pos;
+      var windowEnd = pos + Math.max(0, rangeKm - safetyKm);
+      var candidates = pool.filter(function(s) {
+        return s.kmFromOrigin > windowStart && s.kmFromOrigin <= windowEnd;
+      });
+      if (candidates.length === 0) {
+        return {
+          stops: stops,
+          unreachable: true,
+          maxAutonomyKm: maxAutonomyKm,
+          initialRangeKm: initialRangeKm,
+          totalCostEur: totalCost
+        };
+      }
+      candidates.sort(function(a, b) {
+        return (a.priceEurL - b.priceEurL) || (b.kmFromOrigin - a.kmFromOrigin);
+      });
+      var pick = candidates[0];
+      stops.push({ item: pick.item, kmFromOrigin: pick.kmFromOrigin, priceEurL: pick.priceEurL });
+      var consumedKm = pick.kmFromOrigin - pos;
+      var consumedL = (consumedKm / 100) * cons;
+      totalCost += consumedL * pick.priceEurL;
+      pos = pick.kmFromOrigin;
+      rangeKm = maxAutonomyKm;
     }
-    // Resolver provinciaId via reverse geocoding + mapa local
-    var name = await reverseProvinciaFromLatLng(p.lat, p.lng);
-    var pid  = name ? provinciaIdByName(name) : '';
-    if (!pid) return [];
-    try {
-      var r = await fetch('/api/estaciones/provincia/' + pid, { credentials: 'same-origin' });
-      if (!r.ok) return [];
-      var data = await r.json();
-      return (data.ListaEESSPrecio || []).map(normalizeStation);
-    } catch(_) { return []; }
+    return {
+      stops: stops,
+      unreachable: false,
+      maxAutonomyKm: maxAutonomyKm,
+      initialRangeKm: initialRangeKm,
+      totalCostEur: totalCost
+    };
+  }
+
+  // Bbox del trayecto con margen. El cliente pide al servidor un rectangulo
+  // que cubre A->B + ~width km de buffer en cada direccion. 1 grado lat ~ 111 km;
+  // 1 grado lng ~ 111 * cos(lat) km. Anadimos x3 el width como seguridad.
+  function routeBbox(a, b, widthKm) {
+    var minLat = Math.min(a.lat, b.lat);
+    var maxLat = Math.max(a.lat, b.lat);
+    var minLng = Math.min(a.lng, b.lng);
+    var maxLng = Math.max(a.lng, b.lng);
+    var centerLat = (minLat + maxLat) / 2;
+    var marginKm = Math.max(widthKm * 3, 15);  // minimo 15 km de buffer
+    var dLat = marginKm / 111;
+    var dLng = marginKm / (111 * Math.max(0.3, Math.cos(centerLat * Math.PI / 180)));
+    return {
+      minLat: minLat - dLat,
+      maxLat: maxLat + dLat,
+      minLng: minLng - dLng,
+      maxLng: maxLng + dLng
+    };
+  }
+
+  function renderPlanSection(plan_result, fuelLabel, vehicle) {
+    var autoMax = Math.round(plan_result.maxAutonomyKm);
+    var autoInit = Math.round(plan_result.initialRangeKm);
+    var header = '<div class="route-plan-title">&#x26FD; Plan de repostajes</div>'
+               + '<div class="route-plan-subtitle">Autonom\u00EDa inicial: ' + autoInit + ' km / ' + autoMax + ' km total</div>';
+
+    if (plan_result.unreachable) {
+      return header + '<div class="route-plan-warning">\u26A0\uFE0F No hay gasolineras alcanzables desde tu posici\u00F3n. '
+           + 'Sal con m\u00E1s combustible o elige un corredor m\u00E1s ancho.</div>';
+    }
+    if (plan_result.stops.length === 0) {
+      return header + '<div class="route-plan-success">\u2705 No necesitas repostar. '
+           + 'Puedes completar la ruta con el combustible actual.</div>';
+    }
+    var itemsHtml = plan_result.stops.map(function(stop, i) {
+      var s = stop.item;
+      var lat = stationLatLng(s);
+      var navUrl = lat
+        ? 'https://www.google.com/maps/dir/?api=1&destination=' + lat.lat.toFixed(6) + ',' + lat.lng.toFixed(6) + '&travelmode=driving'
+        : '#';
+      return '<a class="route-plan-stop" href="' + navUrl + '" target="_blank" rel="noopener">'
+        + '<div class="route-plan-info">'
+        + '  <div class="route-plan-badge">' + (i + 1) + '</div>'
+        + '  <div class="route-plan-main">'
+        + '    <div class="route-plan-title2">' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+        + '    <div class="route-plan-sub">\u{1F4CD} ' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
+        + '  </div>'
+        + '</div>'
+        + '<div class="route-plan-right">'
+        + '  <div class="route-plan-price">' + stop.priceEurL.toFixed(3) + ' \u20AC</div>'
+        + '  <div class="route-plan-km">a ' + Math.round(stop.kmFromOrigin) + ' km</div>'
+        + '</div>'
+        + '</a>';
+    }).join('');
+    var cost = plan_result.totalCostEur;
+    var costLine = cost > 0
+      ? '<div class="route-plan-subtitle">Gasto estimado en ruta: ' + cost.toFixed(2) + ' \u20AC (' + fuelLabel + ')</div>'
+      : '';
+    return header + itemsHtml + costLine;
   }
 
   async function doSearch() {
@@ -3604,60 +3765,85 @@ if ('serviceWorker' in navigator) {
       return;
     }
     stat.classList.remove('error');
-    stat.textContent = 'Buscando estaciones en el trayecto\u2026';
+    stat.textContent = 'Cargando estaciones del trayecto\u2026';
+    plan.innerHTML = '';
     res.innerHTML = '';
     var width = parseInt(inWidth.value, 10);
     var fuel = document.getElementById('sel-combustible').value;
     var fuelLabel = (document.getElementById('sel-combustible').selectedOptions[0].text) || fuel;
+    var fuelPct = parseFloat(inFuel.value);
+    var vehicle = readVehicle();
 
-    // Intenta cargar estaciones extra para cada extremo si aun no estan.
-    // Ambos fetches en paralelo. Merge deduplicando por stationId.
     try {
-      var extras = await Promise.all([
-        ensureStationsForPoint(fromSel),
-        ensureStationsForPoint(toSel),
-      ]);
-      var pool = allStations.slice();
-      var seen = {};
-      for (var j = 0; j < pool.length; j++) seen[stationId(pool[j])] = true;
-      extras.forEach(function(arr) {
-        arr.forEach(function(s) {
-          var id = stationId(s);
-          if (!seen[id]) { seen[id] = true; pool.push(s); }
-        });
-      });
+      // 1. Bbox → /api/estaciones/bbox. Cubre todas las provincias intermedias.
+      var bbox = routeBbox(fromSel, toSel, width);
+      var bboxUrl = '/api/estaciones/bbox?minLat=' + bbox.minLat.toFixed(4)
+                  + '&maxLat=' + bbox.maxLat.toFixed(4)
+                  + '&minLng=' + bbox.minLng.toFixed(4)
+                  + '&maxLng=' + bbox.maxLng.toFixed(4);
+      var r = await fetch(bboxUrl, { credentials: 'same-origin' });
+      if (!r.ok) {
+        stat.textContent = 'No se pudieron cargar estaciones para esa ruta.';
+        stat.classList.add('error');
+        return;
+      }
+      var data = await r.json();
+      var pool = (data.ListaEESSPrecio || []).map(normalizeStation);
 
       if (pool.length === 0) {
-        stat.textContent = 'No hay gasolineras cargadas. Selecciona una provincia primero.';
+        stat.textContent = 'Sin estaciones en la zona del trayecto.';
         stat.classList.add('error');
         return;
       }
 
-      // Filtrar por corredor + precio disponible, ordenar por (precio, offset)
-      var hits = [];
+      // 2. Para cada estacion del bbox: proyecta sobre A->B y conserva las
+      // que caen dentro del corredor (offKm <= width).
+      var corridor = [];
+      var totalKm = 0;
       for (var k = 0; k < pool.length; k++) {
         var s = pool[k];
         var pos = stationLatLng(s);
         if (!pos) continue;
         var price = parsePrice(s[fuel]);
         if (!price) continue;
-        var off = perpDistanceKm({ lat: pos.lat, lng: pos.lng }, fromSel, toSel);
-        if (off <= width) hits.push({ s: s, price: price, off: off });
+        var proj = projectOnRoute({ lat: pos.lat, lng: pos.lng }, fromSel, toSel);
+        totalKm = proj.totalKm;
+        if (proj.offKm <= width) {
+          corridor.push({
+            item: s,
+            kmFromOrigin: proj.kmFromOrigin,
+            offKm: proj.offKm,
+            priceEurL: price
+          });
+        }
       }
-      hits.sort(function(a, b) {
-        return (a.price - b.price) || (a.off - b.off);
-      });
-      var top = hits.slice(0, 5);
 
-      if (top.length === 0) {
+      if (corridor.length === 0) {
         stat.textContent = 'Sin resultados a \u00B1' + width + ' km del trayecto para ' + fuelLabel + '.';
         return;
       }
 
-      stat.textContent = top.length + ' estaciones encontradas (' + hits.length + ' en el corredor).';
+      // 3. Planifica paradas con el perfil del coche + nivel actual.
+      var planResult = planFuelStops({
+        routeKm: totalKm,
+        tankL: vehicle.tank,
+        consumoL100km: vehicle.cons,
+        currentFuelPct: fuelPct,
+        stations: corridor
+      });
 
+      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor.';
+      plan.innerHTML = renderPlanSection(planResult, fuelLabel, vehicle);
+
+      // 4. Secundario: top-5 mas baratas en el corredor (por si el usuario
+      // quiere comparar o modificar la ruta).
+      corridor.sort(function(a, b) {
+        return (a.priceEurL - b.priceEurL) || (a.offKm - b.offKm);
+      });
+      var top = corridor.slice(0, 5);
+      var secHeader = '<div class="route-plan-title" style="margin-top:16px;">Top 5 m\u00E1s baratas en el corredor</div>';
       var html = top.map(function(h) {
-        var s = h.s;
+        var s = h.item;
         var lat = stationLatLng(s);
         var navUrl = lat
           ? 'https://www.google.com/maps/dir/?api=1&destination=' + lat.lat.toFixed(6) + ',' + lat.lng.toFixed(6) + '&travelmode=driving'
@@ -3668,12 +3854,12 @@ if ('serviceWorker' in navigator) {
           + '  <div class="route-card-sub">\u{1F4CD} ' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
           + '</div>'
           + '<div class="route-card-right">'
-          + '  <div class="route-card-price">' + h.price.toFixed(3) + ' \u20AC/L</div>'
-          + '  <div class="route-card-off">+' + h.off.toFixed(1) + ' km del trayecto</div>'
+          + '  <div class="route-card-price">' + h.priceEurL.toFixed(3) + ' \u20AC/L</div>'
+          + '  <div class="route-card-off">km ' + Math.round(h.kmFromOrigin) + ' \u00B7 +' + h.offKm.toFixed(1) + ' km</div>'
           + '</div>'
           + '</a>';
       }).join('');
-      res.innerHTML = html;
+      res.innerHTML = secHeader + html;
     } catch (err) {
       stat.textContent = 'Error al buscar. Prueba de nuevo.';
       stat.classList.add('error');

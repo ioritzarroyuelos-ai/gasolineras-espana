@@ -18,6 +18,8 @@ import {
   stationsInCorridor,
   computeL100km,
   diaryStats,
+  planFuelStops,
+  projectOnRoute,
 } from '../src/lib/pure'
 
 describe('LRU', () => {
@@ -593,6 +595,215 @@ describe('stationsInCorridor (filtrar gasolineras en trayecto)', () => {
     expect(stationsInCorridor(stations, madrid, barcelona, 0, extract, 5)).toEqual([])
     expect(stationsInCorridor(stations, madrid, barcelona, -1, extract, 5)).toEqual([])
     expect(stationsInCorridor(stations, madrid, barcelona, NaN, extract, 5)).toEqual([])
+  })
+})
+
+describe('planFuelStops (planificador de paradas en ruta)', () => {
+  type S = { id: string; name: string }
+
+  it('no necesita paradas si el combustible actual alcanza con reserva', () => {
+    // Depo 50L + consumo 6.5 L/100km = 769 km de autonomia. Ruta 500km.
+    // Con 80% de gasolina = 615km alcanzables > 500km + reserva.
+    const r = planFuelStops<S>({
+      routeKm: 500,
+      tankL: 50,
+      consumoL100km: 6.5,
+      currentFuelPct: 0.80,
+      stations: [
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 200, priceEurL: 1.50 },
+        { item: { id: 'b', name: 'B' }, kmFromOrigin: 400, priceEurL: 1.40 },
+      ],
+    })
+    expect(r.stops).toEqual([])
+    expect(r.unreachable).toBe(false)
+    expect(r.maxAutonomyKm).toBeCloseTo(769.23, 1)
+  })
+
+  it('planifica una parada en la mas barata alcanzable', () => {
+    // Depo 50L + 6.5L/100km, 50% gasolina = 384km alcanzables. Ruta 564km.
+    // Necesita parar antes de km 384-(10% reserva ~77km) = 307km.
+    // En ventana [0,307]: barata@200=1.35, media@100=1.50. Debe elegir 1.35.
+    const r = planFuelStops<S>({
+      routeKm: 564,
+      tankL: 50,
+      consumoL100km: 6.5,
+      currentFuelPct: 0.50,
+      stations: [
+        { item: { id: 'media',  name: 'Media' },  kmFromOrigin: 100, priceEurL: 1.50 },
+        { item: { id: 'barata', name: 'Barata' }, kmFromOrigin: 200, priceEurL: 1.35 },
+        { item: { id: 'lejos',  name: 'Lejos' },  kmFromOrigin: 500, priceEurL: 1.30 },  // fuera del alcance
+      ],
+    })
+    expect(r.unreachable).toBe(false)
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('barata')
+    expect(r.stops[0].kmFromOrigin).toBe(200)
+  })
+
+  it('si varias estaciones empatan en precio, elige la mas lejana (menos paradas)', () => {
+    const r = planFuelStops<S>({
+      routeKm: 500,
+      tankL: 50,
+      consumoL100km: 6.5,
+      currentFuelPct: 0.30,  // ~230 km alcanzables
+      stations: [
+        { item: { id: 'cerca', name: 'Cerca' }, kmFromOrigin: 50,  priceEurL: 1.40 },
+        { item: { id: 'lejos', name: 'Lejos' }, kmFromOrigin: 150, priceEurL: 1.40 },
+      ],
+    })
+    expect(r.stops.length).toBeGreaterThanOrEqual(1)
+    expect(r.stops[0].item.id).toBe('lejos')
+  })
+
+  it('planifica multiples paradas en rutas largas', () => {
+    // Ruta 1500 km, autonomia 500 km (50L, 10L/100km). Paradas necesarias: ~3.
+    const stations = []
+    for (let km = 100; km < 1500; km += 100) {
+      stations.push({
+        item: { id: 'km' + km, name: 'KM' + km },
+        kmFromOrigin: km,
+        priceEurL: 1.40 + Math.sin(km) * 0.05,
+      })
+    }
+    const r = planFuelStops<S>({
+      routeKm: 1500,
+      tankL: 50,
+      consumoL100km: 10,
+      currentFuelPct: 1.0,
+      stations,
+    })
+    expect(r.unreachable).toBe(false)
+    expect(r.stops.length).toBeGreaterThan(1)
+    // Paradas ordenadas temporalmente
+    for (let i = 1; i < r.stops.length; i++) {
+      expect(r.stops[i].kmFromOrigin).toBeGreaterThan(r.stops[i-1].kmFromOrigin)
+    }
+  })
+
+  it('marca unreachable si no hay ninguna estacion alcanzable desde el inicio', () => {
+    const r = planFuelStops<S>({
+      routeKm: 1000,
+      tankL: 40,
+      consumoL100km: 8,        // autonomia 500 km
+      currentFuelPct: 0.20,    // 100 km alcanzables
+      stations: [
+        // Todas a 200+ km, ninguna en ventana [0, 100 - reserva]
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 200, priceEurL: 1.40 },
+        { item: { id: 'b', name: 'B' }, kmFromOrigin: 400, priceEurL: 1.30 },
+      ],
+    })
+    expect(r.unreachable).toBe(true)
+    expect(r.stops.length).toBe(0)
+  })
+
+  it('respeta la reserva: no eligira estacion a exactamente el limite', () => {
+    // Autonomia 500km. Safety 10% = 50km. Con deposito lleno, ventana [0, 450].
+    // Estacion a 480km NO debe ser elegida (esta mas alla de 450).
+    const r = planFuelStops<S>({
+      routeKm: 700,
+      tankL: 50,
+      consumoL100km: 10,
+      currentFuelPct: 1.0,
+      safetyPct: 0.10,
+      stations: [
+        { item: { id: 'ok',     name: 'OK' },     kmFromOrigin: 300, priceEurL: 1.45 },
+        { item: { id: 'afuera', name: 'Afuera' }, kmFromOrigin: 480, priceEurL: 1.30 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('ok')
+  })
+
+  it('calcula totalCostEur basado en km recorridos entre paradas', () => {
+    const r = planFuelStops<S>({
+      routeKm: 400,
+      tankL: 50,
+      consumoL100km: 10,
+      currentFuelPct: 0.30,    // 150 km alcanzables
+      stations: [
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 100, priceEurL: 1.50 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    // consumido 100km * 10 / 100 = 10 L * 1.50 = 15 €
+    expect(r.totalCostEur).toBeCloseTo(15, 2)
+  })
+
+  it('devuelve resultado vacio con inputs invalidos (fail-safe)', () => {
+    expect(planFuelStops({
+      routeKm: 0, tankL: 50, consumoL100km: 6.5,
+      currentFuelPct: 0.5, stations: [],
+    }).stops).toEqual([])
+
+    expect(planFuelStops({
+      routeKm: 500, tankL: 0, consumoL100km: 6.5,
+      currentFuelPct: 0.5, stations: [],
+    }).stops).toEqual([])
+
+    expect(planFuelStops({
+      routeKm: 500, tankL: 50, consumoL100km: 0,
+      currentFuelPct: 0.5, stations: [],
+    }).stops).toEqual([])
+  })
+
+  it('ignora estaciones con precio invalido o fuera de la ruta', () => {
+    const r = planFuelStops<S>({
+      routeKm: 500,
+      tankL: 50,
+      consumoL100km: 10,
+      currentFuelPct: 0.30,
+      stations: [
+        { item: { id: 'sin-precio', name: 'X' }, kmFromOrigin: 100, priceEurL: 0 },
+        { item: { id: 'negativa',   name: 'Y' }, kmFromOrigin: 120, priceEurL: -1 },
+        { item: { id: 'pasada',     name: 'Z' }, kmFromOrigin: -5,  priceEurL: 1.30 },
+        { item: { id: 'fuera',      name: 'W' }, kmFromOrigin: 600, priceEurL: 1.30 },
+        { item: { id: 'valida',     name: 'V' }, kmFromOrigin: 100, priceEurL: 1.45 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('valida')
+  })
+})
+
+describe('projectOnRoute (proyeccion sobre segmento)', () => {
+  const madrid = { lat: 40.4168, lng: -3.7038 }
+  const barcelona = { lat: 41.3851, lng: 2.1734 }
+
+  it('kmFromOrigin = 0 para el punto A', () => {
+    const r = projectOnRoute(madrid, madrid, barcelona)
+    expect(r.kmFromOrigin).toBeCloseTo(0, 1)
+  })
+
+  it('kmFromOrigin = totalKm para el punto B', () => {
+    const r = projectOnRoute(barcelona, madrid, barcelona)
+    expect(r.kmFromOrigin).toBeCloseTo(r.totalKm, 1)
+  })
+
+  it('punto medio tiene kmFromOrigin ~ totalKm / 2', () => {
+    const mid = { lat: (madrid.lat + barcelona.lat) / 2, lng: (madrid.lng + barcelona.lng) / 2 }
+    const r = projectOnRoute(mid, madrid, barcelona)
+    expect(r.kmFromOrigin).toBeCloseTo(r.totalKm / 2, 0)
+    expect(r.offKm).toBeLessThan(1)
+  })
+
+  it('totalKm ~ haversine(A, B) con error <2%', () => {
+    const r = projectOnRoute(madrid, madrid, barcelona)
+    const expected = haversineKm(madrid.lat, madrid.lng, barcelona.lat, barcelona.lng)
+    const relErr = Math.abs(r.totalKm - expected) / expected
+    expect(relErr).toBeLessThan(0.02)
+  })
+
+  it('punto fuera del segmento se cierra en el extremo mas cercano', () => {
+    // Muy al oeste de Madrid: proyecta en A (km=0)
+    const oeste = { lat: 40.4, lng: -8.0 }
+    const r = projectOnRoute(oeste, madrid, barcelona)
+    expect(r.kmFromOrigin).toBeCloseTo(0, 0)
+  })
+
+  it('origen = destino devuelve totalKm = 0', () => {
+    const r = projectOnRoute({ lat: 41, lng: 0 }, madrid, madrid)
+    expect(r.totalKm).toBe(0)
+    expect(r.kmFromOrigin).toBe(0)
   })
 })
 

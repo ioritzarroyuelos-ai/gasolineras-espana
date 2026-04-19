@@ -427,6 +427,179 @@ export function stationsInCorridor<T>(
   return hits.slice(0, Math.max(1, topN))
 }
 
+// ---- PLANIFICACION DE PARADAS DE REPOSTAJE EN RUTA ----
+// Dada una ruta A->B (distancia total en km), el deposito del coche, su
+// consumo, el nivel de combustible actual, y una lista de estaciones ya
+// PROYECTADAS sobre la ruta (con su km-desde-origen), decide EN QUE
+// ESTACIONES parar para completar el viaje sin quedarse sin gasolina,
+// minimizando el gasto total (elige la mas barata alcanzable en cada tramo).
+//
+// Modelo greedy-por-tramo:
+//   1. Calcula autonomia maxima (km) = tankL / consumoL100km * 100
+//   2. Calcula km alcanzables AHORA = autonomia * currentFuelPct
+//   3. Define reserva minima (km) que queremos conservar = autonomia * safetyPct
+//      (por defecto 10% del tanque: si autonomia=700km, reservamos 70km)
+//   4. Mientras no lleguemos a destino con reserva:
+//      - Ventana alcanzable = [posActual, posActual + kmRestantesDeTanque - reserva]
+//      - Elige estacion MAS BARATA de la ventana; desempate por mayor km
+//        (mas lejos => menos paradas futuras).
+//      - Si no hay ninguna estacion en la ventana => ruta imposible con esta
+//        autonomia; devuelve unreachable=true (el cliente avisa).
+//      - Llena el deposito (asumimos llenado completo), avanza posicion,
+//        sigue.
+//   5. Para al llegar a destino.
+//
+// La heuristica NO minimiza el coste total optimo (problema NP-hard en
+// general), pero produce planes razonables en O(n * stopsCount) — para
+// rutas tipicas (2-5 paradas sobre <1000 estaciones) es instantaneo.
+export interface PlanFuelStopsInput<T> {
+  routeKm: number                 // distancia total A->B en km
+  tankL: number                   // capacidad deposito en litros
+  consumoL100km: number           // consumo en L/100km
+  currentFuelPct: number          // [0..1] nivel actual del deposito
+  safetyPct?: number              // [0..1] reserva minima; default 0.10 (10%)
+  stations: {
+    item: T
+    kmFromOrigin: number          // km-desde-origen del punto proyectado
+    priceEurL: number
+  }[]
+}
+export interface PlannedStop<T> {
+  item: T
+  kmFromOrigin: number
+  priceEurL: number
+}
+export interface PlanFuelStopsResult<T> {
+  stops: PlannedStop<T>[]
+  unreachable: boolean            // true si no es posible completar la ruta
+  maxAutonomyKm: number            // autonomia con deposito lleno
+  initialRangeKm: number           // km alcanzables al inicio (segun currentFuelPct)
+  totalCostEur: number             // coste total de las paradas planificadas
+                                    // (asume llenar hasta tope en cada parada)
+}
+export function planFuelStops<T>(input: PlanFuelStopsInput<T>): PlanFuelStopsResult<T> {
+  const {
+    routeKm, tankL, consumoL100km, currentFuelPct,
+    safetyPct = 0.10, stations,
+  } = input
+  // Defaults ultra-conservadores si el input es ruidoso.
+  const empty: PlanFuelStopsResult<T> = {
+    stops: [], unreachable: false, maxAutonomyKm: 0, initialRangeKm: 0, totalCostEur: 0,
+  }
+  if (!Number.isFinite(routeKm)         || routeKm         <= 0) return empty
+  if (!Number.isFinite(tankL)           || tankL           <= 0) return empty
+  if (!Number.isFinite(consumoL100km)   || consumoL100km   <= 0) return empty
+  const fuelPct   = Math.max(0, Math.min(1, Number.isFinite(currentFuelPct) ? currentFuelPct : 0))
+  const safety    = Math.max(0, Math.min(0.5, Number.isFinite(safetyPct) ? safetyPct : 0.10))
+
+  const maxAutonomyKm = (tankL / consumoL100km) * 100
+  const safetyKm      = maxAutonomyKm * safety
+  const initialRangeKm = maxAutonomyKm * fuelPct
+
+  // Estaciones validas, ordenadas por km-desde-origen ascendente (nos da el
+  // orden temporal en que las "veremos" al conducir).
+  const pool = stations
+    .filter(s => s && Number.isFinite(s.kmFromOrigin) && s.kmFromOrigin >= 0
+             && s.kmFromOrigin <= routeKm
+             && Number.isFinite(s.priceEurL) && s.priceEurL > 0)
+    .slice()
+    .sort((a, b) => a.kmFromOrigin - b.kmFromOrigin)
+
+  let pos = 0
+  let rangeKm = initialRangeKm
+  const plan: PlannedStop<T>[] = []
+  let totalCost = 0
+
+  // Bucle acotado: como maximo ceil(routeKm / (tankL/consumoL*100 - safetyKm))
+  // paradas. Anadimos un hard-cap de 50 como safety-net anti-infinito.
+  for (let iter = 0; iter < 50; iter++) {
+    const remaining = routeKm - pos
+    if (rangeKm - safetyKm >= remaining) break  // llegamos sin parar mas
+
+    const windowStart = pos
+    const windowEnd   = pos + Math.max(0, rangeKm - safetyKm)
+
+    // Candidatas alcanzables desde nuestra posicion actual (reserva incluida).
+    // Las que ya pasamos (< pos) no cuentan.
+    const candidates = pool.filter(s =>
+      s.kmFromOrigin > windowStart && s.kmFromOrigin <= windowEnd,
+    )
+    if (candidates.length === 0) {
+      // Ruta imposible: ni siquiera la primera estacion alcanzable existe.
+      return {
+        stops: plan,
+        unreachable: true,
+        maxAutonomyKm,
+        initialRangeKm,
+        totalCostEur: totalCost,
+      }
+    }
+    // Escoge la MAS BARATA; si empate, la mas lejana (menos futuras paradas).
+    candidates.sort((a, b) =>
+      (a.priceEurL - b.priceEurL) || (b.kmFromOrigin - a.kmFromOrigin),
+    )
+    const pick = candidates[0]
+    plan.push({
+      item: pick.item,
+      kmFromOrigin: pick.kmFromOrigin,
+      priceEurL: pick.priceEurL,
+    })
+    // Coste: asumimos que en cada parada llenas hasta tope. Litros necesarios
+    // para reponer desde el nivel actual (tras consumir pick.kmFromOrigin - pos km)
+    // hasta el deposito lleno.
+    const consumedKm = pick.kmFromOrigin - pos
+    const consumedL  = (consumedKm / 100) * consumoL100km
+    totalCost += consumedL * pick.priceEurL
+    pos = pick.kmFromOrigin
+    rangeKm = maxAutonomyKm  // deposito lleno tras repostar
+  }
+  return {
+    stops: plan,
+    unreachable: false,
+    maxAutonomyKm,
+    initialRangeKm,
+    totalCostEur: totalCost,
+  }
+}
+
+// ---- RUTA: proyeccion de un punto sobre el segmento A->B ----
+// Devuelve { offKm, kmFromOrigin } donde kmFromOrigin es la distancia desde A
+// hasta el punto proyectado (en km) sobre el segmento recto A->B.
+// Util para ordenar temporalmente las estaciones del corredor al planificar
+// paradas: "primero encuentro la estacion X a 120km, luego la Y a 310km".
+export function projectOnRoute(
+  point: LatLng, a: LatLng, b: LatLng,
+): { offKm: number; kmFromOrigin: number; totalKm: number } {
+  const center: LatLng = {
+    lat: (a.lat + b.lat) / 2,
+    lng: (a.lng + b.lng) / 2,
+  }
+  const P = llToXYkm(point, center)
+  const A = llToXYkm(a, center)
+  const B = llToXYkm(b, center)
+  const dx = B.x - A.x
+  const dy = B.y - A.y
+  const len2 = dx * dx + dy * dy
+  const totalKm = Math.sqrt(len2)
+  if (len2 < 1e-9) {
+    const ex = P.x - A.x
+    const ey = P.y - A.y
+    return { offKm: Math.sqrt(ex * ex + ey * ey), kmFromOrigin: 0, totalKm: 0 }
+  }
+  let t = ((P.x - A.x) * dx + (P.y - A.y) * dy) / len2
+  if (t < 0) t = 0
+  else if (t > 1) t = 1
+  const cx = A.x + t * dx
+  const cy = A.y + t * dy
+  const ex = P.x - cx
+  const ey = P.y - cy
+  return {
+    offKm: Math.sqrt(ex * ex + ey * ey),
+    kmFromOrigin: t * totalKm,
+    totalKm,
+  }
+}
+
 // ---- DIARIO DE REPOSTAJES: consumo real L/100km ----
 // Dado una entrada del diario con litros cargados + km totales del coche al
 // repostar, y la entrada anterior con sus km_totales, calculamos el consumo

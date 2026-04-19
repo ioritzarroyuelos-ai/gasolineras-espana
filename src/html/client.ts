@@ -774,11 +774,37 @@ function buildPopup(s) {
       + '</div>'
     : '';
 
+  // Deep links a apps de navegacion. Los 3 siguen sus URL schemes oficiales:
+  //   Google Maps: https://developers.google.com/maps/documentation/urls/get-started
+  //   Waze:        https://developers.google.com/waze/deeplinks
+  //   Apple Maps:  https://developer.apple.com/library/archive/featuredarticles/
+  //                iPhoneURLScheme_Reference/MapLinks/MapLinks.html
+  //
+  // Comportamiento esperado segun plataforma:
+  //   - Desktop            -> nueva pestana con la version web
+  //   - Mobile con app     -> Universal Link / Android intent abre la app nativa
+  //                           con navegacion ya arrancada (navigate=yes/dirflg=d)
+  //   - Mobile sin app     -> cae al web viewer del vendor
+  //
+  // Notas:
+  //   - Waze: www. explicito para evitar 301 extra (waze.com redirige a www.).
+  //   - Apple Maps: q= pinta la etiqueta del pin con el nombre de la estacion
+  //     en vez de solo las coordenadas.
+  //   - Coordenadas redondeadas a 6 decimales (~11cm de precision). Mas que
+  //     suficiente para apuntar al surtidor y genera URLs limpias sin artefactos
+  //     de coma flotante (ej. 43.2199999998).
+  //   - target="_blank" + rel="noopener" impide que la pestana destino acceda
+  //     a window.opener (reverse-tabnabbing).
+  var latS = lat.toFixed(6);
+  var lngS = lng.toFixed(6);
+  // Label para Apple Maps: nombre de la estacion o fallback generico.
+  // encodeURIComponent garantiza que comas, espacios y tildes no rompan la URL.
+  var aplLabel = encodeURIComponent(s['Rotulo'] || 'Gasolinera');
   var navBtns = hasCoords ? (
     '<div style="display:flex;gap:5px;margin-top:12px">'
-    + '<a href="https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng + '&travelmode=driving" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#4285f4;color:#fff;text-decoration:none">Google Maps</a>'
-    + '<a href="https://waze.com/ul?ll=' + lat + ',' + lng + '&navigate=yes" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#09d3f7;color:#0d1b2a;text-decoration:none">Waze</a>'
-    + '<a href="https://maps.apple.com/?daddr=' + lat + ',' + lng + '&dirflg=d" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#1c1c1e;color:#fff;text-decoration:none">Apple Maps</a>'
+    + '<a href="https://www.google.com/maps/dir/?api=1&destination=' + latS + ',' + lngS + '&travelmode=driving" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#4285f4;color:#fff;text-decoration:none">Google Maps</a>'
+    + '<a href="https://www.waze.com/ul?ll=' + latS + ',' + lngS + '&navigate=yes" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#09d3f7;color:#0d1b2a;text-decoration:none">Waze</a>'
+    + '<a href="https://maps.apple.com/?daddr=' + latS + ',' + lngS + '&q=' + aplLabel + '&dirflg=d" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#1c1c1e;color:#fff;text-decoration:none">Apple Maps</a>'
     + '</div>'
   ) : '';
 

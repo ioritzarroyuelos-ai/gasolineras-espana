@@ -12,7 +12,7 @@ on:
 
 permissions:
   contents: read
-  actions: read             # para leer el artefacto de otro workflow_run
+  actions: read             # para leer el artefacto de otro workflow_run + listar runs (gh run list)
   deployments: write        # para que la UI muestre el deploy en "Environments"
 
 # Actions pineadas a versiones Node 24 nativas (download-artifact@v7) para
@@ -42,22 +42,69 @@ jobs:
       name: production
       url: https://webapp-3ft.pages.dev
     steps:
-      # Checkout del commit exacto que disparo CI. Lo necesitamos para que
+      # Resuelve QUE artefacto descargar. Dos caminos:
+      #   1) workflow_run: CI acaba de terminar verde en main -> usamos sus
+      #      outputs directamente (run_id + head_sha del event).
+      #   2) workflow_dispatch (manual): NO hay workflow_run en el event,
+      #      asi que buscamos el ultimo CI verde en main via `gh run list`.
+      #      Si la retention de 7d ya expiro el artefacto, el download falla
+      #      y deja un error claro al final.
+      #
+      # Antes, el manual caia al `github.run_id` del propio Deploy (que
+      # nunca sube dist-*) y fallaba con 'Artifact not found'. Esto corrige
+      # ese bug: el manual trigger tambien funciona out-of-the-box.
+      - name: Resolver run de CI con el artefacto
+        id: ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            RUN_ID="${{ github.event.workflow_run.id }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            SOURCE="workflow_run (auto tras CI verde)"
+          else
+            # workflow_dispatch: resolver el ultimo CI verde en main.
+            LATEST=$(gh run list \
+              --workflow=ci.yml \
+              --branch=main \
+              --event=push \
+              --status=success \
+              --limit=1 \
+              --json databaseId,headSha \
+              --repo "${{ github.repository }}")
+            if [ "$(echo "$LATEST" | jq 'length')" = "0" ]; then
+              echo "::error::No hay CI runs verdes en main. Haz un push antes de lanzar Deploy manual."
+              exit 1
+            fi
+            RUN_ID=$(echo "$LATEST" | jq -r '.[0].databaseId')
+            HEAD_SHA=$(echo "$LATEST" | jq -r '.[0].headSha')
+            SOURCE="workflow_dispatch (manual, ultimo CI verde)"
+          fi
+          echo "Origen: $SOURCE"
+          echo "  run_id:   $RUN_ID"
+          echo "  head_sha: $HEAD_SHA"
+          echo "run_id=$RUN_ID"     >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      # Checkout del commit exacto que validó CI. Lo necesitamos para que
       # `wrangler d1 migrations apply` lea migrations/ y wrangler.jsonc.
       - name: Checkout repo @ commit validado
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ steps.ci.outputs.head_sha }}
 
       - name: Descargar dist del CI run
-        # Usa el SHA del commit que disparo CI. Asi deployamos exactamente el
-        # mismo artefacto validado (no reconstruimos = sin sorpresas).
+        # Usa el SHA y run_id resueltos arriba. Asi deployamos exactamente el
+        # mismo artefacto validado por CI (no reconstruimos = sin sorpresas).
+        # Si el artefacto ya expiro (>7d de retention), GHA falla con
+        # "Artifact not found" — el workaround es un empty commit para
+        # regenerarlo desde CI, o esperar al siguiente push real.
         uses: actions/download-artifact@v7
         with:
-          name: dist-${{ github.event.workflow_run.head_sha || github.sha }}
+          name: dist-${{ steps.ci.outputs.head_sha }}
           path: dist
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+          run-id: ${{ steps.ci.outputs.run_id }}
 
       - name: Sanity check del artefacto
         run: |
@@ -108,7 +155,7 @@ jobs:
             --project-name=webapp \
             --branch=main \
             --commit-dirty=true \
-            --commit-hash="${{ github.event.workflow_run.head_sha || github.sha }}"
+            --commit-hash="${{ steps.ci.outputs.head_sha }}"
 
       # Smoke post-deploy: valida que /api/health responde 200 {ok:true}.
       # Si rompe, el job queda en rojo -> notificacion automatica y posibilidad
@@ -138,6 +185,7 @@ jobs:
         if: success()
         run: |
           echo "### Deploy OK" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: \`${{ github.event.workflow_run.head_sha || github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ steps.ci.outputs.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "URL: https://webapp-3ft.pages.dev" >> $GITHUB_STEP_SUMMARY
           echo "Health: \`$(cat /tmp/health.json 2>/dev/null || echo 'n/a')\`" >> $GITHUB_STEP_SUMMARY

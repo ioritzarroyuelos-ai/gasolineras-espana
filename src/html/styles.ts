@@ -584,10 +584,64 @@ export function getStyles(nonce: string = ''): string {
     }
     .route-mode-bar-exit:hover { background: #134e4a; }
     body.dark .route-mode-bar { background: rgba(6, 95, 70, 0.95); }
-    @media (max-width: 520px) {
-      .route-mode-bar { font-size: 12px; padding: 6px 10px; }
-      .route-mode-bar-text { max-width: 48vw; }
+
+    /* Bloque de deep-links a apps de navegacion, en el banner flotante.
+       Se oculta si no hay origen/destino confirmado. */
+    .route-mode-bar-nav { display: inline-flex; gap: 4px; }
+    .route-mode-bar-nav a {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 4px 9px; border-radius: 999px;
+      font-size: 11px; font-weight: 700;
+      text-decoration: none;
+      background: rgba(255,255,255,0.15); color: white;
+      border: 1px solid rgba(255,255,255,0.25);
+      transition: background .15s ease, transform .1s ease;
     }
+    .route-mode-bar-nav a:hover { background: rgba(255,255,255,0.3); }
+    .route-mode-bar-nav a:active { transform: scale(.96); }
+
+    @media (max-width: 520px) {
+      .route-mode-bar { font-size: 12px; padding: 6px 10px; gap: 6px; flex-wrap: wrap; }
+      .route-mode-bar-text { max-width: 100%; flex: 1 0 100%; text-align: center; }
+      .route-mode-bar-nav a { padding: 3px 7px; font-size: 10px; }
+    }
+
+    /* Botonera "Abrir ruta en..." dentro del panel del plan. */
+    .route-nav-title {
+      margin-top: 14px; margin-bottom: 6px;
+      font-size: 12px; font-weight: 700; color: #334155;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    body.dark .route-nav-title { color: #cbd5e1; }
+    .route-nav-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+    .route-nav-btn {
+      flex: 1 1 110px;
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 10px 12px; border-radius: 8px;
+      font-size: 13px; font-weight: 700;
+      text-decoration: none; color: white;
+      transition: opacity .15s ease, transform .1s ease;
+    }
+    .route-nav-btn:hover { opacity: 0.92; }
+    .route-nav-btn:active { transform: scale(.98); }
+    .route-nav-google { background: #4285F4; }
+    .route-nav-apple  { background: #111827; }
+    .route-nav-waze   { background: #33ccff; color: #0b1220; }
+    .route-nav-note {
+      font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;
+    }
+    body.dark .route-nav-note { color: #94a3b8; }
+
+    /* Botones pequenitos dentro del popup del marcador de parada. */
+    .popup-nav-btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 5px 9px; border-radius: 6px;
+      font-size: 11px; font-weight: 700;
+      text-decoration: none; color: white;
+    }
+    .popup-nav-google { background: #4285F4; }
+    .popup-nav-apple  { background: #111827; }
+    .popup-nav-waze   { background: #33ccff; color: #0b1220; }
     /* Marcador grande de parada: numero + icono de gasolinera.
        Se superpone al mapa, con el numero de orden de la parada. */
     .route-stop-marker {

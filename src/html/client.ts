@@ -3479,10 +3479,81 @@ if ('serviceWorker' in navigator) {
 // carreteras no cambian en horas, asi que 99% de las rutas sirven el
 // primer hit a la siguiente peticion identica.
 
+// ---- URL builders para llevar la ruta a apps de navegacion ----
+// Google Maps y Apple Maps soportan MULTI-paradas via URL. Waze NO: su
+// esquema de deep-link solo acepta un destino, asi que para Waze abrimos
+// la proxima parada no visitada (o el destino final si no hay paradas) y
+// el usuario tiene que repetir el proceso en cada gasolinera. Mostramos
+// esa limitacion en la UI para que no haya sorpresas.
+//
+// Formatos:
+//   Google: dir/?api=1&origin=LAT,LNG&destination=LAT,LNG
+//           &waypoints=LAT,LNG|LAT,LNG&travelmode=driving
+//   Apple:  ?saddr=LAT,LNG&daddr=LAT,LNG+to:LAT,LNG+to:LAT,LNG&dirflg=d
+//   Waze:   ?ll=LAT,LNG&navigate=yes
+//
+// Google Maps acepta hasta 9 waypoints; Apple tiene un limite practico
+// similar. MAX_ROUTE_STOPS ya esta capado a 8 en el backend, pero
+// defendemos aqui tambien por si un futuro cambio lo eleva.
+var NAV_MAX_WAYPOINTS = 9;
+function navCoord(ll) {
+  return ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6);
+}
+function navStopsLatLngs(stops) {
+  var out = [];
+  if (!stops) return out;
+  for (var i = 0; i < stops.length && i < NAV_MAX_WAYPOINTS; i++) {
+    var ll = stationLatLng(stops[i].item);
+    if (ll) out.push(ll);
+  }
+  return out;
+}
+function googleMapsRouteUrl(from, to, stops) {
+  var url = 'https://www.google.com/maps/dir/?api=1'
+          + '&origin=' + navCoord(from)
+          + '&destination=' + navCoord(to)
+          + '&travelmode=driving';
+  var wps = navStopsLatLngs(stops);
+  if (wps.length > 0) {
+    url += '&waypoints=' + encodeURIComponent(wps.map(navCoord).join('|'));
+  }
+  return url;
+}
+function appleMapsRouteUrl(from, to, stops) {
+  // daddr = parada1+to:parada2+to:destino. Apple requiere que el destino
+  // final sea el ULTIMO elemento de daddr, no un parametro separado.
+  var wps = navStopsLatLngs(stops);
+  var daddrParts = wps.map(navCoord);
+  daddrParts.push(navCoord(to));
+  return 'https://maps.apple.com/?saddr=' + navCoord(from)
+       + '&daddr=' + encodeURIComponent(daddrParts.join('+to:'))
+       + '&dirflg=d';
+}
+function wazeRouteUrl(to) {
+  // Waze NO soporta waypoints. Devolvemos el URL al destino final; el
+  // usuario tendra que relanzar Waze desde cada parada.
+  return 'https://waze.com/ul?ll=' + navCoord(to) + '&navigate=yes';
+}
+function wazeStopUrl(ll) {
+  return 'https://waze.com/ul?ll=' + navCoord(ll) + '&navigate=yes';
+}
+function appleMapsStopUrl(ll) {
+  return 'https://maps.apple.com/?daddr=' + navCoord(ll) + '&dirflg=d';
+}
+function googleMapsStopUrl(ll) {
+  return 'https://www.google.com/maps/dir/?api=1&destination=' + navCoord(ll) + '&travelmode=driving';
+}
+
+// Estado conservado entre entrar/salir de modo-ruta: permite re-generar
+// las URLs si el usuario cambia de app sin recalcular la ruta.
+var routeNavFrom = null;
+var routeNavTo = null;
+var routeNavStops = null;
+
 // Entra en modo-ruta: oculta los marcadores generales, dibuja la polilinea y
 // los marcadores numerados de las paradas recomendadas, y centra el mapa.
 // Guarda los layers para poder desmontarlos al salir.
-function enterRouteMode(coords, stops) {
+function enterRouteMode(coords, stops, from, to) {
   if (!map) return;
   // Oculta el cluster general; al salir lo volveremos a enganchar.
   if (clusterGroup && map.hasLayer(clusterGroup)) {
@@ -3491,6 +3562,11 @@ function enterRouteMode(coords, stops) {
   // Limpia layers previos de una ruta anterior si existiera.
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   if (routeStopsLayer) { map.removeLayer(routeStopsLayer); routeStopsLayer = null; }
+
+  // Guarda contexto para re-generar deep-links (Waze secuencial, etc.).
+  routeNavFrom = from || null;
+  routeNavTo = to || null;
+  routeNavStops = stops || [];
 
   // Polilinea: coords viene como [[lng, lat], ...] (GeoJSON). Leaflet usa
   // [lat, lng] en L.polyline, asi que le damos la vuelta.
@@ -3516,12 +3592,18 @@ function enterRouteMode(coords, stops) {
       iconAnchor: [18, 18]
     });
     var m = L.marker([pos.lat, pos.lng], { icon: icon, zIndexOffset: 800 });
-    var nav = 'https://www.google.com/maps/dir/?api=1&destination=' + pos.lat.toFixed(6) + ',' + pos.lng.toFixed(6) + '&travelmode=driving';
+    var gUrl = googleMapsStopUrl(pos);
+    var aUrl = appleMapsStopUrl(pos);
+    var wUrl = wazeStopUrl(pos);
     var popup = '<div style="font-weight:700;margin-bottom:4px;">Parada ' + (i + 1) + ': ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
               + '<div style="font-size:12px;color:#475569;margin-bottom:4px;">' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
               + '<div style="font-size:14px;font-weight:800;color:#16a34a;margin-bottom:6px;">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
               + '<div style="font-size:11px;color:#475569;margin-bottom:8px;">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>'
-              + '<a href="' + nav + '" target="_blank" rel="noopener" style="display:inline-block;padding:6px 10px;background:#16a34a;color:white;border-radius:6px;font-weight:700;text-decoration:none;font-size:12px;">Abrir en Google Maps</a>';
+              + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
+              + '  <a href="' + gUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-google">Google</a>'
+              + '  <a href="' + aUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-apple">Apple</a>'
+              + '  <a href="' + wUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-waze">Waze</a>'
+              + '</div>';
     m.bindPopup(popup, { maxWidth: 280 });
     routeStopsLayer.addLayer(m);
   });
@@ -3529,6 +3611,21 @@ function enterRouteMode(coords, stops) {
 
   // Centra el mapa en la ruta completa.
   try { map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] }); } catch (e) {}
+
+  // Pobla los deep-links del banner flotante (Google/Apple con paradas,
+  // Waze solo al destino). Si faltan origen/destino, ocultamos el bloque.
+  var navBox = document.getElementById('route-mode-bar-nav');
+  if (navBox && from && to) {
+    var gLink = document.getElementById('nav-gmaps');
+    var aLink = document.getElementById('nav-amaps');
+    var wLink = document.getElementById('nav-waze');
+    if (gLink) gLink.setAttribute('href', googleMapsRouteUrl(from, to, stops));
+    if (aLink) aLink.setAttribute('href', appleMapsRouteUrl(from, to, stops));
+    if (wLink) wLink.setAttribute('href', wazeRouteUrl(to));
+    navBox.style.display = 'inline-flex';
+  } else if (navBox) {
+    navBox.style.display = 'none';
+  }
 
   // Banner flotante de estado.
   var bar = document.getElementById('route-mode-bar');
@@ -3546,6 +3643,9 @@ function exitRouteMode() {
   var bar = document.getElementById('route-mode-bar');
   if (bar) bar.classList.remove('show');
   routeModeActive = false;
+  routeNavFrom = null;
+  routeNavTo = null;
+  routeNavStops = null;
 }
 
 // Hook del boton de salida del banner flotante (existe siempre en el DOM).
@@ -3839,7 +3939,29 @@ function exitRouteMode() {
     };
   }
 
-  function renderPlanSection(plan_result, fuelLabel, autonomyKm) {
+  // Bloque "Abrir la ruta completa en..." — 3 botones uno al lado del otro.
+  // Google y Apple Maps van con paradas (waypoints); Waze solo acepta destino.
+  // Si falta from/to (render inicial antes de entrar en modo-ruta), omitimos
+  // el bloque; se re-renderiza cuando el flujo llega a enterRouteMode.
+  function renderNavButtons(from, to, stops) {
+    if (!from || !to) return '';
+    var gUrl = googleMapsRouteUrl(from, to, stops);
+    var aUrl = appleMapsRouteUrl(from, to, stops);
+    var wUrl = wazeRouteUrl(to);
+    var hasStops = stops && stops.length > 0;
+    var footnote = hasStops
+      ? '<div class="route-nav-note">Waze no admite paradas m\u00FAltiples: abre solo el destino final. Para navegar parada a parada, usa los botones de cada pin en el mapa.</div>'
+      : '';
+    return '<div class="route-nav-title">Abrir ruta en:</div>'
+         + '<div class="route-nav-buttons">'
+         + '  <a href="' + gUrl + '" target="_blank" rel="noopener" class="route-nav-btn route-nav-google">Google Maps</a>'
+         + '  <a href="' + aUrl + '" target="_blank" rel="noopener" class="route-nav-btn route-nav-apple">Apple Maps</a>'
+         + '  <a href="' + wUrl + '" target="_blank" rel="noopener" class="route-nav-btn route-nav-waze">Waze</a>'
+         + '</div>'
+         + footnote;
+  }
+
+  function renderPlanSection(plan_result, fuelLabel, autonomyKm, from, to) {
     var header = '<div class="route-plan-title">&#x26FD; Plan de repostajes</div>'
                + '<div class="route-plan-subtitle">Autonom\u00EDa: ' + Math.round(autonomyKm) + ' km</div>';
 
@@ -3858,15 +3980,15 @@ function exitRouteMode() {
            + 'Amplia el corredor (desv\u00EDo m\u00E1ximo) o sube la autonom\u00EDa.</div>';
     }
     if (plan_result.stops.length === 0) {
-      return header + '<div class="route-plan-success">\u2705 No necesitas repostar. '
-           + 'Puedes completar la ruta con la autonom\u00EDa actual.</div>';
+      return header
+           + '<div class="route-plan-success">\u2705 No necesitas repostar. '
+           + 'Puedes completar la ruta con la autonom\u00EDa actual.</div>'
+           + renderNavButtons(from, to, []);
     }
     var itemsHtml = plan_result.stops.map(function(stop, i) {
       var s = stop.item;
       var lat = stationLatLng(s);
-      var navUrl = lat
-        ? 'https://www.google.com/maps/dir/?api=1&destination=' + lat.lat.toFixed(6) + ',' + lat.lng.toFixed(6) + '&travelmode=driving'
-        : '#';
+      var navUrl = lat ? googleMapsStopUrl(lat) : '#';
       return '<a class="route-plan-stop" href="' + navUrl + '" target="_blank" rel="noopener">'
         + '<div class="route-plan-info">'
         + '  <div class="route-plan-badge">' + (i + 1) + '</div>'
@@ -3881,7 +4003,7 @@ function exitRouteMode() {
         + '</div>'
         + '</a>';
     }).join('');
-    return header + itemsHtml;
+    return header + itemsHtml + renderNavButtons(from, to, plan_result.stops);
   }
 
   async function doSearch() {
@@ -4048,7 +4170,10 @@ function exitRouteMode() {
       } catch (e) { /* idem */ }
 
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.';
-      plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm);
+      // Renderizado inicial del plan SIN botones de navegacion para feedback
+      // inmediato. Se re-renderiza con botones justo despues de enterRouteMode,
+      // cuando tenemos confirmados from/to/stops definitivos.
+      plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm, null, null);
 
       // 5. Si hay paradas, pide a OSRM una SEGUNDA ruta que pase por las
       // gasolineras como waypoints intermedios. Asi la polilinea en el mapa
@@ -4085,8 +4210,13 @@ function exitRouteMode() {
 
       // 6. Entra en modo-ruta en el mapa: polilinea (posiblemente ya con
       // waypoints) + SOLO las paradas recomendadas (el usuario pidio
-      // explicitamente ver solo las que debe repostar).
-      enterRouteMode(finalCoords, planResult.stops);
+      // explicitamente ver solo las que debe repostar). Pasamos fromSel/toSel
+      // para construir los deep-links a Google/Apple/Waze Maps.
+      enterRouteMode(finalCoords, planResult.stops, fromSel, toSel);
+
+      // Re-renderiza el plan con el bloque de botones de navegacion ahora
+      // que tenemos from/to disponibles.
+      plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm, fromSel, toSel);
 
       // Actualiza el texto del banner flotante con informacion de la ruta.
       var barText = document.getElementById('route-mode-bar-text');

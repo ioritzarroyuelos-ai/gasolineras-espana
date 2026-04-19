@@ -467,6 +467,11 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
          una ruta y se oculta al cerrar el modo. -->
     <div id="route-mode-bar" class="route-mode-bar" role="status" aria-live="polite">
       <span class="route-mode-bar-text" id="route-mode-bar-text">Modo ruta activo</span>
+      <span class="route-mode-bar-nav" id="route-mode-bar-nav" aria-label="Abrir ruta en">
+        <a id="nav-gmaps" href="#" target="_blank" rel="noopener" title="Abrir ruta en Google Maps">Google</a>
+        <a id="nav-amaps" href="#" target="_blank" rel="noopener" title="Abrir ruta en Apple Maps">Apple</a>
+        <a id="nav-waze"  href="#" target="_blank" rel="noopener" title="Abrir destino en Waze (no admite paradas)">Waze</a>
+      </span>
       <button id="route-mode-bar-exit" class="route-mode-bar-exit" type="button">Salir de la ruta</button>
     </div>
 

@@ -706,16 +706,21 @@ app.get('/api/estaciones/bbox', async c => {
   if (minLat < 26 || maxLat > 45 || minLng < -20 || maxLng > 6) {
     return c.json({ error: 'bbox fuera de Espana' }, 400)
   }
-  // Area maxima razonable: 6°x6° (~400k km²). Un Madrid-Barcelona cabe en
-  // 3°x6° largos. Para rutas mas largas, el cliente puede trocear.
-  if ((maxLat - minLat) > 6 || (maxLng - minLng) > 6) {
-    return c.json({ error: 'bbox demasiado grande (max 6 grados por lado)' }, 400)
+  // Area maxima razonable: 10°x10° (cubre Peninsula Iberica completa). Un
+  // Durango-Cadiz (~7°x4°) cabe comodamente. Para queries absurdos (Canarias
+  // + Pirineos), 10° es el hard-cap. La proteccion real la da
+  // MAX_STATIONS_PER_BBOX sobre el payload.
+  if ((maxLat - minLat) > 10 || (maxLng - minLng) > 10) {
+    return c.json({ error: 'bbox demasiado grande (max 10 grados por lado)' }, 400)
   }
 
   const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
   if (!snap) return c.json({ error: 'snapshot no disponible' }, 503)
 
-  const MAX_STATIONS_PER_BBOX = 4000  // ~4k * ~300 bytes = <2 MB, seguro
+  // Snapshot de Espana: ~12k estaciones totales. Con el cap a 12000 no hay
+  // truncado silencioso en rutas largas; 12000 * ~300 B = ~3.6 MB sin gzip
+  // (~500 KB con gzip). Aceptable para una feature deliberada (route planner).
+  const MAX_STATIONS_PER_BBOX = 12000
   const filtered = filterStations(snap, s => {
     // Ministerio devuelve lat/lng como string con coma decimal. Fail-safe:
     // si no parsea, se descarta (no cuenta).
@@ -884,11 +889,14 @@ async function upstreamRoute(url: string): Promise<RouteResponse | null> {
     const durSeconds = typeof r.duration === 'number' ? r.duration : 0
     const geom = r.geometry as Record<string, unknown> | undefined
     if (!geom || geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) return null
-    // Passthrough restrictivo: validamos cada coord. Capamos a 5000 puntos
-    // como safety net (una ruta Espana peninsular completa tiene ~2000 puntos).
+    // Passthrough restrictivo: validamos cada coord. Capamos a 20000 puntos
+    // como safety net. Con overview=simplified una ruta peninsular completa
+    // (Durango-Cadiz ~1000 km) devuelve ~300-800 puntos; con overview=full
+    // puede superar 8000 y alcanzaba el cap anterior, truncando la ruta a
+    // medio camino. 20000 da margen amplio para cualquier caso.
     const coords: [number, number][] = []
     const raw_coords = geom.coordinates as unknown[]
-    for (let i = 0; i < raw_coords.length && i < 5000; i++) {
+    for (let i = 0; i < raw_coords.length && i < 20000; i++) {
       const p = raw_coords[i]
       if (!Array.isArray(p) || p.length < 2) continue
       const lng = Number(p[0])
@@ -931,12 +939,19 @@ app.get('/api/route', async c => {
     return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'HIT' })
   }
 
-  const out = await cachedJson('route-' + encodeURIComponent(cacheKey), 86400, async () => {
+  // v2 en la clave para invalidar rutas truncadas de la version anterior (que
+  // usaba overview=full + cap 5000 y cortaba rutas largas a medio camino).
+  const out = await cachedJson('route-v2-' + encodeURIComponent(cacheKey), 86400, async () => {
     // OSRM: coordenadas en orden lng,lat (GeoJSON convention).
+    // overview=simplified: Douglas-Peucker con tolerancia ~5m (zoom 14).
+    // Preserva la forma de la carretera perfectamente para render + proyeccion
+    // con bajo numero de puntos (~300-800 para una ruta Espana peninsular).
+    // overview=full explotaba el cap de 20k puntos en rutas largas (Durango-
+    // Cadiz) truncando la ruta a medio camino.
     const url = 'https://router.project-osrm.org/route/v1/driving/'
       + encodeURIComponent(from.lng) + ',' + encodeURIComponent(from.lat) + ';'
       + encodeURIComponent(to.lng)   + ',' + encodeURIComponent(to.lat)
-      + '?overview=full&geometries=geojson&alternatives=false&steps=false'
+      + '?overview=simplified&geometries=geojson&alternatives=false&steps=false'
     return await upstreamRoute(url)
   })
 

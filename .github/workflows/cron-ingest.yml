@@ -9,7 +9,9 @@ name: D1 cron — ingesta diaria de precios
 #   - Secret CRON_TOKEN en el repo (Settings → Secrets → Actions).
 #     Debe coincidir con la env var CRON_TOKEN del Pages project.
 #   - Variable PUBLIC_ORIGIN en el repo (Settings → Variables → Actions).
-#     Si no esta definida, cae al dominio por defecto webapp.pages.dev.
+#     Si no esta definida, cae al dominio por defecto webapp-3ft.pages.dev
+#     (el slug real del project de Cloudflare Pages — coincide con el default
+#     en wrangler.jsonc).
 
 on:
   schedule:
@@ -35,7 +37,7 @@ jobs:
             echo "::error::CRON_TOKEN secret no configurado — abortando."
             exit 1
           fi
-          ORIGIN="${PUBLIC_ORIGIN:-https://webapp.pages.dev}"
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
           echo "Invocando ${ORIGIN}/api/cron/ingest"
           # -f: fallar con exit!=0 si HTTP >=400 (GHA lo detecta y pone rojo).
           # -sS: silencioso excepto en error (mas limpio en los logs).

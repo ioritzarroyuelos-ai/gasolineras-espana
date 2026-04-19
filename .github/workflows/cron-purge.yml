@@ -4,7 +4,7 @@ name: D1 cron — purga semanal >2 anos
 # hoy-2a. Mantiene la BD dentro del free tier (5 GB de D1).
 #
 # Mismos requisitos que cron-ingest: secret CRON_TOKEN + variable
-# PUBLIC_ORIGIN (opcional, cae a webapp.pages.dev).
+# PUBLIC_ORIGIN (opcional, cae a webapp-3ft.pages.dev — slug real del project).
 
 on:
   schedule:
@@ -30,7 +30,7 @@ jobs:
             echo "::error::CRON_TOKEN secret no configurado — abortando."
             exit 1
           fi
-          ORIGIN="${PUBLIC_ORIGIN:-https://webapp.pages.dev}"
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
           echo "Invocando ${ORIGIN}/api/cron/purge"
           curl -fsS --retry 3 --retry-delay 5 --max-time 60 \
             -X POST "$ORIGIN/api/cron/purge" \

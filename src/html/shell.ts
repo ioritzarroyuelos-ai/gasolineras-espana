@@ -215,33 +215,33 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   ${seoScript}
   ${turnstileScripts}
 
-  ${getStyles()}
+  ${getStyles(nonce)}
 </head>
 <body>
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
   <button id="btn-toggle-sidebar" title="Abrir filtros" aria-label="Abrir panel de filtros">
-    <i class="fas fa-bars" aria-hidden="true" style="color:#fff;font-size:16px"></i>
+    <i class="fas fa-bars u-c-white u-fs-16" aria-hidden="true"></i>
   </button>
 
-  <a href="/" id="brand" aria-label="Gasolineras España · inicio" style="display:flex;align-items:center;gap:10px;text-decoration:none;color:inherit;min-width:0;flex:1">
+  <a href="/" id="brand" class="brand-link" aria-label="Gasolineras España · inicio">
     <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
-    <div style="min-width:0">
+    <div class="u-mw-0">
       <div class="header-title">Gasolineras España</div>
       <div class="header-sub">Precios oficiales · Ministerio de Industria y Energía</div>
     </div>
   </a>
 
-  <div id="geocoder-wrap" style="margin-right:6px">
+  <div id="geocoder-wrap" class="u-mr-6">
     <i class="fas fa-search-location" id="geocoder-icon" aria-hidden="true"></i>
     <input id="geocoder-input" type="text" placeholder="Buscar lugar..." autocomplete="off" spellcheck="false" aria-label="Buscar un lugar por nombre" />
     <div id="geocoder-results" role="listbox" aria-label="Resultados de busqueda"></div>
   </div>
 
-  <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-    <span id="lbl-update" class="header-update" style="display:none"></span>
-    <span id="lbl-count" class="header-badge" style="display:none"></span>
+  <div class="header-actions">
+    <span id="lbl-update" class="header-update u-hide"></span>
+    <span id="lbl-count" class="header-badge u-hide"></span>
     <!-- Acceso a favoritas: abre el modal con la lista + alertas. La estrella
          se rellena cuando hay >=1 favorita, y la insignia numerica solo se
          muestra en ese caso. -->
@@ -256,13 +256,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
 <!-- Banner offline -->
 <div id="offline-banner" role="status" aria-live="polite">
-  <i class="fas fa-wifi" aria-hidden="true" style="margin-right:6px;opacity:0.8"></i>
+  <i class="fas fa-wifi u-mr-6 u-op-80" aria-hidden="true"></i>
   <span id="offline-text">Sin conexión · mostrando datos guardados</span>
 </div>
 
 <!-- Banner datos desactualizados (>24h) -->
 <div id="stale-banner" role="status" aria-live="polite">
-  <i class="fas fa-hourglass-half" aria-hidden="true" style="margin-right:6px"></i>
+  <i class="fas fa-hourglass-half u-mr-6" aria-hidden="true"></i>
   <span id="stale-text">Los datos oficiales llevan más de 24 h sin actualizarse.</span>
 </div>
 
@@ -285,11 +285,11 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
     <!-- FILTROS -->
     <div id="sidebar-filters">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <span style="font-size:13px;font-weight:600;color:#374151;display:flex;align-items:center;gap:6px">
-          <i class="fas fa-sliders-h" style="color:#16a34a" aria-hidden="true"></i> Búsqueda
+      <div class="search-heading-row">
+        <span class="search-heading">
+          <i class="fas fa-sliders-h u-c-green" aria-hidden="true"></i> Búsqueda
         </span>
-        <div style="display:flex;gap:6px">
+        <div class="search-actions">
           <button id="btn-share" class="btn-icon" title="Compartir búsqueda" aria-label="Compartir búsqueda actual">
             <i class="fas fa-share-alt" aria-hidden="true"></i>
           </button>
@@ -328,7 +328,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         </select>
       </div>
 
-      <div class="form-group" style="position:relative">
+      <div class="form-group u-pos-rel">
         <label class="form-label" for="search-text">Buscar gasolinera</label>
         <div class="input-icon-wrap">
           <i class="fas fa-search icon" aria-hidden="true"></i>
@@ -373,7 +373,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
               <span>&#x1F319; 24 horas</span>
             </label>
           </div>
-          <div class="form-group" style="margin-top:10px;margin-bottom:0">
+          <div class="form-group u-mt-10 u-mb-0">
             <label class="form-label" for="sel-marca">Marca</label>
             <select id="sel-marca" class="form-select">
               <option value="">-- Cualquiera --</option>
@@ -403,7 +403,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </details>
 
       <!-- Radio de busqueda (cerca-de-mi) -->
-      <div class="form-group" id="radius-group" style="display:none">
+      <div class="form-group u-hide" id="radius-group">
         <label class="form-label" for="in-radius">Radio de búsqueda</label>
         <div class="range-group">
           <input id="in-radius" type="range" min="1" max="50" step="1" value="10" aria-label="Radio en kilómetros" />
@@ -413,7 +413,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
       <!-- Deposito del vehiculo (para calculo de ahorro) -->
       <div class="form-group">
-        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#64748b">(para calcular ahorro)</span></label>
+        <label class="form-label" for="in-tank">Depósito <span class="tank-sub">(para calcular ahorro)</span></label>
         <div class="range-group">
           <input id="in-tank" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
           <span class="range-val" id="lbl-tank">50 L</span>
@@ -428,16 +428,16 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </div>
 
       <!-- Edit perfil -->
-      <button id="btn-profile" class="btn-ghost" style="width:100%;margin-top:4px;font-size:12px">
-        <i class="fas fa-user-cog" aria-hidden="true" style="margin-right:6px"></i>
+      <button id="btn-profile" class="btn-ghost btn-profile-util">
+        <i class="fas fa-user-cog u-mr-6" aria-hidden="true"></i>
         <span id="btn-profile-label">Configurar mi vehículo</span>
       </button>
     </div>
 
     <!-- STATS -->
     <div id="stats-bar">
-      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px">
-        <span style="color:#64748b"><i class="fas fa-map-marker-alt" style="color:#16a34a;margin-right:4px" aria-hidden="true"></i><strong id="stat-n">0</strong> gasolineras</span>
+      <div class="stats-flex">
+        <span class="u-c-slate"><i class="fas fa-map-marker-alt u-c-green u-mr-4" aria-hidden="true"></i><strong id="stat-n">0</strong> gasolineras</span>
         <span class="stat-chip">&#x2193; <span id="stat-min">--</span></span>
         <span class="stat-chip yellow">&#x2248; <span id="stat-avg">--</span></span>
         <span class="stat-chip red">&#x2191; <span id="stat-max">--</span></span>
@@ -466,8 +466,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     <div id="loading" role="status" aria-live="polite">
       <div class="loading-box">
         <div class="spinner" aria-hidden="true"></div>
-        <p style="font-size:14px;font-weight:600;color:#374151">Cargando gasolineras...</p>
-        <p style="font-size:12px;color:#64748b">Datos oficiales del Ministerio</p>
+        <p class="loading-line-1">Cargando gasolineras...</p>
+        <p class="loading-line-2">Datos oficiales del Ministerio</p>
       </div>
     </div>
 
@@ -480,10 +480,10 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     <!-- LEYENDA -->
     <div id="legend" aria-label="Leyenda de precios">
       <h4>LEYENDA</h4>
-      <div class="legend-item"><span class="legend-dot" style="background:#16a34a" aria-hidden="true"></span> Más barato</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#d97706" aria-hidden="true"></span> Intermedio</div>
-      <div class="legend-item"><span class="legend-dot" style="background:#dc2626" aria-hidden="true"></span> Más caro</div>
-      <div class="legend-item" style="margin-bottom:0"><span class="legend-dot" style="background:#9ca3af" aria-hidden="true"></span> Sin precio</div>
+      <div class="legend-item"><span class="legend-dot dot-green" aria-hidden="true"></span> Más barato</div>
+      <div class="legend-item"><span class="legend-dot dot-orange" aria-hidden="true"></span> Intermedio</div>
+      <div class="legend-item"><span class="legend-dot dot-red" aria-hidden="true"></span> Más caro</div>
+      <div class="legend-item u-mb-0"><span class="legend-dot dot-gray" aria-hidden="true"></span> Sin precio</div>
     </div>
   </div>
 
@@ -547,7 +547,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
      para un release posterior; el flujo actual es 100% navegacion. -->
 <div id="modal-favs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="favs-title">
   <div class="modal">
-    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+    <div class="modal-header modal-header-row">
       <div>
         <h2 id="favs-title">&#x2B50; Mis favoritas (<span id="favs-modal-count">0</span>)</h2>
         <p>Haz click en una favorita para verla en el mapa.</p>
@@ -572,14 +572,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
 ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intrusiva -->
 <div id="ts-widget"
-     class="cf-turnstile"
+     class="cf-turnstile ts-widget-hidden"
      data-sitekey="${tsKey}"
      data-size="invisible"
      data-appearance="interaction-only"
      data-callback="__onTsOk"
      data-expired-callback="__onTsExpired"
-     aria-hidden="true"
-     style="position:fixed;bottom:0;right:0;width:1px;height:1px;pointer-events:none;opacity:0"></div>` : ''}
+     aria-hidden="true"></div>` : ''}
 
 ${getClientScript(nonce, APP_VERSION)}
 </body>

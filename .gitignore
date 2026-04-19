@@ -15,6 +15,11 @@ dist/
 node_modules/
 .wrangler
 
+# Artefactos regenerables de D1 — el backfill sale de `npm run backfill:d1`
+# y se puede regenerar cualquier dia; no commiteamos 2-10 MB de SQL
+# autogenerado. La migracion canonica 0001_*.sql SI se commitea (es fuente).
+migrations/9999_backfill.sql
+
 # env
 .env
 .env.production

@@ -672,15 +672,15 @@ function horarioCard(h) {
 
 // Version completa para el popup (cada tramo en su linea)
 function horarioPopup(h) {
-  if (!h) return '<span style="color:#94a3b8;font-size:11px">Horario no disponible</span>';
-  if (is24H(h)) return '<span style="color:#16a34a;font-weight:700;font-size:12px">&#x2665; Abierto 24 horas todos los dias</span>';
+  if (!h) return '<span class="popup-muted">Horario no disponible</span>';
+  if (is24H(h)) return '<span class="popup-h24">&#x2665; Abierto 24 horas todos los dias</span>';
   var segs = h.split(';').map(function(s){ return s.trim(); }).filter(Boolean);
   return segs.map(function(seg) {
     var parts = seg.match(/^([^:]+):\s*(.+)$/);
-    if (!parts) return '<div style="font-size:11px;padding:2px 0">' + esc(seg) + '</div>';
-    return '<div style="display:flex;justify-content:space-between;gap:8px;padding:3px 0;font-size:11px;border-bottom:1px solid #f1f5f9">'
-      + '<span style="color:#64748b;font-weight:600">' + esc(parts[1].trim()) + '</span>'
-      + '<span style="color:#1e293b">' + esc(parts[2].trim()) + '</span>'
+    if (!parts) return '<div class="popup-segment">' + esc(seg) + '</div>';
+    return '<div class="popup-segment-row">'
+      + '<span class="popup-seg-day">' + esc(parts[1].trim()) + '</span>'
+      + '<span class="popup-seg-hrs">' + esc(parts[2].trim()) + '</span>'
       + '</div>';
   }).join('');
 }
@@ -697,31 +697,219 @@ var FUELS_POPUP = [
   ['Precio Diesel Renovable', 'Diesel Renov.'],
 ];
 
-// Dibuja un sparkline SVG con los ultimos puntos de historico (array [{d,p}]).
-function buildSparkline(points) {
+// Dibuja un sparkline SVG alineado por fecha. Acepta:
+//   points          : array principal [{d:"YYYY-MM-DD", p:euros}]
+//   medianPoints    : array opcional de mediana provincial para pintar linea
+//                     de referencia discontinua (misma escala vertical).
+// Ambas series comparten eje: calculamos min/max considerando las dos, asi
+// la linea de mediana no se sale del SVG si la estacion se dispara. El eje X
+// se reparte por indice de fecha — para que dos series con fechas distintas
+// (la estacion puede tener huecos) queden alineadas, fabricamos una ventana
+// de fechas unica y posicionamos cada punto por su indice en esa ventana.
+function buildSparkline(points, medianPoints) {
   if (!points || points.length < 2) return '';
+  // Ventana de fechas: union ordenada de las dos series.
+  var dateSet = {};
+  points.forEach(function(pp) { dateSet[pp.d] = true; });
+  if (medianPoints) medianPoints.forEach(function(mp) { dateSet[mp.d] = true; });
+  var dates = Object.keys(dateSet).sort();
+  if (dates.length < 2) return '';
+  var idxByDate = {};
+  for (var i = 0; i < dates.length; i++) idxByDate[dates[i]] = i;
+
+  // Escala vertical sobre el conjunto completo (estacion + mediana) para
+  // evitar que una serie se salga arriba/abajo.
+  var allVals = points.map(function(pp) { return pp.p; });
+  if (medianPoints) medianPoints.forEach(function(mp) { allVals.push(mp.p); });
+  var min = Math.min.apply(null, allVals);
+  var max = Math.max.apply(null, allVals);
+  var range = max - min || 0.001;
+  var w = 220, h = 60, step = dates.length > 1 ? w / (dates.length - 1) : 0;
+  function yOf(p) {
+    return (h - ((p - min) / range) * (h - 4) - 2).toFixed(1);
+  }
+  function pathFor(series) {
+    return series.map(function(pt, i) {
+      var x = (idxByDate[pt.d] * step).toFixed(1);
+      var y = yOf(pt.p);
+      return (i === 0 ? 'M' : 'L') + x + ',' + y;
+    }).join(' ');
+  }
+  var path = pathFor(points);
+  // Area bajo la curva: cerramos desde el ultimo punto hasta el primero por
+  // la base del SVG. Usamos solo los puntos de la estacion (no la mediana).
+  var lastX = (idxByDate[points[points.length-1].d] * step).toFixed(1);
+  var firstX = (idxByDate[points[0].d] * step).toFixed(1);
+  var area = path + ' L' + lastX + ',' + h + ' L' + firstX + ',' + h + ' Z';
+  var first = points[0].p, last = points[points.length-1].p;
+  var cls = last > first + 0.005 ? 'sp-up' : (last < first - 0.005 ? 'sp-down' : 'sp-flat');
+  var svg = '<svg class="sparkline ' + cls + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">'
+          + '<path class="sp-area" d="' + area + '"/>'
+          + '<path d="' + path + '"/>';
+  if (medianPoints && medianPoints.length >= 2) {
+    svg += '<path class="sp-median" d="' + pathFor(medianPoints) + '"/>';
+  }
+  svg += '</svg>';
+  return svg;
+}
+
+// Panel de historico asincrono. buildPopup() emite el marcador HTML con
+// data-atributos; renderHistoryPanel lee esos atributos, hace fetch a
+// /api/history/:id (+ /api/history/province/:id en paralelo) y rellena.
+// Separado del sparkline para poder reusar el fetch desde toggles de rango.
+function buildHistoryPlaceholder(stationId, provinciaId, fuel, fuelLabel, currentPrice) {
+  var stAttr = encodeURIComponent(stationId || '');
+  var prAttr = encodeURIComponent(provinciaId || '');
+  var fAttr  = encodeURIComponent(fuel || '');
+  var flAttr = encodeURIComponent(fuelLabel || '');
+  var cp     = currentPrice ? currentPrice.toFixed(3) : '';
+  return '<div class="popup-trend-top hist-panel"'
+       + ' data-hist-station="' + stAttr + '"'
+       + ' data-hist-province="' + prAttr + '"'
+       + ' data-hist-fuel="' + fAttr + '"'
+       + ' data-hist-fuel-label="' + flAttr + '"'
+       + ' data-hist-current="' + cp + '"'
+       + ' data-hist-days="30">'
+       + '<div class="popup-trend-caption">\u{1F4C8} Evolucion (' + esc(fuelLabel || fuel) + ')</div>'
+       + '<div class="hist-toggles" role="tablist" aria-label="Rango de historico">'
+       + '<button type="button" class="hist-toggle"            data-hist-range="7"   role="tab" aria-selected="false">7d</button>'
+       + '<button type="button" class="hist-toggle active"     data-hist-range="30"  role="tab" aria-selected="true">30d</button>'
+       + '<button type="button" class="hist-toggle"            data-hist-range="90"  role="tab" aria-selected="false">90d</button>'
+       + '<button type="button" class="hist-toggle"            data-hist-range="365" role="tab" aria-selected="false">1a</button>'
+       + '</div>'
+       + '<div class="hist-body" data-hist-body="1"><div class="hist-loading">\u23F3 Cargando historial\u2026</div></div>'
+       + '</div>';
+}
+
+// Hace fetch a los endpoints (estacion + mediana provincial) en paralelo y
+// pinta el sparkline + stats dentro del contenedor dado. 'days' es el rango.
+// Si el servidor devuelve 503 (dev sin D1) o el station no tiene datos, cae
+// al historico local de localStorage — seguimos mostrando algo util.
+function renderHistoryPanel(container, days) {
+  var stationIdV = decodeURIComponent(container.getAttribute('data-hist-station') || '');
+  var provinceId = decodeURIComponent(container.getAttribute('data-hist-province') || '');
+  var fuel       = decodeURIComponent(container.getAttribute('data-hist-fuel') || '');
+  var fuelLabel  = decodeURIComponent(container.getAttribute('data-hist-fuel-label') || '');
+  var currentStr = container.getAttribute('data-hist-current') || '';
+  var currentP   = currentStr ? parseFloat(currentStr) : null;
+  var body       = container.querySelector('[data-hist-body]');
+  if (!body) return;
+  // Refresca estado visual de los toggles
+  var toggles = container.querySelectorAll('.hist-toggle');
+  for (var i = 0; i < toggles.length; i++) {
+    var range = toggles[i].getAttribute('data-hist-range');
+    var active = range === String(days);
+    toggles[i].classList.toggle('active', active);
+    toggles[i].setAttribute('aria-selected', active ? 'true' : 'false');
+  }
+  container.setAttribute('data-hist-days', String(days));
+  body.innerHTML = '<div class="hist-loading">\u23F3 Cargando historial\u2026</div>';
+
+  // Fetch estacion (obligatorio) + mediana provincial (opcional, no bloquea).
+  var stationUrl = '/api/history/' + encodeURIComponent(stationIdV) + '?days=' + days;
+  var medianUrl  = provinceId
+    ? '/api/history/province/' + encodeURIComponent(provinceId) + '?fuel=' + encodeURIComponent(fuel) + '&days=' + days
+    : null;
+
+  var pStation = fetch(stationUrl, { credentials: 'same-origin' }).then(function(r) {
+    if (r.status === 503) return { unavailable: true };
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+  var pMedian = medianUrl
+    ? fetch(medianUrl, { credentials: 'same-origin' }).then(function(r) {
+        if (!r.ok) return null;
+        return r.json();
+      }).catch(function(){ return null; })
+    : Promise.resolve(null);
+
+  Promise.all([pStation, pMedian]).then(function(results) {
+    var st = results[0], md = results[1];
+    if (st && st.unavailable) {
+      renderFallbackLocal(body, stationIdV, fuel, days);
+      return;
+    }
+    var series = (st && st.series && st.series[fuel]) || [];
+    // Remap a formato interno {d, p} que usa buildSparkline.
+    var points = series.map(function(p) { return { d: p.date, p: p.price }; });
+    var medianPoints = null;
+    if (md && md.median && md.median.length >= 2) {
+      medianPoints = md.median.map(function(p) { return { d: p.date, p: p.price }; });
+    }
+    if (points.length < 2) {
+      // Fallback a localStorage si no hay 2 puntos historicos aun (primer
+      // dia tras deploy o estacion sin tracking suficiente).
+      renderFallbackLocal(body, stationIdV, fuel, days);
+      return;
+    }
+    renderHistoryBody(body, points, medianPoints, currentP, fuelLabel);
+  }).catch(function() {
+    // Fallo de red/servidor: caemos al local como ultimo recurso.
+    renderFallbackLocal(body, stationIdV, fuel, days);
+  });
+}
+
+function renderFallbackLocal(body, stationIdV, fuel, days) {
+  var local = getHistory()[stationIdV + '|' + fuel] || [];
+  if (local.length < 2) {
+    body.innerHTML = '<div class="hist-empty">Sin datos suficientes para este rango</div>';
+    return;
+  }
+  // Aplicamos un cutoff por 'days' para que el slider local respete el rango.
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  var cutoffStr = cutoff.toISOString().slice(0, 10);
+  var filtered = local.filter(function(pt) { return pt.d >= cutoffStr; });
+  if (filtered.length < 2) filtered = local;  // si el rango corta demasiado, dejamos todo el local
+  renderHistoryBody(body, filtered, null, null, fuel);
+  var note = document.createElement('div');
+  note.className = 'trend-label u-mt-2';
+  note.textContent = '\u2139 Datos locales (servidor sin historial)';
+  body.appendChild(note);
+}
+
+// Pinta el cuerpo del panel: sparkline + stats (min/max/media) + badge de
+// "precio historicamente bajo". Extraido para poder llamarlo desde fallback
+// local y desde la via normal.
+function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) {
   var vals = points.map(function(p) { return p.p; });
   var min = Math.min.apply(null, vals);
   var max = Math.max.apply(null, vals);
-  var range = max - min || 0.001;
-  var w = 220, h = 30, step = w / (points.length - 1);
-  var path = points.map(function(p, i) {
-    var x = (i * step).toFixed(1);
-    var y = (h - ((p.p - min) / range) * (h - 4) - 2).toFixed(1);
-    return (i === 0 ? 'M' : 'L') + x + ',' + y;
-  }).join(' ');
-  var area = path + ' L' + w + ',' + h + ' L0,' + h + ' Z';
-  var first = points[0].p, last = points[points.length-1].p;
-  var cls = last > first + 0.005 ? 'sp-up' : (last < first - 0.005 ? 'sp-down' : 'sp-flat');
+  var avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
+  var fmt = function(v) { return v.toFixed(3) + ' \u20AC'; };
+  // Badge "historicamente bajo": precio actual <= percentil 10 del periodo.
+  // Usamos una copia ordenada para no mutar el array original.
+  var sorted = vals.slice().sort(function(a, b) { return a - b; });
+  var p10 = sorted[Math.max(0, Math.floor(sorted.length * 0.1) - 1)];
+  var lowBadge = '';
+  if (currentPrice && currentPrice <= p10 + 0.0005 && sorted.length >= 5) {
+    // El +0.0005 absorbe redondeos de eurosToCents en el servidor.
+    lowBadge = '<div class="hist-lowbadge">\u{1F3C6} Precio historicamente bajo</div>';
+  }
+  // Tendencia total sobre la ventana mostrada
+  var first = vals[0], last = vals[vals.length - 1];
   var delta = last - first;
   var trendClass = delta > 0.005 ? 'trend-up' : (delta < -0.005 ? 'trend-down' : '');
   var trendArrow = delta > 0.005 ? '\u2191' : (delta < -0.005 ? '\u2193' : '\u2192');
-  var trendTxt = '<div class="trend-label ' + trendClass + '" style="margin-top:2px">'
-               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3) + ' \u20AC en ' + points.length + ' dias</div>';
-  return '<svg class="sparkline ' + cls + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">'
-       + '<path class="sp-area" d="' + area + '"/>'
-       + '<path d="' + path + '"/>'
-       + '</svg>' + trendTxt;
+  var trendTxt = '<div class="trend-label u-mt-2 ' + trendClass + '">'
+               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3) + ' \u20AC en ' + points.length + ' observaciones</div>';
+
+  var legend = medianPoints
+    ? '<div class="hist-legend">'
+      + '<span><span class="hist-legend-swatch hist-legend-price"></span>Esta estacion</span>'
+      + '<span><span class="hist-legend-swatch hist-legend-median"></span>Mediana provincial</span>'
+      + '</div>'
+    : '';
+
+  body.innerHTML = buildSparkline(points, medianPoints)
+    + legend
+    + '<div class="hist-stats">'
+    + '<div class="hist-stat"><div class="hist-stat-label">Min</div><div class="hist-stat-value">' + fmt(min) + '</div></div>'
+    + '<div class="hist-stat"><div class="hist-stat-label">Media</div><div class="hist-stat-value">' + fmt(avg) + '</div></div>'
+    + '<div class="hist-stat"><div class="hist-stat-label">Max</div><div class="hist-stat-value">' + fmt(max) + '</div></div>'
+    + '</div>'
+    + trendTxt
+    + lowBadge;
 }
 
 function buildPopup(s) {
@@ -753,7 +941,7 @@ function buildPopup(s) {
     var tank = parseInt(localStorage.getItem('gs_tank') || '50', 10);
     var saving = (currentMedianPrice - mainPrice) * tank;
     if (saving >= 0.5) {
-      savingsHtml = '<div class="savings-badge" style="margin-top:6px">\u{1F4B0} Ahorras ' + saving.toFixed(2) + ' \u20AC / deposito ' + tank + 'L</div>';
+      savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorras ' + saving.toFixed(2) + ' \u20AC / deposito ' + tank + 'L</div>';
     }
   }
 
@@ -762,17 +950,15 @@ function buildPopup(s) {
   if (userPos && hasCoords) {
     var km = distanceKm(userPos.lat, userPos.lng, lat, lng);
     var mins = Math.round(km / 40 * 60); // 40 km/h urbano
-    distHtml = '<span class="distance-chip" style="margin-left:6px">\u{1F9ED} ' + km.toFixed(1) + ' km &middot; ~' + mins + ' min</span>';
+    distHtml = '<span class="distance-chip u-ml-6">\u{1F9ED} ' + km.toFixed(1) + ' km &middot; ~' + mins + ' min</span>';
   }
 
-  // Sparkline historico (solo si hay datos)
-  var hist = getHistory()[id + '|' + fuel] || [];
-  var sparkHtml = hist.length >= 2
-    ? '<div style="border-top:1px solid #f1f5f9;padding-top:8px;margin-top:8px">'
-      + '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:2px;text-transform:uppercase;letter-spacing:0.05em">\u{1F4C8} Evolucion</div>'
-      + buildSparkline(hist)
-      + '</div>'
-    : '';
+  // Panel de historico asincrono. Renderizamos el placeholder en el HTML del
+  // popup; el fetch (y la pintura del sparkline) ocurren en popupopen cuando
+  // Leaflet inserta el DOM. Esto evita bloquear la apertura del popup y nos
+  // deja variar el rango (7/30/90/1a) sin rebuild completo.
+  var provinciaId = s['IDProvincia'] || '';
+  var sparkHtml = buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, mainPrice);
 
   // Deep links a apps de navegacion. Los 3 siguen sus URL schemes oficiales:
   //   Google Maps: https://developers.google.com/maps/documentation/urls/get-started
@@ -801,10 +987,10 @@ function buildPopup(s) {
   // encodeURIComponent garantiza que comas, espacios y tildes no rompan la URL.
   var aplLabel = encodeURIComponent(s['Rotulo'] || 'Gasolinera');
   var navBtns = hasCoords ? (
-    '<div style="display:flex;gap:5px;margin-top:12px">'
-    + '<a href="https://www.google.com/maps/dir/?api=1&destination=' + latS + ',' + lngS + '&travelmode=driving" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#4285f4;color:#fff;text-decoration:none">Google Maps</a>'
-    + '<a href="https://www.waze.com/ul?ll=' + latS + ',' + lngS + '&navigate=yes" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#09d3f7;color:#0d1b2a;text-decoration:none">Waze</a>'
-    + '<a href="https://maps.apple.com/?daddr=' + latS + ',' + lngS + '&q=' + aplLabel + '&dirflg=d" target="_blank" rel="noopener" style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;font-size:11px;font-weight:700;background:#1c1c1e;color:#fff;text-decoration:none">Apple Maps</a>'
+    '<div class="popup-nav-row">'
+    + '<a class="popup-nav-btn popup-nav-google" href="https://www.google.com/maps/dir/?api=1&destination=' + latS + ',' + lngS + '&travelmode=driving" target="_blank" rel="noopener">Google Maps</a>'
+    + '<a class="popup-nav-btn popup-nav-waze" href="https://www.waze.com/ul?ll=' + latS + ',' + lngS + '&navigate=yes" target="_blank" rel="noopener">Waze</a>'
+    + '<a class="popup-nav-btn popup-nav-apple" href="https://maps.apple.com/?daddr=' + latS + ',' + lngS + '&q=' + aplLabel + '&dirflg=d" target="_blank" rel="noopener">Apple Maps</a>'
     + '</div>'
   ) : '';
 
@@ -818,29 +1004,34 @@ function buildPopup(s) {
     + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">\u{1F4CB} Copiar</button>'
     + '</div>';
 
+  // priceColor() ya devuelve uno de {green,yellow,red,gray}; lo usamos como
+  // sufijo de clase (.popup-price-main--green, .popup-header--green, etc.).
+  // Asi evitamos style inline con color calculado en tiempo real sin tener
+  // que mantener una tabla de casos especiales en JS.
   var priceDisplay = mainPrice
     ? (priceUnit === 'c'
-        ? '<strong style="font-size:22px;font-weight:800;color:' + mainBg + '">' + (mainPrice * 100).toFixed(1) + ' <span style="font-size:13px">c/L</span></strong>'
-        : '<strong style="font-size:22px;font-weight:800;color:' + mainBg + '">' + mainPrice.toFixed(3) + ' <span style="font-size:13px">\u20AC/L</span></strong>'
+        ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + (mainPrice * 100).toFixed(1) + ' <span class="popup-price-main-unit">c/L</span></strong>'
+        : '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
       )
-    : '<span style="font-size:14px;color:#9ca3af">Sin precio</span>';
+    : '<span class="popup-price-none">Sin precio</span>';
 
-  return '<div style="font-family:system-ui,sans-serif;min-width:250px">'
-    // Cabecera
-    + '<div style="background:linear-gradient(135deg,' + mainBg + ' 0%,#0f172a 100%);color:#fff;padding:14px 16px;margin:-12px -14px 12px;border-radius:8px 8px 0 0">'
-    + '  <div style="font-weight:800;font-size:15px;line-height:1.2">\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
-    + '  <div style="font-size:11px;opacity:0.75;margin-top:4px">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + distHtml + '</div>'
-    + (statusHtml ? '  <div style="margin-top:6px">' + statusHtml + '</div>' : '')
+  return '<div class="popup-root">'
+    // Cabecera — la gradiente del fondo se pinta por clase .popup-header--<color>
+    + '<div class="popup-header popup-header--' + mainColor + '">'
+    + '  <div class="popup-header-title">\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+    + '  <div class="popup-header-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + distHtml + '</div>'
+    + (statusHtml ? '  <div class="popup-header-status">' + statusHtml + '</div>' : '')
     + '</div>'
     // Precio
-    + '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 2px 10px">'
-    + '  <span style="font-size:12px;color:#64748b">' + esc(fuelLabel) + '</span>'
+    + '<div class="popup-price-row">'
+    + '  <span class="popup-fuel-label">' + esc(fuelLabel) + '</span>'
     + '  ' + priceDisplay
     + '</div>'
     + savingsHtml
-    // Horario
-    + '<div style="border-top:1px solid #f1f5f9;padding-top:8px;margin-top:8px">'
-    + '  <div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">\u{1F550} Horario</div>'
+    // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia
+    // de la de Evolucion, que es mb:2 por defecto)
+    + '<div class="popup-trend-top">'
+    + '  <div class="popup-trend-caption popup-trend-caption--mb4">\u{1F550} Horario</div>'
     + horarioPopup(s['Horario'])
     + '</div>'
     + sparkHtml
@@ -867,18 +1058,19 @@ function renderMarkers(stations) {
       var cPrices  = children.map(function(m) { return m.options._price; }).filter(function(p) { return p > 0; });
       var cMin     = cPrices.length ? Math.min.apply(null, cPrices) : null;
       var cColor   = cMin ? priceColor(cMin) : 'gray';
-      var bg       = CLRS[cColor] || CLRS.gray;
       var count    = cluster.getChildCount();
       var sz       = count > 200 ? 52 : count > 50 ? 44 : 36;
-      var fs       = count > 99  ? 9  : 11;
+      var szCls    = 'cluster-icon--s' + sz;           // s36/s44/s52
+      var fsCls    = count > 99 ? 'cluster-icon-count--fs9' : 'cluster-icon-count--fs11';
+      // La divIcon de Leaflet inserta el HTML sin hook post-render, asi que
+      // no podemos setear estilos via CSSOM post-insertion; expresamos todos
+      // los valores dinamicos (tamano, color, tamano de fuente) con clases
+      // modificadoras — ambos sets son discretos, cuesta 9 clases en el CSS.
       return L.divIcon({
         html: [
-          '<div style="width:' + sz + 'px;height:' + sz + 'px;background:' + bg + ';',
-          'border-radius:50%;display:flex;flex-direction:column;align-items:center;',
-          'justify-content:center;border:3px solid rgba(255,255,255,0.85);',
-          'box-shadow:0 3px 12px rgba(0,0,0,0.3);font-family:system-ui,sans-serif;gap:1px">',
-          '  <span style="color:#fff;font-size:' + fs + 'px;font-weight:800;line-height:1">' + count + '</span>',
-          cMin ? '<span style="color:rgba(255,255,255,0.9);font-size:8px;font-weight:600;line-height:1">' + cMin.toFixed(2) + '\u20AC</span>' : '',
+          '<div class="cluster-icon ' + szCls + ' cluster-icon--' + cColor + '">',
+          '  <span class="cluster-icon-count ' + fsCls + '">' + count + '</span>',
+          cMin ? '<span class="cluster-icon-price">' + cMin.toFixed(2) + '\u20AC</span>' : '',
           '</div>'
         ].join(''),
         className: '',
@@ -901,15 +1093,23 @@ function renderMarkers(stations) {
     marker.bindPopup(buildPopup(s), { maxWidth: 300, className: 'custom-popup' });
     var stId = stationId(s);
     marker.on('click', function() { highlightCard(idx); });
-    // Marcamos la estacion como visitada al abrir el popup para que el
-    // proximo fetch incluya su precio en el historico (habilita sparkline).
-    marker.on('popupopen', function() {
+    // Marcamos la estacion como visitada y disparamos la carga asincrona del
+    // historial. El placeholder ya esta en el DOM (buildPopup), asi que aqui
+    // solo necesitamos localizarlo y llamar a renderHistoryPanel.
+    marker.on('popupopen', function(e) {
       markVisited(stId);
-      // Si ya tenemos precio hoy, grabamos ahora mismo en vez de esperar al
-      // proximo loadStations — mejora UX al mostrar un punto desde el primer
-      // click (aunque el sparkline necesite >=2 dias para pintarse).
+      // Seguimos alimentando el cache local — sirve de fallback si el
+      // endpoint /api/history responde 503 (dev sin D1) o el backfill aun
+      // no llego a esta estacion.
       var p = parsePrice(s[fuel]);
       if (p) pushHistoryPoint(stId, fuel, p);
+      // El DOM del popup ya existe en e.popup._contentNode.
+      try {
+        var node = e.popup && e.popup._contentNode;
+        if (!node) return;
+        var panel = node.querySelector('[data-hist-station]');
+        if (panel) renderHistoryPanel(panel, 30);
+      } catch (_) {}
     });
     clusterGroup.addLayer(marker);
     bounds.push([lat, lng]);
@@ -986,21 +1186,21 @@ function cardHTML(s, i, fuel, fuelLabel) {
   var priceText = price ? fmtPriceUnit(price) : '';
   var priceEl = price
     ? '<span class="' + badgeCls + '">' + priceText + '</span>'
-    : '<span style="font-size:11px;color:#9ca3af">N/D</span>';
+    : '<span class="row-row-noprice">N/D</span>';
 
   return '<div class="station-card" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
     + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '" aria-pressed="' + fav + '">'
     + (fav ? '\u2605' : '\u2606') + '</button>'
-    + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;padding-right:22px">'
-    + '<div style="min-width:0;flex:1">'
+    + '<div class="row-info-flex">'
+    + '<div class="row-info-left">'
     + '<div class="card-title">' + medal + '\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + distHtml + '</div>'
     + '<div class="card-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + '</div>'
     + '<div class="card-time">\u{1F550} ' + horarioCard(s['Horario']) + statusHtml + '</div>'
-    + (savingsHtml ? '<div style="margin-top:3px">' + savingsHtml + '</div>' : '')
+    + (savingsHtml ? '<div class="u-mt-3">' + savingsHtml + '</div>' : '')
     + '</div>'
-    + '<div style="flex-shrink:0;text-align:right">'
+    + '<div class="row-info-right">'
     + priceEl
-    + '<div style="font-size:10px;color:#9ca3af;margin-top:1px">' + esc(fuelLabel.slice(0,18)) + '</div>'
+    + '<div class="row-fuel-label">' + esc(fuelLabel.slice(0,18)) + '</div>'
     + '</div></div></div>';
 }
 
@@ -1041,7 +1241,7 @@ function renderList(stations) {
   // Reset estado virtual
   listStations = stations;
   listOffset = 0;
-  list.innerHTML = '<div id="list-sentinel" style="display:none;text-align:center;padding:10px;font-size:12px;color:#94a3b8">Cargando mas...</div>';
+  list.innerHTML = '<div id="list-sentinel" class="list-sentinel">Cargando mas...</div>';
   appendPage(); // primera pagina
 
   // IntersectionObserver para cargar al llegar al final
@@ -1740,17 +1940,16 @@ document.getElementById('sel-marca').addEventListener('change', advFilterChanged
     selIdx = -1;
     box.innerHTML = matches.map(function(s, i) {
       var price = parsePrice(s[fuel]);
-      var color = priceColor(price);
-      var bg    = CLRS[color] || CLRS.gray;
+      var color = price ? priceColor(price) : 'gray';
       var nameSafe = esc(s['Rotulo'] || 'Gasolinera');
       // Highlight sobre el texto ya escapado: $1 es siempre texto seguro
-      var hl    = nameSafe.replace(new RegExp('(' + q.replace(/[.*+?^{}$()|[\]\\]/g,'\\$&') + ')', 'gi'), '<mark style="background:#bbf7d0;color:#15803d;border-radius:2px">$1</mark>');
+      var hl    = nameSafe.replace(new RegExp('(' + q.replace(/[.*+?^{}$()|[\]\\]/g,'\\$&') + ')', 'gi'), '<mark class="suggest-highlight">$1</mark>');
       return '<div class="suggest-item" data-idx="' + i + '">'
-        + '<div style="flex:1;min-width:0">'
+        + '<div class="suggest-row">'
         + '  <div class="suggest-name">&#x26FD; ' + hl + '</div>'
         + '  <div class="suggest-sub">&#x1F4CD; ' + esc(s['Municipio']) + '</div>'
         + '</div>'
-        + (price ? '<span class="suggest-price" style="background:' + bg + '">' + price.toFixed(3) + ' &#x20AC;</span>' : '')
+        + (price ? '<span class="suggest-price suggest-price--' + color + '">' + price.toFixed(3) + ' &#x20AC;</span>' : '')
         + '</div>';
     }).join('');
 
@@ -1907,7 +2106,7 @@ window.addEventListener('resize', function() {
       if (!Array.isArray(data)) data = [];
 
       if (!data.length) {
-        results.innerHTML = '<div class="geocoder-item" style="color:#9ca3af;cursor:default;font-size:12px">Sin resultados en Espana</div>';
+        results.innerHTML = '<div class="geocoder-item geocoder-empty">Sin resultados en Espana</div>';
         results.classList.add('show');
         return;
       }
@@ -1924,7 +2123,7 @@ window.addEventListener('resize', function() {
         // queremos una inyeccion facil via data-*.
         return '<div class="geocoder-item" data-lat="' + esc(r.lat) + '" data-lon="' + esc(r.lon) + '">'
           + '<strong>' + esc(place) + '</strong>'
-          + (sub ? '<span style="font-size:11px;color:#9ca3af;display:block">' + esc(sub) + '</span>' : '')
+          + (sub ? '<span class="geocoder-sub">' + esc(sub) + '</span>' : '')
           + '</div>';
       }).join('');
       results.classList.add('show');
@@ -2271,6 +2470,21 @@ document.addEventListener('click', function(e) {
     }
     return;
   }
+
+  // Toggle de rango del historial (7/30/90/1a). Delegado por el mismo
+  // listener global — cada toggle lleva data-hist-range y el panel
+  // contenedor tiene data-hist-station. Re-fetch ocurre en renderHistoryPanel.
+  var rangeBtn = t.closest('[data-hist-range]');
+  if (rangeBtn) {
+    var panel = rangeBtn.closest('[data-hist-station]');
+    if (panel) {
+      var range = parseInt(rangeBtn.getAttribute('data-hist-range') || '30', 10);
+      if (Number.isFinite(range) && range >= 1 && range <= 365) {
+        renderHistoryPanel(panel, range);
+      }
+    }
+    return;
+  }
 });
 
 // ---- FAVORITOS: BOTON DE HEADER + MODAL ----
@@ -2445,7 +2659,7 @@ function renderFavsModalList() {
     var stalePrefix = (found && found.stale) ? '\u26A0 ' : '';
     var priceHtml = price
       ? '<span class="fav-row-price badge badge-' + priceColor(price) + '"' + ageHint + '>' + stalePrefix + fmtPriceUnit(price) + '</span>'
-      : '<span class="fav-row-sub" style="font-size:10px">Sin datos</span>';
+      : '<span class="fav-row-sub fav-row-sub--small">Sin datos</span>';
     // Mostramos municipio (+ provincia si la conocemos) para que el usuario
     // entienda de un vistazo donde vive cada favorita.
     var loc = esc(f.municipio || '');

@@ -81,8 +81,72 @@ Variables de entorno opcionales (define en el dashboard de Cloudflare Pages):
 |---|---|---|
 | `TURNSTILE_SECRET_KEY` | Turnstile en `/api/ingest` (opcional) | sin reto |
 | `TURNSTILE_SITE_KEY` | Turnstile en cliente (opcional) | sin reto |
+| `HEALTH_ADMIN_TOKEN` | Gate del detalle de `/api/health` | todo publico en dev |
+| `PUBLIC_ORIGIN` | Origen publico usado por `scheduled()` para leer snapshot | `https://webapp.pages.dev` |
 
 Ver [`.env.example`](./.env.example).
+
+## Historico de precios (D1)
+
+Cada gasolinera muestra en su popup un **sparkline de los ultimos 30 dias** con stats (min/max/media), la **mediana provincial** como linea de referencia y un badge `Precio historicamente bajo` cuando el precio actual esta en el percentil ≤10% del periodo. Toggles `7d / 30d / 90d / 1a`.
+
+Los datos viven en **Cloudflare D1** (SQLite managed, free tier 5 GB / 25M reads/dia). El binding se llama `DB` y la tabla es `price_history(station_id, fuel_code, date, price_cents)`.
+
+### Setup inicial
+
+```bash
+# 1) Crear la BD (una sola vez, desde cualquier clone)
+npx wrangler d1 create gasolineras-history
+# → copia el `database_id` de la salida al `database_id` de wrangler.jsonc
+
+# 2) Aplicar migraciones
+npx wrangler d1 migrations apply gasolineras-history --remote
+
+# 3) (Opcional) Backfill desde git log — carga ~180 dias historicos
+npm run backfill:d1                                  # genera migrations/9999_backfill.sql
+npx wrangler d1 execute gasolineras-history \
+  --file=migrations/9999_backfill.sql --remote
+```
+
+### Cron (via GitHub Actions)
+
+Cloudflare **Pages no soporta Cron Triggers nativos** (es una feature solo de Workers puros). Asi que los crons viven en GitHub Actions y disparan dos endpoints HTTP protegidos:
+
+| Workflow | Horario | Endpoint | Que hace |
+|---|---|---|---|
+| `.github/workflows/cron-ingest.yml` | `0 20 * * *` | `POST /api/cron/ingest` | Lee `/data/stations.json` y upsertea precios del dia a D1 |
+| `.github/workflows/cron-purge.yml`  | `0 3 * * 0`  | `POST /api/cron/purge`  | Borra filas con `date < hoy-2a` |
+
+Ambos endpoints exigen `Authorization: Bearer <CRON_TOKEN>`.
+
+**Setup del token** (una sola vez):
+
+```bash
+# 1. Generar el token
+openssl rand -hex 32           # ej: "a264762e4ea0b28b79eac6b5e8086a07..."
+
+# 2. Guardarlo en Cloudflare Pages (el Worker lo valida)
+echo "<TU_TOKEN>" | npx wrangler pages secret put CRON_TOKEN --project-name=webapp
+
+# 3. Guardarlo en GitHub Actions (los workflows lo envian en el header)
+#    GitHub → Repo Settings → Secrets and variables → Actions → New secret
+#      Name:  CRON_TOKEN
+#      Value: <mismo token>
+
+# 4. (Opcional) Variable PUBLIC_ORIGIN en GHA si tu dominio no es webapp.pages.dev
+#    GitHub → Repo Settings → Secrets and variables → Actions → Variables
+#      Name:  PUBLIC_ORIGIN
+#      Value: https://tu-dominio.pages.dev
+```
+
+### Endpoints
+
+| Metodo | Ruta | Respuesta | Cache |
+|---|---|---|---|
+| GET | `/api/history/:stationId?days=30` | `{ station_id, days, series: { '95': [...], 'diesel': [...] } }` | `public, max-age=3600` |
+| GET | `/api/history/province/:id?fuel=95&days=30` | `{ provincia_id, fuel, days, median: [...] }` | `public, max-age=3600` |
+
+Ambos devuelven 503 `history_unavailable` si no hay binding D1 (dev local) — el cliente cae a `localStorage` como fallback.
 
 ## Estructura
 

@@ -5,7 +5,57 @@
   "pages_build_output_dir": "./dist",
   "compatibility_flags": [
     "nodejs_compat"
-  ]
+  ],
+
+  // ---- Env vars ----
+  // PUBLIC_ORIGIN: dominio publico donde el worker sirve el snapshot del
+  // Ministerio (public/data/stations.json tras build). El cron de ingesta lo
+  // necesita porque scheduled() no tiene request.url del que deducirlo.
+  // En entornos de preview/PR la subdomain cambia por rama — dejarlo apuntando
+  // al dominio canonico de prod es correcto siempre que el snapshot de prod
+  // este razonablemente fresco (lo esta: GHA commitea 2 veces/dia).
+  "vars": {
+    "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev"
+  },
+
+  // ---- D1 ----
+  // Binding `DB` -> base de datos con el historico de precios por estacion/dia.
+  // Esquema: ver migrations/0001_price_history.sql
+  //
+  // Setup (una sola vez, desde tu terminal):
+  //   npx wrangler d1 create gasolineras-history
+  //   # El comando imprime un `database_id` — pegarlo abajo.
+  //   npx wrangler d1 migrations apply gasolineras-history --remote
+  //
+  // El `database_id` es un UUID publico (aparece en el dashboard); no es un
+  // secret, pero al estar en el repo permite que cualquier clone haga
+  // `wrangler d1 execute` contra la misma BD — eso es lo que queremos en un
+  // proyecto con deploys desde CI. Si algun dia abrimos forks, se crea una BD
+  // aparte por environment.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "gasolineras-history",
+      "database_id": "cb93f064-b1cb-42ff-ac24-ed1f3235fb77",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // ---- Cron ----
+  // Cloudflare Pages NO soporta "triggers.crons" (es una feature solo de
+  // Workers puros). Asi que los dos crons se disparan desde GitHub Actions:
+  //
+  //   .github/workflows/cron-ingest.yml → `0 20 * * *` → POST /api/cron/ingest
+  //   .github/workflows/cron-purge.yml  → `0 3 * * 0`  → POST /api/cron/purge
+  //
+  // Ambos endpoints exigen `Authorization: Bearer <CRON_TOKEN>`. El token vive
+  // en dos sitios:
+  //   - GitHub Actions Secrets (CRON_TOKEN) para que el workflow lo envie
+  //   - Cloudflare Pages env var (CRON_TOKEN) para que el Worker lo valide
+  //
+  // Valor recomendado: generar con `openssl rand -hex 32` y pegar el MISMO
+  // valor en los dos sitios.
+
   // ---- Hardening adicional a configurar en el dashboard de Cloudflare ----
   //
   // 1) Rate Limiting Rules (distribuido, a nivel de red). El SlidingWindowLimiter
@@ -30,31 +80,4 @@
   //
   // 3) Logpush a R2/BigQuery para ingerir los slog('error', ...) estructurados
   //    emitidos por index.tsx (schema_drift, health.stale, client.error, etc.).
-  //
-  // ---- Env vars (local o Dashboard → Pages → Settings → Environment) ----
-  // "vars": {
-  //   "MY_VAR": "my-variable"
-  // },
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "MY_KV_NAMESPACE",
-  //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  //   }
-  // ],
-  // "r2_buckets": [
-  //   {
-  //     "binding": "MY_BUCKET",
-  //     "bucket_name": "my-bucket"
-  //   }
-  // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "MY_DB",
-  //     "database_name": "my-database",
-  //     "database_id": ""
-  //   }
-  // ],
-  // "ai": {
-  //   "binding": "AI"
-  // }
 }

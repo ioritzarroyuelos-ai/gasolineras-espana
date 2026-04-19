@@ -18,6 +18,14 @@ import {
   safeValidate,
 } from './lib/schemas'
 import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
+import {
+  snapshotToRows,
+  buildInsertBatches,
+  todayUtc,
+  purgeCutoffDate,
+  FUEL_CODES,
+  centsToEuros,
+} from './lib/history'
 
 type StationRecord = Record<string, string> & {
   IDProvincia?: string
@@ -46,11 +54,33 @@ type SnapshotMeta = {
 // HEALTH_ADMIN_TOKEN: si se define, /api/health solo devuelve detalle (snapshot,
 //   cache sizes) cuando la peticion trae 'X-Admin-Token: <valor>'. Sin header,
 //   devuelve solo { ok, ts }. Sin env var, devuelve todo (modo dev).
+// DB: binding D1 con el historico de precios (migrations/0001_price_history.sql).
+//   Solo esta presente en deploys con el binding configurado — en dev sin D1,
+//   los endpoints de historico responden 503 "historia no disponible".
+// PUBLIC_ORIGIN: dominio publico (https://webapp.pages.dev) usado por el cron
+//   scheduled() para fetchear el snapshot estatico de /data/stations.json
+//   (mismo path que consume loadSnapshot en peticiones normales).
+type D1PreparedStatement = {
+  bind: (...values: unknown[]) => D1PreparedStatement
+  run: () => Promise<unknown>
+  all: <T = unknown>() => Promise<{ results: T[] }>
+}
+type D1Database = {
+  prepare: (sql: string) => D1PreparedStatement
+  batch: (statements: D1PreparedStatement[]) => Promise<unknown[]>
+  exec: (sql: string) => Promise<unknown>
+}
 type Env = {
   ASSETS?: { fetch: (req: Request) => Promise<Response> }
   TURNSTILE_SITE_KEY?: string
   TURNSTILE_SECRET_KEY?: string
   HEALTH_ADMIN_TOKEN?: string
+  DB?: D1Database
+  PUBLIC_ORIGIN?: string
+  // CRON_TOKEN: shared secret entre GitHub Actions y el Worker. GHA manda
+  // `Authorization: Bearer <CRON_TOKEN>` en los POST a /api/cron/*. Si no
+  // esta definido, los endpoints de cron responden 503 (modo dev sin cron).
+  CRON_TOKEN?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -262,12 +292,20 @@ const geoLimiter    = new SlidingWindowLimiter(15,  60_000)  // 15 req/min por I
 // (varios por pageload si hay un XSS encadenado). Rate-limit agresivo para
 // evitar DoS via spam de informes desde navegador malicioso.
 const cspLimiter    = new SlidingWindowLimiter(30,  60_000)  // 30 reports/min por IP
+// Historico de precios: cada popup de gasolinera hace 1 call. Un usuario que
+// pasea el mapa puede abrir 10 popups en un minuto tranquilamente; 60 deja
+// margen ancho y aun asi frena scrapers que intenten paginar todas las
+// gasolineras (11k estaciones / 60 req-min = 3 horas de scrapeo visible).
+const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
-  return c.req.header('cf-connecting-ip')
-      || c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
-      || c.req.header('x-real-ip')
-      || 'unknown'
+  // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
+  // puede spoofar desde el cliente — es la fuente autoritativa de la IP del
+  // peticionario. `x-forwarded-for` y `x-real-ip` SI son spoofables en un
+  // request directo, asi que los omitimos como fallback: preferimos rate-limitar
+  // contra 'unknown' (bucket compartido, mas agresivo) que dejar un bypass
+  // trivial si alguna vez el Worker se sirviera fuera del edge CF.
+  return c.req.header('cf-connecting-ip') || 'unknown'
 }
 
 app.use('/api/*', async (c, next) => {
@@ -311,6 +349,17 @@ function genNonce(): string {
 
 function buildCsp(nonce: string, turnstile = false): string {
   const scriptSrc  = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com']
+  // style-src con nonce + allowlist de CDNs. Ya NO llevamos 'unsafe-inline':
+  //   - Los <style> inline (shell.ts / legalPage) emiten nonce="${nonce}" que
+  //     coincide con este valor — el navegador ejecuta solo los que llevan el
+  //     nonce valido.
+  //   - Los stylesheets externos siguen permitidos por URL (unpkg, jsdelivr).
+  //   - Mutaciones programaticas element.style.x = valor son CSSOM y no
+  //     dependen de style-src, asi que no se rompe nada del cliente.
+  //   - No hay bloque style-src-attr — si en el futuro se necesitase permitir
+  //     style="..." inline en algun componente third-party se documentaria y
+  //     evaluaria usar 'unsafe-hashes' antes que reintroducir 'unsafe-inline'.
+  const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com', 'https://cdn.jsdelivr.net']
   const frameSrc   = ["'self'"]
   // connect-src: sin nominatim. Todo el geocoding pasa por /api/geocode/* (mismo
   // origen) → no expone la IP del usuario a OSM y reduce superficie de CSP.
@@ -323,7 +372,7 @@ function buildCsp(nonce: string, turnstile = false): string {
   return [
     "default-src 'self'",
     "script-src " + scriptSrc.join(' '),
-    "style-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net",
+    "style-src " + styleSrc.join(' '),
     "img-src 'self' data: blob: https:",
     "font-src 'self' data: https://cdn.jsdelivr.net",
     "connect-src " + connectSrc.join(' '),
@@ -345,11 +394,33 @@ function buildCsp(nonce: string, turnstile = false): string {
 }
 
 // ---- Turnstile (opcional) ----
-// Verifica un token de Cloudflare Turnstile contra la API /siteverify. Si no
-// hay secret configurado, fail-open (util en dev). Si hay secret, fail-closed.
-async function verifyTurnstile(token: string | undefined, secret: string | undefined, ip: string): Promise<boolean> {
-  if (!secret) return true           // no configurado → modo permisivo
-  if (!token)  return false
+// Verifica un token de Cloudflare Turnstile contra la API /siteverify.
+// Politica tri-estado:
+//   - Ni siteKey ni secret configurados → modo dev puro, fail-open (true).
+//   - Ambos configurados                  → verifica token, fail-closed si invalido.
+//   - Solo uno de los dos                 → MISCONFIG. Fail-closed + log de error.
+//
+// El tercer caso es critico: antes el codigo devolvia true cuando faltaba el
+// secret, lo que significaba que un despliegue que perdiera el secret por error
+// (secret rotado y no re-pusheado, env limpiada por accidente, etc.) dejaba
+// /api/ingest abierto sin que nadie se enterase. Ahora rompemos el payload y
+// emitimos 'turnstile.misconfig' para que salte en alertas de logs.
+async function verifyTurnstile(
+  token: string | undefined,
+  secret: string | undefined,
+  siteKey: string | undefined,
+  ip: string,
+): Promise<boolean> {
+  const hasSecret  = !!secret
+  const hasSiteKey = !!siteKey
+  if (!hasSecret && !hasSiteKey) return true   // dev puro → permisivo
+  if (hasSecret !== hasSiteKey) {
+    slog('error', 'turnstile.misconfig', { hasSiteKey, hasSecret })
+    return false                                // misconfig → fail-closed
+  }
+  // A partir de aqui hasSecret === hasSiteKey === true. El type narrowing de TS
+  // no propaga a traves del flag derivado, asi que comprobamos `secret` directo.
+  if (!secret || !token) return false
   try {
     const form = new URLSearchParams()
     form.set('secret', secret)
@@ -493,14 +564,17 @@ ${entries.join('\n')}
 })
 
 // ---- Paginas legales (HTML simple, sin JS) ----
-function legalPage(title: string, bodyHtml: string): string {
+// El nonce debe coincidir con el del header CSP — sin el atributo el <style>
+// inline es bloqueado (style-src no lleva ya 'unsafe-inline'). El caller de
+// la ruta es quien genera el nonce via genNonce() y lo pasa a ambos sitios.
+function legalPage(title: string, bodyHtml: string, nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${title} · Gasolineras España</title>
 <meta name="robots" content="index,follow"/>
 <meta name="description" content="${title} de Gasolineras España"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26FD;</text></svg>"/>
-<style>
+<style nonce="${nonce}">
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:0 auto;padding:32px 20px;color:#1f2937;line-height:1.6}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
   h2{color:#15803d;margin-top:28px}
@@ -517,6 +591,11 @@ ${bodyHtml}
 }
 
 app.get('/privacidad', c => {
+  // Generamos nonce por request igual que en la home, y emitimos CSP completa
+  // (antes /privacidad respondia sin Content-Security-Policy — un XSS en la
+  // pagina legal habria tenido ejecucion libre). turnstile=false porque no hay
+  // widget en la pagina legal.
+  const nonce = genNonce()
   const html = legalPage('Privacidad', `
 <h1>Política de privacidad</h1>
 <p><strong>Última actualización:</strong> ${new Date().toISOString().slice(0,10)}</p>
@@ -542,8 +621,13 @@ app.get('/privacidad', c => {
 
 <h2>Contacto</h2>
 <p>Incidencias: issue en el repositorio.</p>
-`)
-  return c.html(html, 200, { 'Cache-Control': 'public, max-age=3600' })
+`, nonce)
+  return c.html(html, 200, {
+    ...pageHeaders(nonce, false),
+    // pageHeaders fija Cache-Control: no-cache para rutas dinamicas con Turnstile,
+    // pero la pagina legal es estatica y cacheable por 1h — sobreescribimos despues.
+    'Cache-Control': 'public, max-age=3600',
+  })
 })
 
 // ---- API ----
@@ -809,6 +893,259 @@ app.get('/api/health', async c => {
   return c.json(body, 200, { 'Cache-Control': 'no-store' })
 })
 
+// ---- HISTORICO DE PRECIOS (D1) ----
+// Devuelve la serie temporal de una estacion para N dias. Lee de D1 (tabla
+// price_history, poblada por scheduled() diario). Si el binding DB no existe
+// (dev local sin `wrangler d1 create`), respondemos 503 sin romper la UI —
+// el cliente muestra "historial no disponible" en el popup.
+//
+// Respuesta:
+//   { station_id, days, series: { '95': [{date, price}, ...], '98': [...], ... } }
+//
+// 'days' limitado a [1, 365] para acotar el trabajo por request. 365d de 4
+// combustibles son 1460 filas max — serializado sale ~40 KB gzip, razonable.
+//
+// Cache-Control: public, max-age=3600. El dato cambia como mucho 1 vez/dia
+// (cron a las 20:00 UTC), asi que 1h de CDN cache es conservador y evita que
+// cualquier viral-tweet nos dispare 100k reads/hora contra D1.
+app.get('/api/history/:stationId', async c => {
+  const key = clientKey(c)
+  const rl = histLimiter.check(key)
+  if (!rl.allowed) {
+    return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+
+  // IDEESS: 1-10 digitos. Misma regla que snapshotToRows y validateId,
+  // reproducida aqui porque la param del path no pasa por validateId().
+  const stationId = c.req.param('stationId')
+  if (!stationId || !/^\d{1,10}$/.test(stationId)) {
+    return c.json({ error: 'invalid_station_id' }, 400)
+  }
+
+  // ?days=N con clamp [1, 365]. Default 30 = sweet spot para un sparkline
+  // legible sin abrumar al servidor.
+  const daysParam = c.req.query('days')
+  let days = 30
+  if (daysParam != null) {
+    const n = parseInt(daysParam, 10)
+    if (!Number.isFinite(n) || n < 1 || n > 365) {
+      return c.json({ error: 'invalid_days' }, 400)
+    }
+    days = n
+  }
+
+  if (!c.env.DB) {
+    // Dev sin binding D1: 503 explicito para que el cliente muestre UI de
+    // "historial no disponible" en lugar de error generico.
+    return c.json({ error: 'history_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+
+  // Cutoff = hoy - days. Usamos el mismo formato YYYY-MM-DD que usa la tabla
+  // para evitar conversiones timezone-sensitive.
+  const today = new Date()
+  const cutoffDate = new Date(today.getTime())
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+
+  try {
+    const stmt = c.env.DB
+      .prepare('SELECT fuel_code, date, price_cents FROM price_history WHERE station_id = ? AND date >= ? ORDER BY date ASC')
+      .bind(stationId, cutoff)
+    const { results } = await stmt.all<{ fuel_code: string; date: string; price_cents: number }>()
+
+    // Agrupamos por fuel_code para devolver un objeto { '95': [...], 'diesel': [...] }
+    // comodo de consumir desde el cliente sin logica extra de agrupacion.
+    const series: Record<string, Array<{ date: string; price: number }>> = {}
+    for (const f of FUEL_CODES) series[f] = []
+    for (const r of results) {
+      const arr = series[r.fuel_code]
+      if (!arr) continue  // combustible no mapeado (defensivo)
+      arr.push({ date: r.date, price: centsToEuros(r.price_cents) })
+    }
+
+    return c.json(
+      { station_id: stationId, days, series },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    )
+  } catch (err) {
+    slog('error', 'history.query_failed', {
+      stationId,
+      days,
+      err: String(err).slice(0, 300),
+    })
+    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+  }
+})
+
+// Mediana provincial por dia para un combustible. Se dibuja como linea de
+// referencia en el sparkline del popup para que el usuario vea si esta
+// gasolinera esta "por encima" o "por debajo" de la media de su provincia.
+//
+// Entrada: :id = IDProvincia (2 digitos), ?fuel=95|98|diesel|diesel_plus,
+//          ?days=[1,365] (default 30).
+// Salida: { provincia_id, fuel, days, median: [{date, price}, ...] }
+//
+// La mediana se calcula en Cloudflare, no en SQL — SQLite no tiene PERCENTILE
+// nativo. Traemos todos los precios del periodo, agrupamos por date en memoria
+// y ordenamos. Coste acotado: ~800 estaciones/provincia × 30 dias = 24k rows
+// max (provincia grande), que procesar en JS es trivial.
+app.get('/api/history/province/:id', async c => {
+  const key = clientKey(c)
+  const rl = histLimiter.check(key)
+  if (!rl.allowed) {
+    return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+
+  const id = c.req.param('id')
+  if (!isValidProvinciaId(id)) {
+    return c.json({ error: 'invalid_province_id' }, 400)
+  }
+
+  const fuel = c.req.query('fuel') || ''
+  if (!FUEL_CODES.includes(fuel)) {
+    return c.json({ error: 'invalid_fuel' }, 400)
+  }
+
+  const daysParam = c.req.query('days')
+  let days = 30
+  if (daysParam != null) {
+    const n = parseInt(daysParam, 10)
+    if (!Number.isFinite(n) || n < 1 || n > 365) {
+      return c.json({ error: 'invalid_days' }, 400)
+    }
+    days = n
+  }
+
+  if (!c.env.DB) {
+    return c.json({ error: 'history_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+
+  // Para filtrar por provincia necesitamos la lista de stationIds de ella. La
+  // derivamos del snapshot estatico (ya cacheado en memoria por loadSnapshot),
+  // evitando duplicar metadata de estacion en D1.
+  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
+    return c.json({ error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+  const stationIds = snap.ListaEESSPrecio
+    .filter(s => s.IDProvincia === id && typeof s['IDEESS'] === 'string' && /^\d{1,10}$/.test(s['IDEESS']))
+    .map(s => s['IDEESS'] as string)
+
+  if (stationIds.length === 0) {
+    return c.json(
+      { provincia_id: id, fuel, days, median: [] },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    )
+  }
+
+  const cutoffDate = new Date()
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+
+  // D1 limita a 100 parametros bound por query. Con 2 fijos (fuel, cutoff)
+  // podemos meter como mucho 98 station_ids por sub-query. Paginamos en
+  // chunks de 90 (margen) y consultamos en paralelo — Madrid (~900 estaciones)
+  // sale en 10 sub-queries, milisegundos en total.
+  const CHUNK = 90
+  const sqlTemplate = (n: number) =>
+    `SELECT date, price_cents FROM price_history WHERE fuel_code = ? AND date >= ? AND station_id IN (${new Array(n).fill('?').join(',')})`
+
+  try {
+    const chunkResults: Array<{ date: string; price_cents: number }> = []
+    // Array de promises de sub-queries; D1 las ejecuta concurrentemente
+    // (Workers runtime soporta fetch concurrency nativo).
+    const queries: Promise<{ results: Array<{ date: string; price_cents: number }> }>[] = []
+    for (let i = 0; i < stationIds.length; i += CHUNK) {
+      const slice = stationIds.slice(i, i + CHUNK)
+      const sql = sqlTemplate(slice.length)
+      queries.push(
+        c.env.DB.prepare(sql).bind(fuel, cutoff, ...slice)
+          .all<{ date: string; price_cents: number }>()
+      )
+    }
+    const subResults = await Promise.all(queries)
+    for (const sr of subResults) for (const r of sr.results) chunkResults.push(r)
+    // Mantenemos 'results' para que el resto de la funcion (agregacion por
+    // fecha + mediana) no cambie.
+    const results = chunkResults
+
+    // Agrupa por dia y calcula la mediana (valor central). Para un numero
+    // par de observaciones tomamos el de indice n/2 (no la media de los dos
+    // centrales) — es mas barato y la diferencia practica es invisible en un
+    // sparkline a resolucion pixel.
+    const byDate = new Map<string, number[]>()
+    for (const r of results) {
+      let arr = byDate.get(r.date)
+      if (!arr) { arr = []; byDate.set(r.date, arr) }
+      arr.push(r.price_cents)
+    }
+    const median: Array<{ date: string; price: number }> = []
+    const dates = Array.from(byDate.keys()).sort()
+    for (const date of dates) {
+      const arr = byDate.get(date)!
+      arr.sort((a, b) => a - b)
+      const mid = arr[Math.floor(arr.length / 2)]
+      median.push({ date, price: centsToEuros(mid) })
+    }
+
+    return c.json(
+      { provincia_id: id, fuel, days, median },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    )
+  } catch (err) {
+    slog('error', 'history.province_median_failed', {
+      provinciaId: id,
+      fuel,
+      days,
+      err: String(err).slice(0, 300),
+    })
+    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+  }
+})
+
+// ---- CRON (disparados por GitHub Actions) ----
+// Cloudflare Pages no soporta Cron Triggers nativos (solo Workers puros los
+// tienen). Asi que aqui exponemos dos endpoints HTTP POST protegidos por un
+// `Authorization: Bearer <CRON_TOKEN>` que GHA invoca con curl en horario
+// programado. Si CRON_TOKEN no esta definido (dev), respondemos 503 sin hacer
+// nada — evita que cualquiera los active sin intencion.
+//
+// GHA workflows:
+//   .github/workflows/cron-ingest.yml → 0 20 * * * (tras el fetch de 19:00)
+//   .github/workflows/cron-purge.yml  → 0 3 * * 0  (domingos)
+async function authorizeCron(c: { req: { header: (h: string) => string | undefined }; env: Env }): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> {
+  const cfg = c.env.CRON_TOKEN
+  if (!cfg) {
+    return { ok: false, status: 503, body: { error: 'cron_not_configured' } }
+  }
+  const auth = c.req.header('authorization') || ''
+  const provided = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+  if (!provided || !tokensEqualConstTime(provided, cfg)) {
+    return { ok: false, status: 401, body: { error: 'unauthorized' } }
+  }
+  return { ok: true }
+}
+
+// POST /api/cron/ingest — ingesta diaria del snapshot a D1.
+// Idempotente via INSERT OR REPLACE: si GHA hace retry no duplica datos.
+app.post('/api/cron/ingest', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  const result = await runDailyIngest(c.env)
+  return c.json(result, result.ok ? 200 : 500, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/cron/purge — borra filas > 2 anos.
+app.post('/api/cron/purge', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  const result = await runWeeklyPurge(c.env)
+  return c.json(result, result.ok ? 200 : 500, { 'Cache-Control': 'no-store' })
+})
+
 // ---- CSP violation report endpoint ----
 // Navegadores envian aqui cada violacion de Content-Security-Policy. Es la
 // senal mas temprana que tenemos de: (a) intentos de XSS, (b) extensiones
@@ -877,12 +1214,18 @@ app.post('/api/ingest', async c => {
   let evt: Record<string, unknown>
   try { evt = JSON.parse(raw) } catch { return c.json({ ok: false }, 400) }
 
-  // Turnstile: token opcional en header (preferido) o body (ts). Si no hay
-  // TURNSTILE_SECRET_KEY configurado, verifyTurnstile hace fail-open (true)
-  // para no romper dev. Si esta configurado y falta o es invalido → 403.
+  // Turnstile: token opcional en header (preferido) o body (ts). verifyTurnstile
+  // decide politica: fail-open solo si NINGUNA key esta configurada (dev puro);
+  // fail-closed si hay misconfig (solo site_key sin secret o viceversa); verifica
+  // token si ambas estan configuradas.
   const tsToken = c.req.header('cf-turnstile-response')
     || (typeof evt.ts === 'string' ? evt.ts : undefined)
-  const tsOk = await verifyTurnstile(tsToken, c.env.TURNSTILE_SECRET_KEY, key)
+  const tsOk = await verifyTurnstile(
+    tsToken,
+    c.env.TURNSTILE_SECRET_KEY,
+    c.env.TURNSTILE_SITE_KEY,
+    key,
+  )
   if (!tsOk) {
     slog('warn', 'ingest.turnstile_fail', { key })
     return c.json({ ok: false }, 403)
@@ -927,5 +1270,121 @@ app.onError((err, c) => {
 app.notFound(c => {
   return c.json({ error: 'not_found' }, 404, { 'Cache-Control': 'no-store' })
 })
+
+// ---- LOGICA DE CRON (invocada desde /api/cron/*) ----
+// Las dos funciones devuelven un objeto con `ok` + metricas para que el
+// endpoint lo serialize como respuesta — GHA asi puede distinguir exito
+// real de "llego pero fallo" y fallar el workflow en el segundo caso.
+
+type IngestResult =
+  | { ok: true; date: string; rows: number; batches: number; ms: number }
+  | { ok: false; reason: string; detail?: string }
+
+type PurgeResult =
+  | { ok: true; cutoff: string; ms: number }
+  | { ok: false; reason: string; detail?: string }
+
+// Ingesta diaria: lee el snapshot estatico ya publicado (GHA lo commitea 2
+// veces/dia) y upsertea los precios del dia a D1. Idempotente via
+// INSERT OR REPLACE — si el endpoint se llama dos veces, la segunda pisa la
+// primera sin duplicar filas.
+async function runDailyIngest(env: Env): Promise<IngestResult> {
+  const startedAt = Date.now()
+  if (!env.DB) {
+    slog('error', 'cron.ingest.no_db', {})
+    return { ok: false, reason: 'no_db' }
+  }
+  if (!env.PUBLIC_ORIGIN) {
+    slog('error', 'cron.ingest.no_origin', {})
+    return { ok: false, reason: 'no_origin' }
+  }
+
+  let snapshot: MinistryResponse | null = null
+  const url = new URL('/data/stations.json', env.PUBLIC_ORIGIN).toString()
+  try {
+    // fetch directo (sin loadSnapshot) porque PUBLIC_ORIGIN ya es absoluto y
+    // el ASSETS binding del runtime de cron puede no estar disponible igual
+    // que en una request normal. Preferimos HTTP publico (agnostico al runtime).
+    const res = await fetch(url)
+    if (!res.ok) {
+      slog('error', 'cron.ingest.fetch_failed', { url, status: res.status })
+      return { ok: false, reason: 'fetch_failed', detail: 'http ' + res.status }
+    }
+    snapshot = await res.json() as MinistryResponse
+  } catch (err) {
+    const detail = String(err).slice(0, 300)
+    slog('error', 'cron.ingest.fetch_exception', { err: detail })
+    return { ok: false, reason: 'fetch_exception', detail }
+  }
+
+  const date = todayUtc()
+  const rows = snapshotToRows(snapshot, date)
+  if (rows.length === 0) {
+    slog('warn', 'cron.ingest.no_rows', { date })
+    return { ok: false, reason: 'no_rows' }
+  }
+
+  // D1 limita a 100 PARAMETROS BOUND por query (no 999 como SQLite puro; es
+  // un limite especifico de la implementacion de Cloudflare). Con 4 columnas,
+  // 25 filas por statement dan exactamente 100 placeholders — maximo seguro.
+  // 12k estaciones × 4 combustibles = ~48k filas → ~1920 batches.
+  //
+  // Para reducir el numero de round-trips al driver usamos D1.batch([stmts])
+  // agrupando varios statements por llamada. batch() acepta hasta ~50 stmts
+  // segun docs, asi que cargamos de 40 en 40 para dejar margen.
+  const batches = buildInsertBatches(rows, 25)
+  // Preparamos todos los statements y los mandamos de 40 en 40 a D1.batch().
+  // D1.batch() ejecuta cada tanda como una transaccion — si una tanda falla,
+  // toda esa tanda se revierte, pero las anteriores ya commitearon. Como
+  // INSERT OR REPLACE es idempotente, reintentando completa el trabajo.
+  const stmts = batches.map(b => env.DB!.prepare(b.sql).bind(...b.params))
+  const BATCH_GROUP = 40
+  let completedBatches = 0
+  try {
+    for (let i = 0; i < stmts.length; i += BATCH_GROUP) {
+      await env.DB.batch(stmts.slice(i, i + BATCH_GROUP))
+      completedBatches += Math.min(BATCH_GROUP, stmts.length - i)
+    }
+  } catch (err) {
+    const detail = String(err).slice(0, 300)
+    slog('error', 'cron.ingest.batch_failed', {
+      err: detail,
+      completedBatches,
+      totalBatches: batches.length,
+    })
+    return { ok: false, reason: 'batch_failed', detail }
+  }
+
+  const ms = Date.now() - startedAt
+  slog('info', 'cron.ingest.ok', {
+    date,
+    rows: rows.length,
+    batches: batches.length,
+    ms,
+  })
+  return { ok: true, date, rows: rows.length, batches: batches.length, ms }
+}
+
+// Purga semanal: borra filas con date < hoy-2a. Mantiene la BD dentro del
+// free tier (5 GB). Un solo DELETE: SQLite usa el indice secundario
+// idx_fuel_date y marca las paginas como libres sin full-table scan.
+async function runWeeklyPurge(env: Env): Promise<PurgeResult> {
+  const startedAt = Date.now()
+  if (!env.DB) {
+    slog('error', 'cron.purge.no_db', {})
+    return { ok: false, reason: 'no_db' }
+  }
+  const cutoff = purgeCutoffDate(new Date(), 2)
+  try {
+    await env.DB.prepare('DELETE FROM price_history WHERE date < ?').bind(cutoff).run()
+    const ms = Date.now() - startedAt
+    slog('info', 'cron.purge.ok', { cutoff, ms })
+    return { ok: true, cutoff, ms }
+  } catch (err) {
+    const detail = String(err).slice(0, 300)
+    slog('error', 'cron.purge.failed', { cutoff, err: detail })
+    return { ok: false, reason: 'delete_failed', detail }
+  }
+}
 
 export default app

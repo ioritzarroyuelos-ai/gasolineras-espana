@@ -1,5 +1,11 @@
-export function getStyles(): string {
-  return `<style>
+// Recibe el nonce CSP por parametro. El <style> inline debe llevar el mismo
+// nonce que esta en el header Content-Security-Policy para ejecutarse sin
+// 'unsafe-inline' en style-src. Si el caller pasa '' (p.ej. preview offline)
+// se omite el atributo — el bloque entonces solo cargara si la CSP aun
+// permite 'unsafe-inline', lo que no ocurre en el flujo normal de la app.
+export function getStyles(nonce: string = ''): string {
+  const nonceAttr = nonce ? ` nonce="${nonce}"` : ''
+  return `<style${nonceAttr}>
     /* ===== RESET & BASE ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f8fafc; }
@@ -605,15 +611,60 @@ export function getStyles(): string {
     body.dark .range-group .range-val { color:#4ade80; }
 
     /* ---- Sparkline ---- */
-    .sparkline { display:block; width:100%; height:30px; margin-top:6px; }
+    .sparkline { display:block; width:100%; height:60px; margin-top:6px; }
     .sparkline path { fill:none; stroke-width:1.5; }
     .sparkline .sp-up   { stroke:#dc2626; }
     .sparkline .sp-down { stroke:#16a34a; }
     .sparkline .sp-flat { stroke:#64748b; }
     .sparkline .sp-area { fill:currentColor; opacity:0.08; }
+    /* Linea de referencia (mediana provincial) — discontinua, gris apagado
+       para que no compita visualmente con el trazo principal. */
+    .sparkline .sp-median { stroke:#94a3b8; stroke-width:1; stroke-dasharray:3,3; fill:none; }
     .trend-label { font-size:11px; color:#64748b; }
     .trend-up   { color:#dc2626; }
     .trend-down { color:#16a34a; }
+
+    /* ---- Panel de historico (popup) ---- */
+    /* Estados del panel (loading/error/empty) y controles de rango dias. */
+    .hist-panel { margin-top: 8px; }
+    .hist-toggles { display:flex; gap:4px; margin-top:4px; }
+    .hist-toggle {
+      flex:1; padding:4px 0; font-size:11px; font-weight:600;
+      border:1px solid #cbd5e1; border-radius:6px; background:#fff;
+      color:#334155; cursor:pointer; transition:background 0.15s;
+    }
+    .hist-toggle:hover { background:#f1f5f9; }
+    .hist-toggle.active { background:#16a34a; border-color:#15803d; color:#fff; }
+    body.dark .hist-toggle { background:#1e293b; border-color:#334155; color:#cbd5e1; }
+    body.dark .hist-toggle:hover { background:#334155; }
+    body.dark .hist-toggle.active { background:#16a34a; color:#fff; }
+    .hist-stats {
+      display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;
+      margin-top:6px; font-size:11px;
+    }
+    .hist-stat {
+      background:#f8fafc; border-radius:6px; padding:4px 6px; text-align:center;
+    }
+    body.dark .hist-stat { background:#0f172a; }
+    .hist-stat-label { color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:0.04em; }
+    .hist-stat-value { color:#0f172a; font-weight:700; font-variant-numeric:tabular-nums; }
+    body.dark .hist-stat-value { color:#e2e8f0; }
+    .hist-legend { display:flex; gap:10px; font-size:10px; color:#64748b; margin-top:4px; }
+    .hist-legend-swatch { display:inline-block; width:14px; height:2px; margin-right:4px; vertical-align:middle; }
+    .hist-legend-swatch.hist-legend-price  { background:#16a34a; }
+    .hist-legend-swatch.hist-legend-median { background:#94a3b8; border-top:1px dashed #94a3b8; }
+    .hist-loading, .hist-empty, .hist-error {
+      padding:10px; text-align:center; font-size:11px; color:#64748b;
+    }
+    .hist-error { color:#b91c1c; }
+    /* Badge "precio historicamente bajo" — se anade si el precio actual esta en
+       el percentil <=10% del periodo consultado. Mismo tratamiento visual que
+       .savings-badge para consistencia. */
+    .hist-lowbadge {
+      display:inline-block; margin-top:6px; padding:3px 8px; border-radius:12px;
+      background:#dcfce7; color:#166534; font-size:11px; font-weight:700;
+    }
+    body.dark .hist-lowbadge { background:#14532d; color:#bbf7d0; }
 
     /* ---- Modal (onboarding / favoritos) ---- */
     .modal-backdrop {
@@ -930,6 +981,142 @@ export function getStyles(): string {
     body.dark .chip-check { background: #0f172a; border-color: #334155; color: #cbd5e1; }
     body.dark .chip-check:hover { border-color: #22c55e; color: #22c55e; }
     body.dark .chip-check:has(input:checked) { background: #14532d; border-color: #22c55e; color: #86efac; }
+
+    /* ============================================================
+       UTILIDADES PARA CSP SIN 'unsafe-inline' EN style-src
+       ------------------------------------------------------------
+       Antes usabamos style="..." inline en muchos elementos, lo que
+       obligaba a mantener 'unsafe-inline' en style-src de la CSP. Con
+       este bloque sustituimos cada inline por una clase equivalente —
+       misma visualizacion, cero riesgo de CSS-injection amplificando
+       un XSS teorico. Lo que es dinamico (color de precio, tamano del
+       cluster, etc.) se aplica en JS via element.style.x = valor:
+       eso NO dispara CSP porque no es un atributo HTML inline sino una
+       mutacion programatica del CSSOM.
+       ============================================================ */
+
+    /* utilidades atomicas */
+    .u-hide                 { display: none; }
+    .u-pos-rel              { position: relative; }
+    .u-mw-0                 { min-width: 0; }
+    .u-mt-10                { margin-top: 10px; }
+    .u-mt-6                 { margin-top: 6px; }
+    .u-mt-4                 { margin-top: 4px; }
+    .u-mt-3                 { margin-top: 3px; }
+    .u-mt-2                 { margin-top: 2px; }
+    .u-mb-0                 { margin-bottom: 0; }
+    .u-mr-6                 { margin-right: 6px; }
+    .u-mr-4                 { margin-right: 4px; }
+    .u-ml-6                 { margin-left: 6px; }
+    .u-op-80                { opacity: 0.8; }
+    .u-c-white              { color: #fff; }
+    .u-c-green              { color: #16a34a; }
+    .u-c-slate              { color: #64748b; }
+    .u-fs-16                { font-size: 16px; }
+
+    /* compuestas (estructura) */
+    .brand-link             { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; flex: 1; }
+    .header-actions         { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .search-heading-row     { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .search-heading         { font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; gap: 6px; }
+    .search-actions         { display: flex; gap: 6px; }
+    .tank-sub               { font-weight: 400; text-transform: none; color: #64748b; }
+    .btn-profile-util       { width: 100%; margin-top: 4px; font-size: 12px; }
+    .stats-flex             { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+    .loading-line-1         { font-size: 14px; font-weight: 600; color: #374151; }
+    .loading-line-2         { font-size: 12px; color: #64748b; }
+    .modal-header-row       { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .ts-widget-hidden       { position: fixed; bottom: 0; right: 0; width: 1px; height: 1px; pointer-events: none; opacity: 0; }
+
+    /* leyenda: puntos fijos (4 colores semanticos) */
+    .dot-green              { background: #16a34a; }
+    .dot-orange             { background: #d97706; }
+    .dot-red                { background: #dc2626; }
+    .dot-gray               { background: #9ca3af; }
+
+    /* sugerencias y autocomplete */
+    .suggest-highlight      { background: #bbf7d0; color: #15803d; border-radius: 2px; }
+    .suggest-row            { flex: 1; min-width: 0; }
+    /* Variantes de fondo para .suggest-price — antes iba inline con bg=CLRS[color]. */
+    .suggest-price--green   { background: #16a34a; }
+    .suggest-price--yellow  { background: #d97706; }
+    .suggest-price--red     { background: #dc2626; }
+    .suggest-price--gray    { background: #64748b; }
+    .geocoder-empty         { color: #9ca3af; cursor: default; font-size: 12px; }
+    .geocoder-sub           { font-size: 11px; color: #9ca3af; display: block; }
+    .list-sentinel          { display: none; text-align: center; padding: 10px; font-size: 12px; color: #94a3b8; }
+    .fav-row-sub--small     { font-size: 10px; }
+
+    /* popup de horarios */
+    .popup-muted            { color: #94a3b8; font-size: 11px; }
+    .popup-h24              { color: #16a34a; font-weight: 700; font-size: 12px; }
+    .popup-segment          { font-size: 11px; padding: 2px 0; }
+    .popup-segment-row      { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; font-size: 11px; border-bottom: 1px solid #f1f5f9; }
+    .popup-seg-day          { color: #64748b; font-weight: 600; }
+    .popup-seg-hrs          { color: #1e293b; }
+
+    /* popup de precios */
+    .popup-price-main       { font-size: 22px; font-weight: 800; }
+    /* .popup-price-main-unit hereda font-weight:800 del <strong> padre — asi
+       lo hacia el inline original (no habia override). Solo fijamos font-size. */
+    .popup-price-main-unit  { font-size: 13px; }
+    .popup-price-none       { font-size: 14px; color: #9ca3af; }
+    /* Variantes por rango de precio (priceColor devuelve 'green'/'yellow'/
+       'red'/'gray'). Son 4 valores discretos, asi que clases son mas simples
+       que data-dyn-style + CSSOM runtime. */
+    .popup-price-main--green  { color: #16a34a; }
+    .popup-price-main--yellow { color: #d97706; }
+    .popup-price-main--red    { color: #dc2626; }
+    .popup-price-main--gray   { color: #64748b; }
+
+    /* popup de estaciones */
+    .popup-root             { font-family: system-ui, sans-serif; min-width: 250px; }
+    .popup-header           { color: #fff; padding: 14px 16px; margin: -12px -14px 12px; border-radius: 8px 8px 0 0; }
+    .popup-header-title     { font-weight: 800; font-size: 15px; line-height: 1.2; }
+    .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 4px; }
+    .popup-header-status    { margin-top: 6px; }
+    .popup-price-row        { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px 10px; }
+    .popup-fuel-label       { font-size: 12px; color: #64748b; }
+    .popup-trend-top        { border-top: 1px solid #f1f5f9; padding-top: 8px; margin-top: 8px; }
+    .popup-trend-caption    { font-size: 11px; font-weight: 700; color: #374151; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .popup-trend-caption--mb4 { margin-bottom: 4px; }
+    /* Gradiente del header: mainBg en 135deg hacia #0f172a. Antes era
+       inline con mainBg calculado por JS; ahora una clase por rango. */
+    .popup-header--green    { background: linear-gradient(135deg, #16a34a 0%, #0f172a 100%); }
+    .popup-header--yellow   { background: linear-gradient(135deg, #d97706 0%, #0f172a 100%); }
+    .popup-header--red      { background: linear-gradient(135deg, #dc2626 0%, #0f172a 100%); }
+    .popup-header--gray     { background: linear-gradient(135deg, #64748b 0%, #0f172a 100%); }
+
+    /* navigation buttons (Google Maps / Waze / Apple Maps) */
+    .popup-nav-row          { display: flex; gap: 5px; margin-top: 12px; }
+    .popup-nav-btn          { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; font-size: 11px; font-weight: 700; text-decoration: none; }
+    .popup-nav-google       { background: #4285f4; color: #fff; }
+    .popup-nav-waze         { background: #09d3f7; color: #0d1b2a; }
+    .popup-nav-apple        { background: #1c1c1e; color: #fff; }
+
+    /* cluster icon — la divIcon de Leaflet se inserta en el DOM sin hook
+       post-render, por eso NO usamos data-dyn-style + CSSOM. Los valores
+       dinamicos (size, bg, fs del contador) caen en sets discretos, asi
+       que los expresamos como combinacion de clases modificadoras. */
+    .cluster-icon           { border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; border: 3px solid rgba(255,255,255,0.85); box-shadow: 0 3px 12px rgba(0,0,0,0.3); font-family: system-ui, sans-serif; gap: 1px; }
+    .cluster-icon--s36      { width: 36px; height: 36px; }
+    .cluster-icon--s44      { width: 44px; height: 44px; }
+    .cluster-icon--s52      { width: 52px; height: 52px; }
+    .cluster-icon--green    { background: #16a34a; }
+    .cluster-icon--yellow   { background: #d97706; }
+    .cluster-icon--red      { background: #dc2626; }
+    .cluster-icon--gray     { background: #64748b; }
+    .cluster-icon-count     { color: #fff; font-weight: 800; line-height: 1; }
+    .cluster-icon-count--fs9  { font-size: 9px; }
+    .cluster-icon-count--fs11 { font-size: 11px; }
+    .cluster-icon-price     { color: rgba(255,255,255,0.9); font-size: 8px; font-weight: 600; line-height: 1; }
+
+    /* list rows (station-list) */
+    .row-info-flex          { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; padding-right: 22px; }
+    .row-info-left          { min-width: 0; flex: 1; }
+    .row-info-right         { flex-shrink: 0; text-align: right; }
+    .row-fuel-label         { font-size: 10px; color: #9ca3af; margin-top: 1px; }
+    .row-row-noprice        { font-size: 11px; color: #9ca3af; }
 
   </style>`
 }

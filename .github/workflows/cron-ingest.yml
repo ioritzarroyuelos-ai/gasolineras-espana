@@ -1,0 +1,48 @@
+name: D1 cron — ingesta diaria de precios
+
+# Cloudflare Pages no soporta Cron Triggers nativos (son Workers-only). Este
+# workflow los reemplaza: a las 20:00 UTC (1h despues del fetch-prices de las
+# 19:00) hace un POST a /api/cron/ingest, que lee el snapshot ya desplegado
+# y upsertea precios del dia a D1.
+#
+# Requisitos:
+#   - Secret CRON_TOKEN en el repo (Settings → Secrets → Actions).
+#     Debe coincidir con la env var CRON_TOKEN del Pages project.
+#   - Variable PUBLIC_ORIGIN en el repo (Settings → Variables → Actions).
+#     Si no esta definida, cae al dominio por defecto webapp.pages.dev.
+
+on:
+  schedule:
+    - cron: '0 20 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: cron-ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: POST /api/cron/ingest
+        env:
+          CRON_TOKEN:    ${{ secrets.CRON_TOKEN }}
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::CRON_TOKEN secret no configurado — abortando."
+            exit 1
+          fi
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp.pages.dev}"
+          echo "Invocando ${ORIGIN}/api/cron/ingest"
+          # -f: fallar con exit!=0 si HTTP >=400 (GHA lo detecta y pone rojo).
+          # -sS: silencioso excepto en error (mas limpio en los logs).
+          # --retry: 3 intentos con backoff exponencial para absorber cold starts.
+          # --max-time 60: cortamos antes del timeout de 300s del Worker.
+          curl -fsS --retry 3 --retry-delay 5 --max-time 60 \
+            -X POST "$ORIGIN/api/cron/ingest" \
+            -H "Authorization: Bearer $CRON_TOKEN" \
+            -H "Accept: application/json" \
+            -w "\nHTTP %{http_code} in %{time_total}s\n"

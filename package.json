@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
     "lh": "lhci autorun",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "backfill:d1": "node scripts/backfill-d1.mjs"
   },
   "dependencies": {
     "hono": "^4.12.10",

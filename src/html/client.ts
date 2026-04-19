@@ -2210,6 +2210,24 @@ document.addEventListener('click', function(e) {
 });
 
 // ---- PANEL DE FAVORITOS EN SIDEBAR ----
+// Banner onboarding: se muestra la primera vez que el usuario tiene una
+// favorita y todavia no ha dismissed ni activado alertas. Explica historico
+// + alertas y ofrece CTA para activar. La dismissal es permanente (localStorage).
+var FAV_TIP_KEY = 'gs_fav_tip_seen_v1';
+function favTipShouldShow() {
+  try {
+    if (localStorage.getItem(FAV_TIP_KEY) === '1') return false;
+    if (alertsEnabled()) return false;      // ya las ha activado: no tiene sentido
+    if (!getFavs().length) return false;    // sin favoritas nada que enseñar
+    return true;
+  } catch(_) { return false; }
+}
+function favTipDismiss() {
+  try { localStorage.setItem(FAV_TIP_KEY, '1'); } catch(_) {}
+  var el = document.getElementById('fav-tip');
+  if (el) el.classList.remove('show');
+}
+
 function renderFavsPanel() {
   var section = document.getElementById('favs-section');
   var list = document.getElementById('fav-list');
@@ -2217,6 +2235,13 @@ function renderFavsPanel() {
   document.getElementById('fav-count').textContent = favs.length;
   if (!favs.length) { section.classList.remove('show'); return; }
   section.classList.add('show');
+  // Mostrar/ocultar tip de onboarding. Se evalua en cada render para que
+  // desaparezca automaticamente cuando el usuario active alertas o dismiss.
+  var tip = document.getElementById('fav-tip');
+  if (tip) {
+    if (favTipShouldShow()) tip.classList.add('show');
+    else tip.classList.remove('show');
+  }
   list.innerHTML = '';
   favs.forEach(function(f) {
     // Busca si la favorita esta en el listado actual (para mostrar precio)
@@ -2538,6 +2563,28 @@ document.addEventListener('keydown', function(e) {
   });
   // Estado inicial.
   syncUI();
+})();
+
+// ---- HANDLERS DEL BANNER DE ONBOARDING DE FAVORITOS ----
+// El banner #fav-tip aparece la primera vez que el usuario tiene >=1 favorita
+// y aun no ha activado alertas. Tres botones: cerrar (X), "Ahora no" y
+// "Activar alertas". El CTA reutiliza el flujo existente del bell toggle para
+// no duplicar logica de permisos. Cualquiera de los tres descarta el banner
+// permanentemente via favTipDismiss() (persiste en localStorage).
+(function() {
+  var close    = document.getElementById('fav-tip-close');
+  var dismiss  = document.getElementById('fav-tip-dismiss');
+  var activate = document.getElementById('fav-tip-activate');
+  if (close)   close.addEventListener('click', favTipDismiss);
+  if (dismiss) dismiss.addEventListener('click', favTipDismiss);
+  if (activate) activate.addEventListener('click', function() {
+    // Delega en el bell: asi reutilizamos el flujo de requestPermission y de
+    // toasts sin tener que duplicar logica. Tras disparar, marcamos dismiss
+    // para que no vuelva a aparecer aunque el usuario termine denegando.
+    var bell = document.getElementById('btn-alerts-toggle');
+    if (bell) bell.click();
+    favTipDismiss();
+  });
 })();
 
 // ---- SERVICE WORKER (PWA) ----

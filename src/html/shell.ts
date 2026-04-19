@@ -438,6 +438,24 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <i class="far fa-bell" id="btn-alerts-icon" aria-hidden="true"></i>
         </button>
       </div>
+      <!-- Banner de onboarding: aparece la primera vez que el usuario
+           favoritea. Explica historico + alertas y ofrece CTA directo para
+           activar las alertas. Persistimos dismissal en localStorage. -->
+      <div id="fav-tip" role="note" aria-live="polite">
+        <button class="fav-tip-close" id="fav-tip-close" aria-label="Cerrar aviso" title="Cerrar">&times;</button>
+        <div class="fav-tip-title"><i class="fas fa-lightbulb" aria-hidden="true"></i> Aprovecha tus favoritas</div>
+        <div>A partir de ahora, con tus favoritas puedes:</div>
+        <ul>
+          <li><b>Ver su histórico</b>: sparkline de evolución en el popup (a partir de 2 días de datos).</li>
+          <li><b>Recibir alertas</b> cuando baje el precio <b>&ge; 2&nbsp;c</b>.</li>
+        </ul>
+        <div class="fav-tip-actions">
+          <button class="fav-tip-cta" id="fav-tip-activate">
+            <i class="fas fa-bell" aria-hidden="true"></i> Activar alertas
+          </button>
+          <button class="fav-tip-dismiss" id="fav-tip-dismiss">Ahora no</button>
+        </div>
+      </div>
       <div id="fav-list" role="list"></div>
     </section>
 

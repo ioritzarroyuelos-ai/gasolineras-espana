@@ -3530,18 +3530,9 @@ function appleMapsRouteUrl(from, to, stops) {
        + '&dirflg=d';
 }
 function wazeRouteUrl(to) {
-  // Waze NO soporta waypoints. Devolvemos el URL al destino final; el
-  // usuario tendra que relanzar Waze desde cada parada.
+  // Waze NO soporta waypoints via URL: su esquema ?ll=LAT,LNG solo acepta
+  // un destino. Devolvemos el URL al destino final. La UI avisa al usuario.
   return 'https://waze.com/ul?ll=' + navCoord(to) + '&navigate=yes';
-}
-function wazeStopUrl(ll) {
-  return 'https://waze.com/ul?ll=' + navCoord(ll) + '&navigate=yes';
-}
-function appleMapsStopUrl(ll) {
-  return 'https://maps.apple.com/?daddr=' + navCoord(ll) + '&dirflg=d';
-}
-function googleMapsStopUrl(ll) {
-  return 'https://www.google.com/maps/dir/?api=1&destination=' + navCoord(ll) + '&travelmode=driving';
 }
 
 // Estado conservado entre entrar/salir de modo-ruta: permite re-generar
@@ -3592,19 +3583,14 @@ function enterRouteMode(coords, stops, from, to) {
       iconAnchor: [18, 18]
     });
     var m = L.marker([pos.lat, pos.lng], { icon: icon, zIndexOffset: 800 });
-    var gUrl = googleMapsStopUrl(pos);
-    var aUrl = appleMapsStopUrl(pos);
-    var wUrl = wazeStopUrl(pos);
+    // Popup informativo: rotulo, direccion, precio y km desde origen. Sin
+    // botones de navegacion por gasolinera: la ruta completa se lleva a
+    // Google/Apple/Waze desde el banner flotante o el plan del modal.
     var popup = '<div style="font-weight:700;margin-bottom:4px;">Parada ' + (i + 1) + ': ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
               + '<div style="font-size:12px;color:#475569;margin-bottom:4px;">' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
-              + '<div style="font-size:14px;font-weight:800;color:#16a34a;margin-bottom:6px;">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
-              + '<div style="font-size:11px;color:#475569;margin-bottom:8px;">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>'
-              + '<div style="display:flex;gap:6px;flex-wrap:wrap;">'
-              + '  <a href="' + gUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-google">Google</a>'
-              + '  <a href="' + aUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-apple">Apple</a>'
-              + '  <a href="' + wUrl + '" target="_blank" rel="noopener" class="popup-nav-btn popup-nav-waze">Waze</a>'
-              + '</div>';
-    m.bindPopup(popup, { maxWidth: 280 });
+              + '<div style="font-size:14px;font-weight:800;color:#16a34a;margin-bottom:4px;">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
+              + '<div style="font-size:11px;color:#475569;">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>';
+    m.bindPopup(popup, { maxWidth: 240 });
     routeStopsLayer.addLayer(m);
   });
   routeStopsLayer.addTo(map);
@@ -3949,8 +3935,11 @@ function exitRouteMode() {
     var aUrl = appleMapsRouteUrl(from, to, stops);
     var wUrl = wazeRouteUrl(to);
     var hasStops = stops && stops.length > 0;
+    // Google y Apple llevan todas las paradas como waypoints. Waze no lo
+    // soporta via deep-link (solo acepta un destino), asi que solo el destino
+    // final. Lo decimos claramente para que el usuario no crea que es un bug.
     var footnote = hasStops
-      ? '<div class="route-nav-note">Waze no admite paradas m\u00FAltiples: abre solo el destino final. Para navegar parada a parada, usa los botones de cada pin en el mapa.</div>'
+      ? '<div class="route-nav-note">Google Maps y Apple Maps abren la ruta con todas las gasolineras como paradas. Waze no admite paradas m\u00FAltiples v\u00EDa enlace, as\u00ED que solo abre el destino final.</div>'
       : '';
     return '<div class="route-nav-title">Abrir ruta en:</div>'
          + '<div class="route-nav-buttons">'
@@ -3985,11 +3974,12 @@ function exitRouteMode() {
            + 'Puedes completar la ruta con la autonom\u00EDa actual.</div>'
            + renderNavButtons(from, to, []);
     }
+    // Cada parada: info solo (sin link individual a ningun navegador). La
+    // ruta completa con todas las paradas se abre desde los 3 botones de
+    // "Abrir ruta en:" al final del panel.
     var itemsHtml = plan_result.stops.map(function(stop, i) {
       var s = stop.item;
-      var lat = stationLatLng(s);
-      var navUrl = lat ? googleMapsStopUrl(lat) : '#';
-      return '<a class="route-plan-stop" href="' + navUrl + '" target="_blank" rel="noopener">'
+      return '<div class="route-plan-stop">'
         + '<div class="route-plan-info">'
         + '  <div class="route-plan-badge">' + (i + 1) + '</div>'
         + '  <div class="route-plan-main">'
@@ -4001,7 +3991,7 @@ function exitRouteMode() {
         + '  <div class="route-plan-price">' + stop.priceEurL.toFixed(3) + ' \u20AC</div>'
         + '  <div class="route-plan-km">a ' + Math.round(stop.kmFromOrigin) + ' km</div>'
         + '</div>'
-        + '</a>';
+        + '</div>';
     }).join('');
     return header + itemsHtml + renderNavButtons(from, to, plan_result.stops);
   }

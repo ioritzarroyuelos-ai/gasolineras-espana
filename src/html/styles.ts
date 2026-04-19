@@ -523,10 +523,8 @@ export function getStyles(nonce: string = ''): string {
     .route-plan-stop {
       padding:12px 14px; background:#ecfdf5; border:2px solid #86efac;
       border-radius:12px; display:flex; justify-content:space-between; gap:10px;
-      cursor:pointer; transition:background 0.1s, border-color 0.1s;
       align-items:center;
     }
-    .route-plan-stop:hover { background:#d1fae5; border-color:#22c55e; }
     .route-plan-badge {
       display:inline-block; min-width:28px; height:28px; line-height:28px;
       text-align:center; background:#16a34a; color:#fff; border-radius:50%;
@@ -550,7 +548,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .route-plan-title { color:#f1f5f9; }
     body.dark .route-plan-subtitle { color:#86efac; }
     body.dark .route-plan-stop { background:#14532d; border-color:#166534; }
-    body.dark .route-plan-stop:hover { background:#166534; border-color:#22c55e; }
     body.dark .route-plan-badge { background:#22c55e; color:#052e16; }
     body.dark .route-plan-title2 { color:#f1f5f9; }
     body.dark .route-plan-sub, body.dark .route-plan-km { color:#cbd5e1; }
@@ -631,17 +628,6 @@ export function getStyles(nonce: string = ''): string {
       font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;
     }
     body.dark .route-nav-note { color: #94a3b8; }
-
-    /* Botones pequenitos dentro del popup del marcador de parada. */
-    .popup-nav-btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 5px 9px; border-radius: 6px;
-      font-size: 11px; font-weight: 700;
-      text-decoration: none; color: white;
-    }
-    .popup-nav-google { background: #4285F4; }
-    .popup-nav-apple  { background: #111827; }
-    .popup-nav-waze   { background: #33ccff; color: #0b1220; }
     /* Marcador grande de parada: numero + icono de gasolinera.
        Se superpone al mapa, con el numero de orden de la parada. */
     .route-stop-marker {

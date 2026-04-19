@@ -36,6 +36,52 @@ export function validateId(id: string | undefined): string | null {
   return id
 }
 
+// Allowlist de IDs de provincia validos (52 codigos INE: 01-52). Rechaza 99999
+// y compania antes de hacer passthrough al Ministerio → reduce amplificacion
+// cache-miss a ratio 1:1 con el universo real. Complementa validateId().
+const VALID_PROVINCIA_IDS = new Set<string>([
+  '01','02','03','04','05','06','07','08','09','10',
+  '11','12','13','14','15','16','17','18','19','20',
+  '21','22','23','24','25','26','27','28','29','30',
+  '31','32','33','34','35','36','37','38','39','40',
+  '41','42','43','44','45','46','47','48','49','50',
+  '51','52',
+])
+export function isValidProvinciaId(id: string | null | undefined): boolean {
+  return !!id && VALID_PROVINCIA_IDS.has(id)
+}
+
+// ---- Sanitizacion de query de geocoding ----
+// Nominatim acepta queries largas pero aqui acotamos agresivamente para limitar
+// superficie de abuso (logs, cache keys gigantes, payloads maliciosos). Normas:
+//   1. Rechaza cadenas vacias, >120 chars, o con caracteres de control.
+//   2. Colapsa whitespace multiple a un solo espacio.
+//   3. Preserva letras Unicode (acentos, n), digitos, espacios y signos tipicos
+//      de direcciones espanolas (- , . ' / ').
+//   4. Devuelve null si tras limpiar queda <2 chars utiles.
+const GEO_DISALLOWED = /[\u0000-\u001F\u007F<>{}\\^`]/  // control chars + shell-like
+export function sanitizeGeocodeQuery(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null
+  if (raw.length === 0 || raw.length > 120) return null
+  if (GEO_DISALLOWED.test(raw)) return null
+  const collapsed = raw.replace(/\s+/g, ' ').trim()
+  if (collapsed.length < 2) return null
+  return collapsed
+}
+
+// Valida que (lat, lng) sean finitos, dentro de rango, y mantiene precision.
+// Devuelve el par formateado como strings con 6 decimales (~11cm de precision)
+// para que la clave de cache no dependa del formato exacto del cliente.
+export function sanitizeLatLng(latRaw: string | null | undefined, lngRaw: string | null | undefined):
+  { lat: string; lng: string } | null {
+  if (typeof latRaw !== 'string' || typeof lngRaw !== 'string') return null
+  const lat = Number(latRaw)
+  const lng = Number(lngRaw)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null
+  return { lat: lat.toFixed(6), lng: lng.toFixed(6) }
+}
+
 // ---- CORS / anti-hotlink ----
 export function originAllowed(
   origin: string | undefined,

@@ -3,6 +3,9 @@ import { buildPage } from './html/shell'
 import {
   LRU,
   validateId,
+  isValidProvinciaId,
+  sanitizeGeocodeQuery,
+  sanitizeLatLng,
   originAllowed,
   SlidingWindowLimiter,
 } from './lib/pure'
@@ -81,9 +84,16 @@ function slog(level: LogLevel, event: string, fields: Record<string, unknown> = 
 // ---- LRU CACHE con tope (evita DoS por memoria) ----
 const srvCache      = new LRU<unknown>(200)
 const snapshotCache = new LRU<unknown>(10)
-const SRV_TTL_FRESH = 4 * 60 * 60 * 1000        // 4h: datos fresquisimos
-const SRV_TTL_STALE = 30 * 24 * 60 * 60 * 1000  // 30d: ultimo recurso en memoria
+const geoCache      = new LRU<unknown>(500)      // Nominatim: cache agresivo, las direcciones cambian poco
+const SRV_TTL_FRESH = 4 * 60 * 60 * 1000         // 4h: datos fresquisimos
+const SRV_TTL_STALE = 30 * 24 * 60 * 60 * 1000   // 30d: ultimo recurso en memoria
 const SNAP_TTL      = 10 * 60 * 1000             // 10 min en memoria, luego re-leer del asset
+const GEO_TTL_FRESH = 60 * 60 * 1000             // 1h geocode fresco
+const GEO_TTL_STALE = 7  * 24 * 60 * 60 * 1000   // 7d si Nominatim cae
+const GEO_UPSTREAM_TIMEOUT = 5000                 // 5s corte al upstream para evitar slowloris
+// User-Agent identificable exigido por la Nominatim Usage Policy.
+// https://operations.osmfoundation.org/policies/nominatim/
+const GEO_USER_AGENT = 'gasolineras-espana/' + APP_VERSION + ' (+https://gasolineras.pages.dev/privacidad)'
 
 // Selecciona el schema zod apropiado segun la URL del Ministerio. Si no casa
 // con ninguno conocido devuelve null → salta validacion (datos pasan tal cual
@@ -103,7 +113,9 @@ async function proxiedFetch(path: string): Promise<unknown> {
   const t0 = Date.now()
   for (let i = 0; i < 3; i++) {
     try {
-      const res = await fetch(MINISTRY + path)
+      // Timeout duro: el Ministerio a veces se cuelga y no queremos que bloquee
+      // el Worker indefinidamente (slowloris / agotar CPU time limit).
+      const res = await fetch(MINISTRY + path, { signal: AbortSignal.timeout(8000) })
       if (!res.ok) { lastErr = new Error('Ministry ' + res.status); continue }
       const raw = await res.json()
 
@@ -171,6 +183,11 @@ const ALLOWED_ORIGINS = new Set<string>([
 // escritura potencial.
 const apiLimiter    = new SlidingWindowLimiter(120, 60_000)  // 120 req/min por IP
 const ingestLimiter = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min por IP
+// Geocoding hace fetch upstream a Nominatim (policy: 1 req/s global). Un atacante
+// con muchos IPs podria convertirnos en su amplificador de DDoS contra OSM, asi
+// que aqui somos mas estrictos: cache cubre el trafico normal y aun asi cada IP
+// puede pedir 15/min de cache-miss antes de ser bloqueada.
+const geoLimiter    = new SlidingWindowLimiter(15,  60_000)  // 15 req/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   return c.req.header('cf-connecting-ip')
@@ -221,7 +238,9 @@ function genNonce(): string {
 function buildCsp(nonce: string, turnstile = false): string {
   const scriptSrc  = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com']
   const frameSrc   = ["'self'"]
-  const connectSrc = ["'self'", 'https://nominatim.openstreetmap.org']
+  // connect-src: sin nominatim. Todo el geocoding pasa por /api/geocode/* (mismo
+  // origen) → no expone la IP del usuario a OSM y reduce superficie de CSP.
+  const connectSrc = ["'self'"]
   if (turnstile) {
     scriptSrc.push('https://challenges.cloudflare.com')
     frameSrc.push('https://challenges.cloudflare.com')
@@ -283,12 +302,15 @@ function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> 
     'X-Frame-Options': 'DENY',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=()',
     'Cross-Origin-Opener-Policy': 'same-origin',
+    // HSTS: pages.dev ya fuerza HTTPS pero publicamos este header para que
+    // navegadores y scanners de cumplimiento confirmen la postura. 2 anios +
+    // subdominios. Sin preload porque eso afectaria a todo pages.dev.
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'Cache-Control': 'no-store',
     'Link': [
       '<https://sedeaplicaciones.minetur.gob.es>; rel=preconnect',
       '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
       '<https://unpkg.com>; rel=preconnect; crossorigin',
-      '<https://nominatim.openstreetmap.org>; rel=preconnect; crossorigin',
     ].join(', '),
   }
 }
@@ -331,8 +353,8 @@ function buildSecurityTxt(host: string, scheme: string): string {
   const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
   return [
     '# Canal privado de reporte de vulnerabilidades',
-    'Contact: ' + base + '/.well-known/security.txt',
-    'Contact: https://github.com/YOUR_USER/YOUR_REPO/security/advisories/new',
+    'Contact: https://github.com/ioritzarroyuelos-ai/gasolineras-espana/security/advisories/new',
+    'Contact: https://github.com/ioritzarroyuelos-ai/gasolineras-espana/issues',
     'Expires: ' + expires,
     'Preferred-Languages: es, en',
     'Policy: ' + base + '/privacidad',
@@ -421,11 +443,10 @@ app.get('/privacidad', c => {
 
 <h2>Servicios de terceros</h2>
 <ul>
-  <li><strong>Ministerio para la Transición Ecológica</strong>: origen oficial de los precios.</li>
-  <li><strong>OpenStreetMap Nominatim</strong>: geocodificación de direcciones introducidas por el usuario.</li>
-  <li><strong>CartoDB / unpkg</strong>: CDN de tiles de mapa y librerías.</li>
+  <li><strong>Ministerio para la Transición Ecológica</strong>: origen oficial de los precios. Las peticiones pasan por nuestro servidor, tu IP no llega al Ministerio.</li>
+  <li><strong>OpenStreetMap Nominatim</strong>: geocodificación de direcciones. Las peticiones pasan por nuestro servidor (endpoint <code>/api/geocode/*</code>), tu IP no llega a OpenStreetMap.</li>
+  <li><strong>CartoDB / unpkg</strong>: CDN de tiles de mapa y librerías. Estos servicios sí reciben tu IP directamente porque los recursos se cargan desde el navegador.</li>
 </ul>
-<p>Estos servicios pueden registrar la IP del visitante según sus propias políticas.</p>
 
 <h2>Informes de errores</h2>
 <p>Si se produce un fallo en JavaScript, se puede enviar un informe técnico mínimo (mensaje, stack, URL, user-agent) al endpoint <code>/api/ingest</code>. No se incluye contenido introducido por el usuario ni cookies. Puedes desactivarlo bloqueando <code>/api/ingest</code> en tu navegador.</p>
@@ -450,7 +471,10 @@ app.get('/api/provincias', async c => {
 
 app.get('/api/municipios/:idProv', async c => {
   const idProv = validateId(c.req.param('idProv'))
-  if (!idProv) return c.json({ error: 'ID de provincia invalido' }, 400)
+  // Doble validacion: regex para descartar basura + allowlist INE (01-52) para
+  // bloquear IDs validos en formato pero inexistentes (99999, etc). Sin esto un
+  // atacante podria forzar 99998 misses distintos y saturar el upstream.
+  if (!idProv || !isValidProvinciaId(idProv)) return c.json({ error: 'ID de provincia invalido' }, 400)
   try {
     return c.json(await proxiedFetch('/Listados/MunicipiosPorProvincia/' + idProv))
   } catch {
@@ -465,7 +489,7 @@ app.get('/api/municipios/:idProv', async c => {
 
 app.get('/api/estaciones/provincia/:idProv', async c => {
   const idProv = validateId(c.req.param('idProv'))
-  if (!idProv) return c.json({ error: 'ID de provincia invalido' }, 400)
+  if (!idProv || !isValidProvinciaId(idProv)) return c.json({ error: 'ID de provincia invalido' }, 400)
   try {
     return c.json(await proxiedFetch('/EstacionesTerrestres/FiltroProvincia/' + idProv))
   } catch {
@@ -487,6 +511,142 @@ app.get('/api/estaciones/municipio/:idMun', async c => {
     if (filtered) return c.json(filtered, 200, { 'X-Data-Source': 'snapshot' })
     return c.json({ error: 'Error al cargar estaciones' }, 503)
   }
+})
+
+// ---- Geocoding proxy (OpenStreetMap Nominatim) ----
+// Motivacion: hacer este fetch server-side en vez de desde el navegador tiene
+// tres beneficios:
+//   1. Privacidad: la IP del usuario nunca llega a Nominatim (antes si llegaba).
+//   2. Cache: un fetch del servidor sirve muchas peticiones identicas desde
+//      distintos clientes (cada 'Madrid' buscado una vez y ya).
+//   3. Hardening: saneamos la entrada, timeoutamos el upstream, y solo dejamos
+//      pasar un conjunto explicito de campos (pick-list) en la respuesta.
+// Nominatim Usage Policy (https://operations.osmfoundation.org/policies/nominatim/)
+// exige User-Agent identificable, bounded rate, y que cacheemos respuestas.
+function pickSearchItem(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as Record<string, unknown>
+  const lat = typeof r.lat === 'string' ? r.lat : typeof r.lat === 'number' ? String(r.lat) : null
+  const lon = typeof r.lon === 'string' ? r.lon : typeof r.lon === 'number' ? String(r.lon) : null
+  const displayName = typeof r.display_name === 'string' ? r.display_name : null
+  if (!lat || !lon || !displayName) return null
+  const out: Record<string, unknown> = {
+    lat, lon,
+    display_name: displayName.length > 300 ? displayName.slice(0, 300) : displayName,
+  }
+  if (typeof r.type === 'string')  out.type  = r.type
+  if (typeof r.class === 'string') out.class = r.class
+  if (Array.isArray(r.boundingbox) && r.boundingbox.length === 4
+      && r.boundingbox.every(v => typeof v === 'string')) {
+    out.boundingbox = r.boundingbox
+  }
+  return out
+}
+
+async function upstreamGeo<T>(url: string): Promise<T | null> {
+  try {
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(GEO_UPSTREAM_TIMEOUT),
+      headers: {
+        'User-Agent': GEO_USER_AGENT,
+        'Accept-Language': 'es,en',
+      },
+    })
+    if (!res.ok) {
+      slog('warn', 'geo.upstream_status', { status: res.status })
+      return null
+    }
+    return await res.json() as T
+  } catch (e) {
+    slog('warn', 'geo.upstream_err', { err: String(e).slice(0, 200) })
+    return null
+  }
+}
+
+app.get('/api/geocode/search', async c => {
+  const rl = geoLimiter.check(clientKey(c))
+  if (!rl.allowed) {
+    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+  const q = sanitizeGeocodeQuery(c.req.query('q'))
+  if (!q) return c.json({ error: 'query invalida' }, 400)
+
+  const cacheKey = 's:' + q.toLowerCase()
+  const hit = geoCache.get(cacheKey)
+  if (hit && Date.now() - hit.ts < GEO_TTL_FRESH) {
+    return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'HIT' })
+  }
+
+  const url = 'https://nominatim.openstreetmap.org/search?'
+    + 'format=json&limit=5&countrycodes=es&q=' + encodeURIComponent(q)
+  const raw = await upstreamGeo<unknown>(url)
+
+  if (!Array.isArray(raw)) {
+    // Fallback stale: mejor una respuesta vieja que nada si Nominatim cae.
+    if (hit && Date.now() - hit.ts < GEO_TTL_STALE) {
+      return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
+    }
+    return c.json([], 200, { 'Cache-Control': 'no-store' })
+  }
+
+  const safe = raw.map(pickSearchItem).filter(x => x !== null).slice(0, 5)
+  geoCache.set(cacheKey, { data: safe, ts: Date.now() })
+  return c.json(safe, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
+})
+
+app.get('/api/geocode/reverse', async c => {
+  const rl = geoLimiter.check(clientKey(c))
+  if (!rl.allowed) {
+    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+  const ll = sanitizeLatLng(c.req.query('lat'), c.req.query('lon'))
+  if (!ll) return c.json({ error: 'coordenadas invalidas' }, 400)
+
+  const cacheKey = 'r:' + ll.lat + ',' + ll.lng
+  const hit = geoCache.get(cacheKey)
+  if (hit && Date.now() - hit.ts < GEO_TTL_FRESH) {
+    return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'HIT' })
+  }
+
+  const url = 'https://nominatim.openstreetmap.org/reverse?'
+    + 'format=json&zoom=16&addressdetails=1'
+    + '&lat=' + encodeURIComponent(ll.lat)
+    + '&lon=' + encodeURIComponent(ll.lng)
+  const raw = await upstreamGeo<Record<string, unknown>>(url)
+
+  if (!raw || typeof raw !== 'object') {
+    if (hit && Date.now() - hit.ts < GEO_TTL_STALE) {
+      return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
+    }
+    return c.json({}, 200, { 'Cache-Control': 'no-store' })
+  }
+
+  // Passthrough restrictivo: solo campos utiles al cliente.
+  const out: Record<string, unknown> = {}
+  if (typeof raw.display_name === 'string') {
+    out.display_name = raw.display_name.length > 300 ? raw.display_name.slice(0, 300) : raw.display_name
+  }
+  if (raw.address && typeof raw.address === 'object') {
+    const a = raw.address as Record<string, unknown>
+    const addrOut: Record<string, string> = {}
+    // Incluimos state_district y province porque el cliente los usa al adivinar
+    // la provincia espanola desde coordenadas (mas fiables que 'state' en Espana).
+    const addrKeys = [
+      'road','neighbourhood','suburb',
+      'village','town','city','municipality',
+      'county','state_district','province','state',
+      'postcode','country','country_code',
+    ]
+    for (const k of addrKeys) {
+      const v = a[k]
+      if (typeof v === 'string' && v.length <= 200) addrOut[k] = v
+    }
+    out.address = addrOut
+  }
+  if (typeof raw.lat === 'string') out.lat = raw.lat
+  if (typeof raw.lon === 'string') out.lon = raw.lon
+  geoCache.set(cacheKey, { data: out, ts: Date.now() })
+  return c.json(out, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
 })
 
 // ---- Health check (para monitorizacion sintetica) ----

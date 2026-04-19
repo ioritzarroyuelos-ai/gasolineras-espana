@@ -1522,13 +1522,13 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
       radius: 11, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.55, weight: 2
     }).addTo(map).bindPopup('<b>&#x1F4CD; Tu ubicacion</b>').openPopup();
 
-    // 2. Geocodificacion inversa
+    // 2. Geocodificacion inversa via nuestro proxy /api/geocode/reverse.
+    //    Ventaja: la IP del usuario no llega a OpenStreetMap (privacy) y el
+    //    servidor cachea + rate-limitea. Si el proxy falla, 'addr' queda {}.
     var revRes = await fetch(
-      'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&addressdetails=1',
-      { headers: { 'Accept-Language': 'es' } }
+      '/api/geocode/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng)
     );
-    var addr = (await revRes.json()).address || {};
-    console.log('[geo] address:', JSON.stringify(addr));
+    var addr = (revRes.ok ? (await revRes.json()).address : null) || {};
 
     // Candidatos de provincia en orden de fiabilidad
     var provCandidates = [
@@ -1553,7 +1553,7 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
         if (words.some(function(w) { return optN.includes(w); })) {
           foundProvId   = opt.value;
           selProv.value = opt.value;
-          console.log('[geo] provincia encontrada:', opt.textContent, '<- candidato:', raw);
+          // No logueamos el match porque contiene datos de ubicacion; ver /privacidad.
           break outer;
         }
       }
@@ -1581,7 +1581,7 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
       }
       if (bestOpt && bestScore > 0) {
         selMun.value = bestOpt.value;
-        console.log('[geo] municipio encontrado:', bestOpt.textContent, 'score:', bestScore);
+        // No logueamos el municipio: lo mismo, rastro de ubicacion del usuario.
       }
     }
 
@@ -1866,23 +1866,19 @@ window.addEventListener('resize', function() {
   var results = document.getElementById('geocoder-results');
   var debounce;
 
+  // Solo aceptamos lat/lon en formato numerico (+/- digitos con punto decimal).
+  // Si el upstream devolviera otra cosa, descartamos la entrada para que un
+  // eventual XSS via atributo data-* sea imposible.
+  var LATLON_RE = /^-?\d+(?:\.\d+)?$/;
+
   async function search(q) {
     if (q.length < 3) { results.classList.remove('show'); return; }
     try {
-      var url = 'https://nominatim.openstreetmap.org/search?format=json'
-        + '&q=' + encodeURIComponent(q)
-        + '&countrycodes=es'
-        + '&viewbox=-18.2,43.9,4.6,27.4'
-        + '&bounded=1'
-        + '&limit=8&addressdetails=1';
-      var res  = await fetch(url, { headers: { 'Accept-Language': 'es' } });
-      var all  = await res.json();
-
-      var data = all.filter(function(r) {
-        var cc   = (r.address || {}).country_code || '';
-        var name = (r.display_name || '').toLowerCase();
-        return cc === 'es' || name.endsWith('espana') || name.endsWith('spain');
-      });
+      // Pasa por nuestro proxy: countrycodes=es ya viene forzado en el server,
+      // sanitiza la query y cachea. No mandamos headers custom (innecesarios).
+      var res  = await fetch('/api/geocode/search?q=' + encodeURIComponent(q));
+      var data = res.ok ? await res.json() : [];
+      if (!Array.isArray(data)) data = [];
 
       if (!data.length) {
         results.innerHTML = '<div class="geocoder-item" style="color:#9ca3af;cursor:default;font-size:12px">Sin resultados en Espana</div>';
@@ -1891,18 +1887,22 @@ window.addEventListener('resize', function() {
       }
 
       results.innerHTML = data.map(function(r) {
-        var addr  = r.address || {};
-        var place = r.name || addr.city || addr.town || addr.village || r.display_name.split(',')[0];
-        var parts = r.display_name.split(',').map(function(p) { return p.trim(); })
+        if (!r || typeof r.lat !== 'string' || typeof r.lon !== 'string') return '';
+        if (!LATLON_RE.test(r.lat) || !LATLON_RE.test(r.lon)) return '';
+        var dn    = typeof r.display_name === 'string' ? r.display_name : '';
+        var place = dn.split(',')[0].trim();
+        var parts = dn.split(',').map(function(p) { return p.trim(); })
           .filter(function(p) { return p && !['espana','spain'].includes(p.toLowerCase()); }).slice(1, 4);
         var sub = parts.join(', ');
-        return '<div class="geocoder-item" data-lat="' + r.lat + '" data-lon="' + r.lon + '">'
+        // esc() en atributos tambien: si algun dia aceptamos no-numericos no
+        // queremos una inyeccion facil via data-*.
+        return '<div class="geocoder-item" data-lat="' + esc(r.lat) + '" data-lon="' + esc(r.lon) + '">'
           + '<strong>' + esc(place) + '</strong>'
           + (sub ? '<span style="font-size:11px;color:#9ca3af;display:block">' + esc(sub) + '</span>' : '')
           + '</div>';
       }).join('');
       results.classList.add('show');
-    } catch(e) { console.error('[geocoder]', e); }
+    } catch(e) { /* silent */ }
   }
 
   input.addEventListener('input', function() {
@@ -2523,8 +2523,9 @@ function provinciaIdByName(name) {
 async function reverseProvinciaFromLatLng(lat, lng) {
   if (!lat || !lng || isNaN(lat) || isNaN(lng)) return '';
   try {
-    var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&addressdetails=1';
-    var r = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    // Va por /api/geocode/reverse → no exponemos la IP del usuario a OSM.
+    var url = '/api/geocode/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng);
+    var r = await fetch(url);
     if (!r.ok) return '';
     var data = await r.json();
     var addr = data && data.address || {};

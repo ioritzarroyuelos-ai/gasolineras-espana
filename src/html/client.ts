@@ -102,10 +102,17 @@ function toggleFav(station) {
   var idx = -1;
   for (var i = 0; i < favs.length; i++) if (favs[i].id === id) { idx = i; break; }
   if (idx >= 0) { favs.splice(idx, 1); setFavs(favs); return false; }
+  // Guardamos ademas provinciaId y municipioId: son la pieza que nos permite
+  // navegar a la favorita aunque actualmente estes viendo otra provincia.
+  // Sin estos IDs, un click en una favorita "remota" no podria cambiar la
+  // provincia ni el municipio.
   favs.push({
     id: id,
     rotulo: station['Rotulo'] || 'Gasolinera',
     municipio: station['Municipio'] || '',
+    municipioId: station['IDMunicipio'] || '',
+    provincia: station['Provincia'] || '',
+    provinciaId: station['IDProvincia'] || '',
     direccion: station['Direccion'] || '',
     lat: parseFloat((station['Latitud'] || '').replace(',', '.')),
     lng: parseFloat((station['Longitud (WGS84)'] || '').replace(',', '.'))
@@ -2211,23 +2218,13 @@ document.addEventListener('click', function(e) {
 
 // ---- FAVORITOS: BOTON DE HEADER + MODAL ----
 // La estrella del header es el unico acceso a favoritas. Abre un modal que
-// contiene (a) la lista de gasolineras guardadas con precio y acciones, y
-// (b) la configuracion de alertas (navegador local + email). El modal se
-// re-renderiza en cada apertura y tambien cuando cambia la lista (toggleFav).
-// Para compatibilidad con el resto del codigo mantenemos el nombre
-// renderFavsPanel() como alias de renderFavs() — asi no hay que tocar las
-// llamadas ya existentes (markVisited, toggle de card, etc).
-
-// Preferencias de alertas por email. Se guardan en localStorage hasta que
-// montemos el backend en v1.7; el formulario siempre muestra "pronto".
-var ALERT_PREFS_KEY = 'gs_alert_prefs_v1';
-function getAlertPrefs() {
-  try { return JSON.parse(localStorage.getItem(ALERT_PREFS_KEY) || 'null') || { email: '', drop: true, rise: false, threshold: 2 }; }
-  catch(_) { return { email: '', drop: true, rise: false, threshold: 2 }; }
-}
-function setAlertPrefs(p) {
-  try { localStorage.setItem(ALERT_PREFS_KEY, JSON.stringify(p)); } catch(_) {}
-}
+// contiene la lista de gasolineras guardadas. Click en una favorita ->
+// cierra modal y navega en el mapa (setea provincia, carga municipios,
+// setea municipio, pone el rotulo en la caja de busqueda y hace zoom).
+// El modal se re-renderiza en cada apertura y tambien cuando cambia la
+// lista (toggleFav). Para compatibilidad con el resto del codigo mantenemos
+// el nombre renderFavsPanel() como alias de renderFavs() — asi no hay que
+// tocar las llamadas ya existentes (markVisited, toggle de card, etc).
 
 // Actualiza el boton estrella del header: color segun tiene/no favoritas,
 // insignia numerica solo si hay >=1. Y, si el modal esta abierto, refresca.
@@ -2255,8 +2252,10 @@ function renderFavs() {
 // Alias: renderFavsPanel es el nombre historico llamado desde toggle/handlers.
 function renderFavsPanel() { renderFavs(); }
 
-// Render de la lista de favoritas dentro del modal (con precio actual si la
-// gasolinera esta en el conjunto cargado + boton "quitar").
+// Render de la lista de favoritas dentro del modal. Cada fila muestra rotulo
+// + municipio + provincia y, si la gasolinera ya esta cargada en allStations,
+// el precio actual (badge). El click navega al mapa via navigateToFav() —
+// independientemente de la provincia que se esta viendo ahora mismo.
 function renderFavsModalList() {
   var list = document.getElementById('favs-list');
   var empty = document.getElementById('favs-empty');
@@ -2280,31 +2279,31 @@ function renderFavsModalList() {
     var priceHtml = price
       ? '<span class="fav-row-price badge badge-' + priceColor(price) + '">' + fmtPriceUnit(price) + '</span>'
       : '<span class="fav-row-sub" style="font-size:10px">Sin datos</span>';
+    // Mostramos municipio (+ provincia si la conocemos) para que el usuario
+    // entienda de un vistazo donde vive cada favorita.
+    var loc = esc(f.municipio || '');
+    if (f.provincia && f.provincia !== f.municipio) loc += (loc ? ', ' : '') + esc(f.provincia);
     var row = document.createElement('div');
     row.className = 'fav-row';
     row.innerHTML =
         '<div class="fav-row-info" role="button" tabindex="0" aria-label="Ver ' + esc(f.rotulo) + ' en el mapa">'
       + '  <div class="fav-row-title">\u2B50 ' + esc(f.rotulo) + '</div>'
-      + '  <div class="fav-row-sub">\u{1F4CD} ' + esc(f.municipio) + '</div>'
+      + '  <div class="fav-row-sub">\u{1F4CD} ' + loc + '</div>'
       + '</div>'
       + '<div>' + priceHtml + '</div>'
       + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><i class="fas fa-trash" aria-hidden="true"></i></button>';
-    // Click en info -> zoom en el mapa (solo si la gasolinera esta en el
-    // filtrado actual; si no, no hay nada adonde llevarla).
+    // Click en info -> navegar a la favorita (setea provincia, municipio,
+    // busqueda por rotulo y zoom). Funciona aunque actualmente estes viendo
+    // otra provincia: navigateToFav carga lo que haga falta.
     var info = row.querySelector('.fav-row-info');
-    if (info && live) {
-      info.addEventListener('click', function() {
-        for (var j = 0; j < filteredStations.length; j++) {
-          if (stationId(filteredStations[j]) === f.id) {
-            closeFavsModal();
-            zoomTo(j);
-            return;
-          }
+    if (info) {
+      info.addEventListener('click', function() { navigateToFav(f); });
+      info.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Enter' || ev.key === ' ') {
+          ev.preventDefault();
+          navigateToFav(f);
         }
       });
-    } else if (info) {
-      info.style.cursor = 'default';
-      info.setAttribute('tabindex', '-1');
     }
     // Click en quitar -> toggleFav + re-render.
     row.querySelector('.fav-row-remove').addEventListener('click', function() {
@@ -2334,24 +2333,77 @@ function renderFavsModalList() {
   });
 }
 
+// Navega el mapa+sidebar hasta la favorita indicada:
+//   1. Cierra el modal.
+//   2. Si tenemos provinciaId: fija el select de provincia, carga municipios,
+//      fija el select de municipio, rellena la caja "Buscar gasolinera" con
+//      el rotulo y dispara loadStations() + applyFilters() — asi el unico
+//      resultado visible es la favorita.
+//   3. Hace zoom y abre su popup.
+// Si la favorita es legacy (sin provinciaId, guardada antes de v1.6.1) y no
+// esta en el conjunto cargado actual, pedimos al usuario que la re-guarde.
+async function navigateToFav(f) {
+  closeFavsModal();
+  var selProv = document.getElementById('sel-provincia');
+  var selMun  = document.getElementById('sel-municipio');
+  var inText  = document.getElementById('search-text');
+
+  // Caso legacy: intentamos encontrarla en el conjunto actual.
+  if (!f.provinciaId) {
+    for (var k = 0; k < filteredStations.length; k++) {
+      if (stationId(filteredStations[k]) === f.id) { zoomTo(k); return; }
+    }
+    showToast('Re-guarda esta favorita para poder navegar a ella', 'warning');
+    return;
+  }
+
+  // Si ya estamos en la provincia correcta y allStations tiene la estacion,
+  // saltamos el fetch y simplemente filtramos + zoom.
+  var alreadyThere = selProv && selProv.value === f.provinciaId && allStations.length > 0;
+
+  if (!alreadyThere) {
+    // 1) Fijar provincia y cargar su dropdown de municipios.
+    if (selProv) selProv.value = f.provinciaId;
+    try { await loadMunicipios(f.provinciaId); } catch(_) {}
+  }
+
+  // 2) Fijar municipio (si la favorita tiene uno y esta en el dropdown).
+  if (selMun && f.municipioId) {
+    var hasOpt = false;
+    for (var o = 0; o < selMun.options.length; o++) {
+      if (selMun.options[o].value === f.municipioId) { hasOpt = true; break; }
+    }
+    if (hasOpt) selMun.value = f.municipioId;
+    else selMun.value = '';
+  } else if (selMun) {
+    selMun.value = '';
+  }
+
+  // 3) Rellenar la caja de busqueda con el rotulo para que applyFilters
+  //    deje solo esa favorita visible.
+  if (inText) inText.value = f.rotulo || '';
+
+  // 4) Cargar estaciones si no las tenemos ya.
+  if (!alreadyThere) {
+    try { await loadStations(); } catch(_) {}
+  } else {
+    // Con la provincia ya cargada, basta con refiltrar.
+    applyFilters();
+  }
+
+  // 5) Buscar la estacion en el resultado filtrado y hacer zoom.
+  for (var i = 0; i < filteredStations.length; i++) {
+    if (stationId(filteredStations[i]) === f.id) { zoomTo(i); return; }
+  }
+  // Si no aparece (precio o combustible filtrado la escondio), avisamos —
+  // pero la provincia/municipio ya estan fijados, asi que el usuario ve
+  // el contexto.
+  showToast('Esa gasolinera no aparece con los filtros actuales', 'info');
+}
+
 function openFavsModal() {
   var modal = document.getElementById('modal-favs');
   if (!modal) return;
-  // Sincroniza el toggle de navegador con el estado real persistido.
-  var chkBrowser = document.getElementById('chk-alerts-browser');
-  if (chkBrowser) chkBrowser.checked = alertsEnabled();
-  // Carga prefs de email en el formulario.
-  var prefs = getAlertPrefs();
-  var em = document.getElementById('in-alert-email');
-  var cd = document.getElementById('chk-alert-drop');
-  var cr = document.getElementById('chk-alert-rise');
-  var th = document.getElementById('in-alert-threshold');
-  var thl = document.getElementById('lbl-alert-threshold');
-  if (em) em.value = prefs.email || '';
-  if (cd) cd.checked = !!prefs.drop;
-  if (cr) cr.checked = !!prefs.rise;
-  if (th) th.value = String(prefs.threshold || 2);
-  if (thl) thl.textContent = (prefs.threshold || 2) + ' c';
   renderFavsModalList();
   modal.classList.add('show');
 }
@@ -2583,24 +2635,17 @@ document.addEventListener('keydown', function(e) {
 })();
 
 // ---- HANDLERS DEL MODAL DE FAVORITAS ----
-// Centraliza todo lo que antes eran tres piezas separadas (panel sidebar,
-// bell toggle, banner onboarding) en un unico modal accesible desde el
-// boton estrella del header. Contiene la lista de favoritas + dos
-// sub-formularios de alertas: navegador (local, funciona hoy) y email
-// (recogida de prefs en localStorage, envio real en v1.7).
+// Modal accesible desde la estrella del header. Solo renderiza la lista —
+// el click en una fila dispara navigateToFav() (ver arriba) y el user
+// acaba con esa gasolinera unica visible en el mapa. Las alertas
+// (navegador/email) se dejaron fuera de este release para mantener la UI
+// centrada en "ver mis favoritas".
 (function() {
   var modal = document.getElementById('modal-favs');
   if (!modal) return;
   var btnOpen   = document.getElementById('btn-favs');
   var btnClose  = document.getElementById('btn-favs-close');
   var btnDone   = document.getElementById('btn-favs-done');
-  var chkBrowser= document.getElementById('chk-alerts-browser');
-  var btnSave   = document.getElementById('btn-alerts-save');
-  var inEmail   = document.getElementById('in-alert-email');
-  var chkDrop   = document.getElementById('chk-alert-drop');
-  var chkRise   = document.getElementById('chk-alert-rise');
-  var inTh      = document.getElementById('in-alert-threshold');
-  var lblTh     = document.getElementById('lbl-alert-threshold');
 
   if (btnOpen)  btnOpen.addEventListener('click', openFavsModal);
   if (btnClose) btnClose.addEventListener('click', closeFavsModal);
@@ -2609,72 +2654,6 @@ document.addEventListener('keydown', function(e) {
   modal.addEventListener('click', function(e) { if (e.target === modal) closeFavsModal(); });
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && modal.classList.contains('show')) closeFavsModal();
-  });
-
-  // Toggle de notificaciones del navegador: reutiliza el flujo original que
-  // antes estaba en el bell del sidebar. El click pide permiso la primera
-  // vez y alterna el flag en los siguientes.
-  if (chkBrowser) chkBrowser.addEventListener('change', async function() {
-    if (!chkBrowser.checked) {
-      setAlertsEnabled(false);
-      showToast('Notificaciones desactivadas', 'info');
-      return;
-    }
-    // Encender: pide permiso si hace falta.
-    if (!('Notification' in window)) {
-      showToast('Tu navegador no soporta notificaciones; usaremos avisos dentro de la app', 'warning');
-      setAlertsEnabled(true);
-      return;
-    }
-    if (Notification.permission === 'granted') {
-      setAlertsEnabled(true);
-      showToast('Notificaciones activadas \u{1F514}', 'success');
-      return;
-    }
-    if (Notification.permission === 'denied') {
-      showToast('Permiso bloqueado por el navegador. Te avisaremos dentro de la app.', 'warning');
-      setAlertsEnabled(true);
-      return;
-    }
-    try {
-      var perm = await Notification.requestPermission();
-      if (perm === 'granted') {
-        setAlertsEnabled(true);
-        showToast('Notificaciones activadas \u{1F514}', 'success');
-      } else {
-        setAlertsEnabled(true);
-        showToast('Sin permiso; solo avisos dentro de la app', 'info');
-      }
-    } catch(_) {
-      setAlertsEnabled(true);
-    }
-  });
-
-  // Slider de umbral: actualiza la etiqueta.
-  if (inTh && lblTh) inTh.addEventListener('input', function() {
-    lblTh.textContent = inTh.value + ' c';
-  });
-
-  // Guardar preferencias de alertas por email. Validacion minima de formato.
-  if (btnSave) btnSave.addEventListener('click', function() {
-    var email = (inEmail && inEmail.value || '').trim();
-    var drop = !!(chkDrop && chkDrop.checked);
-    var rise = !!(chkRise && chkRise.checked);
-    var threshold = parseInt(inTh && inTh.value || '2', 10);
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      showToast('Email no valido', 'warning');
-      return;
-    }
-    if (email && !drop && !rise) {
-      showToast('Marca al menos una condicion (bajada o subida)', 'warning');
-      return;
-    }
-    setAlertPrefs({ email: email, drop: drop, rise: rise, threshold: threshold });
-    if (email) {
-      showToast('Preferencias guardadas. Te avisaremos al lanzar alertas por email.', 'success');
-    } else {
-      showToast('Preferencias guardadas', 'info');
-    }
   });
 
   // Render inicial de la estrella (color + insignia) antes de que se carguen

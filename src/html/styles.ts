@@ -761,18 +761,6 @@ export function getStyles(): string {
     .modal-close-x:hover { color: #475569; }
     body.dark .modal-close-x { color: #64748b; }
     body.dark .modal-close-x:hover { color: #e2e8f0; }
-    .favs-subtitle {
-      font-size: 11px;
-      font-weight: 700;
-      color: #475569;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin: 12px 0 6px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    body.dark .favs-subtitle { color: #cbd5e1; }
     .favs-empty {
       background: #f8fafc;
       border: 1px dashed #cbd5e1;
@@ -817,74 +805,6 @@ export function getStyles(): string {
     .fav-row-remove:hover { color: #dc2626; background: #fee2e2; }
     body.dark .fav-row-remove { color: #64748b; }
     body.dark .fav-row-remove:hover { color: #f87171; background: #450a0a; }
-
-    /* Seccion de alertas (navegador + email) */
-    .alerts-section {
-      margin-top: 14px;
-      padding-top: 14px;
-      border-top: 1px solid #e2e8f0;
-    }
-    body.dark .alerts-section { border-top-color: #334155; }
-    .alerts-help {
-      font-size: 11px;
-      color: #64748b;
-      margin: 0 0 8px;
-      line-height: 1.5;
-    }
-    body.dark .alerts-help { color: #94a3b8; }
-    .alerts-toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: #374151;
-      cursor: pointer;
-      padding: 6px 0;
-    }
-    .alerts-toggle input[type=checkbox] {
-      width: 16px;
-      height: 16px;
-      accent-color: #16a34a;
-      cursor: pointer;
-    }
-    body.dark .alerts-toggle { color: #e2e8f0; }
-    .alerts-checks {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin: 4px 0 8px;
-    }
-    .badge-soon {
-      display: inline-block;
-      background: #fef3c7;
-      color: #92400e;
-      font-size: 9px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-left: 4px;
-    }
-    body.dark .badge-soon { background: #78350f; color: #fde68a; }
-    .form-input {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      font-size: 13px;
-      font-family: inherit;
-      color: #111827;
-      background: #fff;
-      transition: border-color 0.15s ease;
-    }
-    .form-input:focus { outline: 0; border-color: #16a34a; }
-    body.dark .form-input {
-      background: #0f172a;
-      border-color: #475569;
-      color: #f1f5f9;
-    }
-    body.dark .form-input:focus { border-color: #22c55e; }
 
     /* ---- Logo del header (imagen SVG) ---- */
     .header-logo-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); flex-shrink: 0; }

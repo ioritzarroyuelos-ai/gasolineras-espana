@@ -539,71 +539,29 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   </div>
 </div>
 
-<!-- ============ MODAL FAVORITAS + ALERTAS ============ -->
-<!-- Se abre desde el boton estrella del header. Contiene la lista de
-     gasolineras favoritas (con precio actual, click para ir al mapa, boton
-     para quitar) y un formulario de alertas con dos sub-secciones:
-       1. Notificaciones del navegador (local, funciona hoy)
-       2. Alertas por email (recoge prefs; envio real llegara en v1.7). -->
+<!-- ============ MODAL FAVORITAS ============ -->
+<!-- Se abre desde el boton estrella del header. Solo contiene la lista de
+     gasolineras favoritas. Al hacer click en una, el modal cierra y el
+     cliente navega (provincia + municipio + texto de busqueda) para dejar en
+     el mapa unicamente esa estacion. Alertas (navegador/email) se dejan
+     para un release posterior; el flujo actual es 100% navegacion. -->
 <div id="modal-favs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="favs-title">
   <div class="modal">
     <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
       <div>
         <h2 id="favs-title">&#x2B50; Mis favoritas (<span id="favs-modal-count">0</span>)</h2>
-        <p>Gestiona tus gasolineras guardadas y configura alertas de precio.</p>
+        <p>Haz click en una favorita para verla en el mapa.</p>
       </div>
       <button id="btn-favs-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
     </div>
     <div class="modal-body">
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">
-        <div class="favs-subtitle">Tus gasolineras</div>
         <div id="favs-empty" class="favs-empty">
           <i class="far fa-star" aria-hidden="true"></i>
           Aun no tienes favoritas. Pulsa la estrella en el popup de una gasolinera para guardarla.
         </div>
         <div id="favs-list"></div>
-      </div>
-
-      <!-- Alertas: navegador -->
-      <div class="alerts-section">
-        <div class="favs-subtitle"><i class="fas fa-bell" aria-hidden="true"></i> Notificaciones del navegador</div>
-        <p class="alerts-help">Recibe avisos locales cuando una favorita cambie de precio mientras tengas la web abierta.</p>
-        <label class="alerts-toggle">
-          <input type="checkbox" id="chk-alerts-browser" />
-          <span>Activar notificaciones del navegador</span>
-        </label>
-      </div>
-
-      <!-- Alertas: email -->
-      <div class="alerts-section">
-        <div class="favs-subtitle"><i class="fas fa-envelope" aria-hidden="true"></i> Alertas por email <span class="badge-soon">pronto</span></div>
-        <p class="alerts-help">Recibe un email cuando tus favoritas bajen o suban de precio. Aun estamos montando la infraestructura &mdash; guarda tus preferencias y te avisaremos al lanzar.</p>
-        <div class="form-group">
-          <label class="form-label" for="in-alert-email">Tu email</label>
-          <input type="email" id="in-alert-email" class="form-input" placeholder="tu@email.com" autocomplete="email" />
-        </div>
-        <div class="alerts-checks">
-          <label class="alerts-toggle">
-            <input type="checkbox" id="chk-alert-drop" checked />
-            <span>Avisarme cuando <b>baje</b> el precio</span>
-          </label>
-          <label class="alerts-toggle">
-            <input type="checkbox" id="chk-alert-rise" />
-            <span>Avisarme cuando <b>suba</b> el precio</span>
-          </label>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="in-alert-threshold">Umbral (centimos)</label>
-          <div class="range-group">
-            <input id="in-alert-threshold" type="range" min="1" max="10" step="1" value="2" aria-label="Umbral en centimos" />
-            <span class="range-val" id="lbl-alert-threshold">2 c</span>
-          </div>
-        </div>
-        <button id="btn-alerts-save" class="btn-primary" style="width:100%;margin-top:6px">
-          <i class="fas fa-save" aria-hidden="true" style="margin-right:6px"></i>
-          Guardar preferencias
-        </button>
       </div>
     </div>
     <div class="modal-footer">

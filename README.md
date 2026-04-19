@@ -69,6 +69,10 @@ git add public/data && git commit -m "chore(data): snapshot manual"
 
 ## Deploy a Cloudflare Pages
 
+**Flujo normal (100% automatico):** `git push origin main` → CI (typecheck + tests + build + E2E + Lighthouse) → si verde, Deploy workflow aplica migraciones D1 pendientes, sube `dist/` a Pages y corre smoke test contra `/api/health`. Tiempo tipico: ~3 min desde push hasta prod verificada.
+
+**Deploy manual** (solo para emergencias / debug):
+
 ```bash
 wrangler login                          # una vez
 npm run build
@@ -85,6 +89,52 @@ Variables de entorno opcionales (define en el dashboard de Cloudflare Pages):
 | `PUBLIC_ORIGIN` | Origen publico usado por `scheduled()` para leer snapshot | `https://webapp.pages.dev` |
 
 Ver [`.env.example`](./.env.example).
+
+## Automatizacion completa
+
+El proyecto esta disenado para que no haya trabajo manual recurrente. Todo lo que corre periodicamente vive en GitHub Actions:
+
+| Evento | Workflow | Trigger | Resultado |
+|---|---|---|---|
+| Push a `main` | `ci.yml` | `push` | Typecheck, tests, build, E2E, Lighthouse. Sube `dist` como artefacto. |
+| CI verde en `main` | `deploy.yml` | `workflow_run(CI)` | Aplica migraciones D1, deploya a Pages, smoke test `/api/health`. |
+| Dos veces al dia | `fetch-prices.yml` | `cron 0 7,19 * * *` | Snapshot del Ministerio -> commit + auto-deploy si cambia. |
+| Cada 12h | `fetch-prices.yml` (dead-man) | `cron 30 */12 * * *` | Falla el workflow si el snapshot lleva >26h sin actualizar. |
+| Diario 20:00 UTC | `cron-ingest.yml` | `cron 0 20 * * *` | `POST /api/cron/ingest` -> upsertea precios del dia a D1. |
+| Domingos 03:00 UTC | `cron-purge.yml` | `cron 0 3 * * 0` | `POST /api/cron/purge` -> borra filas >2 anos. |
+| Push o PR | `security.yml` | `push`, `pull_request` | npm audit (runtime, moderate+), gitleaks, OSV-Scanner. |
+| Push o PR | `codeql.yml` | `push`, `pull_request` | Analisis estatico de codigo (CodeQL). |
+| Lunes 04:00 Madrid | Dependabot | interno | PRs semanales agrupadas: deps npm + github-actions. |
+| PR de Dependabot | `dependabot-auto-merge.yml` | `pull_request` | Auto-merge squash si es patch/minor o dev-only. Majors quedan manual. |
+
+**Resultado practico:** lo unico que un mantenedor hace es (a) revisar PRs major de Dependabot, (b) mergear features en `main`. Todo lo demas se actualiza solo — snapshot de precios, datos historicos, deps, deploy, verificacion.
+
+### Hook pre-push local (opcional pero recomendado)
+
+Tras `npm ci`, el `postinstall` activa `.githooks/pre-push` automaticamente. Antes de cada `git push` se corren `npm run typecheck` + `npm test`: si fallan, el push se aborta en local (~10s) en vez de esperar al CI (2-3 min) para enterarte.
+
+Saltar puntualmente:
+
+```bash
+git push --no-verify
+```
+
+Desactivarlo permanentemente en tu clone:
+
+```bash
+git config --local --unset core.hooksPath
+```
+
+### Setup unico (primera vez en la vida del proyecto)
+
+Cosas que **no** se automatizan porque son one-shot o requieren credenciales nuevas:
+
+1. `npx wrangler d1 create gasolineras-history` + pegar `database_id` en `wrangler.jsonc`
+2. Secretos en Cloudflare Pages y GitHub Actions:
+   - `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` (GHA → deploy)
+   - `CRON_TOKEN` (Pages + GHA, mismo valor)
+   - `HEALTH_ADMIN_TOKEN` (Pages, opcional)
+3. Primer `npm run backfill:d1` + `wrangler d1 execute ... --file=migrations/9999_backfill.sql --remote` si quieres historico previo al primer cron-ingest
 
 ## Historico de precios (D1)
 

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Pre-push hook: valida typecheck + tests en local ANTES de que el push salga.
+#
+# Objetivo: que los errores obvios (typo de TypeScript, test roto por
+# refactor) se cacheen aqui — <30s — en vez de esperar 2-3 min al CI de
+# GitHub Actions y notarlo a toro pasado.
+#
+# Si tienes prisa y sabes lo que haces, salta el hook con:
+#   git push --no-verify
+#
+# Se activa con `git config core.hooksPath .githooks` (corre automaticamente
+# tras `npm ci` via el `postinstall` de package.json).
+
+set -e
+
+# Evita correr en pushes que no son de este repo (submodulos, worktrees
+# extranos). Si estamos en un worktree pero apuntando al mismo origen, OK.
+if ! git rev-parse --show-toplevel >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Salta en CI (GitHub Actions, etc) — alli el CI propio ya hace estos checks.
+# CI=true lo setean casi todos los runners. Evita doble ejecucion si el hook
+# se invoca dentro de un action que hace git push (fetch-prices.yml, por ej).
+if [ "${CI:-}" = "true" ]; then
+  echo "[pre-push] skip: CI=true"
+  exit 0
+fi
+
+echo "[pre-push] → typecheck"
+npm run typecheck --silent
+
+echo "[pre-push] → tests (vitest)"
+npm test --silent
+
+echo "[pre-push] OK — push continua"

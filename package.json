@@ -15,7 +15,8 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "lh": "lhci autorun",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
-    "backfill:d1": "node scripts/backfill-d1.mjs"
+    "backfill:d1": "node scripts/backfill-d1.mjs",
+    "postinstall": "git rev-parse --git-dir >/dev/null 2>&1 && git config --local core.hooksPath .githooks || true"
   },
   "dependencies": {
     "hono": "^4.12.14",

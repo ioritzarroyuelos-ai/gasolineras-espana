@@ -1,0 +1,64 @@
+name: Dependabot auto-merge
+
+# Auto-mergea PRs de Dependabot cuando son de bajo riesgo:
+#   - update-type = patch o minor (semver garantiza compat hacia atras)
+#   - O dependency-type = direct:development (no llega a prod)
+#   - O dependency-type = indirect (transitivas; el resolver ya las escogio)
+#
+# Major updates siguen manual: cambian API, requieren revision humana.
+#
+# Flujo:
+#   1. Dependabot abre PR contra main (lunes 04:00 Madrid via dependabot.yml)
+#   2. CI corre (typecheck + tests + build + E2E + Lighthouse)
+#   3. Este workflow espera a que CI termine (via --auto) y mergea con squash
+#   4. Deploy workflow se dispara por workflow_run de CI -> prod actualizada
+#
+# `gh pr merge --auto` no hace el merge inmediatamente: registra la intencion
+# y GitHub espera a que todos los checks requeridos pasen antes de mergear.
+# Si un check falla, el PR queda abierto para revision.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write       # para crear el merge commit
+  pull-requests: write  # para --auto-merge
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Leer metadata de Dependabot
+        id: metadata
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decidir si es auto-mergeable
+        id: decide
+        run: |
+          UPDATE="${{ steps.metadata.outputs.update-type }}"
+          DEPTYPE="${{ steps.metadata.outputs.dependency-type }}"
+          echo "update-type=$UPDATE dep-type=$DEPTYPE"
+          # Auto-merge si: patch, minor, o dev-only, o indirecta.
+          # Bloquea: major de prod-direct (cambios API potenciales).
+          if [ "$UPDATE" = "version-update:semver-patch" ] \
+             || [ "$UPDATE" = "version-update:semver-minor" ] \
+             || [ "$DEPTYPE" = "direct:development" ] \
+             || [ "$DEPTYPE" = "indirect" ]; then
+            echo "mergeable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mergeable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PR no auto-mergeable ($UPDATE / $DEPTYPE). Requiere revision manual."
+          fi
+
+      - name: Activar auto-merge (squash) si es seguro
+        if: steps.decide.outputs.mergeable == 'true'
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+          echo "Auto-merge activado. GitHub mergeara cuando CI pase."

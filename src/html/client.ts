@@ -2275,6 +2275,22 @@ function renderFavsModalList() {
     for (var i = 0; i < allStations.length; i++) {
       if (stationId(allStations[i]) === f.id) { live = allStations[i]; break; }
     }
+    // Enriquecimiento oportunista: si la estacion esta cargada (misma
+    // provincia que se esta viendo) y la favorita es legacy, completamos
+    // sus IDs silenciosamente para futuras navegaciones.
+    if (live && (!f.provinciaId || !f.municipioId)) {
+      enrichFav(f.id, {
+        provinciaId: live['IDProvincia'] || '',
+        municipioId: live['IDMunicipio'] || '',
+        provincia:   live['Provincia']   || '',
+        municipio:   live['Municipio']   || ''
+      });
+      // Reflejamos la enrich en la copia local de la fila.
+      if (!f.provinciaId) f.provinciaId = live['IDProvincia'] || '';
+      if (!f.municipioId) f.municipioId = live['IDMunicipio'] || '';
+      if (!f.provincia)   f.provincia   = live['Provincia']   || '';
+      if (!f.municipio)   f.municipio   = live['Municipio']   || '';
+    }
     var price = live ? parsePrice(live[fuel]) : null;
     var priceHtml = price
       ? '<span class="fav-row-price badge badge-' + priceColor(price) + '">' + fmtPriceUnit(price) + '</span>'
@@ -2333,6 +2349,81 @@ function renderFavsModalList() {
   });
 }
 
+// Mapa manual de nombre -> codigo INE. Nominatim devuelve a veces el nombre
+// en castellano y nuestro dropdown en el idioma cooficial (Bizkaia/Vizcaya,
+// Gipuzkoa/Guipuzcoa, A Coruna/La Coruna, Ourense/Orense, Illes Balears/
+// Baleares). Esta tabla ancla los casos donde el match por 'includes' sobre
+// SPAIN_PROVINCIAS podria fallar. Las claves estan ya normalizadas
+// (normStr: minusculas, sin acentos, sin signos).
+var PROV_NAME_TO_ID = {
+  'vizcaya': '48', 'bizkaia': '48',
+  'guipuzcoa': '20', 'gipuzkoa': '20',
+  'alava': '01', 'araba': '01',
+  'la coruna': '15', 'a coruna': '15', 'coruna': '15',
+  'orense': '32', 'ourense': '32',
+  'gerona': '17', 'girona': '17',
+  'lerida': '25', 'lleida': '25',
+  'baleares': '07', 'islas baleares': '07', 'illes balears': '07',
+  'palmas': '35', 'las palmas': '35',
+  'tenerife': '38', 'santa cruz de tenerife': '38',
+  'navarra': '31', 'nafarroa': '31',
+  'castellon': '12', 'castello': '12'
+};
+
+// Resuelve un nombre de provincia (puede venir de Nominatim con acentos,
+// en castellano, en euskera...) a su codigo INE de 2 digitos. Usa la tabla
+// de aliases primero y luego recorre SPAIN_PROVINCIAS con match por
+// inclusion bidireccional. Reutiliza normStr() (ya definida arriba) para
+// normalizar ambos lados con el mismo criterio que el resto del cliente.
+function provinciaIdByName(name) {
+  var n = normStr(name);
+  if (!n) return '';
+  if (PROV_NAME_TO_ID[n]) return PROV_NAME_TO_ID[n];
+  for (var i = 0; i < SPAIN_PROVINCIAS.length; i++) {
+    var candidate = normStr(SPAIN_PROVINCIAS[i].Provincia);
+    if (candidate === n || candidate.includes(n) || n.includes(candidate)) {
+      return SPAIN_PROVINCIAS[i].IDPovincia;
+    }
+  }
+  return '';
+}
+
+// Para favoritas legacy (guardadas antes de v1.6.1, sin provinciaId) hacemos
+// reverse geocode con Nominatim usando las coordenadas que ya tenemos.
+// Devuelve el primer nombre no vacio en el orden que mejor funciona para
+// direcciones espanolas (el mismo que ya usa el flujo /btn-geolocate):
+// state_district > county > province > state. Si el servicio no responde
+// o no hay provincia reconocible, devolvemos ''. El mapeo a codigo INE lo
+// hace provinciaIdByName() a continuacion.
+async function reverseProvinciaFromLatLng(lat, lng) {
+  if (!lat || !lng || isNaN(lat) || isNaN(lng)) return '';
+  try {
+    var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng + '&addressdetails=1';
+    var r = await fetch(url, { headers: { 'Accept-Language': 'es' } });
+    if (!r.ok) return '';
+    var data = await r.json();
+    var addr = data && data.address || {};
+    return addr.state_district || addr.county || addr.province || addr.state || '';
+  } catch (_) { return ''; }
+}
+
+// Persiste campos enriquecidos en una favorita concreta (por id) sin
+// duplicar la entrada. Devuelve true si hubo cambios.
+function enrichFav(id, patch) {
+  if (!id || !patch) return false;
+  var favs = getFavs();
+  var changed = false;
+  for (var i = 0; i < favs.length; i++) {
+    if (favs[i].id !== id) continue;
+    for (var k in patch) {
+      if (!favs[i][k] && patch[k]) { favs[i][k] = patch[k]; changed = true; }
+    }
+    break;
+  }
+  if (changed) setFavs(favs);
+  return changed;
+}
+
 // Navega el mapa+sidebar hasta la favorita indicada:
 //   1. Cierra el modal.
 //   2. Si tenemos provinciaId: fija el select de provincia, carga municipios,
@@ -2340,22 +2431,56 @@ function renderFavsModalList() {
 //      el rotulo y dispara loadStations() + applyFilters() — asi el unico
 //      resultado visible es la favorita.
 //   3. Hace zoom y abre su popup.
-// Si la favorita es legacy (sin provinciaId, guardada antes de v1.6.1) y no
-// esta en el conjunto cargado actual, pedimos al usuario que la re-guarde.
+// Si la favorita es legacy (sin provinciaId): intentamos resolver la
+// provincia con reverse geocoding de Nominatim sobre sus coordenadas, la
+// persistimos en localStorage y seguimos con el flujo normal. Asi el
+// usuario no tiene que re-guardar nada.
 async function navigateToFav(f) {
   closeFavsModal();
   var selProv = document.getElementById('sel-provincia');
   var selMun  = document.getElementById('sel-municipio');
   var inText  = document.getElementById('search-text');
 
-  // Caso legacy: intentamos encontrarla en el conjunto actual.
+  // --- Resolver provinciaId para favoritas legacy ---
   if (!f.provinciaId) {
+    // Atajo 1: si esta en allStations (la provincia actual), cogemos los
+    // IDs de ahi sin llamar a Nominatim.
+    for (var q = 0; q < allStations.length; q++) {
+      if (stationId(allStations[q]) === f.id) {
+        var s = allStations[q];
+        var pid = s['IDProvincia'] || '';
+        var mid = s['IDMunicipio'] || '';
+        var pname = s['Provincia'] || '';
+        if (pid) {
+          enrichFav(f.id, { provinciaId: pid, municipioId: mid, provincia: pname });
+          f.provinciaId = pid; f.municipioId = mid; f.provincia = pname;
+        }
+        break;
+      }
+    }
+  }
+  if (!f.provinciaId) {
+    // Atajo 2: reverse geocode por lat/lng y mapear nombre -> codigo INE.
+    showToast('Resolviendo ubicacion de la favorita\u2026', 'info');
+    var provName = await reverseProvinciaFromLatLng(f.lat, f.lng);
+    var provId = provName ? provinciaIdByName(provName) : '';
+    if (provId) {
+      enrichFav(f.id, { provinciaId: provId, provincia: provName });
+      f.provinciaId = provId;
+      f.provincia = provName;
+    }
+  }
+  if (!f.provinciaId) {
+    // Ultimo recurso: si esta en el filtrado actual hacemos zoom; si no,
+    // damos un mensaje claro y abortamos.
     for (var k = 0; k < filteredStations.length; k++) {
       if (stationId(filteredStations[k]) === f.id) { zoomTo(k); return; }
     }
-    showToast('Re-guarda esta favorita para poder navegar a ella', 'warning');
+    showToast('No hemos podido ubicar esta favorita. Quitala y guardala otra vez.', 'warning');
     return;
   }
+
+  // --- A partir de aqui tenemos provinciaId seguro ---
 
   // Si ya estamos en la provincia correcta y allStations tiene la estacion,
   // saltamos el fetch y simplemente filtramos + zoom.
@@ -2391,7 +2516,22 @@ async function navigateToFav(f) {
     applyFilters();
   }
 
-  // 5) Buscar la estacion en el resultado filtrado y hacer zoom.
+  // 5) Enriquecer la favorita con los IDs correctos si ahora aparece en
+  //    allStations (caso legacy donde solo teniamos provincia por reverse).
+  for (var p = 0; p < allStations.length; p++) {
+    if (stationId(allStations[p]) === f.id) {
+      var st2 = allStations[p];
+      enrichFav(f.id, {
+        provinciaId: st2['IDProvincia'] || '',
+        municipioId: st2['IDMunicipio'] || '',
+        provincia:   st2['Provincia']   || '',
+        municipio:   st2['Municipio']   || ''
+      });
+      break;
+    }
+  }
+
+  // 6) Buscar la estacion en el resultado filtrado y hacer zoom.
   for (var i = 0; i < filteredStations.length; i++) {
     if (stationId(filteredStations[i]) === f.id) { zoomTo(i); return; }
   }

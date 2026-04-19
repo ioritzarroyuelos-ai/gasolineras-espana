@@ -3788,10 +3788,17 @@ function exitRouteMode() {
           totalCostEur: totalCost
         };
       }
-      candidates.sort(function(a, b) {
-        return (a.priceEurL - b.priceEurL) || (b.kmFromOrigin - a.kmFromOrigin);
-      });
-      var pick = candidates[0];
+      // "Farthest-among-reasonably-cheap": avanzar lo maximo posible por parada
+      // (menos paradas totales) pero restringido a estaciones dentro del 5%
+      // del precio mas barato del tramo. Ver pure.ts para la explicacion.
+      var minPrice = Infinity;
+      for (var mi = 0; mi < candidates.length; mi++) {
+        if (candidates[mi].priceEurL < minPrice) minPrice = candidates[mi].priceEurL;
+      }
+      var priceThreshold = minPrice * 1.05;
+      var cheap = candidates.filter(function(c) { return c.priceEurL <= priceThreshold; });
+      cheap.sort(function(a, b) { return b.kmFromOrigin - a.kmFromOrigin; });
+      var pick = cheap[0];
       stops.push({ item: pick.item, kmFromOrigin: pick.kmFromOrigin, priceEurL: pick.priceEurL });
       var consumedKm = pick.kmFromOrigin - pos;
       var consumedL = (consumedKm / 100) * cons;
@@ -3837,8 +3844,18 @@ function exitRouteMode() {
                + '<div class="route-plan-subtitle">Autonom\u00EDa: ' + Math.round(autonomyKm) + ' km</div>';
 
     if (plan_result.unreachable) {
-      return header + '<div class="route-plan-warning">\u26A0\uFE0F No hay gasolineras alcanzables desde tu posici\u00F3n. '
-           + 'Aumenta la autonom\u00EDa declarada o elige un corredor m\u00E1s ancho.</div>';
+      // Muestra el ultimo punto alcanzado para que el usuario entienda donde
+      // "se rompe" el plan: si se ve 1 parada a km=420 y el mensaje dice
+      // "tras km 420 sin estaciones alcanzables", esta claro que hay que
+      // ampliar el corredor O aumentar la autonomia.
+      var lastKm = plan_result.stops.length > 0
+                   ? Math.round(plan_result.stops[plan_result.stops.length - 1].kmFromOrigin)
+                   : 0;
+      var where = lastKm > 0
+                  ? ('A partir del km ' + lastKm + ' no hay gasolineras dentro del alcance. ')
+                  : 'No hay gasolineras alcanzables desde el origen. ';
+      return header + '<div class="route-plan-warning">\u26A0\uFE0F ' + where
+           + 'Amplia el corredor (desv\u00EDo m\u00E1ximo) o sube la autonom\u00EDa.</div>';
     }
     if (plan_result.stops.length === 0) {
       return header + '<div class="route-plan-success">\u2705 No necesitas repostar. '
@@ -3967,19 +3984,68 @@ function exitRouteMode() {
         return;
       }
 
-      // 4. Planifica paradas usando la autonomia declarada. planFuelStops
-      // internamente modela tank + consumo. Construimos un par ficticio
-      // (tank=50L, consumo derivado) que produce maxAutonomyKm = autonomyKm.
-      // Equivalente a "autonomia directa" para el proposito del planificador.
-      var fakeTank = 50;
-      var fakeCons = (fakeTank * 100) / autonomyKm;
+      // 4. Planifica paradas. planFuelStops necesita tank + consumo. Si el
+      // perfil tiene ambos, los usamos DIRECTAMENTE (maxAutonomyKm sale
+      // coherente con la autonomia declarada del coche). Si el usuario ha
+      // cambiado manualmente "autonomia actual" en este modal (por ej. porque
+      // no salio del garaje con deposito lleno), re-derivamos el consumo para
+      // respetar esa autonomia manteniendo el tanque conocido. Si no hay
+      // perfil, caemos al par ficticio (tank=50L + consumo derivado).
+      var prof = getProfile() || {};
+      var profTank = (typeof prof.tank === 'number' && prof.tank > 0) ? prof.tank : null;
+      var profCons = null;
+      if (typeof prof.consumo === 'number' && prof.consumo > 0) profCons = prof.consumo;
+      else if (typeof prof.consumoL100km === 'number' && prof.consumoL100km > 0) profCons = prof.consumoL100km;
+
+      var tankL, consumoL100km;
+      if (profTank && profCons) {
+        var derivedAutonomy = Math.round((profTank / profCons) * 100);
+        if (Math.abs(derivedAutonomy - autonomyKm) <= 2) {
+          // El usuario dejo el valor autocargado del perfil: usa tank/consumo reales.
+          tankL = profTank;
+          consumoL100km = profCons;
+        } else {
+          // Autonomia modificada manualmente: respeta la nueva y re-deriva el consumo.
+          tankL = profTank;
+          consumoL100km = (profTank * 100) / autonomyKm;
+        }
+      } else {
+        tankL = 50;
+        consumoL100km = (50 * 100) / autonomyKm;
+      }
+
+      // Diagnostico: imprime los parametros usados por el planificador para que
+      // sea facil verificar que tank/consumo/autonomia llegan con valores
+      // razonables cuando el resultado no es el esperado.
+      try {
+        console.log('[ruta] planifica', {
+          routeKm: Math.round(totalKm),
+          autonomyKm: autonomyKm,
+          tankL: tankL,
+          consumoL100km: Number(consumoL100km.toFixed(2)),
+          corridorCount: corridor.length,
+          corridorWidthKm: width,
+          fuel: fuel,
+          sourceOfProfile: (profTank && profCons) ? 'profile' : 'fallback'
+        });
+      } catch (e) { /* sin consola: sigue */ }
+
       var planResult = planFuelStops({
         routeKm: totalKm,
-        tankL: fakeTank,
-        consumoL100km: fakeCons,
+        tankL: tankL,
+        consumoL100km: consumoL100km,
         currentFuelPct: 1.0,
         stations: corridor
       });
+
+      try {
+        console.log('[ruta] resultado', {
+          stops: planResult.stops.length,
+          unreachable: planResult.unreachable,
+          maxAutonomyKm: Math.round(planResult.maxAutonomyKm),
+          totalCostEur: Number(planResult.totalCostEur.toFixed(2))
+        });
+      } catch (e) { /* idem */ }
 
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.';
       plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm);

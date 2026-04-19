@@ -534,11 +534,20 @@ export function planFuelStops<T>(input: PlanFuelStopsInput<T>): PlanFuelStopsRes
         totalCostEur: totalCost,
       }
     }
-    // Escoge la MAS BARATA; si empate, la mas lejana (menos futuras paradas).
-    candidates.sort((a, b) =>
-      (a.priceEurL - b.priceEurL) || (b.kmFromOrigin - a.kmFromOrigin),
-    )
-    const pick = candidates[0]
+    // Estrategia: entre las alcanzables, queremos minimizar el numero TOTAL
+    // de paradas, asi que preferimos la MAS LEJANA (avanzar mas por parada).
+    // Para no sacrificar precio a ciegas, primero filtramos a las que estan
+    // dentro del 5% del precio mas barato de la ventana. Asi sigue siendo
+    // "barato" pero sin quedarnos en una estacion a km=30 de un tramo de 1000km.
+    // Anti-bug: la variante pura "mas-barata" atasca el avance en rutas largas
+    // cuando hay una cheap cluster al principio, terminando como 'unreachable'
+    // con 1 parada. Ver test "con muchas estaciones baratas al principio".
+    let minPrice = Infinity
+    for (const c of candidates) if (c.priceEurL < minPrice) minPrice = c.priceEurL
+    const priceThreshold = minPrice * 1.05
+    const cheap = candidates.filter(c => c.priceEurL <= priceThreshold)
+    cheap.sort((a, b) => (b.kmFromOrigin - a.kmFromOrigin))
+    const pick = cheap[0]
     plan.push({
       item: pick.item,
       kmFromOrigin: pick.kmFromOrigin,

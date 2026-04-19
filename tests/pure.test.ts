@@ -748,6 +748,42 @@ describe('planFuelStops (planificador de paradas en ruta)', () => {
     }).stops).toEqual([])
   })
 
+  it('ruta larga con autonomia moderada: avanza bien en cada parada (regresion bug "solo 1 parada")', () => {
+    // Escenario reproducido por usuario: Durango-Cadiz ~ 1000 km con 300 km
+    // de autonomia. Con el algoritmo greedy-cheap original elegia una
+    // estacion barata a km ~30 y luego se quedaba sin pool alcanzable,
+    // terminando con unreachable=true y 1 unica parada.
+    // El nuevo "farthest-among-reasonably-cheap" debe entregar >=3 paradas.
+    const stations: Array<{ item: S; kmFromOrigin: number; priceEurL: number }> = []
+    for (let km = 30; km < 1000; km += 30) {
+      // Precios bimodales: las tempranas son mas baratas (trampa para el
+      // greedy original) pero varian poco (<5%) para que "farthest-cheap"
+      // pueda saltar adelante sin sacrificar precio.
+      const early = km < 200
+      stations.push({
+        item: { id: 'km' + km, name: 'KM' + km },
+        kmFromOrigin: km,
+        priceEurL: early ? 1.40 : 1.42,
+      })
+    }
+    const r = planFuelStops<S>({
+      routeKm: 1000,
+      tankL: 45,
+      consumoL100km: 15,  // autonomia = 300 km
+      currentFuelPct: 1.0,
+      stations,
+    })
+    expect(r.unreachable).toBe(false)
+    expect(r.stops.length).toBeGreaterThanOrEqual(3)
+    // Cada parada debe avanzar lo suficiente como para no estancarse
+    // en el cluster barato inicial.
+    let prev = 0
+    for (const stop of r.stops) {
+      expect(stop.kmFromOrigin - prev).toBeGreaterThan(100)
+      prev = stop.kmFromOrigin
+    }
+  })
+
   it('ignora estaciones con precio invalido o fuera de la ruta', () => {
     const r = planFuelStops<S>({
       routeKm: 500,

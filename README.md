@@ -69,9 +69,30 @@ git add public/data && git commit -m "chore(data): snapshot manual"
 
 ## Deploy a Cloudflare Pages
 
-**Flujo normal (100% automatico):** `git push origin main` → CI (typecheck + tests + build + E2E + Lighthouse) → si verde, Deploy workflow aplica migraciones D1 pendientes, sube `dist/` a Pages y corre smoke test contra `/api/health`. Tiempo tipico: ~3 min desde push hasta prod verificada.
+**Flujo normal — un solo comando:**
 
-**Deploy manual** (solo para emergencias / debug):
+```bash
+npm run ship -- "feat: lo que acabo de cambiar"
+```
+
+Eso hace commit + push + espera CI + espera Deploy + sonda `/api/health`. Sale con exit 0 cuando prod esta verificada viva; exit != 0 si rompe cualquier paso. Tiempo tipico: ~3 min.
+
+Si invocas `npm run ship` sin mensaje hace empty commit + redeploy — util para forzar un nuevo build cuando solo cambiaste una env var o un secret en Cloudflare.
+
+**Debajo del capo** (por si quieres pipelinearlo tu):
+
+1. `git push origin main`
+2. CI corre (typecheck + tests + build + E2E + Lighthouse) y sube `dist/` como artefacto
+3. Si CI verde, Deploy workflow se dispara via `workflow_run`: aplica migraciones D1 pendientes, deploya `dist/` a Pages y valida con `GET /api/health`
+4. Si alguna etapa falla, el run queda rojo y el Deploy no ocurre
+
+**Redeploy manual sin cambios** (alternativa a `npm run ship` sin args):
+
+```bash
+gh workflow run deploy.yml --ref main   # resuelve y despliega el ultimo CI verde
+```
+
+**Deploy one-shot desde local** (solo emergencias / CI caido):
 
 ```bash
 wrangler login                          # una vez

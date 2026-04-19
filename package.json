@@ -16,6 +16,7 @@
     "lh": "lhci autorun",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "backfill:d1": "node scripts/backfill-d1.mjs",
+    "ship": "node scripts/ship.mjs",
     "postinstall": "git rev-parse --git-dir >/dev/null 2>&1 && git config --local core.hooksPath .githooks || true"
   },
   "dependencies": {

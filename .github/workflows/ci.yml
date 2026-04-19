@@ -90,12 +90,16 @@ jobs:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
 
       - name: Upload Lighthouse reports
-        if: always()
+        # Solo subimos si LHCI dejo resultados. En algunos runs (budget OK y
+        # --assert off) puede no generar `.lighthouseci/`, y queremos evitar
+        # el warning de "no files were found" sin perder el artefacto cuando si existe.
+        if: always() && hashFiles('.lighthouseci/**') != ''
         uses: actions/upload-artifact@v6
         with:
           name: lighthouse-${{ github.sha }}
           path: .lighthouseci/
           retention-days: 14
+          if-no-files-found: ignore
 
   e2e:
     name: E2E Playwright + axe
@@ -141,7 +145,10 @@ jobs:
         run: npm run test:e2e
 
       - name: Upload Playwright report
-        if: always()
+        # Playwright solo genera playwright-report/ y test-results/ cuando hay
+        # fallos o retries. En runs 100% verdes esas carpetas no existen;
+        # `hashFiles` vacio evita la ejecucion del upload y el warning asociado.
+        if: always() && (hashFiles('playwright-report/**') != '' || hashFiles('test-results/**') != '')
         uses: actions/upload-artifact@v6
         with:
           name: playwright-${{ github.sha }}
@@ -149,3 +156,4 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 14
+          if-no-files-found: ignore

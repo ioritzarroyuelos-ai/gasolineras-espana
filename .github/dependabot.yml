@@ -1,0 +1,66 @@
+# Dependabot: parches de seguridad y upgrades semanales automaticos.
+#
+# Dos ecosistemas:
+#   - npm              → deps de la app (Hono, Leaflet, Vite, zod, etc.)
+#   - github-actions   → versiones de las actions usadas en los workflows
+#                        (vulnerabilities tipo supply-chain en setup-node, etc.)
+#
+# Policy:
+#   - Agrupamos upgrades menor/patch en un solo PR por semana para bajar ruido.
+#   - Major upgrades quedan en PRs individuales — cambian API, requieren revision.
+#   - Labels explicitas para poder filtrar en el listado de PRs.
+#   - open-pull-requests-limit alto porque preferimos velocidad sobre backlog:
+#     si se acumulan es sintoma de que hay que revisarlos, no ocultarlos.
+
+version: 2
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "npm"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    groups:
+      # Agrupacion "sana": todo lo que no sea major en un solo PR semanal.
+      # Reduce ruido y facilita revisiones bulk.
+      non-major:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+      # Parches de seguridad aparte y en cualquier momento (override del weekly).
+      security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "Europe/Madrid"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"

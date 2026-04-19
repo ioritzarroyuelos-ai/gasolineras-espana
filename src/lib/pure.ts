@@ -215,6 +215,28 @@ export function isOpenNow(horario: string | undefined, when: Date = new Date()):
   return false
 }
 
+// ---- Comparacion de tokens en tiempo constante ----
+// Evita que un atacante deduzca caracter a caracter el token midiendo el
+// tiempo de respuesta (timing attack). === en JS hace early-return al primer
+// byte distinto, asi que un atacante con jitter bajo (p99 estable) puede en
+// teoria inferir el prefijo correcto. Con XOR acumulado recorremos siempre
+// ambas cadenas completas y comparamos al final.
+//
+// Nota: la comprobacion previa de longitudes SI filtra por longitud (por
+// diseno: un token de longitud distinta no puede ser el valido), pero nunca
+// por contenido. Si necesitas resistir tambien el oraculo de longitud, genera
+// siempre tokens de la misma longitud (es el caso: HEALTH_ADMIN_TOKEN es un
+// UUID/hex fijo).
+export function tokensEqualConstTime(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') return false
+  if (a.length !== b.length) return false
+  let diff = 0
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return diff === 0
+}
+
 // ---- Rate limiter en memoria (ventana deslizante por IP) ----
 // Aproximado: limpia entries caducadas al insertar. No sustituye a Cloudflare Rate
 // Limiting pero anade friccion basica sin depender de KV.

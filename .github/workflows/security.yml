@@ -1,0 +1,96 @@
+# Security: npm audit, gitleaks (secretos) y OSV-Scanner (CVEs multi-ecosistema).
+#
+# Los tres corren en paralelo en cada PR y cada push a main; tambien hay un
+# cron diario que saca un "canario" aunque no haya cambios (para capturar CVEs
+# descubiertas contra versiones ya deployadas de nuestras deps).
+#
+# Policy de fallos (intencionada):
+#   - npm audit: solo falla con severity=high o critical. 'moderate' es ruidoso
+#     y muchas veces no afecta al runtime del Worker (dev deps).
+#   - gitleaks: cualquier hallazgo falla el job. Un secret commited es critico
+#     aunque despues se rote — el historial git lo preserva para siempre.
+#   - osv-scanner: falla si hay al menos una vuln de nivel HIGH/CRITICAL.
+
+name: Security
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    # Diario 05:00 UTC. Asi detectamos CVEs publicadas aunque no haya push.
+    - cron: '0 5 * * *'
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm audit (high+critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install (prod only)
+        # --omit=dev audita solo lo que llega al runtime. Las dev deps las cubre
+        # OSV-Scanner mas abajo, con CVEs actualizadas y por paths reales.
+        run: npm ci --no-audit --no-fund --omit=dev
+
+      - name: Audit runtime deps
+        run: npm audit --omit=dev --audit-level=high
+
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo: queremos detectar secretos en commits antiguos
+          # que alguien podria rotar sin limpiar el git log.
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE no es necesario para repos publicos.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: true
+          GITLEAKS_ENABLE_SUMMARY: true
+
+  osv-scan:
+    name: OSV-Scanner (CVE lockfile)
+    runs-on: ubuntu-latest
+    permissions:
+      # OSV sube SARIF al panel Code scanning, necesita este permiso.
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.0.0
+        with:
+          scan-args: |-
+            --recursive
+            --skip-git
+            --format=sarif
+            --output=osv-results.sarif
+            ./
+        continue-on-error: true
+
+      - name: Upload SARIF to Code scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: hashFiles('osv-results.sarif') != ''
+        with:
+          sarif_file: osv-results.sarif

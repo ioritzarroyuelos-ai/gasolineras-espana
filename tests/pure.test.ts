@@ -11,6 +11,7 @@ import {
   isOpenNow,
   SlidingWindowLimiter,
   estimateMonthly,
+  tokensEqualConstTime,
 } from '../src/lib/pure'
 
 describe('LRU', () => {
@@ -302,5 +303,37 @@ describe('estimateMonthly (widget GASTO ESTIMADO MENSUAL)', () => {
     expect(estimateMonthly({ kmPerMonth: 1000, consumoL100km: 6.5, medianPriceEurL: 0,   tankL: 50 })).toBeNull()
     expect(estimateMonthly({ kmPerMonth: 1000, consumoL100km: 6.5, medianPriceEurL: 1.5, tankL: 0  })).toBeNull()
     expect(estimateMonthly({ kmPerMonth: NaN,  consumoL100km: 6.5, medianPriceEurL: 1.5, tankL: 50 })).toBeNull()
+  })
+})
+
+describe('tokensEqualConstTime', () => {
+  it('devuelve true solo cuando ambas cadenas coinciden exactamente', () => {
+    expect(tokensEqualConstTime('abc123', 'abc123')).toBe(true)
+    expect(tokensEqualConstTime('', '')).toBe(true)
+    expect(tokensEqualConstTime('secret-token-xyz', 'secret-token-xyz')).toBe(true)
+  })
+
+  it('rechaza cualquier diferencia (primer, ultimo, intermedio, case)', () => {
+    expect(tokensEqualConstTime('abc', 'abd')).toBe(false)       // ultimo
+    expect(tokensEqualConstTime('abc', 'xbc')).toBe(false)       // primer
+    expect(tokensEqualConstTime('abcd', 'aXcd')).toBe(false)     // intermedio
+    expect(tokensEqualConstTime('Token', 'token')).toBe(false)   // case-sensitive
+  })
+
+  it('rechaza cadenas de distinta longitud sin tirar excepcion', () => {
+    expect(tokensEqualConstTime('short', 'longer-string')).toBe(false)
+    expect(tokensEqualConstTime('', 'x')).toBe(false)
+    expect(tokensEqualConstTime('x', '')).toBe(false)
+  })
+
+  it('rechaza inputs no-string (defensa ante undefined/header ausente)', () => {
+    // @ts-expect-error - probamos deliberadamente tipos invalidos
+    expect(tokensEqualConstTime(undefined, 'x')).toBe(false)
+    // @ts-expect-error
+    expect(tokensEqualConstTime('x', undefined)).toBe(false)
+    // @ts-expect-error
+    expect(tokensEqualConstTime(null, null)).toBe(false)
+    // @ts-expect-error
+    expect(tokensEqualConstTime(123, '123')).toBe(false)
   })
 })

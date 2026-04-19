@@ -4,4 +4,4 @@
 //
 // IMPORTANTE: el workflow de CI valida que esta constante coincida con el tag
 // git del release (si el tag existe). Si cambias aqui, crea un tag 'vX.Y.Z'.
-export const APP_VERSION = '1.5.1'
+export const APP_VERSION = '1.6.0'

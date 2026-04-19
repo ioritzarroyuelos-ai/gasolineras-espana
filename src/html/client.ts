@@ -2209,74 +2209,155 @@ document.addEventListener('click', function(e) {
   }
 });
 
-// ---- PANEL DE FAVORITOS EN SIDEBAR ----
-// Banner onboarding: se muestra la primera vez que el usuario tiene una
-// favorita y todavia no ha dismissed ni activado alertas. Explica historico
-// + alertas y ofrece CTA para activar. La dismissal es permanente (localStorage).
-var FAV_TIP_KEY = 'gs_fav_tip_seen_v1';
-function favTipShouldShow() {
-  try {
-    if (localStorage.getItem(FAV_TIP_KEY) === '1') return false;
-    if (alertsEnabled()) return false;      // ya las ha activado: no tiene sentido
-    if (!getFavs().length) return false;    // sin favoritas nada que enseñar
-    return true;
-  } catch(_) { return false; }
+// ---- FAVORITOS: BOTON DE HEADER + MODAL ----
+// La estrella del header es el unico acceso a favoritas. Abre un modal que
+// contiene (a) la lista de gasolineras guardadas con precio y acciones, y
+// (b) la configuracion de alertas (navegador local + email). El modal se
+// re-renderiza en cada apertura y tambien cuando cambia la lista (toggleFav).
+// Para compatibilidad con el resto del codigo mantenemos el nombre
+// renderFavsPanel() como alias de renderFavs() — asi no hay que tocar las
+// llamadas ya existentes (markVisited, toggle de card, etc).
+
+// Preferencias de alertas por email. Se guardan en localStorage hasta que
+// montemos el backend en v1.7; el formulario siempre muestra "pronto".
+var ALERT_PREFS_KEY = 'gs_alert_prefs_v1';
+function getAlertPrefs() {
+  try { return JSON.parse(localStorage.getItem(ALERT_PREFS_KEY) || 'null') || { email: '', drop: true, rise: false, threshold: 2 }; }
+  catch(_) { return { email: '', drop: true, rise: false, threshold: 2 }; }
 }
-function favTipDismiss() {
-  try { localStorage.setItem(FAV_TIP_KEY, '1'); } catch(_) {}
-  var el = document.getElementById('fav-tip');
-  if (el) el.classList.remove('show');
+function setAlertPrefs(p) {
+  try { localStorage.setItem(ALERT_PREFS_KEY, JSON.stringify(p)); } catch(_) {}
 }
 
-function renderFavsPanel() {
-  var section = document.getElementById('favs-section');
-  var list = document.getElementById('fav-list');
+// Actualiza el boton estrella del header: color segun tiene/no favoritas,
+// insignia numerica solo si hay >=1. Y, si el modal esta abierto, refresca.
+function renderFavs() {
   var favs = getFavs();
-  document.getElementById('fav-count').textContent = favs.length;
-  if (!favs.length) { section.classList.remove('show'); return; }
-  section.classList.add('show');
-  // Mostrar/ocultar tip de onboarding. Se evalua en cada render para que
-  // desaparezca automaticamente cuando el usuario active alertas o dismiss.
-  var tip = document.getElementById('fav-tip');
-  if (tip) {
-    if (favTipShouldShow()) tip.classList.add('show');
-    else tip.classList.remove('show');
+  var btn = document.getElementById('btn-favs');
+  var badge = document.getElementById('fav-badge');
+  var icon = document.getElementById('btn-favs-icon');
+  if (btn && badge && icon) {
+    if (favs.length) {
+      btn.classList.add('has-favs');
+      icon.className = 'fas fa-star';
+      badge.textContent = String(favs.length);
+      badge.hidden = false;
+    } else {
+      btn.classList.remove('has-favs');
+      icon.className = 'far fa-star';
+      badge.hidden = true;
+    }
   }
+  // Si el modal esta abierto, refrescamos su lista en vivo.
+  var modal = document.getElementById('modal-favs');
+  if (modal && modal.classList.contains('show')) renderFavsModalList();
+}
+// Alias: renderFavsPanel es el nombre historico llamado desde toggle/handlers.
+function renderFavsPanel() { renderFavs(); }
+
+// Render de la lista de favoritas dentro del modal (con precio actual si la
+// gasolinera esta en el conjunto cargado + boton "quitar").
+function renderFavsModalList() {
+  var list = document.getElementById('favs-list');
+  var empty = document.getElementById('favs-empty');
+  var countEl = document.getElementById('favs-modal-count');
+  if (!list || !empty) return;
+  var favs = getFavs();
+  if (countEl) countEl.textContent = String(favs.length);
   list.innerHTML = '';
+  if (!favs.length) {
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  var fuel = document.getElementById('sel-combustible').value;
   favs.forEach(function(f) {
-    // Busca si la favorita esta en el listado actual (para mostrar precio)
     var live = null;
     for (var i = 0; i < allStations.length; i++) {
       if (stationId(allStations[i]) === f.id) { live = allStations[i]; break; }
     }
-    var fuel = document.getElementById('sel-combustible').value;
     var price = live ? parsePrice(live[fuel]) : null;
     var priceHtml = price
-      ? '<span class="badge badge-' + priceColor(price) + '">' + fmtPriceUnit(price) + '</span>'
-      : '<span style="font-size:10px;color:#9ca3af">Sin datos aqui</span>';
-    var item = document.createElement('div');
-    item.className = 'station-card';
-    item.setAttribute('data-fav-live', live ? '1' : '0');
-    item.innerHTML =
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:4px">'
-      + '  <div style="min-width:0;flex:1">'
-      + '    <div class="card-title">\u2B50 ' + esc(f.rotulo) + '</div>'
-      + '    <div class="card-sub">\u{1F4CD} ' + esc(f.municipio) + '</div>'
-      + '  </div>'
-      + '  <div style="text-align:right">' + priceHtml + '</div>'
-      + '</div>';
-    if (live) {
-      item.style.cursor = 'pointer';
-      item.addEventListener('click', function() {
-        // Selecciona provincia/municipio y carga
-        var id = stationId(live);
+      ? '<span class="fav-row-price badge badge-' + priceColor(price) + '">' + fmtPriceUnit(price) + '</span>'
+      : '<span class="fav-row-sub" style="font-size:10px">Sin datos</span>';
+    var row = document.createElement('div');
+    row.className = 'fav-row';
+    row.innerHTML =
+        '<div class="fav-row-info" role="button" tabindex="0" aria-label="Ver ' + esc(f.rotulo) + ' en el mapa">'
+      + '  <div class="fav-row-title">\u2B50 ' + esc(f.rotulo) + '</div>'
+      + '  <div class="fav-row-sub">\u{1F4CD} ' + esc(f.municipio) + '</div>'
+      + '</div>'
+      + '<div>' + priceHtml + '</div>'
+      + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><i class="fas fa-trash" aria-hidden="true"></i></button>';
+    // Click en info -> zoom en el mapa (solo si la gasolinera esta en el
+    // filtrado actual; si no, no hay nada adonde llevarla).
+    var info = row.querySelector('.fav-row-info');
+    if (info && live) {
+      info.addEventListener('click', function() {
         for (var j = 0; j < filteredStations.length; j++) {
-          if (stationId(filteredStations[j]) === id) { zoomTo(j); return; }
+          if (stationId(filteredStations[j]) === f.id) {
+            closeFavsModal();
+            zoomTo(j);
+            return;
+          }
         }
       });
+    } else if (info) {
+      info.style.cursor = 'default';
+      info.setAttribute('tabindex', '-1');
     }
-    list.appendChild(item);
+    // Click en quitar -> toggleFav + re-render.
+    row.querySelector('.fav-row-remove').addEventListener('click', function() {
+      // Necesitamos una "station-like" para toggleFav; reconstruimos la
+      // minima informacion a partir del objeto favorito guardado.
+      toggleFav({
+        'IDEESS': f.id,
+        'Rotulo': f.rotulo,
+        'Municipio': f.municipio,
+        'Direccion': f.direccion,
+        'Latitud': String(f.lat),
+        'Longitud (WGS84)': String(f.lng)
+      });
+      showToast('Eliminada de favoritas', 'info');
+      renderFavs();
+      // El boton de favorito dentro de la station-card (si esta en el DOM)
+      // tambien tiene que sincronizarse.
+      var cardBtn = document.querySelector('.fav-btn[data-fav-id="' + f.id + '"]');
+      if (cardBtn) {
+        cardBtn.classList.remove('active');
+        cardBtn.textContent = '\u2606';
+        cardBtn.setAttribute('aria-pressed', 'false');
+        cardBtn.setAttribute('aria-label', 'A\u00f1adir a favoritas');
+      }
+    });
+    list.appendChild(row);
   });
+}
+
+function openFavsModal() {
+  var modal = document.getElementById('modal-favs');
+  if (!modal) return;
+  // Sincroniza el toggle de navegador con el estado real persistido.
+  var chkBrowser = document.getElementById('chk-alerts-browser');
+  if (chkBrowser) chkBrowser.checked = alertsEnabled();
+  // Carga prefs de email en el formulario.
+  var prefs = getAlertPrefs();
+  var em = document.getElementById('in-alert-email');
+  var cd = document.getElementById('chk-alert-drop');
+  var cr = document.getElementById('chk-alert-rise');
+  var th = document.getElementById('in-alert-threshold');
+  var thl = document.getElementById('lbl-alert-threshold');
+  if (em) em.value = prefs.email || '';
+  if (cd) cd.checked = !!prefs.drop;
+  if (cr) cr.checked = !!prefs.rise;
+  if (th) th.value = String(prefs.threshold || 2);
+  if (thl) thl.textContent = (prefs.threshold || 2) + ' c';
+  renderFavsModalList();
+  modal.classList.add('show');
+}
+function closeFavsModal() {
+  var modal = document.getElementById('modal-favs');
+  if (modal) modal.classList.remove('show');
 }
 
 // ---- WIDGET DE GASTO MENSUAL ----
@@ -2501,90 +2582,104 @@ document.addEventListener('keydown', function(e) {
   } catch(e) {}
 })();
 
-// ---- TOGGLE DE ALERTAS (bell en el header de favoritos) ----
-// Primer click: pide permiso de Notification y marca alertas=ON si lo obtiene.
-// Click posterior: alterna on/off (no hace falta re-pedir permiso).
+// ---- HANDLERS DEL MODAL DE FAVORITAS ----
+// Centraliza todo lo que antes eran tres piezas separadas (panel sidebar,
+// bell toggle, banner onboarding) en un unico modal accesible desde el
+// boton estrella del header. Contiene la lista de favoritas + dos
+// sub-formularios de alertas: navegador (local, funciona hoy) y email
+// (recogida de prefs en localStorage, envio real en v1.7).
 (function() {
-  var btn = document.getElementById('btn-alerts-toggle');
-  if (!btn) return;
-  var icon = document.getElementById('btn-alerts-icon');
+  var modal = document.getElementById('modal-favs');
+  if (!modal) return;
+  var btnOpen   = document.getElementById('btn-favs');
+  var btnClose  = document.getElementById('btn-favs-close');
+  var btnDone   = document.getElementById('btn-favs-done');
+  var chkBrowser= document.getElementById('chk-alerts-browser');
+  var btnSave   = document.getElementById('btn-alerts-save');
+  var inEmail   = document.getElementById('in-alert-email');
+  var chkDrop   = document.getElementById('chk-alert-drop');
+  var chkRise   = document.getElementById('chk-alert-rise');
+  var inTh      = document.getElementById('in-alert-threshold');
+  var lblTh     = document.getElementById('lbl-alert-threshold');
 
-  function syncUI() {
-    var on = alertsEnabled();
-    btn.setAttribute('aria-pressed', String(on));
-    btn.setAttribute('title', on ? 'Alertas activadas (click para desactivar)' : 'Activar alertas de bajadas');
-    if (icon) {
-      icon.className = on ? 'fas fa-bell' : 'far fa-bell';
-      icon.style.color = on ? '#16a34a' : '';
-    }
-  }
+  if (btnOpen)  btnOpen.addEventListener('click', openFavsModal);
+  if (btnClose) btnClose.addEventListener('click', closeFavsModal);
+  if (btnDone)  btnDone.addEventListener('click', closeFavsModal);
+  // Cerrar con click en backdrop o Escape.
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeFavsModal(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeFavsModal();
+  });
 
-  btn.addEventListener('click', async function() {
-    if (alertsEnabled()) {
+  // Toggle de notificaciones del navegador: reutiliza el flujo original que
+  // antes estaba en el bell del sidebar. El click pide permiso la primera
+  // vez y alterna el flag en los siguientes.
+  if (chkBrowser) chkBrowser.addEventListener('change', async function() {
+    if (!chkBrowser.checked) {
       setAlertsEnabled(false);
-      syncUI();
-      showToast('Alertas desactivadas', 'info');
+      showToast('Notificaciones desactivadas', 'info');
       return;
     }
-    // Comprobamos soporte y pedimos permiso.
+    // Encender: pide permiso si hace falta.
     if (!('Notification' in window)) {
       showToast('Tu navegador no soporta notificaciones; usaremos avisos dentro de la app', 'warning');
       setAlertsEnabled(true);
-      syncUI();
       return;
     }
     if (Notification.permission === 'granted') {
       setAlertsEnabled(true);
-      syncUI();
-      showToast('Alertas activadas \u{1F514}', 'success');
+      showToast('Notificaciones activadas \u{1F514}', 'success');
       return;
     }
     if (Notification.permission === 'denied') {
-      showToast('Permiso de notificaciones bloqueado. Igualmente mostraremos avisos dentro de la app.', 'warning');
+      showToast('Permiso bloqueado por el navegador. Te avisaremos dentro de la app.', 'warning');
       setAlertsEnabled(true);
-      syncUI();
       return;
     }
     try {
       var perm = await Notification.requestPermission();
       if (perm === 'granted') {
         setAlertsEnabled(true);
-        syncUI();
-        showToast('Alertas activadas \u{1F514}', 'success');
+        showToast('Notificaciones activadas \u{1F514}', 'success');
       } else {
         setAlertsEnabled(true);
-        syncUI();
-        showToast('Sin permiso del navegador — alertas solo dentro de la app', 'info');
+        showToast('Sin permiso; solo avisos dentro de la app', 'info');
       }
     } catch(_) {
       setAlertsEnabled(true);
-      syncUI();
     }
   });
-  // Estado inicial.
-  syncUI();
-})();
 
-// ---- HANDLERS DEL BANNER DE ONBOARDING DE FAVORITOS ----
-// El banner #fav-tip aparece la primera vez que el usuario tiene >=1 favorita
-// y aun no ha activado alertas. Tres botones: cerrar (X), "Ahora no" y
-// "Activar alertas". El CTA reutiliza el flujo existente del bell toggle para
-// no duplicar logica de permisos. Cualquiera de los tres descarta el banner
-// permanentemente via favTipDismiss() (persiste en localStorage).
-(function() {
-  var close    = document.getElementById('fav-tip-close');
-  var dismiss  = document.getElementById('fav-tip-dismiss');
-  var activate = document.getElementById('fav-tip-activate');
-  if (close)   close.addEventListener('click', favTipDismiss);
-  if (dismiss) dismiss.addEventListener('click', favTipDismiss);
-  if (activate) activate.addEventListener('click', function() {
-    // Delega en el bell: asi reutilizamos el flujo de requestPermission y de
-    // toasts sin tener que duplicar logica. Tras disparar, marcamos dismiss
-    // para que no vuelva a aparecer aunque el usuario termine denegando.
-    var bell = document.getElementById('btn-alerts-toggle');
-    if (bell) bell.click();
-    favTipDismiss();
+  // Slider de umbral: actualiza la etiqueta.
+  if (inTh && lblTh) inTh.addEventListener('input', function() {
+    lblTh.textContent = inTh.value + ' c';
   });
+
+  // Guardar preferencias de alertas por email. Validacion minima de formato.
+  if (btnSave) btnSave.addEventListener('click', function() {
+    var email = (inEmail && inEmail.value || '').trim();
+    var drop = !!(chkDrop && chkDrop.checked);
+    var rise = !!(chkRise && chkRise.checked);
+    var threshold = parseInt(inTh && inTh.value || '2', 10);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('Email no valido', 'warning');
+      return;
+    }
+    if (email && !drop && !rise) {
+      showToast('Marca al menos una condicion (bajada o subida)', 'warning');
+      return;
+    }
+    setAlertPrefs({ email: email, drop: drop, rise: rise, threshold: threshold });
+    if (email) {
+      showToast('Preferencias guardadas. Te avisaremos al lanzar alertas por email.', 'success');
+    } else {
+      showToast('Preferencias guardadas', 'info');
+    }
+  });
+
+  // Render inicial de la estrella (color + insignia) antes de que se carguen
+  // las gasolineras — asi el boton ya refleja las favoritas persistidas.
+  renderFavs();
 })();
 
 // ---- SERVICE WORKER (PWA) ----

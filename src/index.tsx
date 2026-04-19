@@ -939,19 +939,21 @@ app.get('/api/route', async c => {
     return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'HIT' })
   }
 
-  // v2 en la clave para invalidar rutas truncadas de la version anterior (que
-  // usaba overview=full + cap 5000 y cortaba rutas largas a medio camino).
-  const out = await cachedJson('route-v2-' + encodeURIComponent(cacheKey), 86400, async () => {
+  // v3 en la clave para invalidar rutas cacheadas con simplificacion agresiva
+  // (overview=simplified dibujaba lineas rectas que cortaban las curvas de la
+  // carretera). Con overview=full + cap 20k puntos, las rutas peninsulares
+  // renderizan a escala calle sin perder fidelidad.
+  const out = await cachedJson('route-v3-' + encodeURIComponent(cacheKey), 86400, async () => {
     // OSRM: coordenadas en orden lng,lat (GeoJSON convention).
-    // overview=simplified: Douglas-Peucker con tolerancia ~5m (zoom 14).
-    // Preserva la forma de la carretera perfectamente para render + proyeccion
-    // con bajo numero de puntos (~300-800 para una ruta Espana peninsular).
-    // overview=full explotaba el cap de 20k puntos en rutas largas (Durango-
-    // Cadiz) truncando la ruta a medio camino.
+    // overview=full: geometria sin simplificar. Para rutas peninsulares devuelve
+    // 3k-15k puntos que caben bajo el cap de 20k en upstreamRoute(). Necesario
+    // para que la polilinea siga las curvas reales de la carretera a cualquier
+    // zoom (con 'simplified' Leaflet conectaba puntos espaciados con rectas
+    // que cruzaban autovias en diagonal).
     const url = 'https://router.project-osrm.org/route/v1/driving/'
       + encodeURIComponent(from.lng) + ',' + encodeURIComponent(from.lat) + ';'
       + encodeURIComponent(to.lng)   + ',' + encodeURIComponent(to.lat)
-      + '?overview=simplified&geometries=geojson&alternatives=false&steps=false'
+      + '?overview=full&geometries=geojson&alternatives=false&steps=false'
     return await upstreamRoute(url)
   })
 

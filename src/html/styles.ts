@@ -125,10 +125,13 @@ export function getStyles(): string {
     .card-time    { font-size:10px; color:#94a3b8; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
     /* ===== EMPTY STATE ===== */
-    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:24px; color:#94a3b8; }
-    .empty-state .icon { font-size:48px; margin-bottom:12px; }
+    /* Empty state: el color base era #94a3b8 que falla contraste WCAG AA
+       (2.56:1) para el <small>. Usamos #64748b que pasa (4.6:1) y armoniza
+       con el <p> que ya usaba ese valor. */
+    .empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:24px; color:#64748b; }
+    .empty-state .icon { font-size:48px; margin-bottom:12px; color:#94a3b8; }
     .empty-state p { font-size:14px; font-weight:500; color:#64748b; }
-    .empty-state small { font-size:12px; margin-top:4px; }
+    .empty-state small { font-size:12px; margin-top:4px; color:#64748b; }
 
     /* ===== LOADING OVERLAY ===== */
     #loading {
@@ -590,88 +593,6 @@ export function getStyles(): string {
     body.dark .trend-strip-item .dlt-up   { color: #fca5a5; }
     body.dark .trend-strip-close:hover { color: #e2e8f0; }
 
-    /* ---- Banner de onboarding tras la primera favorita ---- */
-    /* Aparece una sola vez dentro del panel de favoritas explicando historico
-       + alertas. Dismissable y con CTA de activar alertas en 1 click. */
-    #fav-tip {
-      display: none;
-      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-      border: 1px solid #86efac;
-      border-radius: 10px;
-      padding: 10px 12px;
-      margin: 8px 0 10px;
-      font-size: 12px;
-      color: #14532d;
-      line-height: 1.45;
-      position: relative;
-    }
-    #fav-tip.show { display: block; }
-    #fav-tip .fav-tip-title {
-      font-weight: 700;
-      font-size: 12px;
-      color: #065f46;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      margin-bottom: 4px;
-    }
-    #fav-tip ul {
-      margin: 4px 0 0;
-      padding-left: 18px;
-    }
-    #fav-tip li { margin-bottom: 2px; }
-    #fav-tip .fav-tip-actions {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-    }
-    #fav-tip .fav-tip-cta {
-      background: #16a34a;
-      color: #fff;
-      border: 0;
-      padding: 5px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    #fav-tip .fav-tip-cta:hover { background: #15803d; }
-    #fav-tip .fav-tip-dismiss {
-      background: transparent;
-      color: #065f46;
-      border: 1px solid #86efac;
-      padding: 5px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      cursor: pointer;
-    }
-    #fav-tip .fav-tip-dismiss:hover { background: #bbf7d0; }
-    #fav-tip .fav-tip-close {
-      position: absolute;
-      top: 4px;
-      right: 6px;
-      background: none;
-      border: 0;
-      color: #065f46;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-      padding: 2px 4px;
-    }
-    #fav-tip .fav-tip-close:hover { color: #064e3b; }
-    body.dark #fav-tip {
-      background: linear-gradient(135deg, #064e3b, #065f46);
-      border-color: #10b981;
-      color: #d1fae5;
-    }
-    body.dark #fav-tip .fav-tip-title { color: #a7f3d0; }
-    body.dark #fav-tip .fav-tip-dismiss {
-      color: #d1fae5;
-      border-color: #10b981;
-    }
-    body.dark #fav-tip .fav-tip-dismiss:hover { background: #047857; }
-    body.dark #fav-tip .fav-tip-close { color: #a7f3d0; }
-
     /* ---- Sliders de ahorro / radio ---- */
     .range-group { display:flex; align-items:center; gap:8px; }
     .range-group input[type=range] {
@@ -786,12 +707,184 @@ export function getStyles(): string {
       body.dark .skeleton-card .sk-line, body.dark .skeleton-card .sk-badge { background: #334155; }
     }
 
-    /* ---- Panel de favoritos ---- */
-    #favs-section { display:none; border-bottom:1px solid #e2e8f0; background:#fffbeb; }
-    #favs-section.show { display:block; }
-    #favs-section h3 { padding:8px 12px 4px; font-size:11px; font-weight:700; color:#92400e; text-transform:uppercase; letter-spacing:0.05em; }
-    body.dark #favs-section { background:#1c1917; border-bottom-color:#334155; }
-    body.dark #favs-section h3 { color:#fbbf24; }
+    /* ---- Boton estrella de favoritas en el header ---- */
+    /* Estrella con insignia numerica: la estrella se rellena cuando hay
+       favoritas y la insignia muestra el total. Sin favoritas, se queda
+       gris y la insignia oculta. */
+    .btn-header-fav {
+      position: relative;
+      background: none;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: #64748b;
+      font-size: 14px;
+      transition: all 0.15s ease;
+    }
+    .btn-header-fav:hover { background: #f8fafc; border-color: #94a3b8; color: #374151; }
+    .btn-header-fav.has-favs { color: #f59e0b; border-color: #fde68a; background: #fffbeb; }
+    .btn-header-fav.has-favs:hover { background: #fef3c7; }
+    body.dark .btn-header-fav { border-color: #475569; color: #cbd5e1; }
+    body.dark .btn-header-fav:hover { background: #334155; }
+    body.dark .btn-header-fav.has-favs { color: #fbbf24; border-color: #78350f; background: #451a03; }
+    body.dark .btn-header-fav.has-favs:hover { background: #78350f; }
+    .fav-badge {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #dc2626;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 10px;
+      min-width: 16px;
+      text-align: center;
+      line-height: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* ---- Modal de favoritas + alertas ---- */
+    /* Reutiliza .modal / .modal-backdrop base. Layout mas ancho para que
+       la lista no se estreche, y con subsecciones visualmente separadas. */
+    #modal-favs .modal { max-width: 540px; }
+    .modal-close-x {
+      background: none;
+      border: 0;
+      color: #94a3b8;
+      font-size: 24px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 6px;
+    }
+    .modal-close-x:hover { color: #475569; }
+    body.dark .modal-close-x { color: #64748b; }
+    body.dark .modal-close-x:hover { color: #e2e8f0; }
+    .favs-subtitle {
+      font-size: 11px;
+      font-weight: 700;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin: 12px 0 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    body.dark .favs-subtitle { color: #cbd5e1; }
+    .favs-empty {
+      background: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 10px;
+      padding: 14px 12px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+    }
+    .favs-empty i { display: block; font-size: 22px; margin-bottom: 6px; color: #cbd5e1; }
+    body.dark .favs-empty { background: #0f172a; border-color: #334155; color: #94a3b8; }
+    body.dark .favs-empty i { color: #475569; }
+    .fav-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      margin-bottom: 6px;
+      background: #fff;
+      transition: background 0.15s ease;
+    }
+    .fav-row:hover { background: #f8fafc; }
+    body.dark .fav-row { background: #1e293b; border-color: #334155; }
+    body.dark .fav-row:hover { background: #334155; }
+    .fav-row-info { flex: 1; min-width: 0; cursor: pointer; }
+    .fav-row-title { font-weight: 600; font-size: 13px; color: #111827; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    body.dark .fav-row-title { color: #f1f5f9; }
+    .fav-row-sub { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    body.dark .fav-row-sub { color: #94a3b8; }
+    .fav-row-price { font-size: 12px; font-weight: 700; }
+    .fav-row-remove {
+      background: none;
+      border: 0;
+      color: #cbd5e1;
+      cursor: pointer;
+      padding: 4px 6px;
+      font-size: 14px;
+      border-radius: 6px;
+    }
+    .fav-row-remove:hover { color: #dc2626; background: #fee2e2; }
+    body.dark .fav-row-remove { color: #64748b; }
+    body.dark .fav-row-remove:hover { color: #f87171; background: #450a0a; }
+
+    /* Seccion de alertas (navegador + email) */
+    .alerts-section {
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid #e2e8f0;
+    }
+    body.dark .alerts-section { border-top-color: #334155; }
+    .alerts-help {
+      font-size: 11px;
+      color: #64748b;
+      margin: 0 0 8px;
+      line-height: 1.5;
+    }
+    body.dark .alerts-help { color: #94a3b8; }
+    .alerts-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: #374151;
+      cursor: pointer;
+      padding: 6px 0;
+    }
+    .alerts-toggle input[type=checkbox] {
+      width: 16px;
+      height: 16px;
+      accent-color: #16a34a;
+      cursor: pointer;
+    }
+    body.dark .alerts-toggle { color: #e2e8f0; }
+    .alerts-checks {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 4px 0 8px;
+    }
+    .badge-soon {
+      display: inline-block;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-left: 4px;
+    }
+    body.dark .badge-soon { background: #78350f; color: #fde68a; }
+    .form-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      font-size: 13px;
+      font-family: inherit;
+      color: #111827;
+      background: #fff;
+      transition: border-color 0.15s ease;
+    }
+    .form-input:focus { outline: 0; border-color: #16a34a; }
+    body.dark .form-input {
+      background: #0f172a;
+      border-color: #475569;
+      color: #f1f5f9;
+    }
+    body.dark .form-input:focus { border-color: #22c55e; }
 
     /* ---- Logo del header (imagen SVG) ---- */
     .header-logo-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); flex-shrink: 0; }

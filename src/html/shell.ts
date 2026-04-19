@@ -242,6 +242,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
     <span id="lbl-update" class="header-update" style="display:none"></span>
     <span id="lbl-count" class="header-badge" style="display:none"></span>
+    <!-- Acceso a favoritas: abre el modal con la lista + alertas. La estrella
+         se rellena cuando hay >=1 favorita, y la insignia numerica solo se
+         muestra en ese caso. -->
+    <button id="btn-favs" class="btn-header-fav" title="Mis favoritas" aria-label="Ver mis favoritas">
+      <i class="far fa-star" id="btn-favs-icon" aria-hidden="true"></i>
+      <span id="fav-badge" class="fav-badge" hidden>0</span>
+    </button>
     <button id="btn-unit" class="unit-toggle" title="Alternar entre euros y centimos" aria-label="Cambiar unidad de precio">&#x20AC;/L</button>
     <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
   </div>
@@ -406,7 +413,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
       <!-- Deposito del vehiculo (para calculo de ahorro) -->
       <div class="form-group">
-        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#94a3b8">(para calcular ahorro)</span></label>
+        <label class="form-label" for="in-tank">Depósito <span style="font-weight:400;text-transform:none;color:#64748b">(para calcular ahorro)</span></label>
         <div class="range-group">
           <input id="in-tank" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
           <span class="range-val" id="lbl-tank">50 L</span>
@@ -427,38 +434,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </button>
     </div>
 
-    <!-- Favoritos (se oculta si no hay) -->
-    <section id="favs-section" aria-label="Gasolineras favoritas">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px">
-        <h3 style="margin:0">&#x2B50; Mis favoritas (<span id="fav-count">0</span>)</h3>
-        <button id="btn-alerts-toggle" class="btn-icon"
-                title="Activar alertas de bajadas de precio"
-                aria-label="Activar alertas de bajadas de precio"
-                aria-pressed="false">
-          <i class="far fa-bell" id="btn-alerts-icon" aria-hidden="true"></i>
-        </button>
-      </div>
-      <!-- Banner de onboarding: aparece la primera vez que el usuario
-           favoritea. Explica historico + alertas y ofrece CTA directo para
-           activar las alertas. Persistimos dismissal en localStorage. -->
-      <div id="fav-tip" role="note" aria-live="polite">
-        <button class="fav-tip-close" id="fav-tip-close" aria-label="Cerrar aviso" title="Cerrar">&times;</button>
-        <div class="fav-tip-title"><i class="fas fa-lightbulb" aria-hidden="true"></i> Aprovecha tus favoritas</div>
-        <div>A partir de ahora, con tus favoritas puedes:</div>
-        <ul>
-          <li><b>Ver su histórico</b>: sparkline de evolución en el popup (a partir de 2 días de datos).</li>
-          <li><b>Recibir alertas</b> cuando baje el precio <b>&ge; 2&nbsp;c</b>.</li>
-        </ul>
-        <div class="fav-tip-actions">
-          <button class="fav-tip-cta" id="fav-tip-activate">
-            <i class="fas fa-bell" aria-hidden="true"></i> Activar alertas
-          </button>
-          <button class="fav-tip-dismiss" id="fav-tip-dismiss">Ahora no</button>
-        </div>
-      </div>
-      <div id="fav-list" role="list"></div>
-    </section>
-
     <!-- STATS -->
     <div id="stats-bar">
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:12px">
@@ -470,7 +445,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     </div>
 
     <!-- LISTA -->
-    <div id="station-list" role="list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
+    <div id="station-list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
       <div class="empty-state">
         <div class="icon" aria-hidden="true">&#x1F5FA;&#xFE0F;</div>
         <p>Selecciona una provincia</p>
@@ -492,7 +467,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <div class="loading-box">
         <div class="spinner" aria-hidden="true"></div>
         <p style="font-size:14px;font-weight:600;color:#374151">Cargando gasolineras...</p>
-        <p style="font-size:12px;color:#94a3b8">Datos oficiales del Ministerio</p>
+        <p style="font-size:12px;color:#64748b">Datos oficiales del Ministerio</p>
       </div>
     </div>
 
@@ -560,6 +535,79 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     <div class="modal-footer">
       <button id="btn-profile-skip"  class="btn-ghost">Ahora no</button>
       <button id="btn-profile-save"  class="btn-primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL FAVORITAS + ALERTAS ============ -->
+<!-- Se abre desde el boton estrella del header. Contiene la lista de
+     gasolineras favoritas (con precio actual, click para ir al mapa, boton
+     para quitar) y un formulario de alertas con dos sub-secciones:
+       1. Notificaciones del navegador (local, funciona hoy)
+       2. Alertas por email (recoge prefs; envio real llegara en v1.7). -->
+<div id="modal-favs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="favs-title">
+  <div class="modal">
+    <div class="modal-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+      <div>
+        <h2 id="favs-title">&#x2B50; Mis favoritas (<span id="favs-modal-count">0</span>)</h2>
+        <p>Gestiona tus gasolineras guardadas y configura alertas de precio.</p>
+      </div>
+      <button id="btn-favs-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Lista de favoritas -->
+      <div id="favs-list-wrap">
+        <div class="favs-subtitle">Tus gasolineras</div>
+        <div id="favs-empty" class="favs-empty">
+          <i class="far fa-star" aria-hidden="true"></i>
+          Aun no tienes favoritas. Pulsa la estrella en el popup de una gasolinera para guardarla.
+        </div>
+        <div id="favs-list"></div>
+      </div>
+
+      <!-- Alertas: navegador -->
+      <div class="alerts-section">
+        <div class="favs-subtitle"><i class="fas fa-bell" aria-hidden="true"></i> Notificaciones del navegador</div>
+        <p class="alerts-help">Recibe avisos locales cuando una favorita cambie de precio mientras tengas la web abierta.</p>
+        <label class="alerts-toggle">
+          <input type="checkbox" id="chk-alerts-browser" />
+          <span>Activar notificaciones del navegador</span>
+        </label>
+      </div>
+
+      <!-- Alertas: email -->
+      <div class="alerts-section">
+        <div class="favs-subtitle"><i class="fas fa-envelope" aria-hidden="true"></i> Alertas por email <span class="badge-soon">pronto</span></div>
+        <p class="alerts-help">Recibe un email cuando tus favoritas bajen o suban de precio. Aun estamos montando la infraestructura &mdash; guarda tus preferencias y te avisaremos al lanzar.</p>
+        <div class="form-group">
+          <label class="form-label" for="in-alert-email">Tu email</label>
+          <input type="email" id="in-alert-email" class="form-input" placeholder="tu@email.com" autocomplete="email" />
+        </div>
+        <div class="alerts-checks">
+          <label class="alerts-toggle">
+            <input type="checkbox" id="chk-alert-drop" checked />
+            <span>Avisarme cuando <b>baje</b> el precio</span>
+          </label>
+          <label class="alerts-toggle">
+            <input type="checkbox" id="chk-alert-rise" />
+            <span>Avisarme cuando <b>suba</b> el precio</span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="in-alert-threshold">Umbral (centimos)</label>
+          <div class="range-group">
+            <input id="in-alert-threshold" type="range" min="1" max="10" step="1" value="2" aria-label="Umbral en centimos" />
+            <span class="range-val" id="lbl-alert-threshold">2 c</span>
+          </div>
+        </div>
+        <button id="btn-alerts-save" class="btn-primary" style="width:100%;margin-top:6px">
+          <i class="fas fa-save" aria-hidden="true" style="margin-right:6px"></i>
+          Guardar preferencias
+        </button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-favs-done" class="btn-primary">Cerrar</button>
     </div>
   </div>
 </div>

@@ -2257,6 +2257,92 @@ document.addEventListener('click', function(e) {
 // el nombre renderFavsPanel() como alias de renderFavs() — asi no hay que
 // tocar las llamadas ya existentes (markVisited, toggle de card, etc).
 
+// Busca una estacion por id en allStations (provincia actual) y, si no esta,
+// en cualquier cache gs_v2_* de localStorage. Devuelve { station, ts, stale }
+// o null. Permite stale hasta 30 dias (CACHE_HARD_TTL en getCache) porque
+// para el listado de favoritas "precio viejo con marca visual" es mas util
+// que "sin datos". El precio del Ministerio cambia como mucho varias veces
+// al dia, asi que un dato de hace 2h suele ser muy representativo.
+function lookupStationInCaches(favId) {
+  if (!favId) return null;
+  // 1) Hot path: provincia que el usuario esta viendo ahora mismo.
+  for (var i = 0; i < allStations.length; i++) {
+    if (stationId(allStations[i]) === favId) {
+      return { station: allStations[i], ts: Date.now(), stale: false };
+    }
+  }
+  // 2) Otras provincias cacheadas en localStorage. Iteramos claves gs_v2_*.
+  try {
+    for (var k = 0; k < localStorage.length; k++) {
+      var key = localStorage.key(k);
+      if (!key || key.indexOf('gs_v2_') !== 0) continue;
+      var raw = localStorage.getItem(key);
+      if (!raw) continue;
+      var parsed;
+      try { parsed = JSON.parse(raw); } catch(_) { continue; }
+      var data = parsed && parsed.data;
+      var ts = parsed && parsed.ts;
+      if (!Array.isArray(data) || !ts) continue;
+      // Si es mayor que CACHE_HARD_TTL, getCache ya lo habria purgado en su
+      // proxima llamada; aqui lo ignoramos tambien.
+      if (Date.now() - ts > CACHE_HARD_TTL) continue;
+      for (var j = 0; j < data.length; j++) {
+        if (stationId(data[j]) === favId) {
+          return { station: data[j], ts: ts, stale: Date.now() - ts > CACHE_FRESH_TTL };
+        }
+      }
+    }
+  } catch(_) {}
+  return null;
+}
+
+// Set de provinciaIds que ya estamos pre-fetching ahora mismo (para no
+// duplicar trabajo si el modal se re-renderiza mientras el fetch esta en
+// vuelo). Tambien acumula las que fallaron para no reintentar en bucle.
+var favsFetchInFlight = {};
+var favsFetchFailed = {};
+
+// Para cada favorita con provinciaId pero sin datos frescos en ningun cache,
+// dispara un fetch a /api/estaciones/provincia/{id} en background. Cuando
+// responde, guarda en cache y re-renderiza el modal (si sigue abierto). No
+// bloquea el render inicial — el usuario ve "Sin datos" unos ms y luego
+// aparece el precio. Deduplica por provinciaId para no hacer N fetches si
+// tienes varias favs en la misma provincia.
+function prefetchFavsPrices(favs) {
+  var seen = {};
+  for (var i = 0; i < favs.length; i++) {
+    var f = favs[i];
+    if (!f.provinciaId) continue;
+    // Si ya tenemos cache fresco para esa provincia, saltamos.
+    var cache = getCache(cacheKey(f.provinciaId, ''));
+    if (cache && !cache.stale) continue;
+    // Si ya esta en vuelo o fallo recientemente, saltamos.
+    if (favsFetchInFlight[f.provinciaId]) continue;
+    if (favsFetchFailed[f.provinciaId]) continue;
+    seen[f.provinciaId] = true;
+  }
+  var provIds = Object.keys(seen);
+  if (!provIds.length) return;
+  // Disparamos en paralelo. Cap implicito = numero de provincias con favs,
+  // raramente > 3. fetchJSON ya usa el service worker / red normal.
+  provIds.forEach(function(pid) {
+    favsFetchInFlight[pid] = true;
+    fetchJSON('/api/estaciones/provincia/' + pid).then(function(data) {
+      var stations = (data.ListaEESSPrecio || []).map(normalizeStation);
+      setCache(cacheKey(pid, ''), stations, data.Fecha || '');
+      // Re-render si el modal sigue abierto.
+      var modal = document.getElementById('modal-favs');
+      if (modal && modal.classList.contains('show')) renderFavsModalList();
+    }).catch(function() {
+      // Marcamos como fallida para no machacar el servidor. Se limpia en el
+      // siguiente refresh de pagina (variable en memoria, no persiste).
+      favsFetchFailed[pid] = true;
+    }).then(function() {
+      delete favsFetchInFlight[pid];
+    });
+  });
+}
+
 // Actualiza el boton estrella del header: color segun tiene/no favoritas,
 // insignia numerica solo si hay >=1. Y, si el modal esta abierto, refresca.
 function renderFavs() {
@@ -2301,14 +2387,18 @@ function renderFavsModalList() {
   }
   empty.style.display = 'none';
   var fuel = document.getElementById('sel-combustible').value;
+  // Disparamos prefetch de las provincias con favs sin datos en background
+  // ANTES del render: asi si llega antes de que el usuario cierre el modal,
+  // se re-renderiza automaticamente con precios frescos.
+  prefetchFavsPrices(favs);
   favs.forEach(function(f) {
-    var live = null;
-    for (var i = 0; i < allStations.length; i++) {
-      if (stationId(allStations[i]) === f.id) { live = allStations[i]; break; }
-    }
-    // Enriquecimiento oportunista: si la estacion esta cargada (misma
-    // provincia que se esta viendo) y la favorita es legacy, completamos
-    // sus IDs silenciosamente para futuras navegaciones.
+    // Busqueda global: allStations (provincia actual) + cualquier cache
+    // localStorage gs_v2_* de otras provincias. Permite stale hasta 30d.
+    var found = lookupStationInCaches(f.id);
+    var live = found ? found.station : null;
+    // Enriquecimiento oportunista: si la estacion esta disponible (en la
+    // provincia actual o en otra cacheada) y la favorita es legacy,
+    // completamos sus IDs silenciosamente para futuras navegaciones.
     if (live && (!f.provinciaId || !f.municipioId)) {
       enrichFav(f.id, {
         provinciaId: live['IDProvincia'] || '',
@@ -2316,15 +2406,19 @@ function renderFavsModalList() {
         provincia:   live['Provincia']   || '',
         municipio:   live['Municipio']   || ''
       });
-      // Reflejamos la enrich en la copia local de la fila.
       if (!f.provinciaId) f.provinciaId = live['IDProvincia'] || '';
       if (!f.municipioId) f.municipioId = live['IDMunicipio'] || '';
       if (!f.provincia)   f.provincia   = live['Provincia']   || '';
       if (!f.municipio)   f.municipio   = live['Municipio']   || '';
     }
     var price = live ? parsePrice(live[fuel]) : null;
+    // Si el precio viene de un cache stale (>4h pero <30d), lo marcamos con
+    // el mismo icono de "atencion" que usa showCacheIndicator y con un
+    // tooltip claro. Asi el usuario no asume que el precio es live.
+    var ageHint = (found && found.stale) ? ' title="Precio guardado ' + formatAge(found.ts) + ' (pulsa para actualizar)"' : '';
+    var stalePrefix = (found && found.stale) ? '\u26A0 ' : '';
     var priceHtml = price
-      ? '<span class="fav-row-price badge badge-' + priceColor(price) + '">' + fmtPriceUnit(price) + '</span>'
+      ? '<span class="fav-row-price badge badge-' + priceColor(price) + '"' + ageHint + '>' + stalePrefix + fmtPriceUnit(price) + '</span>'
       : '<span class="fav-row-sub" style="font-size:10px">Sin datos</span>';
     // Mostramos municipio (+ provincia si la conocemos) para que el usuario
     // entienda de un vistazo donde vive cada favorita.

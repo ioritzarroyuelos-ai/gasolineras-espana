@@ -590,6 +590,7 @@ var minP = 0, maxP = 0;
 
 // Estado nuevo: posicion del usuario (tras geolocalizar), unidad precio, ahorro.
 var userPos = null;                         // { lat, lng } tras geolocate
+var userPosMarker = null;                   // circleMarker del usuario en el mapa (para removerlo al salir del modo geo)
 var priceUnit = localStorage.getItem('gs_unit') === 'c' ? 'c' : 'e';  // 'e' = €/L, 'c' = c/L
 var currentMedianPrice = null;              // mediana del listado filtrado actual
 var topCheapIds = {};                       // ids de las 3 estaciones mas baratas (para medallas)
@@ -1515,7 +1516,9 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
     if (selOrden.value !== 'cerca' && selOrden.value !== 'dist') selOrden.value = 'cerca';
 
     map.setView([lat, lng], 13);
-    L.circleMarker([lat, lng], {
+    // Limpia cualquier marker previo antes de agregar el nuevo (re-click en geolocate).
+    if (userPosMarker) { try { map.removeLayer(userPosMarker); } catch(_) {} userPosMarker = null; }
+    userPosMarker = L.circleMarker([lat, lng], {
       radius: 11, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.55, weight: 2
     }).addTo(map).bindPopup('<b>&#x1F4CD; Tu ubicacion</b>').openPopup();
 
@@ -1597,18 +1600,46 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
   }
 });
 
+// Sale del "modo geolocalizacion": limpia userPos, oculta el slider de radio,
+// quita el marker del mapa y resetea orden si estaba en 'cerca'/'dist'.
+// Se invoca cuando el usuario cambia manualmente provincia o municipio DESPUES
+// de haber pulsado "Mi ubicacion": la señal clara de que ya no quiere ver
+// resultados relativos a su posicion GPS anterior.
+// NOTA: asignaciones programaticas a selProv.value/selMun.value (las que hace
+// el propio btn-geolocate) NO disparan el evento 'change', asi que este helper
+// solo se ejecuta en interacciones reales del usuario.
+function clearGeolocationMode() {
+  if (!userPos) return; // ya estaba limpio: no-op
+  userPos = null;
+  if (userPosMarker) { try { map.removeLayer(userPosMarker); } catch(_) {} userPosMarker = null; }
+  var rg = document.getElementById('radius-group');
+  if (rg) rg.style.display = 'none';
+  var selOrden = document.getElementById('sel-orden');
+  if (selOrden && (selOrden.value === 'cerca' || selOrden.value === 'dist')) {
+    selOrden.value = 'precio';
+  }
+}
+
 // ---- EVENTOS ----
 // Filosofia UX: los cambios en los filtros NO disparan carga ni render. El
 // usuario decide cuando mirar resultados pulsando "Buscar" (o "Mi ubicacion").
 // Asi evitamos que un usuario indeciso vea la lista bailar mientras ajusta 4
 // controles — y ahorramos llamadas innecesarias al Ministerio.
 document.getElementById('sel-provincia').addEventListener('change', async function(e) {
+  // Cambio manual de provincia = el usuario quiere mirar otra region, asi que
+  // salimos del modo geolocalizacion (si estabamos dentro). Sin esto,
+  // loadStations() descartaba el municipio y ordenaba por distancia a la GPS
+  // vieja — bug reportado.
+  clearGeolocationMode();
   // Unica excepcion: al cambiar provincia hay que refrescar el dropdown de
   // municipios (es un selector dependiente). No carga estaciones.
   await loadMunicipios(e.target.value);
 });
 document.getElementById('sel-municipio').addEventListener('change', function() {
-  // No-op: el render llega con "Buscar".
+  // Mismo razonamiento: si el usuario elige un municipio concreto, quiere ese
+  // municipio — no la provincia entera filtrada por distancia GPS.
+  clearGeolocationMode();
+  // No-op adicional: el render llega con "Buscar".
 });
 document.getElementById('sel-combustible').addEventListener('change', function() {
   // No-op: el render llega con "Buscar".

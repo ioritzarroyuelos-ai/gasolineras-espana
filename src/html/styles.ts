@@ -590,6 +590,88 @@ export function getStyles(): string {
     body.dark .trend-strip-item .dlt-up   { color: #fca5a5; }
     body.dark .trend-strip-close:hover { color: #e2e8f0; }
 
+    /* ---- Banner de onboarding tras la primera favorita ---- */
+    /* Aparece una sola vez dentro del panel de favoritas explicando historico
+       + alertas. Dismissable y con CTA de activar alertas en 1 click. */
+    #fav-tip {
+      display: none;
+      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+      border: 1px solid #86efac;
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 8px 0 10px;
+      font-size: 12px;
+      color: #14532d;
+      line-height: 1.45;
+      position: relative;
+    }
+    #fav-tip.show { display: block; }
+    #fav-tip .fav-tip-title {
+      font-weight: 700;
+      font-size: 12px;
+      color: #065f46;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    #fav-tip ul {
+      margin: 4px 0 0;
+      padding-left: 18px;
+    }
+    #fav-tip li { margin-bottom: 2px; }
+    #fav-tip .fav-tip-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    #fav-tip .fav-tip-cta {
+      background: #16a34a;
+      color: #fff;
+      border: 0;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #fav-tip .fav-tip-cta:hover { background: #15803d; }
+    #fav-tip .fav-tip-dismiss {
+      background: transparent;
+      color: #065f46;
+      border: 1px solid #86efac;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    #fav-tip .fav-tip-dismiss:hover { background: #bbf7d0; }
+    #fav-tip .fav-tip-close {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      background: none;
+      border: 0;
+      color: #065f46;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+    }
+    #fav-tip .fav-tip-close:hover { color: #064e3b; }
+    body.dark #fav-tip {
+      background: linear-gradient(135deg, #064e3b, #065f46);
+      border-color: #10b981;
+      color: #d1fae5;
+    }
+    body.dark #fav-tip .fav-tip-title { color: #a7f3d0; }
+    body.dark #fav-tip .fav-tip-dismiss {
+      color: #d1fae5;
+      border-color: #10b981;
+    }
+    body.dark #fav-tip .fav-tip-dismiss:hover { background: #047857; }
+    body.dark #fav-tip .fav-tip-close { color: #a7f3d0; }
+
     /* ---- Sliders de ahorro / radio ---- */
     .range-group { display:flex; align-items:center; gap:8px; }
     .range-group input[type=range] {

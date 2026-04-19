@@ -1,0 +1,69 @@
+name: Deploy
+
+# Se dispara cuando el workflow CI termina en main. Descarga el dist que CI
+# subio como artefacto y lo despliega a Cloudflare Pages → produccion.
+# Nunca deploya codigo roto: si CI falla (typecheck, tests o build), el
+# condicional del job bloquea el deploy.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  workflow_dispatch:        # permite lanzar manualmente desde la UI de GitHub
+
+permissions:
+  contents: read
+  actions: read             # para leer el artefacto de otro workflow_run
+  deployments: write        # para que la UI muestre el deploy en "Environments"
+
+# Evita deploys concurrentes pisandose. Si entra otro push mientras este corre,
+# el nuevo cancela al antiguo (queremos el ultimo commit en prod, no mezcla).
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Cloudflare Pages · main → produccion
+    runs-on: ubuntu-latest
+    # Solo corre si:
+    #   - viene de workflow_run con CI verde en main (auto), o
+    #   - alguien lo lanza a mano (workflow_dispatch)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.event == 'push')
+    environment:
+      name: production
+      url: https://webapp-3ft.pages.dev
+    steps:
+      - name: Descargar dist del CI run
+        # Usa el SHA del commit que disparo CI. Asi deployamos exactamente el
+        # mismo artefacto validado (no reconstruimos = sin sorpresas).
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-${{ github.event.workflow_run.head_sha || github.sha }}
+          path: dist
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+
+      - name: Sanity check del artefacto
+        run: |
+          test -f dist/_worker.js || { echo "::error::dist/_worker.js no existe"; exit 1; }
+          test -f dist/manifest.json || { echo "::error::dist/manifest.json no existe"; exit 1; }
+          echo "artefacto OK ($(du -sh dist | cut -f1))"
+
+      - name: Deploy a Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: '4'
+          command: pages deploy dist --project-name=webapp --branch=main
+
+      - name: Resumen
+        if: success()
+        run: |
+          echo "### Deploy OK" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.event.workflow_run.head_sha || github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "URL: https://webapp-3ft.pages.dev" >> $GITHUB_STEP_SUMMARY

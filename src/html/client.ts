@@ -660,17 +660,15 @@ var allStations = [];
 var filteredStations = [];
 var minP = 0, maxP = 0;
 
-// Estado nuevo: posicion del usuario (tras geolocalizar), unidad precio, ahorro.
+// Estado nuevo: posicion del usuario (tras geolocalizar), ahorro.
 var userPos = null;                         // { lat, lng } tras geolocate
 var userPosMarker = null;                   // circleMarker del usuario en el mapa (para removerlo al salir del modo geo)
-var priceUnit = localStorage.getItem('gs_unit') === 'c' ? 'c' : 'e';  // 'e' = €/L, 'c' = c/L
 var currentMedianPrice = null;              // mediana del listado filtrado actual
 var topCheapIds = {};                       // ids de las 3 estaciones mas baratas (para medallas)
 
-// Formatea precio segun unidad seleccionada
+// Formatea precio en €/L (unica unidad soportada tras quitar el toggle).
 function fmtPriceUnit(price) {
   if (price == null) return 'N/D';
-  if (priceUnit === 'c') return (price * 100).toFixed(1) + ' c';
   return price.toFixed(3) + ' \u20AC';
 }
 
@@ -1109,10 +1107,7 @@ function buildPopup(s) {
   // Asi evitamos style inline con color calculado en tiempo real sin tener
   // que mantener una tabla de casos especiales en JS.
   var priceDisplay = mainPrice
-    ? (priceUnit === 'c'
-        ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + (mainPrice * 100).toFixed(1) + ' <span class="popup-price-main-unit">c/L</span></strong>'
-        : '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
-      )
+    ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
     : '<span class="popup-price-none">Sin precio</span>';
 
   return '<div class="popup-root">'
@@ -2210,75 +2205,9 @@ window.addEventListener('resize', function() {
   if (map) map.invalidateSize(true);
 });
 
-// ---- GEOCODER (Nominatim) ----
-(function() {
-  var input   = document.getElementById('geocoder-input');
-  var results = document.getElementById('geocoder-results');
-  var debounce;
-
-  // Solo aceptamos lat/lon en formato numerico (+/- digitos con punto decimal).
-  // Si el upstream devolviera otra cosa, descartamos la entrada para que un
-  // eventual XSS via atributo data-* sea imposible.
-  var LATLON_RE = /^-?\d+(?:\.\d+)?$/;
-
-  async function search(q) {
-    if (q.length < 3) { results.classList.remove('show'); return; }
-    try {
-      // Pasa por nuestro proxy: countrycodes=es ya viene forzado en el server,
-      // sanitiza la query y cachea. No mandamos headers custom (innecesarios).
-      var res  = await fetch('/api/geocode/search?q=' + encodeURIComponent(q));
-      var data = res.ok ? await res.json() : [];
-      if (!Array.isArray(data)) data = [];
-
-      if (!data.length) {
-        results.innerHTML = '<div class="geocoder-item geocoder-empty">Sin resultados en Espana</div>';
-        results.classList.add('show');
-        return;
-      }
-
-      results.innerHTML = data.map(function(r) {
-        if (!r || typeof r.lat !== 'string' || typeof r.lon !== 'string') return '';
-        if (!LATLON_RE.test(r.lat) || !LATLON_RE.test(r.lon)) return '';
-        var dn    = typeof r.display_name === 'string' ? r.display_name : '';
-        var place = dn.split(',')[0].trim();
-        var parts = dn.split(',').map(function(p) { return p.trim(); })
-          .filter(function(p) { return p && !['espana','spain'].includes(p.toLowerCase()); }).slice(1, 4);
-        var sub = parts.join(', ');
-        // esc() en atributos tambien: si algun dia aceptamos no-numericos no
-        // queremos una inyeccion facil via data-*.
-        return '<div class="geocoder-item" data-lat="' + esc(r.lat) + '" data-lon="' + esc(r.lon) + '">'
-          + '<strong>' + esc(place) + '</strong>'
-          + (sub ? '<span class="geocoder-sub">' + esc(sub) + '</span>' : '')
-          + '</div>';
-      }).join('');
-      results.classList.add('show');
-    } catch(e) { /* silent */ }
-  }
-
-  input.addEventListener('input', function() {
-    clearTimeout(debounce);
-    debounce = setTimeout(function() { search(input.value.trim()); }, 350);
-  });
-
-  results.addEventListener('click', function(e) {
-    var item = e.target.closest('.geocoder-item');
-    if (!item || !item.dataset.lat) return;
-    var lat = parseFloat(item.dataset.lat);
-    var lon = parseFloat(item.dataset.lon);
-    map.setView([lat, lon], 14);
-    results.classList.remove('show');
-    input.value = '';
-    input.blur();
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('#geocoder-wrap')) results.classList.remove('show');
-  });
-
-  input.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') { results.classList.remove('show'); input.blur(); }
-  });
-})();
+// Geocoder del header retirado por decision de producto (usuarios lo usaban
+// poco frente al filtro por provincia + geolocalizacion). El modal de ruta
+// sigue usando /api/geocode/search internamente para origen/destino.
 
 // ---- MODO OSCURO — siempre arranca en claro, sin persistencia ----
 (function() {
@@ -3270,18 +3199,8 @@ function updateMonthlyWidget() {
   });
 })();
 
-// ---- TOGGLE €/CENTIMOS ----
-(function() {
-  var btn = document.getElementById('btn-unit');
-  function updateLabel() { btn.textContent = priceUnit === 'c' ? 'c/L' : '\u20AC/L'; }
-  updateLabel();
-  btn.addEventListener('click', function() {
-    priceUnit = priceUnit === 'c' ? 'e' : 'c';
-    try { localStorage.setItem('gs_unit', priceUnit); } catch(e) {}
-    updateLabel();
-    if (allStations.length) applyFilters();
-  });
-})();
+// Toggle €/centimos retirado: precios siempre se muestran en €/L para evitar
+// que los usuarios despistados comparen mentalmente 1.449 con 144.9.
 
 // ---- BANNER OFFLINE ----
 (function() {
@@ -3299,7 +3218,6 @@ function updateMonthlyWidget() {
 // /  -> foco en buscador
 // g  -> geolocalizar
 // d  -> dark/light
-// f  -> foco en geocoder (buscar lugar)
 // Los atajos se ignoran si el usuario esta escribiendo en un input/textarea.
 document.addEventListener('keydown', function(e) {
   var tag = (e.target.tagName || '').toLowerCase();
@@ -3315,11 +3233,8 @@ document.addEventListener('keydown', function(e) {
     document.getElementById('btn-geolocate').click();
   } else if (e.key === 'd' || e.key === 'D') {
     document.getElementById('btn-dark').click();
-  } else if (e.key === 'f' || e.key === 'F') {
-    e.preventDefault();
-    document.getElementById('geocoder-input').focus();
   } else if (e.key === '?') {
-    showToast('Atajos: / buscar \u00B7 f lugar \u00B7 g ubicacion \u00B7 d tema', 'info');
+    showToast('Atajos: / buscar \u00B7 g ubicacion \u00B7 d tema', 'info');
   }
 });
 

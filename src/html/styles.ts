@@ -201,31 +201,7 @@ export function getStyles(nonce: string = ''): string {
     #btn-dark { background:none; border:none; cursor:pointer; padding:4px 8px; color:#fff; font-size:15px; flex-shrink:0; border-radius:6px; transition:background 0.15s; }
     #btn-dark:hover { background:rgba(255,255,255,0.15); }
 
-    /* ===== GEOCODER ===== */
-    #geocoder-wrap { position:relative; flex-shrink:1; min-width:0; }
-    #geocoder-input {
-      border:none; outline:none; border-radius:8px; padding:6px 10px 6px 30px;
-      font-size:12px; width:180px; max-width:40vw;
-      background:rgba(255,255,255,0.18); color:#fff;
-      transition:width 0.2s ease, background 0.2s;
-    }
-    #geocoder-input::placeholder { color:rgba(255,255,255,0.55); }
-    #geocoder-input:focus { background:rgba(255,255,255,0.28); width:240px; outline:none; }
-    #geocoder-icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:rgba(255,255,255,0.65); font-size:11px; pointer-events:none; }
-    #geocoder-results {
-      position:absolute; top:calc(100% + 6px); left:0; min-width:260px; z-index:2000;
-      background:#fff; border-radius:10px; box-shadow:0 6px 24px rgba(0,0,0,0.18);
-      overflow:hidden; display:none;
-    }
-    #geocoder-results.show { display:block; }
-    .geocoder-item { padding:9px 13px; font-size:12px; cursor:pointer; color:#374151; border-bottom:1px solid #f1f5f9; line-height:1.4; }
-    .geocoder-item:hover { background:#f0fdf4; color:#15803d; }
-    .geocoder-item:last-child { border-bottom:none; }
-    .geocoder-item strong { display:block; font-size:13px; color:#1e293b; }
-    body.dark #geocoder-results { background:#1e293b; box-shadow:0 6px 24px rgba(0,0,0,0.4); }
-    body.dark .geocoder-item { color:#cbd5e1; border-bottom-color:#334155; }
-    body.dark .geocoder-item:hover { background:#334155; }
-    body.dark .geocoder-item strong { color:#f1f5f9; }
+    /* Geocoder del header retirado: los estilos se limpiaron con el elemento. */
 
     /* ===== LEAFLET OVERRIDES ===== */
     .leaflet-popup-content-wrapper {
@@ -402,17 +378,11 @@ export function getStyles(nonce: string = ''): string {
       .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .header-sub   { display: none; }
       #lbl-count, #lbl-update { display: none !important; }
-      /* El geocoder se encoge para dejar espacio al titulo. Crece al hacer
-         focus (ya esta en las reglas base de #geocoder-input:focus). */
-      #geocoder-input { width: 110px !important; max-width: 28vw !important; font-size: 13px; padding: 6px 10px 6px 28px; }
-      #geocoder-input:focus { width: 60vw !important; max-width: 60vw !important; }
-      #geocoder-wrap { margin-right: 4px !important; }
     }
 
     /* ---- Muy compacto < 380px (iPhone SE, mini) ---- */
     @media (max-width: 379px) {
       .header-title { font-size: 12px; }
-      #geocoder-input { width: 90px !important; max-width: 24vw !important; }
       .header-logo-img { width: 28px !important; height: 28px !important; }
     }
 
@@ -831,14 +801,7 @@ export function getStyles(nonce: string = ''): string {
     body.dark #monthly-widget .mw-title, body.dark #monthly-widget .mw-sub { color:#86efac; }
     body.dark #monthly-widget .mw-cost { color:#bbf7d0; }
 
-    /* ---- Toggle €/céntimos ---- */
-    .unit-toggle {
-      background: rgba(255,255,255,0.18); color:#fff;
-      border: none; border-radius:6px; padding:4px 10px;
-      font-size:11px; font-weight:700; cursor:pointer;
-      transition:background 0.12s;
-    }
-    .unit-toggle:hover { background: rgba(255,255,255,0.28); }
+    /* Toggle €/centimos retirado: sus estilos se eliminaron con el boton. */
 
     /* ---- Popup: botones de accion ---- */
     .popup-actions {

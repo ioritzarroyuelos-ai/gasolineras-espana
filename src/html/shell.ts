@@ -233,12 +233,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     </div>
   </a>
 
-  <div id="geocoder-wrap" class="u-mr-6">
-    <i class="fas fa-search-location" id="geocoder-icon" aria-hidden="true"></i>
-    <input id="geocoder-input" type="text" placeholder="Buscar lugar..." autocomplete="off" spellcheck="false" aria-label="Buscar un lugar por nombre" />
-    <div id="geocoder-results" role="listbox" aria-label="Resultados de busqueda"></div>
-  </div>
-
   <div class="header-actions">
     <span id="lbl-update" class="header-update u-hide"></span>
     <span id="lbl-count" class="header-badge u-hide"></span>
@@ -249,7 +243,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <i class="far fa-star" id="btn-favs-icon" aria-hidden="true"></i>
       <span id="fav-badge" class="fav-badge" hidden>0</span>
     </button>
-    <button id="btn-unit" class="unit-toggle" title="Alternar entre euros y centimos" aria-label="Cambiar unidad de precio">&#x20AC;/L</button>
     <!-- Ruta optima A->B: abre modal para buscar las mas baratas del trayecto -->
     <button id="btn-route" class="btn-header-fav" title="Ruta: mejores gasolineras del trayecto" aria-label="Planificar ruta con gasolineras">
       <i class="fas fa-route" aria-hidden="true"></i>

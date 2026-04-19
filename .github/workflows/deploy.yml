@@ -89,7 +89,7 @@ jobs:
       # Checkout del commit exacto que validó CI. Lo necesitamos para que
       # `wrangler d1 migrations apply` lea migrations/ y wrangler.jsonc.
       - name: Checkout repo @ commit validado
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.ci.outputs.head_sha }}
 

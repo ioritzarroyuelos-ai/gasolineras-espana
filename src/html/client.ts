@@ -523,33 +523,15 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Capa base clara: MapLibre GL con el estilo "Liberty" de OpenFreeMap —
-  // render VECTORIAL tipo Google Maps. Diferencias vs. el antiguo raster
-  // CARTO Voyager:
-  //   - Texto nitido a cualquier zoom / rotacion / inclinacion (no pixel art).
-  //   - Transiciones suaves entre niveles de zoom (no "salto" de tiles).
-  //   - Estilo Liberty es casi pixel-identical a Google Maps (paleta, iconos,
-  //     tipografia Roboto-like, highways rojos / freeways amarillos).
-  //   - Tiles vectoriales = ~1/10 el peso de raster (solo geometria + estilo).
-  //
-  // Usamos el bridge plugin @maplibre/maplibre-gl-leaflet (window.L.maplibreGL)
-  // para montarlo como capa dentro del mapa Leaflet — asi markers / clusters /
-  // popups / polyline de ruta siguen funcionando sin tocar nada mas.
-  //
-  // OpenFreeMap es gratis, sin API key, sin limites, sponsoreado por Cloudflare.
-  // Fallback defensivo: si el plugin MapLibre no carga (CDN down, browser sin
-  // WebGL), caemos a raster CARTO Voyager — el usuario no ve pantalla en blanco.
-  if (typeof L.maplibreGL === 'function') {
-    mapLayers.light = L.maplibreGL({
-      style:       'https://tiles.openfreemap.org/styles/liberty',
-      attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-    });
-  } else {
-    mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-      subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
-    });
-  }
+  // Capa base clara: CARTO Voyager raster. Tiles gratis, sin API key, con buen
+  // contraste y carreteras amarillas visibles. Encima pintamos nuestra propia
+  // capa de etiquetas (labelLayer + SPAIN_LABELS) con los nombres de las CCAA
+  // y capitales en castellano — Voyager trae etiquetas pero no tan jerarquicas
+  // como las que queremos para el scope espanol.
+  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
+  });
   // Modo oscuro con etiquetas — emula el "night mode" de Google Maps: calles
   // iluminadas sobre fondo oscuro, texto claro con buen contraste.
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
@@ -585,10 +567,11 @@ function initMap() {
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
-  // Sistema de etiquetas custom (labelLayer + renderLabels + SPAIN_LABELS) ya
-  // NO se conecta: Voyager trae etiquetas nativas multi-idioma equivalentes a
-  // Google Maps. Las definiciones se conservan mas abajo por si se quiere
-  // volver atras rapido, pero no se invocan.
+  // Capa de etiquetas custom encima del basemap (CCAA + ciudades en castellano).
+  // Re-pintar en zoomend porque cada nivel tiene su propio subset (mn/mx).
+  labelLayer = L.layerGroup().addTo(map);
+  renderLabels();
+  map.on('zoomend', renderLabels);
 
   setTimeout(function() { map.invalidateSize(true); }, 100);
 }
@@ -1879,8 +1862,14 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
   icon.className = 'fas fa-spinner fa-spin';
   btn.disabled   = true;
 
+  // 1. Coordenadas GPS — try/catch aislado para diferenciar fallos de
+  //    geolocalizacion (permiso, GPS, timeout) de fallos posteriores de red o
+  //    carga de datos. Antes todo iba en un unico try/catch y cualquier fallo
+  //    post-GPS (p.ej. /api/geocode/reverse caido, loadStations() lanza) daba
+  //    el mensaje generico "No se pudo obtener la ubicacion (error ?)", que es
+  //    mentira: la ubicacion SI se obtuvo, lo que fallaba era lo demas.
+  var lat, lng;
   try {
-    // 1. Coordenadas GPS
     var pos = await new Promise(function(res, rej) {
       navigator.geolocation.getCurrentPosition(res, rej, {
         enableHighAccuracy: false,
@@ -1888,8 +1877,23 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
         maximumAge: 60000
       });
     });
-    var lat = pos.coords.latitude;
-    var lng = pos.coords.longitude;
+    lat = pos.coords.latitude;
+    lng = pos.coords.longitude;
+  } catch(e) {
+    console.error('[geo] GPS error:', e);
+    if (e && e.code === 1)      showToast('Permiso de ubicacion denegado.\\nActiva la ubicacion en el icono del candado (barra de direcciones).', 'error');
+    else if (e && e.code === 2) showToast('Ubicacion no disponible. Asegurate de tener WiFi o datos activos.', 'error');
+    else if (e && e.code === 3) showToast('Tiempo de espera agotado. Comprueba que el navegador tiene permiso de ubicacion e intentalo de nuevo.', 'error');
+    else                        showToast('No se pudo obtener la ubicacion. Intentalo de nuevo.', 'error');
+    icon.className = 'fas fa-crosshairs';
+    btn.disabled   = false;
+    return;
+  }
+
+  // A partir de aqui la ubicacion SI existe. Cualquier fallo en reverse
+  // geocode / loadMunicipios / loadStations se reporta con un mensaje
+  // distinto que no culpa falsamente al GPS.
+  try {
     userPos = { lat: lat, lng: lng };
     // Mostrar slider de radio y cambiar orden automaticamente a "cerca"
     document.getElementById('radius-group').style.display = 'block';
@@ -1970,11 +1974,8 @@ document.getElementById('btn-geolocate').addEventListener('click', async functio
     await loadStations();
 
   } catch(e) {
-    console.error('[geo] error:', e);
-    if (e.code === 1)      showToast('Permiso de ubicacion denegado.\\nActiva la ubicacion en el icono del candado (barra de direcciones).', 'error');
-    else if (e.code === 2) showToast('Ubicacion no disponible. Asegurate de tener WiFi o datos activos.', 'error');
-    else if (e.code === 3) showToast('Tiempo de espera agotado. Comprueba que el navegador tiene permiso de ubicacion e intentalo de nuevo.', 'error');
-    else                   showToast('No se pudo obtener la ubicacion (error ' + (e.code || '?') + '). Intentalo de nuevo.', 'error');
+    console.error('[geo] post-GPS error:', e);
+    showToast('Tu ubicacion se obtuvo, pero fallo la carga de gasolineras. Comprueba tu conexion e intentalo de nuevo.', 'error');
   } finally {
     icon.className = 'fas fa-crosshairs';
     btn.disabled   = false;

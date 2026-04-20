@@ -168,7 +168,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <link rel="preconnect" href="https://b.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossorigin />
-  <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
   <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="dns-prefetch" href="https://nominatim.openstreetmap.org" />
@@ -200,28 +199,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <script defer
           src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"
           integrity="sha384-RLIyj5q1b5XJTn0tqUhucRZe40nFTocRP91R/NkRJHwAe4XxnTV77FXy/vGLiec2"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
-
-  <!-- MapLibre GL — render vectorial estilo Google Maps. Se usa via el bridge
-       plugin maplibre-gl-leaflet (L.maplibreGL) como capa dentro de Leaflet,
-       asi todos los markers / clusters / popups existentes siguen funcionando.
-       Orden de carga garantizado por 'defer': leaflet.js (arriba) → maplibre-gl
-       → leaflet-maplibre-gl. CSS de MapLibre lleva reglas para .maplibregl-*
-       usadas por los controles internos y canvas de fondo. -->
-  <link rel="stylesheet"
-        href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
-        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
-  <script defer
-          src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
-          integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
-  <script defer
-          src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"
-          integrity="sha384-4CB9Vtol9LN6lGgBCvmPLbUEZwilrqIvPieSRurgAXAB7FVJaLS9n8WyAIA5wjQ+"
           crossorigin="anonymous"
           referrerpolicy="no-referrer"></script>
 

@@ -544,16 +544,18 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <span class="range-val" id="lbl-tank-modal">50 L</span>
         </div>
       </div>
-      <!-- Autonomia calculada automaticamente a partir de consumo + deposito.
-           Read-only: es el dato que usamos en el planificador de rutas para
-           saber cada cuantos km hay que repostar. -->
+      <!-- Autonomia: se deriva de consumo + deposito (deposito / consumo * 100)
+           pero el usuario puede EDITARLA directamente. Cuando lo hace, el JS
+           re-deriva el consumo para respetar la autonomia pedida, manteniendo
+           el deposito fijo (la mayoria de gente conoce bien la capacidad del
+           deposito pero solo aproxima su consumo real). -->
       <div class="form-group" id="profile-autonomy-box">
-        <label class="form-label">&#x1F6E3;&#xFE0F; Autonom&iacute;a con dep&oacute;sito lleno</label>
+        <label class="form-label" for="in-autonomy">&#x1F6E3;&#xFE0F; Autonom&iacute;a con dep&oacute;sito lleno</label>
         <div class="profile-autonomy">
-          <span id="profile-autonomy-val">769</span>
+          <input id="in-autonomy" class="profile-autonomy-input" type="number" min="50" max="2000" step="10" value="769" inputmode="numeric" aria-label="Autonom&iacute;a en kil&oacute;metros" />
           <span class="profile-autonomy-unit">km</span>
         </div>
-        <p class="form-help">Se calcula autom&aacute;ticamente: dep&oacute;sito &divide; consumo &times; 100. Es la distancia m&aacute;xima que puedes recorrer sin repostar y la usamos para planificar tus rutas.</p>
+        <p class="form-help">Por defecto la calculamos con dep&oacute;sito &divide; consumo &times; 100. Si prefieres otro valor (por ejemplo, porque tu coche consume m&aacute;s en autopista), camb&iacute;alo aqu&iacute; y ajustaremos el consumo para respetar tu autonom&iacute;a. La usamos para planificar tus rutas.</p>
       </div>
     </div>
     <div class="modal-footer">

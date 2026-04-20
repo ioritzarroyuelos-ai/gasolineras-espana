@@ -660,25 +660,43 @@ export function getStyles(nonce: string = ''): string {
     .form-help { font-size:11px; color:#64748b; margin-top:4px; }
     body.dark .form-help { color:#94a3b8; }
 
-    /* ---- Autonomia calculada en el modal de perfil ----
-       Numero grande + unidad pequena. Visualmente destaca porque es el
-       dato clave que el planificador de rutas usa: el usuario entiende
-       que sus ajustes de consumo/deposito determinan este numero. */
+    /* ---- Autonomia EDITABLE en el modal de perfil ----
+       Input numerico grande + unidad pequena. Visualmente destaca porque es
+       el dato clave que el planificador de rutas usa. Al ser editable, el
+       usuario puede ajustar la autonomia real de su coche y el JS re-deriva
+       el consumo para mantener la ecuacion coherente. */
     .profile-autonomy {
       display: inline-flex; align-items: baseline; gap: 6px;
       padding: 6px 14px; border-radius: 10px;
       background: linear-gradient(135deg, #ecfdf5, #d1fae5);
       border: 1px solid #bbf7d0;
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    .profile-autonomy #profile-autonomy-val {
+    .profile-autonomy:focus-within {
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    }
+    .profile-autonomy-input {
+      /* Hereda el look del numero grande pero sigue siendo un <input>. */
       font-size: 28px; font-weight: 800; color: #065f46; letter-spacing: -0.02em;
+      background: transparent; border: none; outline: none; padding: 0;
+      width: 4ch; text-align: right; font-family: inherit;
+      -moz-appearance: textfield;
+    }
+    .profile-autonomy-input::-webkit-outer-spin-button,
+    .profile-autonomy-input::-webkit-inner-spin-button {
+      -webkit-appearance: none; margin: 0;
     }
     .profile-autonomy-unit { font-size: 13px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.04em; }
     body.dark .profile-autonomy {
       background: linear-gradient(135deg, #064e3b, #065f46);
       border-color: #166534;
     }
-    body.dark .profile-autonomy #profile-autonomy-val { color: #6ee7b7; }
+    body.dark .profile-autonomy:focus-within {
+      border-color: #10b981;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
+    }
+    body.dark .profile-autonomy-input { color: #6ee7b7; }
     body.dark .profile-autonomy-unit { color: #a7f3d0; }
 
     /* ---- Bloque "Tu coche (segun perfil)" en modal ruta ----

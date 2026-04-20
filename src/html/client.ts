@@ -3086,20 +3086,25 @@ function updateMonthlyWidget() {
   var lblCons   = document.getElementById('lbl-consumo');
   var inTankM   = document.getElementById('in-tank-modal');
   var lblTankM  = document.getElementById('lbl-tank-modal');
-  var autoVal   = document.getElementById('profile-autonomy-val');
+  var inAuto    = document.getElementById('in-autonomy');
 
   var tmpProfile = { fuel: '', km: 0, consumo: 6.5, tank: 50, strictFuel: true };
 
-  // Autonomia = deposito (L) / consumo (L/100km) * 100 km. Es el dato clave
-  // del planificador de rutas, por eso lo mostramos live en el modal de
-  // perfil: asi el usuario entiende que sus numeros determinan cuando hay
-  // que repostar.
-  function updateAutonomyHint() {
-    if (!autoVal) return;
+  // Bounds del slider de consumo: si el usuario pide una autonomia que
+  // obligaria a un consumo fuera de este rango, clampamos el consumo y
+  // devolvemos la autonomia que SI es posible con ese deposito.
+  var CONS_MIN = 3, CONS_MAX = 15;
+
+  // Autonomia = deposito (L) / consumo (L/100km) * 100 km. La MOSTRAMOS
+  // derivada de tank/cons cuando el usuario ajusta esos sliders, pero
+  // tambien dejamos al usuario EDITAR el campo para que pueda declarar la
+  // autonomia real de su coche sin pelearse con decimales de consumo.
+  function syncAutonomyFromTankCons() {
+    if (!inAuto) return;
     var cons = parseFloat(tmpProfile.consumo);
     var tank = parseFloat(tmpProfile.tank);
-    if (!(cons > 0) || !(tank > 0)) { autoVal.textContent = '—'; return; }
-    autoVal.textContent = String(Math.round((tank / cons) * 100));
+    if (!(cons > 0) || !(tank > 0)) { inAuto.value = ''; return; }
+    inAuto.value = String(Math.round((tank / cons) * 100));
   }
 
   function openModal() {
@@ -3123,7 +3128,7 @@ function updateMonthlyWidget() {
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
     inTankM.value = tmpProfile.tank;
     lblTankM.textContent = tmpProfile.tank + ' L';
-    updateAutonomyHint();
+    syncAutonomyFromTankCons();
     modal.classList.add('show');
   }
   function closeModal() { modal.classList.remove('show'); }
@@ -3149,13 +3154,49 @@ function updateMonthlyWidget() {
   inCons.addEventListener('input', function() {
     tmpProfile.consumo = parseFloat(inCons.value);
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
-    updateAutonomyHint();
+    syncAutonomyFromTankCons();
   });
   inTankM.addEventListener('input', function() {
     tmpProfile.tank = parseInt(inTankM.value, 10);
     lblTankM.textContent = tmpProfile.tank + ' L';
-    updateAutonomyHint();
+    syncAutonomyFromTankCons();
   });
+
+  // El usuario edita la autonomia directamente. Re-derivamos el consumo
+  // manteniendo el deposito: consumo = tank*100 / autonomia. Si ese consumo
+  // cae fuera del rango del slider (3-15 L/100km), clampamos y re-ajustamos
+  // la autonomia al valor que si es posible con ese deposito — asi el estado
+  // tank/cons/autonomia es siempre coherente entre si (misma ecuacion).
+  //
+  // El listener se dispara en 'change' (no 'input') para no pelearse con
+  // cada tecla: los numeros de 3 cifras producen estados intermedios raros
+  // (ej. "7" mientras el usuario esta escribiendo "769") que reventarian
+  // el clamp. 'change' se dispara al perder foco o pulsar Enter.
+  if (inAuto) {
+    inAuto.addEventListener('change', function() {
+      var km = parseInt(inAuto.value, 10);
+      var tank = parseFloat(tmpProfile.tank);
+      if (!isFinite(km) || km <= 0 || !(tank > 0)) {
+        syncAutonomyFromTankCons();
+        return;
+      }
+      // Clampa la autonomia a [50, 2000] como hace el input.
+      if (km < 50) km = 50;
+      if (km > 2000) km = 2000;
+      var newCons = (tank * 100) / km;
+      if (newCons < CONS_MIN) newCons = CONS_MIN;
+      if (newCons > CONS_MAX) newCons = CONS_MAX;
+      // Redondeamos a 0.5 para encajar en el step del slider (step=0.5).
+      newCons = Math.round(newCons * 2) / 2;
+      tmpProfile.consumo = newCons;
+      inCons.value = newCons;
+      lblCons.textContent = newCons.toString().replace('.', ',') + ' L';
+      // La autonomia FINAL puede diferir de la pedida si tuvimos que clampar
+      // el consumo: re-derivamos para que el campo muestre lo que de verdad
+      // se va a guardar y se va a usar en rutas.
+      syncAutonomyFromTankCons();
+    });
+  }
 
   document.getElementById('btn-profile-save').addEventListener('click', function() {
     setProfile(tmpProfile);

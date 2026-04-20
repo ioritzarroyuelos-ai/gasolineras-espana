@@ -523,17 +523,33 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Tiles CartoDB Voyager CON etiquetas en idioma local — el catalogo raster
-  // gratuito mas parecido a Google Maps: paleta crema/beige, carreteras claras,
-  // agua azul suave, POIs iconificados, y rotulos multi-idioma nativos (espanol
-  // en Espana, frances en Francia, etc. — OSM local names).
+  // Capa base clara: MapLibre GL con el estilo "Liberty" de OpenFreeMap —
+  // render VECTORIAL tipo Google Maps. Diferencias vs. el antiguo raster
+  // CARTO Voyager:
+  //   - Texto nitido a cualquier zoom / rotacion / inclinacion (no pixel art).
+  //   - Transiciones suaves entre niveles de zoom (no "salto" de tiles).
+  //   - Estilo Liberty es casi pixel-identical a Google Maps (paleta, iconos,
+  //     tipografia Roboto-like, highways rojos / freeways amarillos).
+  //   - Tiles vectoriales = ~1/10 el peso de raster (solo geometria + estilo).
   //
-  // noWrap=true evita que los tiles se repitan horizontalmente cuando el
-  // usuario intenta hacer zoom-out (sin esto, veria varios planetas).
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
-  });
+  // Usamos el bridge plugin @maplibre/maplibre-gl-leaflet (window.L.maplibreGL)
+  // para montarlo como capa dentro del mapa Leaflet — asi markers / clusters /
+  // popups / polyline de ruta siguen funcionando sin tocar nada mas.
+  //
+  // OpenFreeMap es gratis, sin API key, sin limites, sponsoreado por Cloudflare.
+  // Fallback defensivo: si el plugin MapLibre no carga (CDN down, browser sin
+  // WebGL), caemos a raster CARTO Voyager — el usuario no ve pantalla en blanco.
+  if (typeof L.maplibreGL === 'function') {
+    mapLayers.light = L.maplibreGL({
+      style:       'https://tiles.openfreemap.org/styles/liberty',
+      attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    });
+  } else {
+    mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
+    });
+  }
   // Modo oscuro con etiquetas — emula el "night mode" de Google Maps: calles
   // iluminadas sobre fondo oscuro, texto claro con buen contraste.
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {

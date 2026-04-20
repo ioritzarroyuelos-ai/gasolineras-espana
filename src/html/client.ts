@@ -523,19 +523,21 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Capa base clara: CARTO Voyager completo — trae todas las etiquetas nativas
-  // de OSM (CCAA, provincias, municipios, barrios, calles a zoom alto). Es lo
-  // que nos permite ver cualquier pueblo sin mantener nosotros un dataset de
-  // ~8.000 municipios. Contrapartida: algunas CCAA del norte salen en ingles
-  // ("VALENCIAN COMMUNITY", "CASTILE AND LEON") por como OSM etiqueta el nivel
-  // 4 administrativo. No pintamos labels custom encima para evitar duplicados.
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  // Capa base clara: arrancamos en raster "voyager_nolabels" — basemap sin
+  // toponimia. Las etiquetas las pintamos nosotros (SPAIN_LABELS) en castellano
+  // puro mientras carga el upgrade vectorial. Si MapLibre GL + Liberty carga
+  // bien (applyLibertyLanguage), reemplazamos esta capa por un vector tile
+  // layer con text-field parcheado a name:es — entonces obtenemos todos los
+  // municipios/calles/POIs de OSM, en castellano cuando existe el tag.
+  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  // Modo oscuro con etiquetas ('dark_all' = equivalente nocturno de Voyager
-  // normal, con toda la toponimia).
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
+  // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
+  // principales) en castellano: suficiente para orientarse en modo nocturno y
+  // mantenemos coherencia con "todo en castellano".
+  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
@@ -560,7 +562,7 @@ function initMap() {
   // Controles estilo Google Maps: zoom abajo-derecha, escala abajo-izquierda.
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(map);
-  L.control.layers(
+  mapLayers.__layersControl = L.control.layers(
     {
       '&#x1F5FA;&#xFE0F; Mapa':            mapLayers.light,
       '&#x1F6F0;&#xFE0F; Sat&eacute;lite': mapLayers.satellite
@@ -568,11 +570,116 @@ function initMap() {
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
-  // Sistema labelLayer + SPAIN_LABELS desactivado: las etiquetas nativas del
-  // basemap (Voyager / dark_all) ya cubren todos los municipios. Dejamos el
-  // codigo definido por si en el futuro queremos volver a labels custom.
+  // Capa de etiquetas propias — CCAA + ciudades principales en castellano.
+  // Funciona como FALLBACK garantizado: mientras MapLibre GL carga (async) y
+  // si falla por cualquier motivo (CDN, sin WebGL, CSP, etc.), el usuario ve
+  // al menos la toponimia basica en castellano encima del basemap sin rotulos.
+  // Cuando MapLibre GL + Liberty se aplica correctamente (applyLibertyLanguage
+  // mas abajo), quitamos esta capa porque el vector tile ya trae TODA la
+  // toponimia OSM con name:es.
+  labelLayer = L.layerGroup().addTo(map);
+  renderLabels();
+  map.on('zoomend', renderLabels);
+
+  // Upgrade async a tiles vectoriales en castellano: fetcheamos el style
+  // Liberty de OpenFreeMap, parcheamos todas las expresiones text-field para
+  // que prioricen name:es con fallback a name:latin/name, y reemplazamos la
+  // capa base clara. Si algo falla, nos quedamos en el raster + SPAIN_LABELS.
+  applyLibertyLanguage();
 
   setTimeout(function() { map.invalidateSize(true); }, 100);
+}
+
+// Fetch + patch + apply del style Liberty de OpenFreeMap.
+// Problema: los raster tiles (CARTO Voyager / dark_all) muestran CCAA y paises
+// fronterizos (Portugal, Francia, Marruecos...) en sus nombres OSM por defecto,
+// que a menudo estan en ingles ("Seville", "CASTILE AND LEON", "Lisbon",
+// "Algiers"). Los tiles vectoriales de OpenFreeMap SI traen campos
+// multi-idioma (name:es, name:fr, name:de...) y MapLibre GL evalua una
+// expresion [get, "name:es"] para decidir que dibujar.
+//
+// Estrategia: fetcheamos el style.json, recorremos recursivamente cada
+// expresion text-field, y cambiamos ["get", "name:latin"] / ["get", "name"] por
+// un coalesce: primero intenta name:es, luego name:latin, luego name.
+// Resultado: toponimia OSM completa en castellano cuando existe el tag.
+async function applyLibertyLanguage() {
+  // Esperamos a que los scripts MapLibre carguen (son defer, asi que pueden
+  // no estar listos cuando initMap() corre).
+  var tries = 0;
+  while ((typeof L.maplibreGL !== 'function' || typeof window.maplibregl === 'undefined') && tries < 40) {
+    await new Promise(function(r) { setTimeout(r, 50); });
+    tries++;
+  }
+  if (typeof L.maplibreGL !== 'function' || typeof window.maplibregl === 'undefined') return;
+  try {
+    var resp = await fetch('https://tiles.openfreemap.org/styles/liberty', { credentials: 'omit' });
+    if (!resp.ok) return;
+    var style = await resp.json();
+
+    // Patch recursivo: cualquier expresion ["get", "name"] o ["get", "name:latin"]
+    // se reescribe como ["coalesce", ["get", "name:es"], <original>]. Eso
+    // garantiza que si un objeto OSM no tiene name:es (algun pueblo pequeno
+    // fuera de Espana), cae al nombre original — nunca pintamos vacio.
+    function patchGet(expr) {
+      if (Array.isArray(expr)) {
+        if (expr[0] === 'get' && (expr[1] === 'name' || expr[1] === 'name:latin')) {
+          return ['coalesce', ['get', 'name:es'], expr];
+        }
+        return expr.map(patchGet);
+      }
+      if (expr && typeof expr === 'object') {
+        var out = {};
+        for (var k in expr) if (Object.prototype.hasOwnProperty.call(expr, k)) out[k] = patchGet(expr[k]);
+        return out;
+      }
+      return expr;
+    }
+    if (Array.isArray(style.layers)) {
+      for (var i = 0; i < style.layers.length; i++) {
+        var layer = style.layers[i];
+        if (!layer || !layer.layout) continue;
+        if (layer.layout['text-field']) {
+          layer.layout['text-field'] = patchGet(layer.layout['text-field']);
+        }
+      }
+    }
+
+    // Montamos el vector tile layer y lo swap-eamos por el raster clar.
+    var libertyLayer = L.maplibreGL({
+      style: style,
+      attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    });
+    var wasLight = map.hasLayer(mapLayers.light);
+    if (wasLight) map.removeLayer(mapLayers.light);
+    mapLayers.light = libertyLayer;
+    if (wasLight) libertyLayer.addTo(map);
+
+    // Liberty ya trae toda la toponimia en castellano (via patch name:es), asi
+    // que en modo claro la capa de SPAIN_LABELS solo duplicaria texto. La
+    // desactivamos cuando el light esta activo — el zoomend handler no pintara
+    // nada si labelLayer es null.
+    if (labelLayer && wasLight) {
+      map.removeLayer(labelLayer);
+      labelLayer = null;
+      map.off('zoomend', renderLabels);
+    }
+
+    // Refresh del control de capas: la referencia en el switcher sigue
+    // apuntando al layer viejo y ya no lo re-anade. Quitamos el antiguo y
+    // anadimos uno nuevo con la referencia actualizada.
+    if (mapLayers.__layersControl) {
+      try { map.removeControl(mapLayers.__layersControl); } catch (e) {}
+    }
+    mapLayers.__layersControl = L.control.layers(
+      {
+        '\u{1F5FA}\u{FE0F} Mapa':            mapLayers.light,
+        '\u{1F6F0}\u{FE0F} Sat\u00e9lite':   mapLayers.satellite
+      },
+      {}, { position: 'topright', collapsed: false }
+    ).addTo(map);
+  } catch (e) {
+    // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
+  }
 }
 
 // ---- ETIQUETAS EN CASTELLANO ----
@@ -2264,6 +2371,27 @@ window.addEventListener('resize', function() {
         var isDark = document.body.classList.contains('dark');
         if (isDark) { map.removeLayer(mapLayers.light); mapLayers.dark.addTo(map); }
         else        { map.removeLayer(mapLayers.dark);  mapLayers.light.addTo(map); }
+        // Dark usa raster sin etiquetas — necesita SPAIN_LABELS encima. Light
+        // puede ser MapLibre Liberty (que ya trae toponimia completa en
+        // castellano) o raster voyager_nolabels; en el segundo caso tambien
+        // hacen falta labels custom. Criterio: si mapLayers.light es un
+        // TileLayer (raster), mostramos labels en ambos modos; si es MapLibre
+        // (vector), solo en modo dark.
+        var lightIsRaster = mapLayers.light instanceof L.TileLayer;
+        var needLabels = isDark || lightIsRaster;
+        if (needLabels) {
+          if (!labelLayer) {
+            labelLayer = L.layerGroup().addTo(map);
+            map.on('zoomend', renderLabels);
+          } else if (!map.hasLayer(labelLayer)) {
+            labelLayer.addTo(map);
+          }
+          renderLabels();
+        } else {
+          if (labelLayer && map.hasLayer(labelLayer)) {
+            map.removeLayer(labelLayer);
+          }
+        }
       }
     }
   });

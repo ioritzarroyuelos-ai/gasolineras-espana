@@ -378,15 +378,22 @@ function buildCsp(nonce: string, turnstile = false): string {
     frameSrc.push('https://challenges.cloudflare.com')
     connectSrc.push('https://challenges.cloudflare.com')
   }
+  // tiles.openfreemap.org sirve vector tiles, sprites y glyphs PBF para el
+  // estilo Liberty de MapLibre GL (render vectorial con toponimia name:es).
+  // Necesita estar en connect-src (fetch del style.json + /planet + /sprites/*)
+  // y en font-src (glyphs .pbf). Los tiles raster caen bajo img-src 'https:'.
+  // worker-src necesita blob: porque MapLibre crea Web Workers a partir de
+  // blob URLs (optimizacion de cold start del motor vectorial).
+  connectSrc.push('https://tiles.openfreemap.org')
   return [
     "default-src 'self'",
     "script-src " + scriptSrc.join(' '),
     "style-src " + styleSrc.join(' '),
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data: https://cdn.jsdelivr.net",
+    "font-src 'self' data: https://cdn.jsdelivr.net https://tiles.openfreemap.org",
     "connect-src " + connectSrc.join(' '),
     "frame-src " + frameSrc.join(' '),
-    "worker-src 'self'",
+    "worker-src 'self' blob:",
     "manifest-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",

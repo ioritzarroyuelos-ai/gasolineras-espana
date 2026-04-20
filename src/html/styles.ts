@@ -688,6 +688,17 @@ export function getStyles(nonce: string = ''): string {
       -webkit-appearance: none; margin: 0;
     }
     .profile-autonomy-unit { font-size: 13px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.04em; }
+    /* Lapiz a la derecha para dejar claro que el numero se puede editar.
+       Sin el icono, el input numerico grande parece un valor estatico —
+       el lapiz + cursor texto del input son la senal de "editame". */
+    .profile-autonomy-pencil {
+      font-size: 14px; opacity: 0.7; margin-left: 4px;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .profile-autonomy:hover .profile-autonomy-pencil,
+    .profile-autonomy:focus-within .profile-autonomy-pencil {
+      opacity: 1; transform: scale(1.15);
+    }
     body.dark .profile-autonomy {
       background: linear-gradient(135deg, #064e3b, #065f46);
       border-color: #166534;

@@ -3088,32 +3088,33 @@ function updateMonthlyWidget() {
   var lblTankM  = document.getElementById('lbl-tank-modal');
   var inAuto    = document.getElementById('in-autonomy');
 
-  var tmpProfile = { fuel: '', km: 0, consumo: 6.5, tank: 50, strictFuel: true };
+  // Autonomia es un campo INDEPENDIENTE. tmpProfile.autonomy se setea una
+  // vez (como default al abrir el modal: deposito/consumo*100) y a partir
+  // de ahi solo cambia si el usuario lo edita. Cambiar deposito o consumo
+  // NO lo mueve — el usuario ya declaro un valor fijo.
+  var tmpProfile = { fuel: '', km: 0, consumo: 6.5, tank: 50, autonomy: 0, strictFuel: true };
 
-  // Bounds del slider de consumo: si el usuario pide una autonomia que
-  // obligaria a un consumo fuera de este rango, clampamos el consumo y
-  // devolvemos la autonomia que SI es posible con ese deposito.
-  var CONS_MIN = 3, CONS_MAX = 15;
-
-  // Autonomia = deposito (L) / consumo (L/100km) * 100 km. La MOSTRAMOS
-  // derivada de tank/cons cuando el usuario ajusta esos sliders, pero
-  // tambien dejamos al usuario EDITAR el campo para que pueda declarar la
-  // autonomia real de su coche sin pelearse con decimales de consumo.
-  function syncAutonomyFromTankCons() {
-    if (!inAuto) return;
-    var cons = parseFloat(tmpProfile.consumo);
-    var tank = parseFloat(tmpProfile.tank);
-    if (!(cons > 0) || !(tank > 0)) { inAuto.value = ''; return; }
-    inAuto.value = String(Math.round((tank / cons) * 100));
+  // Autonomia por defecto: si el perfil aun no tiene autonomy guardada, la
+  // derivamos de tank+cons para dar un valor de partida razonable. Si ya
+  // existe (el usuario la guardo antes), la respetamos tal cual.
+  function deriveDefaultAutonomy(cur) {
+    var t = (typeof cur.tank === 'number' && cur.tank > 0) ? cur.tank : 50;
+    var c = (typeof cur.consumo === 'number' && cur.consumo > 0) ? cur.consumo : 6.5;
+    return Math.round((t / c) * 100);
   }
 
   function openModal() {
     var cur = getProfile() || {};
+    // Autonomia: si el perfil ya tiene un valor guardado (>0), lo usamos;
+    // si no, la derivamos de tank/cons UNA SOLA VEZ como default inicial.
+    // A partir de ese momento vive independiente.
+    var savedAuto = (typeof cur.autonomy === 'number' && cur.autonomy > 0) ? cur.autonomy : 0;
     tmpProfile = {
       fuel: cur.fuel || '',
       km: cur.km || 0,
       consumo: cur.consumo || 6.5,
       tank: cur.tank || 50,
+      autonomy: savedAuto || deriveDefaultAutonomy(cur),
       strictFuel: cur.strictFuel !== false
     };
     Array.prototype.forEach.call(chipsFuel.querySelectorAll('.chip'), function(c) {
@@ -3128,7 +3129,7 @@ function updateMonthlyWidget() {
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
     inTankM.value = tmpProfile.tank;
     lblTankM.textContent = tmpProfile.tank + ' L';
-    syncAutonomyFromTankCons();
+    if (inAuto) inAuto.value = String(tmpProfile.autonomy);
     modal.classList.add('show');
   }
   function closeModal() { modal.classList.remove('show'); }
@@ -3151,50 +3152,34 @@ function updateMonthlyWidget() {
       x.setAttribute('aria-checked', String(sel));
     });
   });
+  // Los sliders de consumo y deposito ya NO tocan la autonomia: son campos
+  // independientes. La autonomia es un dato que el usuario declara (y que
+  // domina en el planificador de rutas).
   inCons.addEventListener('input', function() {
     tmpProfile.consumo = parseFloat(inCons.value);
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
-    syncAutonomyFromTankCons();
   });
   inTankM.addEventListener('input', function() {
     tmpProfile.tank = parseInt(inTankM.value, 10);
     lblTankM.textContent = tmpProfile.tank + ' L';
-    syncAutonomyFromTankCons();
   });
 
-  // El usuario edita la autonomia directamente. Re-derivamos el consumo
-  // manteniendo el deposito: consumo = tank*100 / autonomia. Si ese consumo
-  // cae fuera del rango del slider (3-15 L/100km), clampamos y re-ajustamos
-  // la autonomia al valor que si es posible con ese deposito — asi el estado
-  // tank/cons/autonomia es siempre coherente entre si (misma ecuacion).
-  //
-  // El listener se dispara en 'change' (no 'input') para no pelearse con
-  // cada tecla: los numeros de 3 cifras producen estados intermedios raros
-  // (ej. "7" mientras el usuario esta escribiendo "769") que reventarian
-  // el clamp. 'change' se dispara al perder foco o pulsar Enter.
+  // Autonomia independiente: el usuario la fija y se queda fija. Solo
+  // validamos el rango [50, 2000] para evitar valores absurdos (y para
+  // que el planificador de rutas no se rompa). Listener en 'change' (no
+  // 'input') para no pelearse con cada tecla intermedia.
   if (inAuto) {
     inAuto.addEventListener('change', function() {
       var km = parseInt(inAuto.value, 10);
-      var tank = parseFloat(tmpProfile.tank);
-      if (!isFinite(km) || km <= 0 || !(tank > 0)) {
-        syncAutonomyFromTankCons();
+      if (!isFinite(km) || km <= 0) {
+        // Valor invalido: restauramos lo que habia.
+        inAuto.value = String(tmpProfile.autonomy);
         return;
       }
-      // Clampa la autonomia a [50, 2000] como hace el input.
       if (km < 50) km = 50;
       if (km > 2000) km = 2000;
-      var newCons = (tank * 100) / km;
-      if (newCons < CONS_MIN) newCons = CONS_MIN;
-      if (newCons > CONS_MAX) newCons = CONS_MAX;
-      // Redondeamos a 0.5 para encajar en el step del slider (step=0.5).
-      newCons = Math.round(newCons * 2) / 2;
-      tmpProfile.consumo = newCons;
-      inCons.value = newCons;
-      lblCons.textContent = newCons.toString().replace('.', ',') + ' L';
-      // La autonomia FINAL puede diferir de la pedida si tuvimos que clampar
-      // el consumo: re-derivamos para que el campo muestre lo que de verdad
-      // se va a guardar y se va a usar en rutas.
-      syncAutonomyFromTankCons();
+      tmpProfile.autonomy = km;
+      inAuto.value = String(km);
     });
   }
 
@@ -3778,9 +3763,12 @@ function exitRouteMode() {
   var fromSel = null;
   var toSel   = null;
 
-  // Lee tank+consumo del perfil local. Devuelve null si falta alguno de los
-  // dos (ese caso lo gestiona openRoute() ensenando un CTA para configurar
-  // el perfil en lugar del formulario normal).
+  // Lee tank+consumo+autonomia del perfil local. Devuelve null si falta
+  // cualquiera de los tres — ese caso lo gestiona openRoute() ensenando un
+  // CTA para configurar el perfil. La autonomia es el valor que el usuario
+  // declaro explicitamente (prioritario); si no existe en el perfil (perfiles
+  // antiguos), caemos a la derivada tank/cons*100. tank y cons se leen igual
+  // para mostrarlos en el bloque informativo del modal.
   function readProfileVehicle() {
     var p = getProfile() || {};
     var tank = (typeof p.tank === 'number' && p.tank > 0) ? p.tank : null;
@@ -3788,7 +3776,10 @@ function exitRouteMode() {
     if (typeof p.consumo === 'number' && p.consumo > 0) cons = p.consumo;
     else if (typeof p.consumoL100km === 'number' && p.consumoL100km > 0) cons = p.consumoL100km;
     if (!tank || !cons) return null;
-    return { tank: tank, consumo: cons, autonomyKm: Math.round((tank / cons) * 100) };
+    var auto = (typeof p.autonomy === 'number' && p.autonomy > 0)
+               ? p.autonomy
+               : Math.round((tank / cons) * 100);
+    return { tank: tank, consumo: cons, autonomyKm: auto };
   }
 
   // Refresca el bloque "Tu coche (segun perfil)" con los valores actuales.
@@ -4252,13 +4243,15 @@ function exitRouteMode() {
         return;
       }
 
-      // 4. Planifica paradas usando los datos REALES del perfil: tank y
-      // consumo se leen en readProfileVehicle() al inicio de doSearch, y
-      // autonomyKm = (tank / consumo) * 100 es la autonomia maxima del
-      // coche. planFuelStops asume que al repostar se llena a esta misma
-      // autonomia (simplificacion razonable para "planifica mi ruta").
+      // 4. Planifica paradas. El dato autoritativo es la AUTONOMIA declarada
+      // por el usuario en el perfil (vehicle.autonomyKm). tank y consumo
+      // son secundarios: planFuelStops internamente calcula
+      // maxAutonomyKm = (tank/cons)*100, asi que derivamos un consumo
+      // EFECTIVO que satisface la ecuacion con el tank del perfil. Esto
+      // garantiza que el planificador respeta la autonomia del usuario
+      // independientemente de lo que diga el slider de consumo.
       var tankL = vehicle.tank;
-      var consumoL100km = vehicle.consumo;
+      var consumoL100km = (vehicle.tank * 100) / autonomyKm;
 
       // Diagnostico: imprime los parametros usados por el planificador para que
       // sea facil verificar que tank/consumo/autonomia llegan con valores
@@ -4269,6 +4262,7 @@ function exitRouteMode() {
           autonomyKm: autonomyKm,
           tankL: tankL,
           consumoL100km: Number(consumoL100km.toFixed(2)),
+          profileConsumo: vehicle.consumo,
           corridorCount: corridor.length,
           corridorWidthKm: width,
           fuel: fuel,

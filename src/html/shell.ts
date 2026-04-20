@@ -544,18 +544,19 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <span class="range-val" id="lbl-tank-modal">50 L</span>
         </div>
       </div>
-      <!-- Autonomia: se deriva de consumo + deposito (deposito / consumo * 100)
-           pero el usuario puede EDITARLA directamente. Cuando lo hace, el JS
-           re-deriva el consumo para respetar la autonomia pedida, manteniendo
-           el deposito fijo (la mayoria de gente conoce bien la capacidad del
-           deposito pero solo aproxima su consumo real). -->
+      <!-- Autonomia: valor FIJO que pone el usuario. Primera vez lo
+           precalculamos como deposito / consumo * 100 para dar un default
+           razonable, pero una vez editado se mantiene independiente: cambiar
+           deposito o consumo no lo mueve. Mostramos un icono de lapiz para
+           que se vea claramente que es editable (un numero grande "normal"
+           se confunde con un texto estatico). -->
       <div class="form-group" id="profile-autonomy-box">
         <label class="form-label" for="in-autonomy">&#x1F6E3;&#xFE0F; Autonom&iacute;a con dep&oacute;sito lleno</label>
         <div class="profile-autonomy">
-          <input id="in-autonomy" class="profile-autonomy-input" type="number" min="50" max="2000" step="10" value="769" inputmode="numeric" aria-label="Autonom&iacute;a en kil&oacute;metros" />
+          <input id="in-autonomy" class="profile-autonomy-input" type="number" min="50" max="2000" step="10" value="769" inputmode="numeric" aria-label="Autonom&iacute;a en kil&oacute;metros" title="Pulsa para editar" />
           <span class="profile-autonomy-unit">km</span>
+          <span class="profile-autonomy-pencil" aria-hidden="true">&#x270F;&#xFE0F;</span>
         </div>
-        <p class="form-help">Por defecto la calculamos con dep&oacute;sito &divide; consumo &times; 100. Si prefieres otro valor (por ejemplo, porque tu coche consume m&aacute;s en autopista), camb&iacute;alo aqu&iacute; y ajustaremos el consumo para respetar tu autonom&iacute;a. La usamos para planificar tus rutas.</p>
       </div>
     </div>
     <div class="modal-footer">

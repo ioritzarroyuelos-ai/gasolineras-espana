@@ -627,15 +627,29 @@ async function applyLibertyLanguage() {
     if (!resp.ok) return;
     var style = await resp.json();
 
-    // Patch recursivo de text-field. Capturamos name, name:latin, name:en,
-    // name:fr, etc. y los reescribimos a coalesce(name:es, name:latin, name).
-    // Asi una layer que pedia "name:en" acaba pintando castellano igualmente.
+    // Patch recursivo de text-field. Capturamos CUALQUIER key que empiece por
+    // 'name' (name, name:latin, name:en, name:nonlatin, name_en, name_es,
+    // name_int, ...) salvo las espanolas, y las reescribimos al mismo coalesce
+    // agresivo. Liberty usa mezcla de sintaxis con dos puntos y con underscore
+    // (name_en es el fallback ingles por defecto) — ahora los cubrimos todos.
+    // Orden del coalesce: name:es > name_es > name:latin > name — garantiza
+    // castellano siempre que OSM / OpenMapTiles tengan el tag, y cae a texto
+    // original como ultimo recurso.
     function patchGet(expr) {
       if (Array.isArray(expr)) {
         if (expr[0] === 'get' && typeof expr[1] === 'string') {
           var k = expr[1];
-          if (k === 'name' || k === 'name:latin' || (k.indexOf('name:') === 0 && k !== 'name:es')) {
-            return ['coalesce', ['get', 'name:es'], ['get', 'name:latin'], ['get', 'name']];
+          var isNameKey = k === 'name' ||
+                          k.indexOf('name:') === 0 ||
+                          k.indexOf('name_') === 0;
+          var isSpanish = k === 'name:es' || k === 'name_es';
+          if (isNameKey && !isSpanish) {
+            return ['coalesce',
+              ['get', 'name:es'],
+              ['get', 'name_es'],
+              ['get', 'name:latin'],
+              ['get', 'name']
+            ];
           }
         }
         return expr.map(patchGet);

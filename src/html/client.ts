@@ -523,45 +523,56 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Tiles CartoDB *_nolabels*: el mapa base viene SIN nombres. Los nombres los
-  // pintamos nosotros con una capa propia (renderLabels) solo para Espana, en
-  // castellano. Asi evitamos dos cosas:
-  //  1) Ver "SPAIN" / "ANDALUSIA" / "CATALONIA" en ingles (CartoDB rotula en
-  //     ingles a nivel de pais/region; OSM seria local pero Carto es EN).
-  //  2) Ver nombres de Francia, Portugal, Marruecos o Argelia — el usuario
-  //     viene a consultar gasolineras en Espana, el resto es ruido visual.
+  // Tiles CartoDB Voyager CON etiquetas en idioma local — el catalogo raster
+  // gratuito mas parecido a Google Maps: paleta crema/beige, carreteras claras,
+  // agua azul suave, POIs iconificados, y rotulos multi-idioma nativos (espanol
+  // en Espana, frances en Francia, etc. — OSM local names).
+  //
   // noWrap=true evita que los tiles se repitan horizontalmente cuando el
   // usuario intenta hacer zoom-out (sin esto, veria varios planetas).
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+  // Modo oscuro con etiquetas — emula el "night mode" de Google Maps: calles
+  // iluminadas sobre fondo oscuro, texto claro con buen contraste.
+  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  // El satelite de ESRI no tiene capa "nolabels" pero tampoco trae rotulos por
-  // defecto (es pura ortofoto), asi que vale tal cual.
-  mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  // Satelite base — ortofoto pura de Esri World Imagery.
+  var satBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye',
     maxZoom: 19, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
+  // Overlay de etiquetas transparentes — calles y lugares rotulados encima de
+  // la ortofoto. Reproduce la vista "Satelite con etiquetas" de Google Maps.
+  var satLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
+  });
+  // Capa "Satelite" = ortofoto + etiquetas, igual que el toggle por defecto de
+  // Google Maps. Un layerGroup se comporta como capa unica en el control.
+  mapLayers.satellite = L.layerGroup([satBase, satLabels]);
 
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
 
+  // Controles estilo Google Maps: zoom abajo-derecha, escala abajo-izquierda.
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 120 }).addTo(map);
+  L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(map);
   L.control.layers(
-    { '&#x1F5FA;&#xFE0F; Mapa': mapLayers.light, '&#x1F6F0;&#xFE0F; Satelite': mapLayers.satellite },
+    {
+      '&#x1F5FA;&#xFE0F; Mapa':            mapLayers.light,
+      '&#x1F6F0;&#xFE0F; Sat&eacute;lite': mapLayers.satellite
+    },
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
-  // Etiquetas en castellano (pais / CCAA / ciudades). Se repintan en cada
-  // zoomend para mostrar/ocultar segun el nivel actual.
-  labelLayer = L.layerGroup().addTo(map);
-  renderLabels();
-  map.on('zoomend', renderLabels);
+  // Sistema de etiquetas custom (labelLayer + renderLabels + SPAIN_LABELS) ya
+  // NO se conecta: Voyager trae etiquetas nativas multi-idioma equivalentes a
+  // Google Maps. Las definiciones se conservan mas abajo por si se quiere
+  // volver atras rapido, pero no se invocan.
 
   setTimeout(function() { map.invalidateSize(true); }, 100);
 }

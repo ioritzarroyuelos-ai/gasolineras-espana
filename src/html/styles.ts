@@ -203,37 +203,70 @@ export function getStyles(nonce: string = ''): string {
 
     /* Geocoder del header retirado: los estilos se limpiaron con el elemento. */
 
-    /* ===== LEAFLET OVERRIDES ===== */
+    /* ===== LEAFLET OVERRIDES — popups estilo Google Maps InfoWindow ===== */
     .leaflet-popup-content-wrapper {
-      border-radius: 12px !important;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.18) !important;
+      border-radius: 8px !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15), 0 4px 24px rgba(0,0,0,0.15) !important;
       padding: 0 !important;
       overflow: hidden;
       border: none !important;
+      background: #fff !important;
     }
-    .leaflet-popup-content { min-width:250px; max-width:300px; font-size:13px; margin:12px 14px !important; }
+    .leaflet-popup-content { min-width:260px; max-width:300px; font-size:13px; margin:14px 16px !important; line-height:1.4; }
     .leaflet-popup-tip-container { display:none; }
     .leaflet-popup-close-button {
-      color: #fff !important; font-size: 18px !important;
-      top: 8px !important; right: 10px !important;
-      opacity: 0.75; z-index: 10;
+      color: #fff !important; font-size: 20px !important;
+      top: 10px !important; right: 12px !important;
+      opacity: 0.80; z-index: 10;
+      width: 22px !important; height: 22px !important;
+      line-height: 20px !important; text-align: center;
+      border-radius: 50%; background: rgba(0,0,0,0.25);
+      font-weight: 400 !important; padding: 0 !important;
     }
-    .leaflet-popup-close-button:hover { opacity: 1; }
+    .leaflet-popup-close-button:hover { opacity: 1; background: rgba(0,0,0,0.40); }
     .fuel-row { display:flex; justify-content:space-between; align-items:center; padding:3px 0; border-bottom:1px solid #f3f4f6; }
     .fuel-row:last-child { border-bottom:none; }
 
-    /* Zoom control visual */
+    /* Zoom control — estilo Google Maps: botones mas grandes (40px), sombra
+       mas pronunciada, margen desde el borde, y simbolos +/- mas legibles. */
+    .leaflet-control-zoom { margin: 0 10px 24px 0 !important; }
     .leaflet-control-zoom a {
-      font-size: 16px !important; font-weight: 300 !important;
-      width: 34px !important; height: 34px !important; line-height: 34px !important;
+      font-size: 22px !important; font-weight: 400 !important;
+      width: 40px !important; height: 40px !important; line-height: 40px !important;
+      color: #5f6368 !important; background: #fff !important;
     }
-    .leaflet-bar { border-radius: 10px !important; border: none !important; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important; }
-    .leaflet-bar a { border-bottom-color: #f1f5f9 !important; }
+    .leaflet-control-zoom a:hover { background: #f1f3f4 !important; color: #202124 !important; }
+    .leaflet-bar { border-radius: 8px !important; border: none !important; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08) !important; }
+    .leaflet-bar a { border-bottom-color: #e8eaed !important; }
     .leaflet-bar a:last-child { border-bottom: none !important; }
+    body.dark .leaflet-control-zoom a { background: #202124 !important; color: #e8eaed !important; }
+    body.dark .leaflet-control-zoom a:hover { background: #303134 !important; color: #fff !important; }
+    body.dark .leaflet-bar a { border-bottom-color: #3c4043 !important; }
 
-    /* Scale */
-    .leaflet-control-scale-line { border-color: #64748b !important; color: #64748b; font-size: 10px !important; background: rgba(255,255,255,0.85) !important; padding: 1px 5px !important; border-radius: 3px; }
-    body.dark .leaflet-control-scale-line { background: rgba(15,23,42,0.85) !important; color: #94a3b8; border-color: #475569 !important; }
+    /* Scale — estilo Google: fondo blanco semi, texto gris oscuro, sin borde
+       visible por arriba (solo linea inferior como Google). */
+    .leaflet-control-scale { margin: 0 0 12px 12px !important; }
+    .leaflet-control-scale-line {
+      border-color: #5f6368 !important; color: #3c4043; font-size: 11px !important;
+      background: rgba(255,255,255,0.92) !important; padding: 2px 6px !important;
+      border-radius: 2px; border-top: none !important;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.10);
+      font-weight: 500;
+    }
+    body.dark .leaflet-control-scale-line { background: rgba(32,33,36,0.92) !important; color: #e8eaed; border-color: #9aa0a6 !important; }
+
+    /* Control de capas — pill flotante blanco tipo Google "chip selector". */
+    .leaflet-control-layers { margin: 10px 10px 0 0 !important; }
+    .leaflet-control-layers-expanded {
+      padding: 10px 14px !important; background: #fff !important;
+      border-radius: 8px !important; backdrop-filter: none !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08) !important;
+    }
+    .leaflet-control-layers-base label { font-size: 13px !important; font-weight: 500 !important; color: #3c4043 !important; padding: 2px 0; cursor: pointer; }
+    .leaflet-control-layers-base label:hover { color: #1967d2 !important; }
+    body.dark .leaflet-control-layers-expanded { background: #202124 !important; }
+    body.dark .leaflet-control-layers-base label { color: #e8eaed !important; }
+    body.dark .leaflet-control-layers-base label:hover { color: #8ab4f8 !important; }
 
     /* ===== SCROLLBAR ===== */
     ::-webkit-scrollbar { width:5px; }

@@ -523,18 +523,19 @@ function initMap() {
     worldCopyJump: false
   }).setView([40.4, -3.7], 6);
 
-  // Capa base clara: CARTO Voyager raster SIN etiquetas. Importante: usamos la
-  // variante '_nolabels' porque encima pintamos nuestra propia capa de textos
-  // (labelLayer + SPAIN_LABELS) en castellano. Si usaramos 'voyager' normal se
-  // mezclarian nombres nativos de OSM (a menudo en ingles: "PRINCIPALITY OF
-  // ASTURIAS", "VALENCIAN COMMUNITY", "CASTILE AND LEON"...) con los nuestros.
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
+  // Capa base clara: CARTO Voyager completo — trae todas las etiquetas nativas
+  // de OSM (CCAA, provincias, municipios, barrios, calles a zoom alto). Es lo
+  // que nos permite ver cualquier pueblo sin mantener nosotros un dataset de
+  // ~8.000 municipios. Contrapartida: algunas CCAA del norte salen en ingles
+  // ("VALENCIAN COMMUNITY", "CASTILE AND LEON") por como OSM etiqueta el nivel
+  // 4 administrativo. No pintamos labels custom encima para evitar duplicados.
+  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  // Modo oscuro sin etiquetas por la misma razon: encima van nuestras labels
-  // custom. Variante 'dark_nolabels' es el equivalente nocturno de Voyager.
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+  // Modo oscuro con etiquetas ('dark_all' = equivalente nocturno de Voyager
+  // normal, con toda la toponimia).
+  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
@@ -567,11 +568,9 @@ function initMap() {
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
-  // Capa de etiquetas custom encima del basemap (CCAA + ciudades en castellano).
-  // Re-pintar en zoomend porque cada nivel tiene su propio subset (mn/mx).
-  labelLayer = L.layerGroup().addTo(map);
-  renderLabels();
-  map.on('zoomend', renderLabels);
+  // Sistema labelLayer + SPAIN_LABELS desactivado: las etiquetas nativas del
+  // basemap (Voyager / dark_all) ya cubren todos los municipios. Dejamos el
+  // codigo definido por si en el futuro queremos volver a labels custom.
 
   setTimeout(function() { map.invalidateSize(true); }, 100);
 }

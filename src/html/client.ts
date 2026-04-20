@@ -3184,6 +3184,23 @@ function updateMonthlyWidget() {
   }
 
   document.getElementById('btn-profile-save').addEventListener('click', function() {
+    // Lectura defensiva de autonomia justo antes de guardar: algunos moviles
+    // / navegadores no disparan 'change' cuando el usuario teclea un valor y
+    // pulsa directamente "Guardar". Si confiamos solo en tmpProfile podemos
+    // persistir el default derivado en vez del valor tecleado. Leemos el
+    // input directo como ultima palabra.
+    if (inAuto) {
+      var kmNow = parseInt(inAuto.value, 10);
+      if (isFinite(kmNow) && kmNow > 0) {
+        if (kmNow < 50) kmNow = 50;
+        if (kmNow > 2000) kmNow = 2000;
+        tmpProfile.autonomy = kmNow;
+      }
+    }
+    // Defensa extra: coercion a numero por si algun flujo antiguo dejo string.
+    if (typeof tmpProfile.autonomy !== 'number' || !isFinite(tmpProfile.autonomy)) {
+      tmpProfile.autonomy = parseInt(String(tmpProfile.autonomy), 10) || 0;
+    }
     setProfile(tmpProfile);
     try { localStorage.setItem('gs_tank', String(tmpProfile.tank)); } catch(e) {}
     // Sincronizar combustible y slider deposito del sidebar
@@ -3775,8 +3792,15 @@ function exitRouteMode() {
     if (typeof p.consumo === 'number' && p.consumo > 0) cons = p.consumo;
     else if (typeof p.consumoL100km === 'number' && p.consumoL100km > 0) cons = p.consumoL100km;
     if (!tank || !cons) return null;
-    var auto = (typeof p.autonomy === 'number' && p.autonomy > 0)
-               ? p.autonomy
+    // Coerce autonomy a numero defensivamente: perfiles antiguos o flujos
+    // raros pueden haberlo guardado como string ("300"). Con el typeof
+    // estricto anterior, esos casos caian al fallback derivado de tank/cons
+    // y el planificador usaba 769 km en vez de 300 — visible como el bug
+    // de "solo 1 parada" en rutas largas.
+    var rawAuto = p.autonomy;
+    var autoNum = typeof rawAuto === 'number' ? rawAuto : parseFloat(String(rawAuto));
+    var auto = (isFinite(autoNum) && autoNum > 0)
+               ? Math.round(autoNum)
                : Math.round((tank / cons) * 100);
     return { tank: tank, consumo: cons, autonomyKm: auto };
   }
@@ -4004,16 +4028,44 @@ function exitRouteMode() {
     var rangeKm = initialRangeKm;
     var stops = [];
     var totalCost = 0;
+    // Log diagnostico: ayuda a entender POR QUE un plan salio corto. En el
+    // bug reportado en prod (977 km / autonomia 300 / solo 1 parada), mirar
+    // estos logs deja claro si fue break-prematuro (routeKm mal calculado),
+    // candidates-vacios (gap en corredor) o iter-limit (muy raro).
+    try {
+      console.log('[planFuelStops] start', {
+        routeKm: Math.round(routeKm), maxAutonomyKm: Math.round(maxAutonomyKm),
+        safetyKm: Math.round(safetyKm), initialRangeKm: Math.round(initialRangeKm),
+        poolSize: pool.length
+      });
+    } catch (e) {}
 
     for (var iter = 0; iter < 50; iter++) {
       var remaining = routeKm - pos;
-      if (rangeKm - safetyKm >= remaining) break;
+      if (rangeKm - safetyKm >= remaining) {
+        try {
+          console.log('[planFuelStops] break', {
+            iter: iter, pos: Math.round(pos), remaining: Math.round(remaining),
+            rangeMinusSafety: Math.round(rangeKm - safetyKm),
+            totalStops: stops.length
+          });
+        } catch (e) {}
+        break;
+      }
       var windowStart = pos;
       var windowEnd = pos + Math.max(0, rangeKm - safetyKm);
       var candidates = pool.filter(function(s) {
         return s.kmFromOrigin > windowStart && s.kmFromOrigin <= windowEnd;
       });
       if (candidates.length === 0) {
+        try {
+          console.log('[planFuelStops] unreachable', {
+            iter: iter, pos: Math.round(pos),
+            windowStart: Math.round(windowStart), windowEnd: Math.round(windowEnd),
+            poolInWindowOrPast: pool.filter(function(s) { return s.kmFromOrigin > pos; }).length,
+            stopsSoFar: stops.length
+          });
+        } catch (e) {}
         return {
           stops: stops,
           unreachable: true,
@@ -4043,6 +4095,13 @@ function exitRouteMode() {
       var consumedL = (consumedKm / 100) * cons;
       var detourExtraL = detourL(pick.offKm);
       totalCost += (consumedL + detourExtraL) * pick.priceEurL;
+      try {
+        console.log('[planFuelStops] pick', {
+          iter: iter, km: Math.round(pick.kmFromOrigin),
+          price: Number(pick.priceEurL.toFixed(3)), offKm: Number((pick.offKm || 0).toFixed(1)),
+          candidates: candidates.length, cheap: cheap.length
+        });
+      } catch (e) {}
       pos = pick.kmFromOrigin;
       rangeKm = maxAutonomyKm;
     }
@@ -4206,14 +4265,24 @@ function exitRouteMode() {
         return;
       }
       var cum = cumulativePolylineKm(coords);
-      var totalKm = cum[cum.length - 1];
+      var polyKm = cum[cum.length - 1];
+      // Preferimos route.distanceKm (OSRM autoritativo) sobre la suma
+      // haversine de la polilinea: si la polilinea viene simplificada o
+      // truncada, el haversine infra-estima y el planificador cree que la
+      // ruta es mas corta de lo que es (bug real visto en prod: 977 km OSRM
+      // -> cum ~500 km -> planner devolvia solo 1 parada con autonomia 300).
+      // Caemos a cum[] solo si distanceKm no llega.
+      var osrmKm = typeof route.distanceKm === 'number' && route.distanceKm > 0
+                   ? route.distanceKm
+                   : 0;
+      var totalKm = osrmKm > 0 ? Math.max(osrmKm, polyKm) : polyKm;
 
       // 2. Bbox que envuelve la polilinea real → /api/estaciones/bbox.
       //    IMPORTANTE: dimensionamos el bbox con el ancho MAXIMO de reintento
       //    (10 km), no con el ancho inicial del usuario. Asi podemos ampliar
       //    el corredor en memoria (sin re-fetchear) si el primer plan sale
       //    incompleto porque el usuario eligio un corredor muy estrecho.
-      var MAX_RETRY_WIDTH = 10;
+      var MAX_RETRY_WIDTH = 15;
       var bboxWidthKm = Math.max(width, MAX_RETRY_WIDTH);
       var bbox = polylineBbox(coords, bboxWidthKm);
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km. Cargando estaciones del trayecto\u2026';
@@ -4260,9 +4329,9 @@ function exitRouteMode() {
       }
       var corridor = corridorAt(width);
 
-      // Si ni siquiera el corredor maximo (10 km) tiene estaciones para el
+      // Si ni siquiera el corredor maximo (15 km) tiene estaciones para el
       // combustible seleccionado, abortamos con un mensaje claro.
-      if (corridorAt(10).length === 0) {
+      if (corridorAt(15).length === 0) {
         stat.textContent = 'Sin gasolineras con ' + fuelLabel + ' cerca del trayecto.';
         stat.classList.add('error');
         return;
@@ -4284,10 +4353,13 @@ function exitRouteMode() {
       try {
         console.log('[ruta] planifica', {
           routeKm: Math.round(totalKm),
+          polyKm: Math.round(polyKm),
+          osrmKm: Math.round(osrmKm || 0),
           autonomyKm: autonomyKm,
           tankL: tankL,
           consumoL100km: Number(consumoL100km.toFixed(2)),
           profileConsumo: vehicle.consumo,
+          profileAutonomyRaw: (getProfile() || {}).autonomy,
           corridorCount: corridor.length,
           corridorWidthKm: width,
           fuel: fuel,
@@ -4328,8 +4400,8 @@ function exitRouteMode() {
       // probamos con corredores progresivamente mas anchos. Motivo: las
       // gasolineras de autopista suelen estar a 2-3 km de la ruta (salidas,
       // areas de servicio); con corredor <=2 km entran pocas y el
-      // planificador no puede completar trayectos largos. Probamos 3, 5, 7, 10.
-      var retryWidths = [3, 5, 7, 10];
+      // planificador no puede completar trayectos largos. Probamos hasta 15 km.
+      var retryWidths = [3, 5, 7, 10, 15];
       for (var rw = 0; rw < retryWidths.length && needsRetry(planResult); rw++) {
         var w = retryWidths[rw];
         if (w <= usedWidth) continue;  // no retrocedemos

@@ -886,6 +886,39 @@ describe('planFuelStops (planificador de paradas en ruta)', () => {
     })
     expect(r.totalCostEur).toBeCloseTo(15, 2)
   })
+
+  it('REPRO bug reportado: ruta 977km con autonomia 300km y desvios realistas → >=3 paradas', () => {
+    // Escenario identico al reportado por el usuario:
+    // Pais Vasco -> Cadiz, 977 km, coche con tank=50L, consumo=6.5 L/100km
+    // pero autonomia FIJADA por el usuario en 300 km (consumo efectivo 16.67).
+    // Expectativa: 3-4 paradas para cubrir 977 km con 300 km de autonomia.
+    // La queja: la UI mostraba solo 1 parada, claramente erronea.
+    const stations: Array<{ item: S; kmFromOrigin: number; priceEurL: number; offKm: number }> = []
+    // Densidad realista en corredor autopista espanola: 1 estacion cada ~5 km
+    // con offKm variable 0-4 (corredor 5 km).
+    for (let km = 8; km < 975; km += 5) {
+      const price = 1.45 + Math.abs(Math.sin(km / 37)) * 0.10   // 1.45 a 1.55
+      const offKm = Math.abs(Math.cos(km / 23)) * 4             // 0 a 4
+      stations.push({
+        item: { id: 'km' + km, name: 'KM' + km },
+        kmFromOrigin: km,
+        priceEurL: price,
+        offKm,
+      })
+    }
+    const r = planFuelStops<S>({
+      routeKm: 977,
+      tankL: 50,
+      consumoL100km: 16.67,     // derivado de autonomia=300 con tank=50
+      currentFuelPct: 1.0,
+      stations,
+    })
+    expect(r.unreachable).toBe(false)
+    expect(r.stops.length).toBeGreaterThanOrEqual(3)
+    // Cada parada debe avanzar: no concentrarse todas en el primer tramo.
+    const lastStopKm = r.stops[r.stops.length - 1].kmFromOrigin
+    expect(lastStopKm).toBeGreaterThan(700)  // ultima parada cerca del destino
+  })
 })
 
 describe('projectOnRoute (proyeccion sobre segmento)', () => {

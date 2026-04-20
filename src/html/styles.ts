@@ -101,12 +101,12 @@ export function getStyles(nonce: string = ''): string {
 
     /* ===== BOTONES ===== */
     .btn-primary {
-      background: #16a34a; color: #fff; border: none; border-radius: 8px;
+      background: #15803d; color: #fff; border: none; border-radius: 8px;
       padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
       transition: background 0.15s; display:inline-flex; align-items:center; gap:6px;
     }
-    .btn-primary:hover { background: #15803d; }
-    .btn-primary:active { background: #166534; }
+    .btn-primary:hover { background: #166534; }
+    .btn-primary:active { background: #14532d; }
     .btn-icon { background:none; border:none; cursor:pointer; color:#16a34a; font-size:15px; padding:4px; transition:color 0.15s; }
     .btn-icon:hover { color: #15803d; }
 
@@ -952,7 +952,7 @@ export function getStyles(nonce: string = ''): string {
       flex:1; height:4px; accent-color:#16a34a; cursor:pointer;
     }
     .range-group .range-val {
-      font-size:12px; font-weight:700; color:#16a34a; min-width:50px; text-align:right;
+      font-size:12px; font-weight:700; color:#15803d; min-width:50px; text-align:right;
       font-variant-numeric: tabular-nums;
     }
     body.dark .range-group .range-val { color:#4ade80; }

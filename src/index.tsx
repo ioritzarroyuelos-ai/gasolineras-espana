@@ -1106,11 +1106,19 @@ app.get('/api/health', async c => {
   // token midiendo respuestas (timing attack). tokensEqualConstTime vive en pure.ts.
   const isAdmin = !adminToken || (provided.length > 0 && tokensEqualConstTime(provided, adminToken))
 
-  const bodyPublic: Record<string, unknown> = { ok: !stale, ts: new Date().toISOString() }
+  // 'version' y 'stale' son publicos: version ya se expone en el cliente
+  // (console.info/headers) y stale es deliberadamente publico para que los
+  // health checks externos disparen alertas. El resto (snapshot meta, caches,
+  // umbrales exactos) sigue gated por HEALTH_ADMIN_TOKEN.
+  const bodyPublic: Record<string, unknown> = {
+    ok: !stale,
+    ts: new Date().toISOString(),
+    version: APP_VERSION,
+    stale,
+  }
   const body = isAdmin
     ? {
         ...bodyPublic,
-        version: APP_VERSION,
         caches: {
           srv: (srvCache as unknown as { size: number }).size,
           snapshot: (snapshotCache as unknown as { size: number }).size,
@@ -1118,7 +1126,6 @@ app.get('/api/health', async c => {
         },
         snapshot: meta ?? null,
         snapshotAgeMs,
-        stale,
         staleThresholdMs: SNAPSHOT_STALE_MS,
       }
     : bodyPublic

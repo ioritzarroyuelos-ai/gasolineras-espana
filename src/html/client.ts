@@ -4049,7 +4049,13 @@ function exitRouteMode() {
       var totalKm = cum[cum.length - 1];
 
       // 2. Bbox que envuelve la polilinea real → /api/estaciones/bbox.
-      var bbox = polylineBbox(coords, width);
+      //    IMPORTANTE: dimensionamos el bbox con el ancho MAXIMO de reintento
+      //    (10 km), no con el ancho inicial del usuario. Asi podemos ampliar
+      //    el corredor en memoria (sin re-fetchear) si el primer plan sale
+      //    incompleto porque el usuario eligio un corredor muy estrecho.
+      var MAX_RETRY_WIDTH = 10;
+      var bboxWidthKm = Math.max(width, MAX_RETRY_WIDTH);
+      var bbox = polylineBbox(coords, bboxWidthKm);
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km. Cargando estaciones del trayecto\u2026';
       var bboxUrl = '/api/estaciones/bbox?minLat=' + bbox.minLat.toFixed(4)
                   + '&maxLat=' + bbox.maxLat.toFixed(4)
@@ -4071,9 +4077,10 @@ function exitRouteMode() {
       }
 
       // 3. Para cada estacion del bbox: proyecta sobre la POLILINEA REAL (no
-      // sobre linea recta) y conserva las que caen dentro del corredor
-      // (offKm <= width).
-      var corridor = [];
+      //    sobre linea recta). Guardamos el array "projected" completo para
+      //    poder re-filtrar por anchos distintos sin re-proyectar (el 99% del
+      //    coste CPU del tramo 3-4 es la proyeccion).
+      var projected = [];
       for (var k = 0; k < pool.length; k++) {
         var s = pool[k];
         var pos = stationLatLng(s);
@@ -4081,18 +4088,23 @@ function exitRouteMode() {
         var price = parsePrice(s[fuel]);
         if (!price) continue;
         var proj = projectOnPolyline({ lat: pos.lat, lng: pos.lng }, coords, cum);
-        if (proj.offKm <= width) {
-          corridor.push({
-            item: s,
-            kmFromOrigin: proj.kmFromOrigin,
-            offKm: proj.offKm,
-            priceEurL: price
-          });
-        }
+        projected.push({
+          item: s,
+          kmFromOrigin: proj.kmFromOrigin,
+          offKm: proj.offKm,
+          priceEurL: price
+        });
       }
+      function corridorAt(w) {
+        return projected.filter(function(p) { return p.offKm <= w; });
+      }
+      var corridor = corridorAt(width);
 
-      if (corridor.length === 0) {
-        stat.textContent = 'Sin resultados a \u00B1' + width + ' km del trayecto para ' + fuelLabel + '.';
+      // Si ni siquiera el corredor maximo (10 km) tiene estaciones para el
+      // combustible seleccionado, abortamos con un mensaje claro.
+      if (corridorAt(10).length === 0) {
+        stat.textContent = 'Sin gasolineras con ' + fuelLabel + ' cerca del trayecto.';
+        stat.classList.add('error');
         return;
       }
 
@@ -4142,24 +4154,86 @@ function exitRouteMode() {
         });
       } catch (e) { /* sin consola: sigue */ }
 
-      var planResult = planFuelStops({
-        routeKm: totalKm,
-        tankL: tankL,
-        consumoL100km: consumoL100km,
-        currentFuelPct: 1.0,
-        stations: corridor
-      });
+      function runPlan(stations) {
+        return planFuelStops({
+          routeKm: totalKm,
+          tankL: tankL,
+          consumoL100km: consumoL100km,
+          currentFuelPct: 1.0,
+          stations: stations
+        });
+      }
+
+      var planResult = runPlan(corridor);
+      var usedWidth = width;
+      var widenedAutomatically = false;
+
+      // Estimamos el numero MINIMO de paradas que deberia tener un plan
+      // "razonable" para esta ruta: cuantas veces hay que repostar sabiendo
+      // que el tanque lleno da maxAutonomyKm y que dejamos un 10% de reserva.
+      // Si el planificador devuelve MENOS paradas de las esperadas aunque
+      // diga unreachable=false, sospechamos que el corredor es demasiado
+      // estrecho y forzamos el retry igual.
+      var maxAutonomyKm = (tankL / consumoL100km) * 100;
+      var usableRangeKm = Math.max(10, maxAutonomyKm * 0.90);
+      var initialFullRange = maxAutonomyKm;  // asumimos tanque lleno al salir
+      var expectedMinStops = Math.max(0, Math.floor((totalKm - initialFullRange) / usableRangeKm));
+
+      function needsRetry(p) {
+        return p.unreachable || p.stops.length < expectedMinStops;
+      }
+
+      // Auto-retry: si el plan salio incompleto o con muy pocas paradas,
+      // probamos con corredores progresivamente mas anchos. Motivo: las
+      // gasolineras de autopista suelen estar a 2-3 km de la ruta (salidas,
+      // areas de servicio); con corredor <=2 km entran pocas y el
+      // planificador no puede completar trayectos largos. Probamos 3, 5, 7, 10.
+      var retryWidths = [3, 5, 7, 10];
+      for (var rw = 0; rw < retryWidths.length && needsRetry(planResult); rw++) {
+        var w = retryWidths[rw];
+        if (w <= usedWidth) continue;  // no retrocedemos
+        var corr2 = corridorAt(w);
+        if (corr2.length <= corridor.length) continue;  // no aporta estaciones nuevas
+        var plan2 = runPlan(corr2);
+        try {
+          console.log('[ruta] retry', {
+            width: w,
+            corridor: corr2.length,
+            stops: plan2.stops.length,
+            unreachable: plan2.unreachable,
+            expectedMinStops: expectedMinStops
+          });
+        } catch (e) {}
+        // Nos quedamos con el retry si mejora: completa la ruta, O al menos
+        // encuentra mas paradas que el intento anterior (acercandose al esperado).
+        if (!plan2.unreachable || plan2.stops.length > planResult.stops.length) {
+          planResult = plan2;
+          corridor = corr2;
+          usedWidth = w;
+          widenedAutomatically = true;
+          // Si ya completa Y tiene el numero esperado de paradas, paramos.
+          if (!plan2.unreachable && plan2.stops.length >= expectedMinStops) break;
+        }
+      }
 
       try {
         console.log('[ruta] resultado', {
           stops: planResult.stops.length,
           unreachable: planResult.unreachable,
           maxAutonomyKm: Math.round(planResult.maxAutonomyKm),
-          totalCostEur: Number(planResult.totalCostEur.toFixed(2))
+          totalCostEur: Number(planResult.totalCostEur.toFixed(2)),
+          finalCorridorWidthKm: usedWidth,
+          widenedAutomatically: widenedAutomatically
         });
       } catch (e) { /* idem */ }
 
-      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.';
+      // Mensaje de estado con el ancho REAL usado (si se amplio, avisamos al
+      // usuario que su ancho inicial no bastaba). Asi queda claro por que ve
+      // mas/menos paradas de las que esperaba.
+      var widthNote = widenedAutomatically
+        ? ' (corredor ampliado autom\u00E1ticamente a ' + usedWidth + ' km; con ' + width + ' km no hab\u00EDa suficientes gasolineras)'
+        : '';
+      stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.' + widthNote;
       // Renderizado inicial del plan SIN botones de navegacion para feedback
       // inmediato. Se re-renderiza con botones justo despues de enterRouteMode,
       // cuando tenemos confirmados from/to/stops definitivos.
@@ -4209,6 +4283,8 @@ function exitRouteMode() {
       plan.innerHTML = renderPlanSection(planResult, fuelLabel, autonomyKm, fromSel, toSel);
 
       // Actualiza el texto del banner flotante con informacion de la ruta.
+      // Si hubo que ampliar el corredor automaticamente, lo decimos en el
+      // banner tambien (el modal se cerrara enseguida).
       var barText = document.getElementById('route-mode-bar-text');
       if (barText) {
         var stopsLabel;
@@ -4221,7 +4297,10 @@ function exitRouteMode() {
         } else {
           stopsLabel = planResult.stops.length + ' paradas recomendadas';
         }
-        barText.textContent = 'Ruta ' + finalTotalKm.toFixed(0) + ' km \u00B7 ' + stopsLabel;
+        var widenMsg = widenedAutomatically
+          ? ' \u00B7 corredor ' + usedWidth + ' km (ampliado)'
+          : '';
+        barText.textContent = 'Ruta ' + finalTotalKm.toFixed(0) + ' km \u00B7 ' + stopsLabel + widenMsg;
       }
 
       // 7. Cierra el modal para que el usuario vea el mapa con la ruta.

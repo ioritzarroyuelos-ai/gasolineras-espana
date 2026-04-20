@@ -3086,8 +3086,21 @@ function updateMonthlyWidget() {
   var lblCons   = document.getElementById('lbl-consumo');
   var inTankM   = document.getElementById('in-tank-modal');
   var lblTankM  = document.getElementById('lbl-tank-modal');
+  var autoVal   = document.getElementById('profile-autonomy-val');
 
   var tmpProfile = { fuel: '', km: 0, consumo: 6.5, tank: 50, strictFuel: true };
+
+  // Autonomia = deposito (L) / consumo (L/100km) * 100 km. Es el dato clave
+  // del planificador de rutas, por eso lo mostramos live en el modal de
+  // perfil: asi el usuario entiende que sus numeros determinan cuando hay
+  // que repostar.
+  function updateAutonomyHint() {
+    if (!autoVal) return;
+    var cons = parseFloat(tmpProfile.consumo);
+    var tank = parseFloat(tmpProfile.tank);
+    if (!(cons > 0) || !(tank > 0)) { autoVal.textContent = '—'; return; }
+    autoVal.textContent = String(Math.round((tank / cons) * 100));
+  }
 
   function openModal() {
     var cur = getProfile() || {};
@@ -3110,6 +3123,7 @@ function updateMonthlyWidget() {
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
     inTankM.value = tmpProfile.tank;
     lblTankM.textContent = tmpProfile.tank + ' L';
+    updateAutonomyHint();
     modal.classList.add('show');
   }
   function closeModal() { modal.classList.remove('show'); }
@@ -3135,10 +3149,12 @@ function updateMonthlyWidget() {
   inCons.addEventListener('input', function() {
     tmpProfile.consumo = parseFloat(inCons.value);
     lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
+    updateAutonomyHint();
   });
   inTankM.addEventListener('input', function() {
     tmpProfile.tank = parseInt(inTankM.value, 10);
     lblTankM.textContent = tmpProfile.tank + ' L';
+    updateAutonomyHint();
   });
 
   document.getElementById('btn-profile-save').addEventListener('click', function() {
@@ -3499,31 +3515,77 @@ var NAV_MAX_WAYPOINTS = 9;
 function navCoord(ll) {
   return ll.lat.toFixed(6) + ',' + ll.lng.toFixed(6);
 }
-function navStopsLatLngs(stops) {
+
+// Construye la direccion POSTAL completa de una gasolinera para pasarsela
+// como waypoint textual a Google/Apple Maps. Motivo: si mandamos solo
+// LAT,LNG, Maps reverse-geocodea al nombre de calle mas cercano y pierde la
+// referencia de la gasolinera concreta (el pin puede acabar en la carretera
+// en vez de en la estacion). Con direccion textual el buscador resuelve al
+// POI exacto. Formato: "Rotulo, Direccion, CP Municipio, Provincia, Espana".
+// Si faltan piezas, las saltamos y devolvemos null si no queda nada util
+// (el caller cae a LAT,LNG).
+function stationAddress(s) {
+  if (!s) return null;
+  var parts = [];
+  var rot = (s['Rotulo'] || '').trim();
+  var dir = (s['Direccion'] || '').trim();
+  var cp  = (s['C.P.'] || s['CP'] || '').trim();
+  var mun = (s['Municipio'] || '').trim();
+  var prov = (s['Provincia'] || '').trim();
+  if (rot) parts.push(rot);
+  if (dir) parts.push(dir);
+  var cpMun = [cp, mun].filter(Boolean).join(' ').trim();
+  if (cpMun) parts.push(cpMun);
+  if (prov) parts.push(prov);
+  if (parts.length === 0) return null;
+  parts.push('Espana');
+  return parts.join(', ');
+}
+
+// Devuelve la representacion preferida para pasar como waypoint al
+// navegador. Intentamos direccion textual primero (apunta a la gasolinera
+// concreta) y caemos a coordenadas si la direccion esta vacia.
+function stationWaypoint(stop) {
+  if (!stop || !stop.item) return null;
+  var addr = stationAddress(stop.item);
+  if (addr) return { kind: 'text', value: addr };
+  var ll = stationLatLng(stop.item);
+  if (ll) return { kind: 'coord', value: navCoord(ll) };
+  return null;
+}
+
+function navStopsWaypoints(stops) {
   var out = [];
   if (!stops) return out;
   for (var i = 0; i < stops.length && i < NAV_MAX_WAYPOINTS; i++) {
-    var ll = stationLatLng(stops[i].item);
-    if (ll) out.push(ll);
+    var wp = stationWaypoint(stops[i]);
+    if (wp) out.push(wp);
   }
   return out;
 }
 function googleMapsRouteUrl(from, to, stops) {
+  // Origen + destino seguimos pasandolos como LAT,LNG (el usuario puso los
+  // puntos via geocoder, tenemos coords exactas y asi evitamos ambiguedades
+  // con nombres de ciudad). Los waypoints de gasolineras van como TEXTO
+  // cuando tenemos la direccion completa — asi Google Maps apunta al POI
+  // concreto y no a la carretera mas cercana.
   var url = 'https://www.google.com/maps/dir/?api=1'
           + '&origin=' + navCoord(from)
           + '&destination=' + navCoord(to)
           + '&travelmode=driving';
-  var wps = navStopsLatLngs(stops);
+  var wps = navStopsWaypoints(stops);
   if (wps.length > 0) {
-    url += '&waypoints=' + encodeURIComponent(wps.map(navCoord).join('|'));
+    url += '&waypoints=' + encodeURIComponent(wps.map(function(w) { return w.value; }).join('|'));
   }
   return url;
 }
 function appleMapsRouteUrl(from, to, stops) {
   // daddr = parada1+to:parada2+to:destino. Apple requiere que el destino
   // final sea el ULTIMO elemento de daddr, no un parametro separado.
-  var wps = navStopsLatLngs(stops);
-  var daddrParts = wps.map(navCoord);
+  // Igual que Google: waypoints textuales para apuntar a la gasolinera
+  // exacta; saddr/destino final quedan en coordenadas (geocoder precisas).
+  var wps = navStopsWaypoints(stops);
+  var daddrParts = wps.map(function(w) { return w.value; });
   daddrParts.push(navCoord(to));
   return 'https://maps.apple.com/?saddr=' + navCoord(from)
        + '&daddr=' + encodeURIComponent(daddrParts.join('+to:'))
@@ -3651,12 +3713,23 @@ function exitRouteMode() {
   var inTo      = document.getElementById('route-to');
   var sugFrom   = document.getElementById('route-from-sug');
   var sugTo     = document.getElementById('route-to-sug');
-  var inWidth   = document.getElementById('route-width');
-  var lblWidth  = document.getElementById('route-width-lbl');
-  var inRange   = document.getElementById('route-range-km');
   var stat      = document.getElementById('route-status');
   var plan      = document.getElementById('route-plan');
   var res       = document.getElementById('route-results');
+  // Bloque informativo del perfil (read-only). No hay input de autonomia ni
+  // de ancho del corredor: la autonomia sale de deposito+consumo del perfil
+  // y el ancho arranca en 5 km con auto-retry.
+  var profTankEl = document.getElementById('route-profile-tank');
+  var profConsEl = document.getElementById('route-profile-cons');
+  var profAutoEl = document.getElementById('route-profile-auto');
+  var profBox    = document.getElementById('route-profile-box');
+
+  // Ancho inicial del corredor (km). El auto-retry en doSearch() amplia
+  // automaticamente a 3/5/7/10 si es necesario, asi que este valor solo
+  // afecta a la primera iteracion. 5 km es buen punto de partida: cubre
+  // casi todas las areas de servicio de autopista sin arrastrar gasolineras
+  // de carreteras secundarias alejadas del trayecto.
+  var DEFAULT_CORRIDOR_WIDTH_KM = 5;
 
   // Estado: guardamos la ultima seleccion confirmada de cada input (con
   // {lat, lng} resueltos). Si el usuario cambia el texto sin seleccionar
@@ -3664,16 +3737,45 @@ function exitRouteMode() {
   var fromSel = null;
   var toSel   = null;
 
-  // Si el perfil tiene tank + consumo, precarga la autonomia maxima como
-  // valor inicial del input. Si no, deja el 500 del HTML como default.
-  function prefillRangeFromProfile() {
+  // Lee tank+consumo del perfil local. Devuelve null si falta alguno de los
+  // dos (ese caso lo gestiona openRoute() ensenando un CTA para configurar
+  // el perfil en lugar del formulario normal).
+  function readProfileVehicle() {
     var p = getProfile() || {};
-    var tank = p.tank;
-    var cons = (typeof p.consumo === 'number') ? p.consumo : p.consumoL100km;
-    if (typeof tank === 'number' && tank > 0 && typeof cons === 'number' && cons > 0) {
-      var km = Math.round((tank / cons) * 100);
-      if (km > 0 && km < 2000) inRange.value = String(km);
+    var tank = (typeof p.tank === 'number' && p.tank > 0) ? p.tank : null;
+    var cons = null;
+    if (typeof p.consumo === 'number' && p.consumo > 0) cons = p.consumo;
+    else if (typeof p.consumoL100km === 'number' && p.consumoL100km > 0) cons = p.consumoL100km;
+    if (!tank || !cons) return null;
+    return { tank: tank, consumo: cons, autonomyKm: Math.round((tank / cons) * 100) };
+  }
+
+  // Refresca el bloque "Tu coche (segun perfil)" con los valores actuales.
+  // Si falta perfil, oculta el bloque y muestra un aviso con enlace al modal
+  // de perfil — sin perfil no podemos planificar, asi evitamos que el usuario
+  // pulse "Planificar" y reciba un error confuso.
+  function refreshProfileBox() {
+    var v = readProfileVehicle();
+    if (!v) {
+      if (profBox) {
+        profBox.innerHTML = '<div class="route-profile-missing">'
+          + '\u26A0\uFE0F Para planificar una ruta necesitamos tu dep\u00F3sito y consumo. '
+          + '<a href="#" id="route-profile-link">Configura tu perfil</a>.'
+          + '</div>';
+        var lnk = document.getElementById('route-profile-link');
+        if (lnk) lnk.addEventListener('click', function(e) {
+          e.preventDefault();
+          closeRoute();
+          var btn = document.getElementById('btn-profile');
+          if (btn) btn.click();
+        });
+      }
+      return false;
     }
+    if (profTankEl) profTankEl.textContent = String(v.tank);
+    if (profConsEl) profConsEl.textContent = v.consumo.toString().replace('.', ',');
+    if (profAutoEl) profAutoEl.textContent = String(v.autonomyKm);
+    return true;
   }
 
   function openRoute() {
@@ -3681,7 +3783,7 @@ function exitRouteMode() {
     plan.innerHTML = '';
     stat.textContent = '';
     stat.classList.remove('error');
-    prefillRangeFromProfile();
+    refreshProfileBox();
     modal.classList.add('show');
     setTimeout(function(){ inFrom && inFrom.focus(); }, 50);
   }
@@ -3693,10 +3795,6 @@ function exitRouteMode() {
   modal.addEventListener('click', function(e) { if (e.target === modal) closeRoute(); });
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && modal.classList.contains('show')) closeRoute();
-  });
-
-  inWidth.addEventListener('input', function() {
-    lblWidth.textContent = inWidth.value + ' km';
   });
 
   // Debounced geocoder search — reusa /api/geocode/search (Nominatim proxy).
@@ -3956,17 +4054,18 @@ function exitRouteMode() {
 
     if (plan_result.unreachable) {
       // Muestra el ultimo punto alcanzado para que el usuario entienda donde
-      // "se rompe" el plan: si se ve 1 parada a km=420 y el mensaje dice
-      // "tras km 420 sin estaciones alcanzables", esta claro que hay que
-      // ampliar el corredor O aumentar la autonomia.
+      // "se rompe" el plan. Ya no pedimos al usuario que ampl\u00EDe corredor
+      // o suba autonomia (no hay inputs para eso): el auto-retry ya probo
+      // hasta 10 km; si sigue sin completar es problema real de cobertura,
+      // no de configuracion. Sugerimos cambiar el coche (perfil) o la ruta.
       var lastKm = plan_result.stops.length > 0
                    ? Math.round(plan_result.stops[plan_result.stops.length - 1].kmFromOrigin)
                    : 0;
       var where = lastKm > 0
-                  ? ('A partir del km ' + lastKm + ' no hay gasolineras dentro del alcance. ')
-                  : 'No hay gasolineras alcanzables desde el origen. ';
+                  ? ('A partir del km ' + lastKm + ' no hay gasolineras dentro del alcance de tu coche. ')
+                  : 'No hay gasolineras alcanzables desde el origen con tu autonom\u00EDa. ';
       return header + '<div class="route-plan-warning">\u26A0\uFE0F ' + where
-           + 'Amplia el corredor (desv\u00EDo m\u00E1ximo) o sube la autonom\u00EDa.</div>';
+           + 'Revisa en tu perfil el dep\u00F3sito y consumo, o prueba con otro origen/destino.</div>';
     }
     if (plan_result.stops.length === 0) {
       return header
@@ -4002,21 +4101,25 @@ function exitRouteMode() {
       stat.classList.add('error');
       return;
     }
-    // Autonomia declarada por el usuario (km). Unico parametro del coche que
-    // usamos: planFuelStops asume que al repostar se rellena a esta misma
-    // autonomia — simplificacion razonable para "planifica mi ruta".
-    var autonomyKm = parseInt(inRange.value, 10);
-    if (!isFinite(autonomyKm) || autonomyKm < 20) {
-      stat.textContent = 'Pon una autonom\u00EDa v\u00E1lida (20\u20132000 km).';
+    // Tank + consumo salen DIRECTAMENTE del perfil. Si falta cualquiera de
+    // los dos no podemos planificar (no hay forma de saber la autonomia),
+    // asi que abortamos con un mensaje claro. La UI del modal ya ensena un
+    // link a "configurar perfil" en refreshProfileBox(), aqui es defensa.
+    var vehicle = readProfileVehicle();
+    if (!vehicle) {
+      stat.textContent = 'Configura tu perfil (dep\u00F3sito y consumo) antes de planificar una ruta.';
       stat.classList.add('error');
       return;
     }
-    if (autonomyKm > 2000) autonomyKm = 2000;  // sanity cap
+    var autonomyKm = vehicle.autonomyKm;
     stat.classList.remove('error');
     stat.textContent = 'Calculando ruta por carretera\u2026';
     plan.innerHTML = '';
     res.innerHTML = '';
-    var width = parseInt(inWidth.value, 10);
+    // Corridor width inicial (km). No lo pide al usuario: 5 km cubre bien
+    // autopistas sin arrastrar gasolineras de carreteras lejanas. El
+    // auto-retry mas abajo amplia a 7/10 si el plan sale corto.
+    var width = DEFAULT_CORRIDOR_WIDTH_KM;
     var fuel = document.getElementById('sel-combustible').value;
     var fuelLabel = (document.getElementById('sel-combustible').selectedOptions[0].text) || fuel;
 
@@ -4108,35 +4211,13 @@ function exitRouteMode() {
         return;
       }
 
-      // 4. Planifica paradas. planFuelStops necesita tank + consumo. Si el
-      // perfil tiene ambos, los usamos DIRECTAMENTE (maxAutonomyKm sale
-      // coherente con la autonomia declarada del coche). Si el usuario ha
-      // cambiado manualmente "autonomia actual" en este modal (por ej. porque
-      // no salio del garaje con deposito lleno), re-derivamos el consumo para
-      // respetar esa autonomia manteniendo el tanque conocido. Si no hay
-      // perfil, caemos al par ficticio (tank=50L + consumo derivado).
-      var prof = getProfile() || {};
-      var profTank = (typeof prof.tank === 'number' && prof.tank > 0) ? prof.tank : null;
-      var profCons = null;
-      if (typeof prof.consumo === 'number' && prof.consumo > 0) profCons = prof.consumo;
-      else if (typeof prof.consumoL100km === 'number' && prof.consumoL100km > 0) profCons = prof.consumoL100km;
-
-      var tankL, consumoL100km;
-      if (profTank && profCons) {
-        var derivedAutonomy = Math.round((profTank / profCons) * 100);
-        if (Math.abs(derivedAutonomy - autonomyKm) <= 2) {
-          // El usuario dejo el valor autocargado del perfil: usa tank/consumo reales.
-          tankL = profTank;
-          consumoL100km = profCons;
-        } else {
-          // Autonomia modificada manualmente: respeta la nueva y re-deriva el consumo.
-          tankL = profTank;
-          consumoL100km = (profTank * 100) / autonomyKm;
-        }
-      } else {
-        tankL = 50;
-        consumoL100km = (50 * 100) / autonomyKm;
-      }
+      // 4. Planifica paradas usando los datos REALES del perfil: tank y
+      // consumo se leen en readProfileVehicle() al inicio de doSearch, y
+      // autonomyKm = (tank / consumo) * 100 es la autonomia maxima del
+      // coche. planFuelStops asume que al repostar se llena a esta misma
+      // autonomia (simplificacion razonable para "planifica mi ruta").
+      var tankL = vehicle.tank;
+      var consumoL100km = vehicle.consumo;
 
       // Diagnostico: imprime los parametros usados por el planificador para que
       // sea facil verificar que tank/consumo/autonomia llegan con valores
@@ -4150,7 +4231,7 @@ function exitRouteMode() {
           corridorCount: corridor.length,
           corridorWidthKm: width,
           fuel: fuel,
-          sourceOfProfile: (profTank && profCons) ? 'profile' : 'fallback'
+          sourceOfProfile: 'profile'
         });
       } catch (e) { /* sin consola: sigue */ }
 
@@ -4227,11 +4308,12 @@ function exitRouteMode() {
         });
       } catch (e) { /* idem */ }
 
-      // Mensaje de estado con el ancho REAL usado (si se amplio, avisamos al
-      // usuario que su ancho inicial no bastaba). Asi queda claro por que ve
-      // mas/menos paradas de las que esperaba.
+      // Mensaje de estado. Si el auto-retry tuvo que ampliar el corredor,
+      // lo mencionamos discretamente (para que se entienda por que algunas
+      // gasolineras no son pegadas a la autopista) pero sin culpar al usuario
+      // — el ancho es una decision interna que ya no controla.
       var widthNote = widenedAutomatically
-        ? ' (corredor ampliado autom\u00E1ticamente a ' + usedWidth + ' km; con ' + width + ' km no hab\u00EDa suficientes gasolineras)'
+        ? ' \u00B7 corredor ampliado a ' + usedWidth + ' km para encontrar gasolineras'
         : '';
       stat.textContent = 'Ruta ' + totalKm.toFixed(0) + ' km \u00B7 ' + corridor.length + ' estaciones en el corredor \u00B7 ' + planResult.stops.length + ' paradas recomendadas.' + widthNote;
       // Renderizado inicial del plan SIN botones de navegacion para feedback

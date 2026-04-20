@@ -660,6 +660,61 @@ export function getStyles(nonce: string = ''): string {
     .form-help { font-size:11px; color:#64748b; margin-top:4px; }
     body.dark .form-help { color:#94a3b8; }
 
+    /* ---- Autonomia calculada en el modal de perfil ----
+       Numero grande + unidad pequena. Visualmente destaca porque es el
+       dato clave que el planificador de rutas usa: el usuario entiende
+       que sus ajustes de consumo/deposito determinan este numero. */
+    .profile-autonomy {
+      display: inline-flex; align-items: baseline; gap: 6px;
+      padding: 6px 14px; border-radius: 10px;
+      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
+      border: 1px solid #bbf7d0;
+    }
+    .profile-autonomy #profile-autonomy-val {
+      font-size: 28px; font-weight: 800; color: #065f46; letter-spacing: -0.02em;
+    }
+    .profile-autonomy-unit { font-size: 13px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.04em; }
+    body.dark .profile-autonomy {
+      background: linear-gradient(135deg, #064e3b, #065f46);
+      border-color: #166534;
+    }
+    body.dark .profile-autonomy #profile-autonomy-val { color: #6ee7b7; }
+    body.dark .profile-autonomy-unit { color: #a7f3d0; }
+
+    /* ---- Bloque "Tu coche (segun perfil)" en modal ruta ----
+       Resumen read-only de tank + consumo + autonomia derivada. La fila
+       de autonomia se resalta porque es la que mas le importa al usuario
+       para interpretar el plan. */
+    .route-profile-info {
+      display: flex; flex-direction: column; gap: 4px;
+      padding: 10px 12px; border-radius: 10px;
+      background: #f8fafc; border: 1px solid #e2e8f0;
+    }
+    .route-profile-row {
+      display: flex; justify-content: space-between; align-items: baseline;
+      font-size: 13px;
+    }
+    .route-profile-k { color: #475569; }
+    .route-profile-v { font-weight: 700; color: #0f172a; }
+    .route-profile-hl {
+      margin-top: 4px; padding-top: 6px; border-top: 1px dashed #cbd5e1;
+    }
+    .route-profile-hl .route-profile-k { color: #047857; font-weight: 600; }
+    .route-profile-hl .route-profile-v { color: #047857; font-size: 15px; }
+    body.dark .route-profile-info { background: #0f172a; border-color: #334155; }
+    body.dark .route-profile-k { color: #94a3b8; }
+    body.dark .route-profile-v { color: #f1f5f9; }
+    body.dark .route-profile-hl { border-top-color: #475569; }
+    body.dark .route-profile-hl .route-profile-k { color: #6ee7b7; }
+    body.dark .route-profile-hl .route-profile-v { color: #6ee7b7; }
+    .route-profile-missing {
+      padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5;
+      background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
+    }
+    .route-profile-missing a { color: #92400e; font-weight: 700; text-decoration: underline; }
+    body.dark .route-profile-missing { background: #422006; border-color: #78350f; color: #fde68a; }
+    body.dark .route-profile-missing a { color: #fcd34d; }
+
     /* ---- Modal diario de repostajes ---- */
     .diary-modal { max-width: 560px; }
     .diary-stats {

@@ -544,6 +544,17 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <span class="range-val" id="lbl-tank-modal">50 L</span>
         </div>
       </div>
+      <!-- Autonomia calculada automaticamente a partir de consumo + deposito.
+           Read-only: es el dato que usamos en el planificador de rutas para
+           saber cada cuantos km hay que repostar. -->
+      <div class="form-group" id="profile-autonomy-box">
+        <label class="form-label">&#x1F6E3;&#xFE0F; Autonom&iacute;a con dep&oacute;sito lleno</label>
+        <div class="profile-autonomy">
+          <span id="profile-autonomy-val">769</span>
+          <span class="profile-autonomy-unit">km</span>
+        </div>
+        <p class="form-help">Se calcula autom&aacute;ticamente: dep&oacute;sito &divide; consumo &times; 100. Es la distancia m&aacute;xima que puedes recorrer sin repostar y la usamos para planificar tus rutas.</p>
+      </div>
     </div>
     <div class="modal-footer">
       <button id="btn-profile-skip"  class="btn-ghost">Ahora no</button>
@@ -608,17 +619,27 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <input id="route-to" class="form-input" type="text" placeholder="Barcelona, Sevilla, ..." autocomplete="off" />
         <div id="route-to-sug" class="route-sug" role="listbox"></div>
       </div>
-      <div class="form-group">
-        <label class="form-label" for="route-range-km">Autonom&iacute;a actual del coche (km)</label>
-        <input id="route-range-km" class="form-input" type="number" min="20" max="2000" step="10" value="500" inputmode="numeric" />
-        <p class="form-help" id="route-autonomy-lbl">Cu&aacute;ntos km puedes conducir antes de parar a repostar. Si sales con el dep&oacute;sito lleno, pon la autonom&iacute;a m&aacute;xima de tu coche.</p>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="route-width">Ancho del corredor (desv&iacute;o m&aacute;ximo)</label>
-        <div class="range-group">
-          <input id="route-width" type="range" min="1" max="10" step="1" value="3" aria-label="Ancho del corredor en kilometros" />
-          <span class="range-val" id="route-width-lbl">3 km</span>
+      <!-- Bloque informativo: la autonomia se deriva de tu perfil (deposito /
+           consumo x 100). Ya no pedimos al usuario el "ancho del corredor":
+           usamos 5 km por defecto y ampliamos automaticamente si no encontramos
+           suficientes gasolineras. Todo transparente. -->
+      <div class="form-group" id="route-profile-box">
+        <label class="form-label">&#x1F697; Tu coche (seg&uacute;n perfil)</label>
+        <div id="route-profile-info" class="route-profile-info">
+          <div class="route-profile-row">
+            <span class="route-profile-k">Dep&oacute;sito</span>
+            <span class="route-profile-v"><span id="route-profile-tank">50</span> L</span>
+          </div>
+          <div class="route-profile-row">
+            <span class="route-profile-k">Consumo</span>
+            <span class="route-profile-v"><span id="route-profile-cons">6,5</span> L/100km</span>
+          </div>
+          <div class="route-profile-row route-profile-hl">
+            <span class="route-profile-k">Autonom&iacute;a</span>
+            <span class="route-profile-v"><span id="route-profile-auto">769</span> km</span>
+          </div>
         </div>
+        <p class="form-help">Usamos estos datos para decidir d&oacute;nde hay que repostar. Si no son correctos, abre tu perfil (bot&oacute;n &#x1F464; del header) para cambiarlos.</p>
       </div>
       <div id="route-status" class="route-status" aria-live="polite"></div>
       <div id="route-plan" class="route-plan" aria-live="polite"></div>

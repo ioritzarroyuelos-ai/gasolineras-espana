@@ -541,34 +541,14 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
   });
-  // Satelite base — ortofoto pura de Esri World Imagery.
-  var satBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye',
-    maxZoom: 19, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
-  });
-  // Overlay de etiquetas transparentes — calles y lugares rotulados encima de
-  // la ortofoto. Reproduce la vista "Satelite con etiquetas" de Google Maps.
-  var satLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
-  });
-  // Capa "Satelite" = ortofoto + etiquetas, igual que el toggle por defecto de
-  // Google Maps. Un layerGroup se comporta como capa unica en el control.
-  mapLayers.satellite = L.layerGroup([satBase, satLabels]);
-
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
 
-  // Controles estilo Google Maps: zoom abajo-derecha, escala abajo-izquierda.
+  // Controles: solo zoom (abajo-derecha) y escala (abajo-izquierda). Sin
+  // selector Mapa/Satelite (quitado por peticion del usuario) — un unico
+  // basemap, sin opciones visibles que ocupen esquina del mapa.
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(map);
-  mapLayers.__layersControl = L.control.layers(
-    {
-      '&#x1F5FA;&#xFE0F; Mapa':            mapLayers.light,
-      '&#x1F6F0;&#xFE0F; Sat&eacute;lite': mapLayers.satellite
-    },
-    {}, { position: 'topright', collapsed: false }
-  ).addTo(map);
 
   // Capa de etiquetas propias — CCAA + ciudades principales en castellano.
   // Funciona como FALLBACK garantizado: mientras MapLibre GL carga (async) y
@@ -590,18 +570,49 @@ function initMap() {
   setTimeout(function() { map.invalidateSize(true); }, 100);
 }
 
-// Fetch + patch + apply del style Liberty de OpenFreeMap.
-// Problema: los raster tiles (CARTO Voyager / dark_all) muestran CCAA y paises
-// fronterizos (Portugal, Francia, Marruecos...) en sus nombres OSM por defecto,
-// que a menudo estan en ingles ("Seville", "CASTILE AND LEON", "Lisbon",
-// "Algiers"). Los tiles vectoriales de OpenFreeMap SI traen campos
-// multi-idioma (name:es, name:fr, name:de...) y MapLibre GL evalua una
-// expresion [get, "name:es"] para decidir que dibujar.
+// Poligono simplificado que cubre unicamente territorio espanol: Peninsula
+// Iberica (siguiendo la frontera con Portugal/Francia), Baleares, Canarias,
+// Ceuta y Melilla. Lo usamos como filter "within" en cada capa de texto del
+// estilo Liberty — asi MapLibre GL solo renderiza labels cuyos features caen
+// DENTRO de Espana. Portugal, Francia, Marruecos, Argelia, Gibraltar, Andorra
+// quedan sin toponimia.
 //
-// Estrategia: fetcheamos el style.json, recorremos recursivamente cada
-// expresion text-field, y cambiamos ["get", "name:latin"] / ["get", "name"] por
-// un coalesce: primero intenta name:es, luego name:latin, luego name.
-// Resultado: toponimia OSM completa en castellano cuando existe el tag.
+// Precision: ~30 vertices en Peninsula, suficiente para distinguir Portugal
+// de Espana en la frontera y no es demasiado lento de evaluar. Archipielagos
+// son cajas rectangulares (no hay islas de otro pais en esos bboxes).
+var SPAIN_GEOMETRY = {
+  type: 'MultiPolygon',
+  coordinates: [
+    // Peninsula — en sentido antihorario, aproximando frontera con Portugal
+    // (oeste) y Francia (norte / Pirineos).
+    [[[-9.30, 43.20], [-9.50, 42.80], [-8.88, 42.17], [-8.22, 42.15],
+      [-7.05, 41.95], [-6.93, 41.00], [-7.35, 40.20], [-7.20, 39.67],
+      [-7.50, 38.85], [-7.35, 38.25], [-7.50, 37.50], [-7.43, 37.20],
+      [-6.95, 36.80], [-6.50, 36.45], [-5.85, 36.00], [-5.35, 36.15],
+      [-4.40, 36.68], [-3.50, 36.70], [-2.90, 36.70], [-1.80, 36.75],
+      [-0.75, 37.60], [0.20, 39.40], [0.55, 40.70], [1.30, 41.00],
+      [3.30, 41.90], [3.30, 42.30], [1.70, 42.40], [0.70, 42.70],
+      [-0.30, 42.80], [-1.40, 43.05], [-1.75, 43.35], [-2.93, 43.45],
+      [-3.80, 43.48], [-4.85, 43.55], [-6.20, 43.65], [-7.42, 43.79],
+      [-8.20, 43.75], [-9.30, 43.20]]],
+    // Baleares (bbox amplio — no hay islas de otro pais cerca)
+    [[[1.00, 38.55], [4.60, 38.55], [4.60, 40.20], [1.00, 40.20], [1.00, 38.55]]],
+    // Canarias (bbox amplio)
+    [[[-18.30, 27.30], [-13.20, 27.30], [-13.20, 29.60], [-18.30, 29.60], [-18.30, 27.30]]],
+    // Ceuta
+    [[[-5.43, 35.84], [-5.23, 35.84], [-5.23, 35.95], [-5.43, 35.95], [-5.43, 35.84]]],
+    // Melilla
+    [[[-3.03, 35.22], [-2.88, 35.22], [-2.88, 35.35], [-3.03, 35.35], [-3.03, 35.22]]]
+  ]
+};
+
+// Fetch + patch + apply del style Liberty de OpenFreeMap.
+// Dos patches:
+//   1) text-field -> coalesce(name:es, name:latin, name)  — fuerza castellano
+//      incluso si la layer pedia originalmente name:en/name:fr/name:latin.
+//   2) filter    -> ["all", originalFilter, ["within", SPAIN_GEOMETRY]]  — solo
+//      renderiza texto si la feature cae DENTRO de Espana. Portugal, Francia,
+//      Marruecos, Argelia, Andorra, Gibraltar quedan sin ningun label.
 async function applyLibertyLanguage() {
   // Esperamos a que los scripts MapLibre carguen (son defer, asi que pueden
   // no estar listos cuando initMap() corre).
@@ -616,35 +627,48 @@ async function applyLibertyLanguage() {
     if (!resp.ok) return;
     var style = await resp.json();
 
-    // Patch recursivo: cualquier expresion ["get", "name"] o ["get", "name:latin"]
-    // se reescribe como ["coalesce", ["get", "name:es"], <original>]. Eso
-    // garantiza que si un objeto OSM no tiene name:es (algun pueblo pequeno
-    // fuera de Espana), cae al nombre original — nunca pintamos vacio.
+    // Patch recursivo de text-field. Capturamos name, name:latin, name:en,
+    // name:fr, etc. y los reescribimos a coalesce(name:es, name:latin, name).
+    // Asi una layer que pedia "name:en" acaba pintando castellano igualmente.
     function patchGet(expr) {
       if (Array.isArray(expr)) {
-        if (expr[0] === 'get' && (expr[1] === 'name' || expr[1] === 'name:latin')) {
-          return ['coalesce', ['get', 'name:es'], expr];
+        if (expr[0] === 'get' && typeof expr[1] === 'string') {
+          var k = expr[1];
+          if (k === 'name' || k === 'name:latin' || (k.indexOf('name:') === 0 && k !== 'name:es')) {
+            return ['coalesce', ['get', 'name:es'], ['get', 'name:latin'], ['get', 'name']];
+          }
         }
         return expr.map(patchGet);
       }
       if (expr && typeof expr === 'object') {
         var out = {};
-        for (var k in expr) if (Object.prototype.hasOwnProperty.call(expr, k)) out[k] = patchGet(expr[k]);
+        for (var kk in expr) if (Object.prototype.hasOwnProperty.call(expr, kk)) out[kk] = patchGet(expr[kk]);
         return out;
       }
       return expr;
     }
+
+    // Combina el filter original con "within Espana" — preserva la logica de
+    // Liberty (rank, class, etc.) y anade el recorte geografico encima.
+    var spatialFilter = ['within', SPAIN_GEOMETRY];
+    function addSpanishFilter(originalFilter) {
+      if (!originalFilter) return spatialFilter;
+      return ['all', originalFilter, spatialFilter];
+    }
+
     if (Array.isArray(style.layers)) {
       for (var i = 0; i < style.layers.length; i++) {
         var layer = style.layers[i];
         if (!layer || !layer.layout) continue;
-        if (layer.layout['text-field']) {
-          layer.layout['text-field'] = patchGet(layer.layout['text-field']);
-        }
+        if (!layer.layout['text-field']) continue;
+        // 1) Castellano siempre
+        layer.layout['text-field'] = patchGet(layer.layout['text-field']);
+        // 2) Solo dentro de Espana
+        layer.filter = addSpanishFilter(layer.filter);
       }
     }
 
-    // Montamos el vector tile layer y lo swap-eamos por el raster clar.
+    // Montamos el vector tile layer y lo swap-eamos por el raster claro.
     var libertyLayer = L.maplibreGL({
       style: style,
       attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -654,29 +678,13 @@ async function applyLibertyLanguage() {
     mapLayers.light = libertyLayer;
     if (wasLight) libertyLayer.addTo(map);
 
-    // Liberty ya trae toda la toponimia en castellano (via patch name:es), asi
-    // que en modo claro la capa de SPAIN_LABELS solo duplicaria texto. La
-    // desactivamos cuando el light esta activo — el zoomend handler no pintara
-    // nada si labelLayer es null.
+    // Liberty ya trae toda la toponimia en castellano y limitada a Espana:
+    // la capa SPAIN_LABELS solo duplicaria texto. La desactivamos en modo claro.
     if (labelLayer && wasLight) {
       map.removeLayer(labelLayer);
       labelLayer = null;
       map.off('zoomend', renderLabels);
     }
-
-    // Refresh del control de capas: la referencia en el switcher sigue
-    // apuntando al layer viejo y ya no lo re-anade. Quitamos el antiguo y
-    // anadimos uno nuevo con la referencia actualizada.
-    if (mapLayers.__layersControl) {
-      try { map.removeControl(mapLayers.__layersControl); } catch (e) {}
-    }
-    mapLayers.__layersControl = L.control.layers(
-      {
-        '\u{1F5FA}\u{FE0F} Mapa':            mapLayers.light,
-        '\u{1F6F0}\u{FE0F} Sat\u00e9lite':   mapLayers.satellite
-      },
-      {}, { position: 'topright', collapsed: false }
-    ).addTo(map);
   } catch (e) {
     // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
   }
@@ -2364,33 +2372,30 @@ window.addEventListener('resize', function() {
   btn.addEventListener('click', function() {
     document.body.classList.toggle('dark');
     updateIcon();
-    // Sincronizar tile del mapa si no esta en satelite
+    // Sincronizar tile del mapa: togglear entre capa clara y oscura.
     if (map && mapLayers.light && mapLayers.dark) {
-      var onSat = map.hasLayer(mapLayers.satellite);
-      if (!onSat) {
-        var isDark = document.body.classList.contains('dark');
-        if (isDark) { map.removeLayer(mapLayers.light); mapLayers.dark.addTo(map); }
-        else        { map.removeLayer(mapLayers.dark);  mapLayers.light.addTo(map); }
-        // Dark usa raster sin etiquetas — necesita SPAIN_LABELS encima. Light
-        // puede ser MapLibre Liberty (que ya trae toponimia completa en
-        // castellano) o raster voyager_nolabels; en el segundo caso tambien
-        // hacen falta labels custom. Criterio: si mapLayers.light es un
-        // TileLayer (raster), mostramos labels en ambos modos; si es MapLibre
-        // (vector), solo en modo dark.
-        var lightIsRaster = mapLayers.light instanceof L.TileLayer;
-        var needLabels = isDark || lightIsRaster;
-        if (needLabels) {
-          if (!labelLayer) {
-            labelLayer = L.layerGroup().addTo(map);
-            map.on('zoomend', renderLabels);
-          } else if (!map.hasLayer(labelLayer)) {
-            labelLayer.addTo(map);
-          }
-          renderLabels();
-        } else {
-          if (labelLayer && map.hasLayer(labelLayer)) {
-            map.removeLayer(labelLayer);
-          }
+      var isDark = document.body.classList.contains('dark');
+      if (isDark) { map.removeLayer(mapLayers.light); mapLayers.dark.addTo(map); }
+      else        { map.removeLayer(mapLayers.dark);  mapLayers.light.addTo(map); }
+      // Dark usa raster sin etiquetas — necesita SPAIN_LABELS encima. Light
+      // puede ser MapLibre Liberty (trae toponimia filtrada a Espana) o raster
+      // voyager_nolabels; en el segundo caso tambien hacen falta labels custom.
+      // Criterio: si mapLayers.light sigue siendo un TileLayer (raster, el
+      // upgrade MapLibre no llego a aplicarse), mostramos labels en ambos
+      // modos; si es MapLibre (vector), solo en modo dark.
+      var lightIsRaster = mapLayers.light instanceof L.TileLayer;
+      var needLabels = isDark || lightIsRaster;
+      if (needLabels) {
+        if (!labelLayer) {
+          labelLayer = L.layerGroup().addTo(map);
+          map.on('zoomend', renderLabels);
+        } else if (!map.hasLayer(labelLayer)) {
+          labelLayer.addTo(map);
+        }
+        renderLabels();
+      } else {
+        if (labelLayer && map.hasLayer(labelLayer)) {
+          map.removeLayer(labelLayer);
         }
       }
     }

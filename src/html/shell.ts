@@ -203,6 +203,49 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           crossorigin="anonymous"
           referrerpolicy="no-referrer"></script>
 
+  <!-- Leaflet MiniMap — mini-mapa flotante arriba-izquierda con el contexto
+       geografico. Util cuando el usuario hace zoom a una gasolinera y pierde
+       la referencia de donde esta en Espana. Plugin sin dependencias mas alla
+       de Leaflet. -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.css"
+        integrity="sha384-fJfuZkkcvs8WaA4EwtvOnAdWCnya8UJs3liz2V87teR6CERxOgK/sAs+Qtemadnv"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <script defer
+          src="https://unpkg.com/leaflet-minimap@3.6.1/dist/Control.MiniMap.min.js"
+          integrity="sha384-s+UjUz5AYaOKTypfMOTUwRsgophnJbGXlggAD/BqTA1iRFjRK9IK0FOddzOe0b4N"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
+  <!-- Leaflet Fullscreen — boton para pantalla completa real (Fullscreen API
+       nativa del navegador, no solo maximizar en el viewport). Util en moviles
+       y para presentar el mapa sin chrome de la app. -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet.fullscreen@3.0.2/Control.FullScreen.css"
+        integrity="sha384-PALxxXbG28eiE9bT7yKmsbjd4Ta3qKMLlzsrp6G+05f4Nltt4ktlg1l7e4RPeNEa"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <script defer
+          src="https://unpkg.com/leaflet.fullscreen@3.0.2/Control.FullScreen.js"
+          integrity="sha384-l0YxV5zMlsDoa/OatH90j4WDu9eFcFTMBjn1+AZN39VXC/k+uKAu3RTciIg3Te2t"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
+  <!-- Leaflet LocateControl — boton circular "mi ubicacion" tipo Google Maps
+       en el propio mapa (el btn-geolocate existente esta en el sidebar). Hace
+       fly-to a la posicion actual + pinta un circulo con el radio de precision. -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet.locatecontrol@0.83.1/dist/L.Control.Locate.min.css"
+        integrity="sha384-QRv4WaIVqSPw8wG1yKiSkuFaMMvHeL6pRqhDy3PQeyuo81SoY4vKJGCmbapBAjWH"
+        crossorigin="anonymous"
+        referrerpolicy="no-referrer" />
+  <script defer
+          src="https://unpkg.com/leaflet.locatecontrol@0.83.1/dist/L.Control.Locate.min.js"
+          integrity="sha384-P++BxLhQFMrwwdyeD8sPbAer7Lnv27MCe8vhA8fr83oTV3vaNWQndGltGBUsIocS"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
   <!-- MapLibre GL — render vectorial estilo Google Maps. Se usa via el bridge
        plugin maplibre-gl-leaflet (L.maplibreGL) como capa dentro de Leaflet,
        asi todos los markers / clusters / popups existentes siguen funcionando.

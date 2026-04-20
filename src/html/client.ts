@@ -585,6 +585,58 @@ function initMap() {
     {}, { position: 'topright', collapsed: false }
   ).addTo(map);
 
+  // ---- CONTROLES ADICIONALES ESTILO GOOGLE MAPS ----
+  // Los tres plugins (MiniMap, Fullscreen, LocateControl) se cargan con 'defer'
+  // en shell.ts, asi que aqui ya estan disponibles como L.Control.*. Se hace
+  // typeof-check defensivo: si un plugin falla al cargar (CDN, red), el mapa
+  // sigue funcionando sin ese control en vez de romper toda la inicializacion.
+
+  // 1) Pantalla completa — fullscreen API nativa del navegador. Posicionado
+  //    arriba-izquierda para no chocar con el selector de capas (topright).
+  if (typeof L.control.fullscreen === 'function') {
+    L.control.fullscreen({
+      position: 'topleft',
+      title:       'Pantalla completa',
+      titleCancel: 'Salir de pantalla completa'
+    }).addTo(map);
+  }
+
+  // 2) Mi ubicacion — boton circular GPS tipo Google Maps. Hace fly-to a la
+  //    posicion detectada con radio de precision. Complementa el btn-geolocate
+  //    del sidebar (para usuarios que ignoran el sidebar y miran solo el mapa).
+  if (L.control && typeof L.control.locate === 'function') {
+    L.control.locate({
+      position: 'bottomright',
+      flyTo: true,
+      keepCurrentZoomLevel: false,
+      showCompass: false,
+      strings: {
+        title:          'Mostrar mi ubicaci\u00f3n',
+        popup:          'Est\u00e1s a menos de {distance} {unit} de este punto',
+        outsideMapBoundsMsg: 'Tu ubicaci\u00f3n parece estar fuera del area del mapa'
+      },
+      locateOptions: { maxZoom: 14, enableHighAccuracy: false }
+    }).addTo(map);
+  }
+
+  // 3) Mini-mapa — contexto geografico global en esquina inferior-izquierda.
+  //    Usa tiles raster CARTO Voyager nolabels (ligero, sin etiquetas para no
+  //    saturar el widget pequeno). Toggle para colapsar/expandir.
+  if (typeof L.Control !== 'undefined' && typeof L.Control.MiniMap === 'function') {
+    var miniTiles = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png', {
+      subdomains: 'abcd', minZoom: 0, maxZoom: 13
+    });
+    new L.Control.MiniMap(miniTiles, {
+      position:        'bottomleft',
+      width:           140,
+      height:          100,
+      toggleDisplay:   true,
+      minimized:       false,
+      zoomLevelOffset: -5,
+      aimingRectOptions: { color: '#16a34a', weight: 2, opacity: 0.9, fillOpacity: 0.1 }
+    }).addTo(map);
+  }
+
   // Sistema de etiquetas custom (labelLayer + renderLabels + SPAIN_LABELS) ya
   // NO se conecta: Voyager trae etiquetas nativas multi-idioma equivalentes a
   // Google Maps. Las definiciones se conservan mas abajo por si se quiere

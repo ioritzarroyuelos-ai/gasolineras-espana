@@ -268,6 +268,46 @@ export function getStyles(nonce: string = ''): string {
     body.dark .leaflet-control-layers-base label { color: #e8eaed !important; }
     body.dark .leaflet-control-layers-base label:hover { color: #8ab4f8 !important; }
 
+    /* Fullscreen — boton unificado con el estilo Material de los demas. */
+    .leaflet-control-fullscreen a {
+      width: 40px !important; height: 40px !important; line-height: 40px !important;
+      background-color: #fff !important;
+      background-size: 18px 18px !important;
+      color: #5f6368 !important;
+    }
+    .leaflet-control-fullscreen a:hover { background-color: #f1f3f4 !important; }
+    body.dark .leaflet-control-fullscreen a { background-color: #202124 !important; filter: invert(1) hue-rotate(180deg); }
+    .leaflet-control-fullscreen { margin: 10px 0 0 10px !important; }
+
+    /* LocateControl (mi ubicacion) — icono circular Google-like. */
+    .leaflet-control-locate a {
+      width: 40px !important; height: 40px !important; line-height: 40px !important;
+      background: #fff !important; color: #5f6368 !important;
+    }
+    .leaflet-control-locate a:hover { background: #f1f3f4 !important; color: #202124 !important; }
+    .leaflet-control-locate.active a { color: #1a73e8 !important; }        /* azul Google cuando activo */
+    .leaflet-control-locate.following a { color: #1a73e8 !important; background: #e8f0fe !important; }
+    body.dark .leaflet-control-locate a { background: #202124 !important; color: #e8eaed !important; }
+    body.dark .leaflet-control-locate a:hover { background: #303134 !important; }
+    body.dark .leaflet-control-locate.active a { color: #8ab4f8 !important; }
+    .leaflet-control-locate { margin-bottom: 8px !important; }
+
+    /* MiniMap — contenedor con sombra y bordes redondeados estilo Google. */
+    .leaflet-control-minimap {
+      border-radius: 8px !important;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.15), 0 4px 12px rgba(0,0,0,0.08) !important;
+      border: 2px solid #fff !important;
+      overflow: hidden;
+      margin: 0 0 12px 12px !important;
+    }
+    body.dark .leaflet-control-minimap { border-color: #3c4043 !important; }
+    .leaflet-control-minimap-toggle-display {
+      border-radius: 4px !important;
+      background-color: rgba(255,255,255,0.92) !important;
+      color: #5f6368 !important;
+    }
+    .leaflet-control-minimap-toggle-display:hover { background-color: #fff !important; }
+
     /* ===== SCROLLBAR ===== */
     ::-webkit-scrollbar { width:5px; }
     ::-webkit-scrollbar-track { background:#f1f5f9; }

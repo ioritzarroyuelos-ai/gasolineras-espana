@@ -801,6 +801,91 @@ describe('planFuelStops (planificador de paradas en ruta)', () => {
     expect(r.stops.length).toBe(1)
     expect(r.stops[0].item.id).toBe('valida')
   })
+
+  it('penaliza el coste del desvio: prefiere on-route cuando los precios son similares', () => {
+    // Misma ventana, mismo km: una on-route a 1.45 vs una desviada 8 km a
+    // 1.44. Sin penalizacion, la segunda ganaria por precio. Con penalizacion
+    // (autonomia 500km, detour 16km => ~3.2% overhead), la on-route gana.
+    const r = planFuelStops<S>({
+      routeKm: 400,
+      tankL: 50,
+      consumoL100km: 10,        // autonomia = 500 km
+      currentFuelPct: 0.50,     // 250 km alcanzables
+      stations: [
+        { item: { id: 'onroute', name: 'OnRoute' }, kmFromOrigin: 150, priceEurL: 1.45, offKm: 0 },
+        { item: { id: 'desvio',  name: 'Desvio' },  kmFromOrigin: 150, priceEurL: 1.44, offKm: 8 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('onroute')
+  })
+
+  it('penaliza el coste del desvio: no se desvia si el ahorro no compensa', () => {
+    // Dos estaciones mismo km, misma ventana: on-route 1.50, desviada 6km
+    // a 1.48. Desvio encarece ~2.4% (700km autonomia) => 1.48 * 1.024 = 1.515
+    // vs 1.50 on-route. Debe elegir la on-route.
+    const r = planFuelStops<S>({
+      routeKm: 400,
+      tankL: 50,
+      consumoL100km: 7,         // autonomia ~714 km
+      currentFuelPct: 0.30,     // ~214 km alcanzables
+      stations: [
+        { item: { id: 'onroute', name: 'OnRoute' }, kmFromOrigin: 120, priceEurL: 1.50, offKm: 0 },
+        { item: { id: 'desvio',  name: 'Desvio' },  kmFromOrigin: 120, priceEurL: 1.48, offKm: 6 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('onroute')
+  })
+
+  it('se desvia si el ahorro compensa claramente el coste del desvio', () => {
+    // On-route a 1.60, desviada 2km a 1.40. El desvio penaliza poco (~0.6%
+    // de 1.40 = ~0.008 €/L) y el ahorro es enorme (0.20 €/L). Gana la desviada.
+    const r = planFuelStops<S>({
+      routeKm: 400,
+      tankL: 50,
+      consumoL100km: 7,
+      currentFuelPct: 0.30,
+      stations: [
+        { item: { id: 'cara',   name: 'Cara' },   kmFromOrigin: 120, priceEurL: 1.60, offKm: 0 },
+        { item: { id: 'barata', name: 'Barata' }, kmFromOrigin: 120, priceEurL: 1.40, offKm: 2 },
+      ],
+    })
+    expect(r.stops.length).toBe(1)
+    expect(r.stops[0].item.id).toBe('barata')
+  })
+
+  it('totalCostEur incluye el combustible gastado en el desvio ida+vuelta', () => {
+    // 1 parada on-route: total = consumido * precio.
+    const onRoute = planFuelStops<S>({
+      routeKm: 300, tankL: 50, consumoL100km: 10, currentFuelPct: 0.30,
+      stations: [
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 100, priceEurL: 1.50, offKm: 0 },
+      ],
+    })
+    // consumido = 100km * 10/100 = 10 L; total = 10 * 1.50 = 15 €
+    expect(onRoute.totalCostEur).toBeCloseTo(15, 2)
+
+    // Misma parada con desvio 5km: +2*5*10/100 = 1 L extra * 1.50 = 1.50 €.
+    const withDetour = planFuelStops<S>({
+      routeKm: 300, tankL: 50, consumoL100km: 10, currentFuelPct: 0.30,
+      stations: [
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 100, priceEurL: 1.50, offKm: 5 },
+      ],
+    })
+    expect(withDetour.totalCostEur).toBeCloseTo(16.5, 2)
+  })
+
+  it('offKm ausente o invalido se trata como 0 (on-route; no penaliza)', () => {
+    // Sin offKm: deberia comportarse identico al test clasico (15 €).
+    const r = planFuelStops<S>({
+      routeKm: 300, tankL: 50, consumoL100km: 10, currentFuelPct: 0.30,
+      stations: [
+        { item: { id: 'a', name: 'A' }, kmFromOrigin: 100, priceEurL: 1.50 },
+      ],
+    })
+    expect(r.totalCostEur).toBeCloseTo(15, 2)
+  })
 })
 
 describe('projectOnRoute (proyeccion sobre segmento)', () => {

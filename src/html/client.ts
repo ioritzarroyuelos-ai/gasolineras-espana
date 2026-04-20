@@ -3605,16 +3605,15 @@ function googleMapsRouteUrl(from, to, stops) {
   }
   return url;
 }
-function appleMapsRouteUrl(from, to, stops) {
-  // daddr = parada1+to:parada2+to:destino. Apple requiere que el destino
-  // final sea el ULTIMO elemento de daddr, no un parametro separado.
-  // Igual que Google: waypoints textuales para apuntar a la gasolinera
-  // exacta; saddr/destino final quedan en coordenadas (geocoder precisas).
-  var wps = navStopsWaypoints(stops);
-  var daddrParts = wps.map(function(w) { return w.value; });
-  daddrParts.push(navCoord(to));
+function appleMapsRouteUrl(from, to, _stops) {
+  // Apple Maps WEB (maps.apple.com) NO soporta multi-stop via URL: aunque la
+  // documentacion menciona el formato "daddr=A+to:B+to:C", solo la app nativa
+  // (iOS/macOS Maps) lo interpreta correctamente. En web redirige a
+  // /directions y solo lee el PRIMER destino. Para no confundir al usuario
+  // (le salia una parada random como destino final), abrimos unicamente
+  // origen -> destino. La UI avisa de que las paradas solo van en Google.
   return 'https://maps.apple.com/?saddr=' + navCoord(from)
-       + '&daddr=' + encodeURIComponent(daddrParts.join('+to:'))
+       + '&daddr=' + navCoord(to)
        + '&dirflg=d';
 }
 function wazeRouteUrl(to) {
@@ -3980,7 +3979,26 @@ function exitRouteMode() {
       return s && isFinite(s.kmFromOrigin) && s.kmFromOrigin >= 0
           && s.kmFromOrigin <= routeKm
           && isFinite(s.priceEurL) && s.priceEurL > 0;
-    }).slice().sort(function(a, b) { return a.kmFromOrigin - b.kmFromOrigin; });
+    }).map(function(s) {
+      // Normaliza offKm a 0 si ausente/basura (asume on-route).
+      var off = isFinite(s.offKm) && s.offKm >= 0 ? s.offKm : 0;
+      return {
+        item: s.item,
+        kmFromOrigin: s.kmFromOrigin,
+        priceEurL: s.priceEurL,
+        offKm: off
+      };
+    }).sort(function(a, b) { return a.kmFromOrigin - b.kmFromOrigin; });
+
+    // Coste efectivo por litro penalizando el desvio ida+vuelta.
+    // Ver pure.ts:planFuelStops para la derivacion completa. Resumen:
+    //   effectivePrice = priceEurL + (detourL(offKm) * priceEurL) / refillL
+    // con refillL ~ 0.9 * tankL (llenado tipico).
+    var refillL = Math.max(1, tankL * 0.9);
+    function detourL(offKm) { return 2 * offKm * cons / 100; }
+    function effectivePrice(c) {
+      return c.priceEurL + (detourL(c.offKm) * c.priceEurL) / refillL;
+    }
 
     var pos = 0;
     var rangeKm = initialRangeKm;
@@ -4006,19 +4024,25 @@ function exitRouteMode() {
       }
       // "Farthest-among-reasonably-cheap": avanzar lo maximo posible por parada
       // (menos paradas totales) pero restringido a estaciones dentro del 5%
-      // del precio mas barato del tramo. Ver pure.ts para la explicacion.
-      var minPrice = Infinity;
+      // del precio EFECTIVO mas barato del tramo (precio + desvio). Ver pure.ts.
+      var minEff = Infinity;
       for (var mi = 0; mi < candidates.length; mi++) {
-        if (candidates[mi].priceEurL < minPrice) minPrice = candidates[mi].priceEurL;
+        var eff = effectivePrice(candidates[mi]);
+        if (eff < minEff) minEff = eff;
       }
-      var priceThreshold = minPrice * 1.05;
-      var cheap = candidates.filter(function(c) { return c.priceEurL <= priceThreshold; });
-      cheap.sort(function(a, b) { return b.kmFromOrigin - a.kmFromOrigin; });
+      var effThreshold = minEff * 1.05;
+      var cheap = candidates.filter(function(c) { return effectivePrice(c) <= effThreshold; });
+      cheap.sort(function(a, b) {
+        var d = b.kmFromOrigin - a.kmFromOrigin;
+        if (d !== 0) return d;
+        return effectivePrice(a) - effectivePrice(b);
+      });
       var pick = cheap[0];
       stops.push({ item: pick.item, kmFromOrigin: pick.kmFromOrigin, priceEurL: pick.priceEurL });
       var consumedKm = pick.kmFromOrigin - pos;
       var consumedL = (consumedKm / 100) * cons;
-      totalCost += consumedL * pick.priceEurL;
+      var detourExtraL = detourL(pick.offKm);
+      totalCost += (consumedL + detourExtraL) * pick.priceEurL;
       pos = pick.kmFromOrigin;
       rangeKm = maxAutonomyKm;
     }
@@ -4065,11 +4089,12 @@ function exitRouteMode() {
     var aUrl = appleMapsRouteUrl(from, to, stops);
     var wUrl = wazeRouteUrl(to);
     var hasStops = stops && stops.length > 0;
-    // Google y Apple llevan todas las paradas como waypoints. Waze no lo
-    // soporta via deep-link (solo acepta un destino), asi que solo el destino
-    // final. Lo decimos claramente para que el usuario no crea que es un bug.
+    // Solo Google Maps abre la ruta con todas las gasolineras como paradas.
+    // Apple Maps web ignora el multi-stop (solo la app nativa lo soporta) y
+    // Waze no admite waypoints via URL. Por eso en Apple/Waze abrimos unica-
+    // mente origen -> destino final, sin paradas intermedias.
     var footnote = hasStops
-      ? '<div class="route-nav-note">Google Maps y Apple Maps abren la ruta con todas las gasolineras como paradas. Waze no admite paradas m\u00FAltiples v\u00EDa enlace, as\u00ED que solo abre el destino final.</div>'
+      ? '<div class="route-nav-note">Solo Google Maps abre la ruta con todas las gasolineras como paradas. Apple Maps y Waze abren solo origen \u2192 destino (sus enlaces no soportan m\u00FAltiples paradas).</div>'
       : '';
     return '<div class="route-nav-title">Abrir ruta en:</div>'
          + '<div class="route-nav-buttons">'

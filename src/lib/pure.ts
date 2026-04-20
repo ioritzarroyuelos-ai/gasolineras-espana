@@ -462,6 +462,10 @@ export interface PlanFuelStopsInput<T> {
     item: T
     kmFromOrigin: number          // km-desde-origen del punto proyectado
     priceEurL: number
+    offKm?: number                // desviacion (km) desde la ruta a la estacion.
+                                  // Se usa para penalizar estaciones fuera del
+                                  // corredor (ida+vuelta gasta combustible). Si
+                                  // falta, se asume 0 (on-route).
   }[]
 }
 export interface PlannedStop<T> {
@@ -497,13 +501,31 @@ export function planFuelStops<T>(input: PlanFuelStopsInput<T>): PlanFuelStopsRes
   const initialRangeKm = maxAutonomyKm * fuelPct
 
   // Estaciones validas, ordenadas por km-desde-origen ascendente (nos da el
-  // orden temporal en que las "veremos" al conducir).
+  // orden temporal en que las "veremos" al conducir). Normalizamos offKm a 0
+  // si viene ausente o basura (estacion asumida on-route).
   const pool = stations
     .filter(s => s && Number.isFinite(s.kmFromOrigin) && s.kmFromOrigin >= 0
              && s.kmFromOrigin <= routeKm
              && Number.isFinite(s.priceEurL) && s.priceEurL > 0)
-    .slice()
+    .map(s => ({
+      ...s,
+      offKm: Number.isFinite(s.offKm) && (s.offKm as number) >= 0 ? (s.offKm as number) : 0,
+    }))
     .sort((a, b) => a.kmFromOrigin - b.kmFromOrigin)
+
+  // Coste efectivo por litro (€/L) penalizando el desvio ida+vuelta.
+  //   detourL  = 2 * offKm * cons / 100  (litros gastados en el desvio)
+  //   refillL ~ tankL * 0.9              (llenado tipico, casi al completo)
+  //   effectivePrice = priceEurL + detourCostEur / refillL
+  //                  = priceEurL * (1 + detourL / refillL)
+  //                  = priceEurL * (1 + 2*offKm / (autonomyKm * 0.9))
+  // Equivalente: una estacion a 10 km del corredor con autonomia 700 km
+  // encarece el precio efectivo ~3.2% — lo suficiente para preferir una
+  // estacion on-route con precio similar.
+  const refillL = Math.max(1, tankL * 0.9)
+  const detourL = (offKm: number) => 2 * offKm * consumoL100km / 100
+  const effectivePrice = (c: { priceEurL: number; offKm: number }) =>
+    c.priceEurL + (detourL(c.offKm) * c.priceEurL) / refillL
 
   let pos = 0
   let rangeKm = initialRangeKm
@@ -537,28 +559,40 @@ export function planFuelStops<T>(input: PlanFuelStopsInput<T>): PlanFuelStopsRes
     // Estrategia: entre las alcanzables, queremos minimizar el numero TOTAL
     // de paradas, asi que preferimos la MAS LEJANA (avanzar mas por parada).
     // Para no sacrificar precio a ciegas, primero filtramos a las que estan
-    // dentro del 5% del precio mas barato de la ventana. Asi sigue siendo
-    // "barato" pero sin quedarnos en una estacion a km=30 de un tramo de 1000km.
+    // dentro del 5% del precio EFECTIVO mas barato de la ventana (precio +
+    // penalizacion por desvio). Asi sigue siendo "barato" pero sin quedarnos
+    // en una estacion a km=30 de un tramo de 1000km ni desviandonos 10 km
+    // por ahorrar 1 cent.
     // Anti-bug: la variante pura "mas-barata" atasca el avance en rutas largas
     // cuando hay una cheap cluster al principio, terminando como 'unreachable'
     // con 1 parada. Ver test "con muchas estaciones baratas al principio".
-    let minPrice = Infinity
-    for (const c of candidates) if (c.priceEurL < minPrice) minPrice = c.priceEurL
-    const priceThreshold = minPrice * 1.05
-    const cheap = candidates.filter(c => c.priceEurL <= priceThreshold)
-    cheap.sort((a, b) => (b.kmFromOrigin - a.kmFromOrigin))
+    let minEff = Infinity
+    for (const c of candidates) {
+      const eff = effectivePrice(c)
+      if (eff < minEff) minEff = eff
+    }
+    const effThreshold = minEff * 1.05
+    const cheap = candidates.filter(c => effectivePrice(c) <= effThreshold)
+    // Ordena: primero mas lejos (avanzar), desempate por precio efectivo mas
+    // bajo (si dos estan a mismo km, preferimos la on-route barata frente a
+    // una un poco mas cara con desvio).
+    cheap.sort((a, b) => (b.kmFromOrigin - a.kmFromOrigin)
+                       || (effectivePrice(a) - effectivePrice(b)))
     const pick = cheap[0]
     plan.push({
       item: pick.item,
       kmFromOrigin: pick.kmFromOrigin,
       priceEurL: pick.priceEurL,
     })
-    // Coste: asumimos que en cada parada llenas hasta tope. Litros necesarios
-    // para reponer desde el nivel actual (tras consumir pick.kmFromOrigin - pos km)
-    // hasta el deposito lleno.
+    // Coste: asumimos que en cada parada llenas hasta tope. Contamos:
+    //  - Litros consumidos desde la parada anterior (a precio de esta parada;
+    //    simplificacion: todos los litros comprados aqui se pagan aqui).
+    //  - Litros extra por el desvio ida+vuelta (2*offKm), igualmente a precio
+    //    de esta parada. Si offKm=0 (on-route) no hay penalizacion.
     const consumedKm = pick.kmFromOrigin - pos
     const consumedL  = (consumedKm / 100) * consumoL100km
-    totalCost += consumedL * pick.priceEurL
+    const detourExtraL = detourL(pick.offKm)
+    totalCost += (consumedL + detourExtraL) * pick.priceEurL
     pos = pick.kmFromOrigin
     rangeKm = maxAutonomyKm  // deposito lleno tras repostar
   }

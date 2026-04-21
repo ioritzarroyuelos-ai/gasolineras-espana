@@ -438,17 +438,28 @@ function isOpenNow(horario) {
 
 // ---- FETCH CON RETRY (hasta 3 intentos con espera creciente) ----
 async function fetchJSON(url) {
+  // Timeout por intento via AbortController. Sin esto, una conexion lenta/colgada
+  // (DNS stall, TCP sin ACK, movil con mala cobertura) dejaba el fetch pendiente
+  // indefinidamente: los 3 reintentos nunca arrancaban porque ninguno terminaba,
+  // y los skeletons de la UI se quedaban pintados para siempre porque el finally
+  // de loadStations() nunca corria. 8s por intento + 1.5s backoff = ~30s max.
   var lastErr;
   for (var i = 1; i <= 3; i++) {
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var tid = ctrl ? setTimeout(function() { ctrl.abort(); }, 8000) : 0;
     try {
-      var res = await fetch(url);
+      var opts = ctrl ? { signal: ctrl.signal } : undefined;
+      var res = await fetch(url, opts);
+      if (tid) clearTimeout(tid);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       if (data && data.error) throw new Error(data.error);
       return data;
     } catch(e) {
+      if (tid) clearTimeout(tid);
       lastErr = e;
-      console.warn('[fetchJSON] intento ' + i + ' fallido (' + url + '):', e.message);
+      var reason = (e && e.name === 'AbortError') ? 'timeout 8s' : (e && e.message) || String(e);
+      console.warn('[fetchJSON] intento ' + i + ' fallido (' + url + '):', reason);
       if (i < 3) await new Promise(function(r) { setTimeout(r, i * 1500); });
     }
   }
@@ -623,7 +634,17 @@ async function applyLibertyLanguage() {
   }
   if (typeof L.maplibreGL !== 'function' || typeof window.maplibregl === 'undefined') return;
   try {
-    var resp = await fetch('https://tiles.openfreemap.org/styles/liberty', { credentials: 'omit' });
+    // Timeout duro 6s — si el CDN de OpenFreeMap esta lento o caido, nos
+    // quedamos con el raster + SPAIN_LABELS. Sin AbortController, un stall
+    // en este fetch dejaba la Promise pendiente indefinidamente consumiendo
+    // recursos y podia interferir con otros flujos del cliente.
+    var libCtrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var libTid  = libCtrl ? setTimeout(function() { libCtrl.abort(); }, 6000) : 0;
+    var resp = await fetch('https://tiles.openfreemap.org/styles/liberty', {
+      credentials: 'omit',
+      signal: libCtrl ? libCtrl.signal : undefined
+    });
+    if (libTid) clearTimeout(libTid);
     if (!resp.ok) return;
     var style = await resp.json();
 

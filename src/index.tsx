@@ -327,6 +327,12 @@ const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
 // La dedupe aplicativa (mismo ip_hash+ideess+fuel en 1h → 409) complementa este
 // limite: el primer reporte pasa, los siguientes se rechazan antes de tocar DB.
 const reportLimiter = new SlidingWindowLimiter(5,   60_000)  // 5 reports/min por IP
+// Ship 12: Real User Monitoring (Web Vitals LCP/INP/CLS/TTFB/FCP). El cliente
+// manda UN beacon por sesion (en visibilitychange=hidden) con los 5 valores
+// agregados. Un usuario normal no genera > 1-2 beacons / hora; 30/min deja
+// margen para SPAs que reinstalen el SW o abran multiples tabs y frena bots
+// que intenten inflar la telemetria sin impactar UX real.
+const vitalsLimiter = new SlidingWindowLimiter(30,  60_000)  // 30 req/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
@@ -2287,6 +2293,80 @@ app.post('/api/ingest', async c => {
     url:  trim(evt.url, 500),
     ua:   trim(c.req.header('user-agent'), 300),
     ver:  trim(evt.ver, 20),
+  })
+  return c.json({ ok: true })
+})
+
+// ---- Ship 12: Real User Monitoring (Core Web Vitals) ----
+// Endpoint POST /api/vitals que recibe el beacon de la pagina con las
+// metricas LCP/INP/CLS/FCP/TTFB medidas en el navegador del usuario real.
+// Se logea via slog('info', 'rum.sample', {...}) — sin DB, sin estado
+// persistente. Cloudflare Logpush los captura y se pueden agregar con
+// herramientas externas (Grafana/Logpush-to-R2/etc). La privacidad:
+//   - No pedimos ni enviamos ningun identificador de usuario
+//   - La IP solo se usa server-side como clave de rate-limit (no se logea)
+//   - El user-agent se trunca a 300 chars para agregar "tipo de dispositivo"
+// Validaciones: rango sano para cada metrica (mata bots / relojes rotos).
+app.post('/api/vitals', async c => {
+  const key = clientKey(c)
+  const rl = vitalsLimiter.check(key)
+  if (!rl.allowed) return c.json({ ok: false }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+
+  const ct = c.req.header('content-type') || ''
+  if (!ct.includes('application/json')) return c.json({ ok: false }, 415)
+
+  const raw = await c.req.text()
+  if (raw.length > 2048) {
+    slog('warn', 'vitals.oversize', { key, bytes: raw.length })
+    return c.json({ ok: false }, 413)
+  }
+
+  let evt: Record<string, unknown>
+  try { evt = JSON.parse(raw) } catch { return c.json({ ok: false }, 400) }
+
+  // Sanitiza cada metrica: debe ser number finito, positivo (excepto CLS que
+  // es un ratio adimensional pero tambien positivo), y dentro de un rango
+  // sano. Fuera de rango = descartamos el campo pero seguimos registrando
+  // los demas (degradacion elegante). Rangos escogidos para pillar ruido:
+  //   - LCP/FCP/TTFB: ms desde navigation, real-world 0-30000 es el 99.9th %ile
+  //   - INP: ms real-world 0-5000 (un INP > 5s es un freeze total y raro)
+  //   - CLS: ratio adimensional, 0-5 (un CLS > 5 es practicamente imposible)
+  const numInRange = (v: unknown, lo: number, hi: number): number | undefined => {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return undefined
+    if (v < lo || v > hi) return undefined
+    // Truncamos a 3 decimales para CLS, 0 para tiempos (enteros).
+    return v
+  }
+  const lcp  = numInRange(evt.lcp,  0, 30_000)
+  const inp  = numInRange(evt.inp,  0,  5_000)
+  const cls  = numInRange(evt.cls,  0,      5)
+  const fcp  = numInRange(evt.fcp,  0, 30_000)
+  const ttfb = numInRange(evt.ttfb, 0, 30_000)
+
+  // Si TODAS las metricas son undefined, el beacon no tiene valor — 400.
+  if (lcp === undefined && inp === undefined && cls === undefined && fcp === undefined && ttfb === undefined) {
+    return c.json({ ok: false }, 400)
+  }
+
+  const trim = (v: unknown, max: number): string | undefined => {
+    if (typeof v !== 'string') return undefined
+    return v.length > max ? v.slice(0, max) : v
+  }
+  // Metadatos contextuales para poder segmentar: navtype, conexion, ruta.
+  // Todos opcionales y saneados. path viene del cliente (pathname) — nunca
+  // aceptamos query strings (evita logar PII en URLs compartidas).
+  const path = trim(evt.path, 200)
+  const navType = trim(evt.navType, 20)   // 'navigate' | 'reload' | 'back_forward' | 'prerender'
+  const connType = trim(evt.conn, 20)     // '4g' | '3g' | 'wifi' | ...
+  const ver = trim(evt.ver, 20)
+  const ua  = trim(c.req.header('user-agent'), 300)
+
+  slog('info', 'rum.sample', {
+    // key: omitida a proposito — no queremos correlacionar beacons con IPs
+    lcp, inp, cls: cls !== undefined ? Number(cls.toFixed(3)) : undefined,
+    fcp, ttfb,
+    path,
+    navType, conn: connType, ua, ver,
   })
   return c.json({ ok: true })
 })

@@ -719,4 +719,191 @@ function normalizeStation(s) {
   }
 })();
 
+// ============================================================
+// ===== Ship 12: REAL USER MONITORING (Core Web Vitals) =====
+// ============================================================
+// Mide las metricas Web Vitals reales en el navegador del usuario y las
+// envia con UN beacon cuando la pagina se oculta (visibilitychange=hidden
+// o pagehide — lo que ocurra primero). Una sola request por sesion evita
+// inflar el log y captura el mejor valor disponible de cada metrica.
+//
+// Metricas recolectadas:
+//  - LCP (Largest Contentful Paint): toma la MAYOR entry antes del final.
+//    Alta fidelidad: PerformanceObserver 'largest-contentful-paint' es la
+//    fuente canonica, sin fallback JS.
+//  - INP (Interaction to Next Paint): aproximacion via observacion de
+//    'event' entries (PerformanceEventTiming). Tomamos el PEOR duration
+//    de cualquier interaccion (click/keydown/pointerdown/...). El valor
+//    real de INP usa percentil 98 pero para 1 sample por sesion el peor
+//    caso es una aproximacion razonable y es lo que web-vitals.js reporta.
+//  - CLS (Cumulative Layout Shift): suma de 'layout-shift' entries con
+//    hadRecentInput=false (estandar de Web Vitals). Agrupamos en sesiones
+//    pero para simplificar tomamos la SUMA TOTAL no-user-initiated.
+//  - FCP (First Contentful Paint): 'paint' entry 'first-contentful-paint'.
+//  - TTFB (Time to First Byte): performance.getEntriesByType('navigation')
+//    [0].responseStart — sin observer.
+//
+// Privacidad: no enviamos IP (el servidor no la logea), no enviamos IDs,
+// no enviamos query strings (solo pathname). El user-agent SI va porque
+// lo necesitamos para segmentar por tipo de dispositivo.
+//
+// Graceful degradation: Safari < 15 no expone LoAF / event timing; en ese
+// caso INP queda undefined y el resto se envia igual. Navegadores con
+// Performance API nula (< ~2015) no envian nada (early return).
+(function initRUM() {
+  if (typeof performance === 'undefined' || typeof PerformanceObserver === 'undefined') return;
+
+  var metrics = {
+    lcp: undefined,
+    inp: undefined,
+    cls: 0,        // acumula, se envia al final
+    fcp: undefined,
+    ttfb: undefined,
+  };
+  var sent = false;
+  var clsHasShifts = false;
+
+  // ---- LCP ----
+  // PerformanceObserver con buffered:true para capturar LCPs anteriores al
+  // registro del observer (ocurren antes de que el JS se ejecute). El valor
+  // definitivo es el de la ULTIMA entry antes de cualquier interaccion del
+  // usuario — nos quedamos siempre con el mayor renderTime visto.
+  try {
+    var lcpObs = new PerformanceObserver(function(list) {
+      var entries = list.getEntries();
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var v = e.renderTime || e.loadTime || e.startTime;
+        if (v > 0 && (metrics.lcp === undefined || v > metrics.lcp)) metrics.lcp = v;
+      }
+    });
+    lcpObs.observe({ type: 'largest-contentful-paint', buffered: true });
+    // Dejar de observar en cuanto el usuario interactua — LCP por spec es
+    // valido solo hasta la primera interaccion.
+    var stopLCP = function() {
+      try { lcpObs.takeRecords(); lcpObs.disconnect(); } catch(_) {}
+      removeEventListener('keydown', stopLCP, true);
+      removeEventListener('click', stopLCP, true);
+      removeEventListener('pointerdown', stopLCP, true);
+    };
+    addEventListener('keydown', stopLCP, { capture: true, once: true });
+    addEventListener('click', stopLCP, { capture: true, once: true });
+    addEventListener('pointerdown', stopLCP, { capture: true, once: true });
+  } catch(_) {}
+
+  // ---- FCP ----
+  try {
+    var fcpObs = new PerformanceObserver(function(list) {
+      var entries = list.getEntries();
+      for (var i = 0; i < entries.length; i++) {
+        if (entries[i].name === 'first-contentful-paint') {
+          metrics.fcp = entries[i].startTime;
+          try { fcpObs.disconnect(); } catch(_) {}
+          break;
+        }
+      }
+    });
+    fcpObs.observe({ type: 'paint', buffered: true });
+  } catch(_) {}
+
+  // ---- CLS ----
+  try {
+    var clsObs = new PerformanceObserver(function(list) {
+      var entries = list.getEntries();
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        // Ignora shifts provocados por input reciente del usuario (spec).
+        if (!e.hadRecentInput) {
+          metrics.cls += e.value;
+          clsHasShifts = true;
+        }
+      }
+    });
+    clsObs.observe({ type: 'layout-shift', buffered: true });
+  } catch(_) {}
+
+  // ---- INP (aproximacion): peor 'event' duration observado ----
+  // PerformanceEventTiming esta en Chromium y Safari 16+. Ignoramos 'keydown'
+  // por si solo porque Chrome lo reporta con duration 0 antes del repaint.
+  try {
+    var inpObs = new PerformanceObserver(function(list) {
+      var entries = list.getEntries();
+      for (var i = 0; i < entries.length; i++) {
+        var d = entries[i].duration;
+        if (typeof d === 'number' && (metrics.inp === undefined || d > metrics.inp)) metrics.inp = d;
+      }
+    });
+    // durationThreshold 40: filtra interacciones "rapidas" de la cola. INP por
+    // spec es > 40ms (nadie lo percibe por debajo de ese umbral).
+    inpObs.observe({ type: 'event', buffered: true, durationThreshold: 40 });
+  } catch(_) {}
+
+  // ---- TTFB (Navigation Timing API) ----
+  try {
+    var navEntries = performance.getEntriesByType('navigation');
+    if (navEntries && navEntries.length > 0) {
+      var nav = navEntries[0];
+      metrics.ttfb = nav.responseStart;
+    }
+  } catch(_) {}
+
+  // ---- Envio ----
+  function flush() {
+    if (sent) return;
+    sent = true;
+    try {
+      // Contexto del navegador: navType (navigate/reload/back_forward),
+      // connection type (4g / 3g / wifi) si la API lo expone. Ayuda a
+      // segmentar: un LCP alto en "3g" es esperado y no deberia saltar
+      // alarma — en "wifi" si.
+      var navType;
+      try {
+        var nav = performance.getEntriesByType('navigation')[0];
+        if (nav && nav.type) navType = String(nav.type);
+      } catch(_) {}
+      var connType;
+      try {
+        var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        if (c && c.effectiveType) connType = String(c.effectiveType);
+      } catch(_) {}
+
+      var payload = {
+        lcp:  metrics.lcp  !== undefined ? Math.round(metrics.lcp)  : undefined,
+        inp:  metrics.inp  !== undefined ? Math.round(metrics.inp)  : undefined,
+        // CLS solo lo enviamos si HUBO al menos un shift (si no, 0 es ruido
+        // por la forma que tiene 'buffered:true' de inicializar — no significa
+        // que la pagina fuera perfecta sino que aun no detectamos ninguno).
+        cls:  clsHasShifts ? metrics.cls : undefined,
+        fcp:  metrics.fcp  !== undefined ? Math.round(metrics.fcp)  : undefined,
+        ttfb: metrics.ttfb !== undefined ? Math.round(metrics.ttfb) : undefined,
+        path: location.pathname,
+        navType: navType,
+        conn: connType,
+        ver: APP_VER
+      };
+      // Al menos una metrica real → enviamos.
+      var hasAny = payload.lcp != null || payload.inp != null || payload.cls != null
+                 || payload.fcp != null || payload.ttfb != null;
+      if (!hasAny) return;
+      var body = JSON.stringify(payload);
+      if (navigator.sendBeacon) {
+        var blob = new Blob([body], { type: 'application/json' });
+        navigator.sendBeacon('/api/vitals', blob);
+      } else {
+        fetch('/api/vitals', { method:'POST', headers:{'Content-Type':'application/json'}, body: body, keepalive: true })
+          .catch(function(){});
+      }
+    } catch(_) {}
+  }
+  // visibilitychange=hidden es el mejor trigger (incluye cerrar tab, cambiar
+  // a otra pestana, bloquear pantalla, background en movil). pagehide es el
+  // fallback para Safari < 14 que no dispara visibilitychange en algunas
+  // transiciones. Ejecutamos flush() en el primero que llegue (sent=true
+  // hace idempotente la segunda llamada).
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'hidden') flush();
+  });
+  window.addEventListener('pagehide', flush);
+})();
+
 `

@@ -14,6 +14,16 @@ export const clientCoreScript = `
 //   nuestro problema.
 // - keepalive: true en el fetch -> el navegador persiste el envio aunque la
 //   pestana se cierre (ideal para errores fatales durante navegacion).
+//
+// Ship 13 enriquecimiento:
+// - window.__crumbs: ring buffer de las ultimas 8 acciones (click target,
+//   navegacion, modal open/close, network failures). Se incluye en el payload
+//   como 'breadcrumbs' para debug determinista.
+// - module: identificado heuristicamente del stack. map.js / list.js /
+//   features.js tienen frames con 'features' en la URL; core/ui se identifican
+//   por keywords conocidas (initModalFocusTrap, showToast, etc.).
+// - context: {prov, mun, fuel, online} — metadatos que permiten agrupar
+//   errores "solo en ruta X" sin tener que parsear la URL del reporter.
 (function initErrorReporter() {
   var lastSent = Object.create(null);
   function hashCode(s) {
@@ -24,6 +34,46 @@ export const clientCoreScript = `
     }
     return (h >>> 0).toString(36);
   }
+  // ---- Ship 13: breadcrumbs — ring buffer expuesto en window.__crumbs ----
+  // Cualquier modulo puede empujar eventos con window.__addCrumb('evt:tag').
+  // El reporter los consume on-error. Maximo 8 entradas, se descartan las mas
+  // viejas. Las lineas son strings cortas para minimizar payload (<500 bytes).
+  var CRUMB_MAX = 8;
+  var crumbs = [];
+  function addCrumb(tag) {
+    if (!tag) return;
+    var s = String(tag).slice(0, 80);
+    crumbs.push(s);
+    if (crumbs.length > CRUMB_MAX) crumbs.shift();
+  }
+  // Exponemos addCrumb + la lista (read-only clone on-demand).
+  window.__addCrumb = addCrumb;
+  window.__crumbs = function() { return crumbs.slice(); };
+
+  // Auto-registrado de breadcrumbs comunes: clicks sobre buttons / links con
+  // id o clase identificable, cambios de visibility y navegaciones del hash.
+  // Los listeners van en capture=true para pillar eventos antes de que el
+  // handler del modulo los stope (e.stopPropagation).
+  document.addEventListener('click', function(ev) {
+    try {
+      var t = ev.target;
+      if (!t || !t.closest) return;
+      var el = t.closest('button,a,[role="button"],input[type="button"],input[type="submit"]');
+      if (!el) return;
+      var tag = el.tagName ? el.tagName.toLowerCase() : '?';
+      var id  = el.id ? ('#' + el.id) : '';
+      var cls = (!id && el.className && typeof el.className === 'string')
+        ? ('.' + el.className.split(/\\s+/).filter(Boolean).slice(0,2).join('.'))
+        : '';
+      addCrumb('click:' + tag + (id || cls));
+    } catch(_) {}
+  }, true);
+  document.addEventListener('visibilitychange', function() {
+    addCrumb('visibility:' + (document.hidden ? 'hidden' : 'visible'));
+  });
+  window.addEventListener('online',  function() { addCrumb('net:online'); });
+  window.addEventListener('offline', function() { addCrumb('net:offline'); });
+
   // Ruido conocido: usamos indexOf para evitar quebraderos de cabeza con
   // regex escapes dentro del template literal del wrapper (en \`...\` los
   // \\ se comen y las barras cierran el regex antes de tiempo).
@@ -41,6 +91,46 @@ export const clientCoreScript = `
     if (s.indexOf('safari-extension://') >= 0) return true;
     return false;
   }
+  // ---- Ship 13: infiere el modulo a partir del stack ----
+  // Orden de match: (1) URL del frame (features.js → 'features'), (2)
+  // keywords inequivocas del stack (buildPopup/initMap → 'map'), (3) fallback.
+  function inferModule(stack) {
+    if (!stack) return 'unknown';
+    var s = String(stack);
+    // La URL del asset mas explicita primero.
+    if (s.indexOf('/static/features.js') >= 0) return 'features';
+    // Keywords: funciones exportadas o nombres muy distintivos por modulo.
+    if (/initMap|buildPopup|renderMarkers|createMap|computePricePercentile/.test(s)) return 'map';
+    if (/renderList|renderCompareModal|buildCard|addToCompare/.test(s))            return 'list';
+    if (/readQueryState|writeQueryState|applyQueryState|loadMunicipios|loadStations/.test(s)) return 'ui';
+    if (/initErrorReporter|showToast|initModalFocusTrap|initRUM/.test(s))          return 'core';
+    return 'unknown';
+  }
+  // ---- Ship 13: context de la sesion (ruta, filtros, red) ----
+  function snapshotContext() {
+    var ctx = { path: location.pathname };
+    try {
+      var seo = window.__SEO__;
+      if (seo && seo.provinciaSlug) ctx.prov = seo.provinciaSlug;
+      if (seo && seo.municipioSlug) ctx.mun  = seo.municipioSlug;
+    } catch(_) {}
+    try {
+      var selP = document.getElementById('sel-provincia');
+      if (selP && selP.value && !ctx.prov) ctx.prov = selP.value;
+      var selM = document.getElementById('sel-municipio');
+      if (selM && selM.value && !ctx.mun) ctx.mun = selM.value;
+      var selF = document.getElementById('sel-combustible');
+      if (selF && selF.value) {
+        // Solo el sufijo corto: "Precio Gasolina 95 E5" → "95 E5". Ahorra bytes.
+        var v = String(selF.value).replace(/^Precio\\s+/i, '').slice(0, 40);
+        ctx.fuel = v;
+      }
+    } catch(_) {}
+    try {
+      if (typeof navigator.onLine === 'boolean') ctx.online = navigator.onLine;
+    } catch(_) {}
+    return ctx;
+  }
   function send(err) {
     try {
       var msg = '';
@@ -57,11 +147,21 @@ export const clientCoreScript = `
       var now = Date.now();
       if (lastSent[fp] && now - lastSent[fp] < 10000) return;
       lastSent[fp] = now;
+      // Ship 13: adjuntamos module / breadcrumbs / context al payload.
+      // breadcrumbs se serializa a JSON string (max 500 chars tras trim).
+      // context idem a 200 chars.
+      var bcStr = '';
+      try { bcStr = JSON.stringify(crumbs); if (bcStr.length > 500) bcStr = bcStr.slice(0, 500); } catch(_) {}
+      var ctxStr = '';
+      try { ctxStr = JSON.stringify(snapshotContext()); if (ctxStr.length > 200) ctxStr = ctxStr.slice(0, 200); } catch(_) {}
       var body = JSON.stringify({
         message: msg.substring(0, 500),
         stack: stack.substring(0, 4000),
         url: location.pathname,
-        version: APP_VER
+        version: APP_VER,
+        module: inferModule(stack),
+        breadcrumbs: bcStr || undefined,
+        context: ctxStr || undefined
       });
       fetch('/api/client-error', {
         method: 'POST',
@@ -695,8 +795,15 @@ function normalizeStation(s) {
     }
   }
   function handleMutation(modal) {
-    if (modal.classList.contains('show')) onOpen(modal);
-    else onClose(modal);
+    if (modal.classList.contains('show')) {
+      onOpen(modal);
+      // Ship 13: breadcrumb automatico al abrir/cerrar cualquier modal.
+      // window.__addCrumb puede no existir si initErrorReporter fallo — try/catch.
+      try { if (window.__addCrumb) window.__addCrumb('modal:open:' + (modal.id || '?')); } catch(_) {}
+    } else {
+      onClose(modal);
+      try { if (window.__addCrumb) window.__addCrumb('modal:close:' + (modal.id || '?')); } catch(_) {}
+    }
   }
   function register(modal) {
     // Si ya esta visible en init, activa el trap inmediatamente.

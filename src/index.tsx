@@ -2031,9 +2031,28 @@ app.post('/api/client-error', async c => {
   const userAgent = trim(c.req.header('user-agent'), 200)
   const version = trim(evt.version, 30) || 'unknown'
 
+  // Ship 13: campos enriquecidos. Todos opcionales y saneados.
+  //  - module: enum cerrado — rechaza strings raros para evitar explosion de
+  //    cardinalidad en el index; fuera de la whitelist → null.
+  //  - breadcrumbs y context: strings JSON que el cliente ya ha serializado y
+  //    truncado. El server NO los re-valida: son datos de debug opacos. Solo
+  //    aplicamos un trim defensivo final. Si no son JSON valido no importa —
+  //    solo el admin los lee, y el fingerprint ignora estos campos asi que no
+  //    afectan el dedupe.
+  const ALLOWED_MODULES = new Set(['map', 'list', 'ui', 'features', 'core', 'unknown'])
+  const moduleRaw = trim(evt.module, 20)
+  const moduleVal = ALLOWED_MODULES.has(moduleRaw) ? moduleRaw : null
+  const breadcrumbs = trim(evt.breadcrumbs, 500) || null
+  const context     = trim(evt.context, 200) || null
+
   // Fingerprint autoritativo: primera linea del stack + message. Si no hay
   // stack, usamos solo message. Hash completo con sha256 y cogemos 16 chars
   // (64 bits) -> probabilidad de colision despreciable.
+  //
+  // NOTA: module/breadcrumbs/context NO entran en el fingerprint — un mismo
+  // bug puede dispararse desde rutas distintas o tras interacciones distintas,
+  // y queremos verlo como UNA entrada. El upsert actualiza los campos con la
+  // ultima ocurrencia (mas util para reproducir).
   const firstStackLine = stack.split('\n')[0] || ''
   const fp = (await sha256Hex(message + '|' + firstStackLine)).slice(0, 16)
 
@@ -2046,19 +2065,22 @@ app.post('/api/client-error', async c => {
   try {
     // INSERT OR CONFLICT DO UPDATE: D1 (SQLite) soporta ON CONFLICT completo.
     // Si la primera vez, inserta. Si ya existia, incrementa count y actualiza
-    // last_seen/message/stack/version (los campos pueden haber cambiado tras
-    // un deploy, queremos el mas reciente).
+    // last_seen/message/stack/version/module/breadcrumbs/context (los campos
+    // pueden haber cambiado tras un deploy, queremos el mas reciente).
     await c.env.DB.prepare(`
-      INSERT INTO client_errors (fingerprint, message, stack, url, user_agent, version, count, first_seen, last_seen)
-      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+      INSERT INTO client_errors (fingerprint, message, stack, url, user_agent, version, module, breadcrumbs, context, count, first_seen, last_seen)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
       ON CONFLICT(fingerprint) DO UPDATE SET
         count = count + 1,
         last_seen = excluded.last_seen,
         message = excluded.message,
         stack = excluded.stack,
         url = excluded.url,
-        version = excluded.version
-    `).bind(fp, message, stack, url, userAgent, version, now, now).run()
+        version = excluded.version,
+        module = excluded.module,
+        breadcrumbs = excluded.breadcrumbs,
+        context = excluded.context
+    `).bind(fp, message, stack, url, userAgent, version, moduleVal, breadcrumbs, context, now, now).run()
   } catch (e) {
     slog('error', 'client_error.db_fail', { key, fp, err: (e as Error).message })
     return c.json({ ok: false }, 500)
@@ -2078,14 +2100,18 @@ app.get('/api/admin/errors', async c => {
   const limit = Math.min(parseInt(c.req.query('limit') || '100', 10) || 100, 500)
   const minCount = Math.max(parseInt(c.req.query('min_count') || '1', 10) || 1, 1)
   const autofixFilter = c.req.query('autofix_status') // 'null', 'queued', 'pr_opened', etc.
+  // Ship 13: filtro opcional por modulo.
+  const moduleFilter = c.req.query('module')  // map|list|ui|features|core|unknown
 
   let sql = `SELECT fingerprint, message, stack, url, user_agent, version, count,
-                    first_seen, last_seen, notified_at, autofix_status, autofix_pr, autofix_notes
+                    first_seen, last_seen, notified_at, autofix_status, autofix_pr, autofix_notes,
+                    module, breadcrumbs, context
              FROM client_errors WHERE count >= ?`
   const binds: Array<string | number> = [minCount]
   if (unnotified) sql += ' AND notified_at IS NULL'
   if (autofixFilter === 'null') sql += ' AND autofix_status IS NULL'
   else if (autofixFilter) { sql += ' AND autofix_status = ?'; binds.push(autofixFilter) }
+  if (moduleFilter) { sql += ' AND module = ?'; binds.push(moduleFilter) }
   sql += ' ORDER BY last_seen DESC LIMIT ?'
   binds.push(limit)
 

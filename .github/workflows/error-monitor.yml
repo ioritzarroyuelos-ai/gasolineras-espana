@@ -1,0 +1,65 @@
+name: error-monitor — chequea errores del cliente y notifica Telegram
+
+# Corre 3 veces al dia cada 8 horas (00:00, 08:00, 16:00 UTC). En hora peninsular
+# espanola: invierno (UTC+1) 01:00/09:00/17:00, verano (UTC+2) 02:00/10:00/18:00.
+# Elegidos para cubrir madrugada (detectar errores nocturnos), manana y tarde
+# sin saturar el chat de Telegram con cada deploy.
+#
+# El workflow:
+#   1. Pide al endpoint admin los errores con notified_at IS NULL.
+#   2. Si hay 0 -> manda a Telegram "cero errores". Si hay >0 -> manda resumen.
+#   3. Marca los enviados como notificados para que el siguiente tick no los
+#      reenvie. Errores recurrentes que vuelvan a ocurrir solo se re-notifican
+#      si se limpia notified_at manualmente.
+#
+# Secrets requeridos (repo Settings -> Secrets and variables -> Actions):
+#   CRON_TOKEN             shared secret con el Pages project (ya existe)
+#   TELEGRAM_BOT_TOKEN     token del bot creado con @BotFather
+#   TELEGRAM_CHAT_ID       chat al que enviar (obtenerlo con @userinfobot)
+#
+# Variables requeridas (misma pagina, pestana Variables):
+#   PUBLIC_ORIGIN          https://webapp-3ft.pages.dev (opcional, default OK)
+
+on:
+  schedule:
+    - cron: '0 0,8,16 * * *'
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: 'Enviar a Telegram aunque no haya errores nuevos (para probar)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: error-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/error-monitor.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check & notify
+        env:
+          CRON_TOKEN:         ${{ secrets.CRON_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUBLIC_ORIGIN:      ${{ vars.PUBLIC_ORIGIN }}
+          FORCE_NOTIFY:       ${{ github.event.inputs.force_notify }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::CRON_TOKEN no configurado"; exit 1
+          fi
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados"; exit 1
+          fi
+          chmod +x scripts/error-monitor.sh
+          bash scripts/error-monitor.sh

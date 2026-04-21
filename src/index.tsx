@@ -61,9 +61,14 @@ type SnapshotMeta = {
 // PUBLIC_ORIGIN: dominio publico (https://webapp.pages.dev) usado por el cron
 //   scheduled() para fetchear el snapshot estatico de /data/stations.json
 //   (mismo path que consume loadSnapshot en peticiones normales).
+// `meta` de D1 trae el contador de filas afectadas por UPDATE/DELETE — lo
+// usamos para construir respuestas tipo { acknowledged: N }. En runtime real
+// de Workers esto viene siempre poblado; el tipo opcional es para no romper
+// si Cloudflare cambia la forma en el futuro.
+type D1RunResult = { meta?: { changes?: number; last_row_id?: number }; success?: boolean }
 type D1PreparedStatement = {
   bind: (...values: unknown[]) => D1PreparedStatement
-  run: () => Promise<unknown>
+  run: () => Promise<D1RunResult>
   all: <T = unknown>() => Promise<{ results: T[] }>
 }
 type D1Database = {
@@ -294,6 +299,11 @@ const geoLimiter    = new SlidingWindowLimiter(15,  60_000)  // 15 req/min por I
 // (varios por pageload si hay un XSS encadenado). Rate-limit agresivo para
 // evitar DoS via spam de informes desde navegador malicioso.
 const cspLimiter    = new SlidingWindowLimiter(30,  60_000)  // 30 reports/min por IP
+// Client errors: el navegador deduplica client-side a 10s por fingerprint, asi
+// que este limite sirve solo para cortar IPs maliciosas que intentan llenar la
+// tabla D1 con basura. 20/min es generoso para un usuario real (imposible
+// provocar 20 errores distintos en un minuto sin romper algo serio).
+const errLimiter    = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min por IP
 // Historico de precios: cada popup de gasolinera hace 1 call. Un usuario que
 // pasea el mapa puede abrir 10 popups en un minuto tranquilamente; 60 deja
 // margen ancho y aun asi frena scrapers que intenten paginar todas las
@@ -1574,6 +1584,164 @@ app.post('/api/csp-report', async c => {
 
   slog('warn', 'csp.violation', { key, ...report })
   return new Response(null, { status: 204 })
+})
+
+// ============================================================================
+// CLIENT ERROR TRACKING (Nivel 1: deteccion)
+// ============================================================================
+// /api/client-error: endpoint publico que recibe errores del navegador y los
+// persiste en D1 con dedup por fingerprint. Complementa /api/ingest (que solo
+// emite slog) con persistencia real: sin D1 no hay forma de preguntar "que
+// errores hay abiertos" desde fuera. El cron de GitHub Actions (cada 8h) hace
+// GET /api/admin/errors con CRON_TOKEN y notifica los nuevos a Telegram.
+//
+// Diseno:
+// - Fingerprint = sha256(message + primera linea stack) -> 16 chars hex.
+//   Calculado server-side para que el cliente no pueda crear filas separadas
+//   para el mismo error variando el hash.
+// - Upsert: mismo fingerprint -> count++, last_seen = now. Distinta ->
+//   insert. Nunca crece linealmente con el volumen de errores.
+// - Size caps: message 500, stack 4000, url 200, ua 200. Total <5KB por fila.
+// - NO persiste cookies, ni IP, ni ningun identificador que correlacione con
+//   un usuario concreto. El user-agent truncado es suficiente para debugging.
+
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const arr = Array.from(new Uint8Array(digest))
+  return arr.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+app.post('/api/client-error', async c => {
+  const key = clientKey(c)
+  const rl = errLimiter.check(key)
+  if (!rl.allowed) return c.json({ ok: false }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+
+  const ct = c.req.header('content-type') || ''
+  if (!ct.includes('application/json')) return c.json({ ok: false }, 415)
+
+  const raw = await c.req.text()
+  if (raw.length === 0 || raw.length > 8192) return c.json({ ok: false }, 413)
+
+  let evt: Record<string, unknown>
+  try { evt = JSON.parse(raw) } catch { return c.json({ ok: false }, 400) }
+
+  const trim = (v: unknown, max: number): string => {
+    if (typeof v !== 'string') return ''
+    const s = v.trim()
+    return s.length > max ? s.slice(0, max) : s
+  }
+  const message = trim(evt.message, 500)
+  if (!message) return c.json({ ok: false, error: 'message required' }, 400)
+
+  const stack = trim(evt.stack, 4000)
+  const url = trim(evt.url, 200)
+  const userAgent = trim(c.req.header('user-agent'), 200)
+  const version = trim(evt.version, 30) || 'unknown'
+
+  // Fingerprint autoritativo: primera linea del stack + message. Si no hay
+  // stack, usamos solo message. Hash completo con sha256 y cogemos 16 chars
+  // (64 bits) -> probabilidad de colision despreciable.
+  const firstStackLine = stack.split('\n')[0] || ''
+  const fp = (await sha256Hex(message + '|' + firstStackLine)).slice(0, 16)
+
+  const now = Date.now()
+  if (!c.env.DB) {
+    slog('warn', 'client_error.no_db', { key })
+    return c.json({ ok: false, error: 'db not configured' }, 503)
+  }
+
+  try {
+    // INSERT OR CONFLICT DO UPDATE: D1 (SQLite) soporta ON CONFLICT completo.
+    // Si la primera vez, inserta. Si ya existia, incrementa count y actualiza
+    // last_seen/message/stack/version (los campos pueden haber cambiado tras
+    // un deploy, queremos el mas reciente).
+    await c.env.DB.prepare(`
+      INSERT INTO client_errors (fingerprint, message, stack, url, user_agent, version, count, first_seen, last_seen)
+      VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+      ON CONFLICT(fingerprint) DO UPDATE SET
+        count = count + 1,
+        last_seen = excluded.last_seen,
+        message = excluded.message,
+        stack = excluded.stack,
+        url = excluded.url,
+        version = excluded.version
+    `).bind(fp, message, stack, url, userAgent, version, now, now).run()
+  } catch (e) {
+    slog('error', 'client_error.db_fail', { key, fp, err: (e as Error).message })
+    return c.json({ ok: false }, 500)
+  }
+  return c.json({ ok: true, fingerprint: fp })
+})
+
+// GET /api/admin/errors?unnotified=1 — lista errores persistidos. Solo CRON_TOKEN.
+// El cron de GitHub Actions llama a este endpoint cada 8h para saber si hay
+// errores nuevos que notificar. unnotified=1 filtra notified_at IS NULL.
+app.get('/api/admin/errors', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
+
+  const unnotified = c.req.query('unnotified') === '1'
+  const limit = Math.min(parseInt(c.req.query('limit') || '100', 10) || 100, 500)
+  const minCount = Math.max(parseInt(c.req.query('min_count') || '1', 10) || 1, 1)
+  const autofixFilter = c.req.query('autofix_status') // 'null', 'queued', 'pr_opened', etc.
+
+  let sql = `SELECT fingerprint, message, stack, url, user_agent, version, count,
+                    first_seen, last_seen, notified_at, autofix_status, autofix_pr, autofix_notes
+             FROM client_errors WHERE count >= ?`
+  const binds: Array<string | number> = [minCount]
+  if (unnotified) sql += ' AND notified_at IS NULL'
+  if (autofixFilter === 'null') sql += ' AND autofix_status IS NULL'
+  else if (autofixFilter) { sql += ' AND autofix_status = ?'; binds.push(autofixFilter) }
+  sql += ' ORDER BY last_seen DESC LIMIT ?'
+  binds.push(limit)
+
+  const { results } = await c.env.DB.prepare(sql).bind(...binds).all()
+  return c.json({ errors: results || [], ts: new Date().toISOString() }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/admin/errors/ack?fingerprints=a,b,c — marca fingerprints como
+// notificados (set notified_at = now). El cron lo invoca tras enviar a
+// Telegram para que el siguiente tick no reenvie los mismos.
+app.post('/api/admin/errors/ack', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
+
+  const fpsParam = c.req.query('fingerprints') || ''
+  const fps = fpsParam.split(',').map(s => s.trim()).filter(s => /^[a-f0-9]{1,16}$/.test(s))
+  if (fps.length === 0) return c.json({ acknowledged: 0 })
+
+  const placeholders = fps.map(() => '?').join(',')
+  const now = Date.now()
+  const res = await c.env.DB.prepare(
+    `UPDATE client_errors SET notified_at = ? WHERE fingerprint IN (${placeholders})`
+  ).bind(now, ...fps).run()
+  return c.json({ acknowledged: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/admin/errors/autofix?fingerprint=XXX&status=YYY[&pr=URL][&notes=TEXT]
+// Endpoint para el agente auto-fix de Nivel 3. Permite actualizar el estado de
+// autofix de una firma: 'queued', 'in_progress', 'pr_opened' (+pr URL),
+// 'resolved', 'skipped' (+notes).
+app.post('/api/admin/errors/autofix', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
+
+  const fp = (c.req.query('fingerprint') || '').trim()
+  const status = (c.req.query('status') || '').trim()
+  const pr = (c.req.query('pr') || '').trim() || null
+  const notes = (c.req.query('notes') || '').trim() || null
+  const validStatuses = ['queued', 'in_progress', 'pr_opened', 'resolved', 'skipped']
+  if (!/^[a-f0-9]{1,16}$/.test(fp)) return c.json({ error: 'bad fingerprint' }, 400)
+  if (!validStatuses.includes(status)) return c.json({ error: 'bad status', allowed: validStatuses }, 400)
+
+  const res = await c.env.DB.prepare(
+    `UPDATE client_errors SET autofix_status = ?, autofix_pr = ?, autofix_notes = ? WHERE fingerprint = ?`
+  ).bind(status, pr, notes, fp).run()
+  return c.json({ updated: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
 })
 
 // ---- Ingest de errores del cliente ----

@@ -3,6 +3,90 @@ export function getClientScript(nonce: string, version: string = '0.0.0'): strin
   // __APP_VERSION__ se inyecta desde el server: queda accesible como var global 'APP_VER'.
   return `<script nonce="${nonce}">
 var APP_VER = ${JSON.stringify(version)};
+
+// ============================================================
+// ===== ERROR REPORTER (Nivel 1: deteccion) =====
+// ============================================================
+// Hookea los dos buses de error no-handleados del navegador y POSTea cada
+// incidencia a /api/client-error. El servidor dedupe por fingerprint y persiste
+// en D1. Un cron de GitHub Actions cada 8h lee esta tabla y notifica Telegram.
+//
+// Guardrails anti-ruido:
+// - Dedupe cliente 10s por fingerprint (msg + primera linea stack). Evita que
+//   un error en un loop (p.ej. re-render bucle) mande 1000 POSTs en 1s.
+// - Filtro de ruido conocido: ResizeObserver loop, extensiones de terceros
+//   (safari-extension://, chrome-extension://), canceled fetches. No es
+//   nuestro problema.
+// - keepalive: true en el fetch -> el navegador persiste el envio aunque la
+//   pestana se cierre (ideal para errores fatales durante navegacion).
+(function initErrorReporter() {
+  var lastSent = Object.create(null);
+  function hashCode(s) {
+    var h = 0;
+    for (var i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h |= 0;
+    }
+    return (h >>> 0).toString(36);
+  }
+  // Ruido conocido: usamos indexOf para evitar quebraderos de cabeza con
+  // regex escapes dentro del template literal del wrapper (en \`...\` los
+  // \\ se comen y las barras cierran el regex antes de tiempo).
+  function isNoise(msg, stack) {
+    if (!msg) return true;
+    var ml = String(msg).toLowerCase();
+    if (ml.indexOf('resizeobserver loop') >= 0) return true;   // benigno Chrome
+    if (ml === 'script error' || ml === 'script error.') {
+      if (!stack) return true;                                 // cross-origin sin info util
+    }
+    if (ml.indexOf('non-error promise rejection captured') >= 0) return true;
+    var s = String(stack || '');
+    if (s.indexOf('chrome-extension://') >= 0) return true;    // extensiones terceros
+    if (s.indexOf('moz-extension://') >= 0) return true;
+    if (s.indexOf('safari-extension://') >= 0) return true;
+    return false;
+  }
+  function send(err) {
+    try {
+      var msg = '';
+      var stack = '';
+      if (err && typeof err === 'object') {
+        msg = String(err.message || err.reason || err);
+        stack = String(err.stack || '');
+      } else {
+        msg = String(err);
+      }
+      if (isNoise(msg, stack)) return;
+      var firstLine = (stack.split('\\n')[0] || '').substring(0, 200);
+      var fp = hashCode(msg + '|' + firstLine);
+      var now = Date.now();
+      if (lastSent[fp] && now - lastSent[fp] < 10000) return;
+      lastSent[fp] = now;
+      var body = JSON.stringify({
+        message: msg.substring(0, 500),
+        stack: stack.substring(0, 4000),
+        url: location.pathname,
+        version: APP_VER
+      });
+      fetch('/api/client-error', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body,
+        keepalive: true,
+        credentials: 'same-origin'
+      }).catch(function() { /* swallow — no queremos loop infinito de errores */ });
+    } catch (e) { /* swallow */ }
+  }
+  window.addEventListener('error', function(ev) {
+    send(ev.error || { message: ev.message, stack: (ev.filename||'') + ':' + (ev.lineno||0) });
+  });
+  window.addEventListener('unhandledrejection', function(ev) {
+    var r = ev.reason;
+    if (r && typeof r === 'object') send(r);
+    else send({ message: 'unhandled rejection: ' + String(r), stack: '' });
+  });
+})();
+
 // ---- TOASTS ----
 // Usa nodos DOM + textContent para evitar XSS si 'msg' viene de un backend comprometido.
 function showToast(msg, type) {

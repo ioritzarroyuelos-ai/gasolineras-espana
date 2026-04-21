@@ -385,6 +385,14 @@ function buildCsp(nonce: string, turnstile = false): string {
   // worker-src necesita blob: porque MapLibre crea Web Workers a partir de
   // blob URLs (optimizacion de cold start del motor vectorial).
   connectSrc.push('https://tiles.openfreemap.org')
+  // unpkg / jsdelivr: Chrome DevTools intenta fetchear los source maps .js.map
+  // de los scripts que cargamos desde esos CDN (Leaflet, MarkerCluster, MapLibre,
+  // bridge). Son fetch del navegador, caen bajo connect-src — bloquearlos
+  // produce errores "Refused to connect" en consola. Permitirlos NO amplia la
+  // superficie de ataque: script-src sigue exigiendo SRI en cada JS, asi que
+  // aunque unpkg sirviera un .map malicioso Chrome lo parsea como JSON y no
+  // lo ejecuta. Solo quita ruido de la consola del usuario.
+  connectSrc.push('https://unpkg.com', 'https://cdn.jsdelivr.net')
   return [
     "default-src 'self'",
     "script-src " + scriptSrc.join(' '),

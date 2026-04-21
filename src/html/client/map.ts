@@ -343,6 +343,12 @@ var userPosMarker = null;                   // circleMarker del usuario en el ma
 var currentMedianPrice = null;              // mediana del listado filtrado actual
 var topCheapIds = {};                       // ids de las 3 estaciones mas baratas (para medallas)
 
+// Ship 6: estado del heatmap. Se alterna desde el boton flotante
+// #btn-heatmap — renderMarkers inspecciona heatMode para decidir si pinta
+// la capa de calor o el cluster.
+var heatMode = false;
+var heatLayer = null;
+
 // Formatea precio en €/L (unica unidad soportada tras quitar el toggle).
 function fmtPriceUnit(price) {
   if (price == null) return 'N/D';
@@ -833,13 +839,52 @@ function buildPopup(s) {
 }
 
 // ---- RENDER MARKERS ----
+// Ship 6: cache de las estaciones renderizadas para poder re-renderizar al
+// togglear el heatmap sin tener que re-disparar loadStations.
+var lastRenderedStations = [];
 function renderMarkers(stations) {
+  lastRenderedStations = stations || [];
   if (clusterGroup) map.removeLayer(clusterGroup);
+  if (typeof heatLayer !== 'undefined' && heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
 
   var fuel = document.getElementById('sel-combustible').value;
   var prices = stations.map(function(s) { return parsePrice(s[fuel]); }).filter(function(p) { return p !== null; });
   minP = prices.length ? Math.min.apply(null, prices) : 0;
   maxP = prices.length ? Math.max.apply(null, prices) : 0;
+
+  // Ship 6: modo heatmap. Si el usuario tiene activa la vista de calor y
+  // leaflet.heat esta cargado, renderizamos la capa de calor en lugar del
+  // cluster. Cada punto lleva peso = (maxP - price) / (maxP - minP) — asi
+  // el precio MINIMO tiene peso 1 (mas caliente) y el MAXIMO peso 0 (frio).
+  // Fallback: si leaflet.heat no esta (red offline durante primera carga),
+  // caemos al cluster normal. Nunca rompemos la pagina.
+  if (heatMode && typeof L.heatLayer === 'function' && stations.length > 0) {
+    var heatPoints = [];
+    var range = maxP - minP || 1;
+    stations.forEach(function(s) {
+      var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
+      var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
+      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+      var p = parsePrice(s[fuel]);
+      if (p === null) return;
+      var w = Math.max(0.05, (maxP - p) / range);
+      heatPoints.push([lat, lng, w]);
+    });
+    if (heatPoints.length > 0) {
+      heatLayer = L.heatLayer(heatPoints, {
+        radius: 25, blur: 18, maxZoom: 13, minOpacity: 0.35,
+        // Gradient inverso: valor alto (barato) = rojo; valor bajo (caro) = azul.
+        gradient: { 0.1: '#1e40af', 0.3: '#06b6d4', 0.5: '#84cc16', 0.7: '#facc15', 0.9: '#f97316', 1.0: '#dc2626' },
+      });
+      heatLayer.addTo(map);
+      // Mantenemos fitBounds para centrar igual que en modo cluster.
+      try {
+        var bnds = heatPoints.map(function(pt) { return [pt[0], pt[1]]; });
+        if (bnds.length) map.fitBounds(bnds, Object.assign({}, mapAnimOpts(), { padding: [40, 40], maxZoom: 13 }));
+      } catch(e) {}
+      return;
+    }
+  }
 
   // Cluster personalizado: muestra precio minimo del grupo
   clusterGroup = L.markerClusterGroup({
@@ -935,5 +980,34 @@ function highlightCard(idx) {
     card.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' });
   }
 }
+
+// Ship 6: toggle del heatmap. Re-renderiza con las ultimas estaciones
+// cacheadas en renderMarkers — si el usuario tiene filtros aplicados, el
+// heatmap refleja SOLO esas estaciones (mas util que el agregado global).
+(function() {
+  var btn = document.getElementById('btn-heatmap');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    // Defensive: si leaflet.heat no cargo (red caida, CSP, etc.), informa y
+    // no togglea. Asi el boton nunca da una experiencia silenciosa rota.
+    if (!heatMode && typeof L.heatLayer !== 'function') {
+      try { if (typeof showToast === 'function') showToast('El mapa de calor aun esta cargando, prueba en un segundo', 'warn'); } catch(_) {}
+      return;
+    }
+    heatMode = !heatMode;
+    btn.setAttribute('aria-pressed', heatMode ? 'true' : 'false');
+    btn.setAttribute('aria-label', heatMode ? 'Desactivar mapa de calor' : 'Activar mapa de calor de precios');
+    if (lastRenderedStations.length) {
+      renderMarkers(lastRenderedStations);
+    }
+    try {
+      if (typeof showToast === 'function') {
+        showToast(heatMode
+          ? 'Mapa de calor: rojo = mas barato, azul = mas caro'
+          : 'Volviendo a vista de agrupaciones', 'info');
+      }
+    } catch (_) {}
+  });
+})();
 
 `

@@ -284,6 +284,15 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           crossorigin="anonymous"
           referrerpolicy="no-referrer"></script>
 
+  <!-- Leaflet.heat: capa de heatmap como vista alternativa al cluster. El
+       peso de cada punto se calcula inverso al precio (mas barato = mas
+       caliente) en renderMarkers. Defer + SRI para integridad. -->
+  <script defer
+          src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"
+          integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0"
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
+
   <!-- MapLibre GL + bridge leaflet — render vectorial con estilo Liberty de
        OpenFreeMap parcheado en runtime para priorizar name:es (toponimia en
        castellano aunque existan etiquetas en otros idiomas en el dataset OSM).
@@ -579,6 +588,20 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <!-- ======= MAPA ======= -->
   <div id="map-container">
     <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
+
+    <!-- Ship 6: toggle heatmap. Cambia la vista de cluster a mapa de calor
+         donde el color indica densidad de precios bajos (mas rojo = mas
+         barato). Util para decidir zonas en viajes largos sin tener que
+         revisar 400 pins. El boton va flotante sobre el mapa, junto al
+         control de zoom de Leaflet, con aria-pressed. -->
+    <button id="btn-heatmap"
+            class="map-floating-btn"
+            type="button"
+            aria-pressed="false"
+            aria-label="Activar mapa de calor de precios"
+            title="Vista de mapa de calor (más rojo = más barato)">
+      <i class="fa-solid fa-fire" aria-hidden="true"></i>
+    </button>
 
     <!-- Banner "modo ruta" flotante sobre el mapa. Se activa al planificar
          una ruta y se oculta al cerrar el modo. -->

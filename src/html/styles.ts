@@ -689,6 +689,31 @@ export function getStyles(nonce: string = ''): string {
       .route-mode-bar-corridor { padding: 4px 8px; font-size: 11px; }
     }
 
+    /* Ship 6: boton flotante de heatmap. Mismo lenguaje visual que los
+       controles de Leaflet (cuadro blanco, borde sutil) para que se integre.
+       Se posiciona debajo del zoom (arriba-izquierda) en desktop; abajo-
+       derecha en mobile. aria-pressed=true pinta el boton en rojo solido. */
+    .map-floating-btn {
+      position: absolute; top: 90px; left: 10px; z-index: 800;
+      width: 34px; height: 34px; border-radius: 6px;
+      background: #fff; color: #334155;
+      border: 2px solid rgba(0,0,0,0.2);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      cursor: pointer; font-size: 15px;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: background .15s ease, color .15s ease, transform .1s ease;
+    }
+    .map-floating-btn:hover { background: #f8fafc; color: #16a34a; }
+    .map-floating-btn:active { transform: scale(.94); }
+    .map-floating-btn[aria-pressed="true"] {
+      background: #dc2626; color: #fff; border-color: #b91c1c;
+    }
+    body.dark .map-floating-btn { background: #1e293b; color: #cbd5e1; border-color: #475569; }
+    body.dark .map-floating-btn:hover { background: #334155; color: #fb923c; }
+    body.dark .map-floating-btn[aria-pressed="true"] {
+      background: #dc2626; color: #fff; border-color: #991b1b;
+    }
+
     /* Botonera "Abrir ruta en..." dentro del panel del plan. */
     .route-nav-title {
       margin-top: 14px; margin-bottom: 6px;

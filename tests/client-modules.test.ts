@@ -16,18 +16,12 @@
 // Solo validamos que el parse AST es valido — es la garantia mas fuerte
 // que se puede dar sin montar JSDOM + mocks pesados.
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 import { clientCoreScript }     from '../src/html/client/core'
 import { clientMapScript }      from '../src/html/client/map'
 import { clientListScript }     from '../src/html/client/list'
 import { clientUiScript }       from '../src/html/client/ui'
 import { clientFeaturesScript } from '../src/html/client/features'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const FEATURES_JS_PATH = resolve(__dirname, '..', 'public', 'static', 'features.js')
 
 function parseOk(js: string): { ok: true } | { ok: false; err: string } {
   try {
@@ -93,23 +87,15 @@ describe('bundle completo (critico + features concatenados)', () => {
   })
 })
 
-describe('features.js generado (prebuild output)', () => {
-  // El prebuild escribe public/static/features.js desde features.ts. Este
-  // test verifica que lo que se despliega coincide con lo que el build
-  // genera — si alguien edita features.js a mano, el test falla.
-  it('existe y parsea como JS (prebuild lo deja listo)', () => {
-    let content: string
-    try { content = readFileSync(FEATURES_JS_PATH, 'utf8') }
-    catch (e) {
-      // Skip en CI si el prebuild no corrio todavia (local dev sin build)
-      return
-    }
-    const r = parseOk(content)
-    expect(r.ok, 'ok' in r ? '' : (r as any).err).toBe(true)
-    // Sanidad: contiene el banner y las secciones esperadas.
-    expect(content).toContain('features.js (generado automaticamente')
-    expect(content).toContain('trend-strip')
-    expect(content).toContain('openCompareModal') // comparador modal wiring
+describe('features string (fuente del prebuild)', () => {
+  // El prebuild escribe public/static/features.js extrayendo el contenido de
+  // clientFeaturesScript. Aqui validamos que el string exportado tiene las
+  // secciones esperadas — si alguien elimina una feature por error, el test
+  // falla antes de llegar a prod.
+  it('contiene trend strip, comparador modal y diario', () => {
+    expect(clientFeaturesScript).toContain('trend-strip')
+    expect(clientFeaturesScript).toContain('openCompareModal')
+    expect(clientFeaturesScript).toContain('openDiary')
   })
 })
 

@@ -675,6 +675,77 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
     + highBadge;
 }
 
+// Ship 10: calcula el percentil del precio dentro del conjunto filtrado.
+// Devuelve:
+//   { rank, pct, cheaperThanPct, quintile, total }
+// donde:
+//   rank            → posicion 1-based (1 = mas barato)
+//   pct             → percentil [0..100] del precio (0 = mas barato, 100 = mas caro)
+//   cheaperThanPct  → % de estaciones a las que supera en barato (pct invertido)
+//   quintile        → 0..4 (0 = top 20% mas barato, 4 = bottom 20%)
+//   total           → N de estaciones con precio valido en el conjunto
+// Devuelve null si no hay >=3 estaciones con precio (histograma sin sentido).
+function computePricePercentile(price, stations, fuel) {
+  if (!price || !stations || !fuel) return null;
+  var prices = [];
+  for (var i = 0; i < stations.length; i++) {
+    var p = parsePrice(stations[i][fuel]);
+    if (p != null) prices.push(p);
+  }
+  if (prices.length < 3) return null;
+  prices.sort(function(a, b) { return a - b; });
+  // Rank: primer indice donde prices[idx] >= price. 1-based.
+  var rank = 1;
+  for (var j = 0; j < prices.length; j++) {
+    if (prices[j] < price) rank = j + 2;
+    else break;
+  }
+  if (rank > prices.length) rank = prices.length;
+  // pct 0..100: donde cae el precio en la distribucion. 0 = mas barato posible.
+  var pct = ((rank - 1) / Math.max(1, prices.length - 1)) * 100;
+  if (pct < 0) pct = 0; if (pct > 100) pct = 100;
+  var cheaperThanPct = Math.max(0, Math.min(100, Math.round(100 - pct)));
+  var quintile = Math.min(4, Math.floor(pct / 20));
+  return {
+    rank: rank, pct: pct, cheaperThanPct: cheaperThanPct,
+    quintile: quintile, total: prices.length
+  };
+}
+
+// Dibuja un mini-histograma en 5 bins (quintiles) con marcador en la posicion
+// de la estacion. Colores: verde (top 20%) → rojo (peor 20%), pasando por
+// amarillo/naranja. El marcador es una linea vertical negra/blanca (adaptada a
+// dark) en la posicion proporcional al percentil.
+function buildPercentileHistogram(info) {
+  if (!info) return '';
+  var bins = [
+    '<div class="ph-bin ph-bin--q0"></div>',
+    '<div class="ph-bin ph-bin--q1"></div>',
+    '<div class="ph-bin ph-bin--q2"></div>',
+    '<div class="ph-bin ph-bin--q3"></div>',
+    '<div class="ph-bin ph-bin--q4"></div>'
+  ].join('');
+  // Clamp marker al [1%..99%] para que no desaparezca en los bordes.
+  var markerPct = Math.max(1, Math.min(99, info.pct));
+  var label;
+  if (info.rank === 1) {
+    label = '\u{1F3C6} La m\u00E1s barata de su zona (' + info.total + ' estaciones)';
+  } else if (info.quintile === 0) {
+    label = 'Top 20% m\u00E1s barato \u2014 m\u00E1s barata que el ' + info.cheaperThanPct + '% (' + info.total + ')';
+  } else if (info.quintile === 4) {
+    label = 'Peor 20% \u2014 solo supera al ' + info.cheaperThanPct + '% (' + info.total + ')';
+  } else {
+    label = 'M\u00E1s barata que el ' + info.cheaperThanPct + '% de su zona (' + info.total + ')';
+  }
+  return '<div class="popup-percentile" aria-label="' + esc(label) + '">'
+       +   '<div class="ph-track">'
+       +     '<div class="ph-bins">' + bins + '</div>'
+       +     '<div class="ph-marker" style="left:' + markerPct.toFixed(1) + '%"></div>'
+       +   '</div>'
+       +   '<div class="ph-label ph-label--q' + info.quintile + '">' + label + '</div>'
+       + '</div>';
+}
+
 function buildPopup(s) {
   var fuel = document.getElementById('sel-combustible').value;
   var fuelEntry = FUELS_POPUP.find(function(f){ return f[0] === fuel; });
@@ -823,6 +894,17 @@ function buildPopup(s) {
                + '</button>';
   }
 
+  // Ship 10: mini-histograma de posicion (percentil) del precio dentro del
+  // conjunto filtrado actual. Contexto relativo inmediato — "esta gasolinera
+  // es la mas barata de tu busqueda" / "te quedan 10% mas baratas". Solo
+  // sobre filteredStations porque la comparacion tiene que ser con lo que el
+  // usuario esta viendo (si filtra REPSOL, percentil dentro de REPSOL).
+  var percentileHtml = '';
+  if (mainPrice && filteredStations && filteredStations.length >= 3) {
+    var pInfo = computePricePercentile(mainPrice, filteredStations, fuel);
+    if (pInfo) percentileHtml = buildPercentileHistogram(pInfo);
+  }
+
   return '<div class="popup-root">'
     // Cabecera — la gradiente del fondo se pinta por clase .popup-header--<color>
     + '<div class="popup-header popup-header--' + mainColor + '">'
@@ -835,6 +917,7 @@ function buildPopup(s) {
     + '  <span class="popup-fuel-label">' + esc(fuelLabel) + '</span>'
     + '  ' + priceDisplay
     + '</div>'
+    + percentileHtml
     + reportLink
     + predictPlaceholder
     + savingsHtml

@@ -757,6 +757,43 @@ export function getStyles(nonce: string = ''): string {
     body.dark .report-context { background: #1f1212; border-left-color: #7f1d1d; color: #cbd5e1; }
     body.dark .report-context strong { color: #f1f5f9; }
 
+    /* ===== Ship 10: HISTOGRAMA PERCENTIL EN POPUP ===== */
+    /* Mini-grafico horizontal en 5 bins quintil (verde->rojo). Un marcador
+       vertical senala la posicion de la estacion. Se integra en el popup
+       entre el precio y las badges de ahorro — da contexto inmediato sin
+       abrir otra vista. */
+    .popup-percentile           { margin: 6px 0 2px; display: flex; flex-direction: column; gap: 4px; }
+    .popup-percentile .ph-track { position: relative; height: 10px; border-radius: 5px; overflow: visible; }
+    .popup-percentile .ph-bins  { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; border-radius: 5px; overflow: hidden; }
+    .popup-percentile .ph-bin   { height: 100%; }
+    .popup-percentile .ph-bin--q0 { background: #16a34a; }
+    .popup-percentile .ph-bin--q1 { background: #84cc16; }
+    .popup-percentile .ph-bin--q2 { background: #facc15; }
+    .popup-percentile .ph-bin--q3 { background: #f97316; }
+    .popup-percentile .ph-bin--q4 { background: #dc2626; }
+    body.dark .popup-percentile .ph-bin--q0 { background: #15803d; }
+    body.dark .popup-percentile .ph-bin--q1 { background: #4d7c0f; }
+    body.dark .popup-percentile .ph-bin--q2 { background: #ca8a04; }
+    body.dark .popup-percentile .ph-bin--q3 { background: #c2410c; }
+    body.dark .popup-percentile .ph-bin--q4 { background: #b91c1c; }
+    /* Marcador: linea vertical estrecha con un "diente" superior — salta
+       por encima del track con triangulo apuntando abajo. Color adaptado. */
+    .popup-percentile .ph-marker {
+      position: absolute; top: -4px; bottom: -4px; width: 3px;
+      background: #111827; border-radius: 2px;
+      transform: translateX(-50%);
+      box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+    }
+    body.dark .popup-percentile .ph-marker {
+      background: #f1f5f9; box-shadow: 0 0 0 2px rgba(15,23,42,0.9);
+    }
+    .popup-percentile .ph-label { font-size: 10px; line-height: 1.25; color: #475569; font-weight: 500; }
+    body.dark .popup-percentile .ph-label { color: #cbd5e1; }
+    .popup-percentile .ph-label--q0 { color: #166534; font-weight: 700; }
+    .popup-percentile .ph-label--q4 { color: #991b1b; }
+    body.dark .popup-percentile .ph-label--q0 { color: #86efac; }
+    body.dark .popup-percentile .ph-label--q4 { color: #fca5a5; }
+
     /* Ship 6: boton flotante de heatmap. Mismo lenguaje visual que los
        controles de Leaflet (cuadro blanco, borde sutil) para que se integre.
        Se posiciona debajo del zoom (arriba-izquierda) en desktop; abajo-

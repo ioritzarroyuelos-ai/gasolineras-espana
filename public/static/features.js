@@ -558,6 +558,16 @@ function toggleRouteCorridor() {
   var fromSel = null;
   var toSel   = null;
 
+  // Ship 7: paradas intermedias (waypoints). stopsSel es paralelo al DOM
+  // (.route-stop-row en #route-stops-wrap) — cada indice guarda la seleccion
+  // confirmada de esa fila o null si el usuario no ha elegido sugerencia.
+  // MAX_STOPS = 3 es una cota suave: OSRM acepta mas waypoints, pero el
+  // valor de UX cae rapido — rutas con 5+ paradas son edge case. Limitando
+  // aqui evitamos que el modal se llene de inputs y que URLs enormes rompan
+  // caches intermedios.
+  var stopsSel = [];
+  var MAX_STOPS = 3;
+
   // Lee tank+consumo+autonomia del perfil local. Devuelve null si falta
   // cualquiera de los tres — ese caso lo gestiona openRoute() ensenando un
   // CTA para configurar el perfil. La autonomia es el valor que el usuario
@@ -693,6 +703,99 @@ function toggleRouteCorridor() {
   }
   makeGeoSearch(inFrom, sugFrom, function(p) { fromSel = p; });
   makeGeoSearch(inTo,   sugTo,   function(p) { toSel   = p; });
+
+  // Ship 7: UI de paradas intermedias.
+  //
+  //   stopsWrap  contiene 0..MAX_STOPS filas (.route-stop-row). Cada fila
+  //   tiene su propio input + contenedor de sugerencias + boton quitar y una
+  //   instancia propia de makeGeoSearch — el callback escribe en stopsSel[i]
+  //   usando el indice actual de la fila en el DOM (se recalcula tras cada
+  //   remove para no pinchar si el usuario quita la fila 1 de 3).
+  //
+  //   El boton "Anadir parada" se deshabilita cuando stopsSel ya tiene
+  //   MAX_STOPS entradas — evita que el usuario llene la UI sin sentido.
+  var stopsWrap    = document.getElementById('route-stops-wrap');
+  var btnAddStop   = document.getElementById('btn-route-add-stop');
+
+  function refreshAddStopBtn() {
+    if (!btnAddStop) return;
+    var full = stopsSel.length >= MAX_STOPS;
+    btnAddStop.disabled = full;
+    btnAddStop.setAttribute('aria-disabled', full ? 'true' : 'false');
+  }
+
+  // Recalcula los data-index de cada fila tras un remove, de modo que los
+  // callbacks de makeGeoSearch apunten al indice correcto en stopsSel.
+  // Tambien refresca placeholder/aria-label del input y del remove — el
+  // usuario ve la numeracion actualizada ("Parada 2 (ciudad...)" pasa a ser
+  // "Parada 1 (ciudad...)" al quitar la primera).
+  function renumberStopRows() {
+    if (!stopsWrap) return;
+    var rows = stopsWrap.querySelectorAll('.route-stop-row');
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].setAttribute('data-idx', String(i));
+      var input = rows[i].querySelector('input');
+      if (input) input.setAttribute('placeholder', 'Parada ' + (i + 1) + ' (ciudad o lugar)');
+      var rm = rows[i].querySelector('.btn-route-stop-remove');
+      if (rm) rm.setAttribute('aria-label', 'Quitar parada ' + (i + 1));
+      var srLabel = rows[i].querySelector('label.sr-only');
+      if (srLabel) srLabel.textContent = 'Parada intermedia ' + (i + 1);
+    }
+  }
+
+  function removeStopRow(row) {
+    if (!stopsWrap || !row) return;
+    var idx = parseInt(row.getAttribute('data-idx') || '-1', 10);
+    if (idx >= 0 && idx < stopsSel.length) stopsSel.splice(idx, 1);
+    row.parentNode && row.parentNode.removeChild(row);
+    renumberStopRows();
+    refreshAddStopBtn();
+  }
+
+  function addStopRow() {
+    if (!stopsWrap || stopsSel.length >= MAX_STOPS) return;
+    var idx = stopsSel.length;
+    stopsSel.push(null);
+
+    // IDs unicos por fila — aria-controls y label/for necesitan ids, y el
+    // usuario puede tener hasta 3 filas abiertas a la vez.
+    // Markup coherente con .route-stop-row (flex row: input + boton), mas
+    // el label por aria encima (visualmente oculto via sr-only para no romper
+    // el layout compacto del modal — screen readers siguen leyendolo).
+    var rid = 'route-stop-' + idx + '-' + Date.now();
+    var row = document.createElement('div');
+    row.className = 'route-stop-row';
+    row.setAttribute('data-idx', String(idx));
+    row.innerHTML =
+        '<label class="sr-only" for="' + rid + '">Parada intermedia ' + (idx + 1) + '</label>'
+      + '<input id="' + rid + '" class="form-input" type="text" placeholder="Parada ' + (idx + 1) + ' (ciudad o lugar)" autocomplete="off" />'
+      + '<button class="btn-route-stop-remove" type="button" aria-label="Quitar parada ' + (idx + 1) + '">'
+      +   '<i class="fa-solid fa-xmark" aria-hidden="true"></i>'
+      + '</button>'
+      + '<div class="route-sug" role="listbox" id="' + rid + '-sug"></div>';
+    stopsWrap.appendChild(row);
+
+    var input  = row.querySelector('input');
+    var sugBox = row.querySelector('.route-sug');
+    var rmBtn  = row.querySelector('.btn-route-stop-remove');
+
+    makeGeoSearch(input, sugBox, function(p) {
+      // Recalcular idx en el momento del callback — si se quitaron filas
+      // previas, el indice actual de esta fila pudo haber cambiado.
+      var curIdx = parseInt(row.getAttribute('data-idx') || '-1', 10);
+      if (curIdx >= 0 && curIdx < stopsSel.length) stopsSel[curIdx] = p;
+    });
+
+    if (rmBtn) rmBtn.addEventListener('click', function() { removeStopRow(row); });
+
+    refreshAddStopBtn();
+    // Foco al input nuevo para que el usuario pueda teclear inmediatamente
+    // sin tener que clickear de nuevo — ahorra un paso en el flujo comun.
+    setTimeout(function() { input && input.focus(); }, 30);
+  }
+
+  if (btnAddStop) btnAddStop.addEventListener('click', addStopRow);
+  refreshAddStopBtn();
 
   // Duplicados locales de cumulativePolylineKm / projectOnPolyline (funciones
   // puras en src/lib/pure.ts). Los tests unitarios garantizan equivalencia;
@@ -1024,6 +1127,20 @@ function toggleRouteCorridor() {
                    + '&fromLng=' + fromSel.lng.toFixed(6)
                    + '&toLat=' + toSel.lat.toFixed(6)
                    + '&toLng=' + toSel.lng.toFixed(6);
+      // Ship 7: waypoints. El backend (src/index.tsx::parseStops) acepta el
+      // parametro stops con formato "lat,lng;lat,lng;..." y lo inyecta
+      // entre from y to antes de llamar a OSRM. Filtramos stopsSel para
+      // quitar filas sin seleccion confirmada (el usuario pudo anadir la
+      // fila y no elegir nada) — esas no se envian.
+      var validStops = stopsSel.filter(function(s) {
+        return s && typeof s.lat === 'number' && typeof s.lng === 'number';
+      });
+      if (validStops.length > 0) {
+        var stopsParam = validStops.map(function(s) {
+          return s.lat.toFixed(6) + ',' + s.lng.toFixed(6);
+        }).join(';');
+        routeUrl += '&stops=' + encodeURIComponent(stopsParam);
+      }
       var rr = await fetch(routeUrl, { credentials: 'same-origin' });
       if (!rr.ok) {
         if (rr.status === 429) {

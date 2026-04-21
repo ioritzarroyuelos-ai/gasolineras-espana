@@ -769,6 +769,15 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <input id="route-from" class="form-input" type="text" placeholder="Madrid, Valencia, ..." autocomplete="off" />
         <div id="route-from-sug" class="route-sug" role="listbox"></div>
       </div>
+      <!-- Ship 7: paradas intermedias (waypoints). El planner soporta hasta 3
+           paradas entre origen y destino. Cada fila se genera via JS como
+           "chip + input + boton quitar" para mantener el markup limpio en
+           el estado por defecto (0 paradas). El boton "Anadir parada" anade
+           la primera; las adicionales aparecen al rellenar la anterior. -->
+      <div id="route-stops-wrap" class="route-stops-wrap" aria-live="polite"></div>
+      <button id="btn-route-add-stop" class="btn-ghost btn-route-add-stop" type="button">
+        <i class="fa-solid fa-plus" aria-hidden="true"></i> Anadir parada intermedia
+      </button>
       <div class="form-group">
         <label class="form-label" for="route-to">Destino</label>
         <input id="route-to" class="form-input" type="text" placeholder="Barcelona, Sevilla, ..." autocomplete="off" />

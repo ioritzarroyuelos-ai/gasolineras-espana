@@ -689,6 +689,45 @@ export function getStyles(nonce: string = ''): string {
       .route-mode-bar-corridor { padding: 4px 8px; font-size: 11px; }
     }
 
+    /* Ship 7: paradas intermedias en el planificador de ruta. Cada row se
+       pinta como input con un boton "x" para eliminar. Max 3 paradas
+       (limite de Google Maps URL encoding ~9 total, Apple tiene practico
+       de 2-3 antes de degradar). El boton "Anadir parada" va debajo del
+       stack y queda ghost. */
+    .route-stops-wrap:empty { display: none; }
+    .route-stops-wrap { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .route-stop-row {
+      display: flex; gap: 6px; align-items: stretch; position: relative;
+    }
+    .route-stop-row .form-input { flex: 1; }
+    .route-stop-row .btn-route-stop-remove {
+      flex: 0 0 auto; width: 38px;
+      background: transparent; border: 1px solid #e2e8f0; color: #94a3b8;
+      border-radius: 8px; font-size: 14px; cursor: pointer;
+      transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+    .route-stop-row .btn-route-stop-remove:hover {
+      background: #fee2e2; border-color: #fecaca; color: #dc2626;
+    }
+    body.dark .route-stop-row .btn-route-stop-remove { border-color: #475569; color: #64748b; }
+    body.dark .route-stop-row .btn-route-stop-remove:hover { background: #451a03; border-color: #78350f; color: #f87171; }
+    .btn-route-add-stop {
+      margin-bottom: 14px; align-self: flex-start;
+      background: transparent; color: #16a34a; border: 1px dashed #86efac;
+      padding: 6px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
+      transition: background .15s ease, color .15s ease;
+    }
+    .btn-route-add-stop:hover { background: #ecfdf5; color: #047857; }
+    .btn-route-add-stop[disabled] {
+      opacity: 0.5; cursor: not-allowed; pointer-events: none;
+    }
+    body.dark .btn-route-add-stop { color: #4ade80; border-color: #14532d; }
+    body.dark .btn-route-add-stop:hover { background: #064e3b; color: #6ee7b7; }
+    /* sugerencias de los inputs de paradas — reuso de .route-sug */
+    .route-stop-row .route-sug {
+      position: absolute; top: 100%; left: 0; right: 44px; z-index: 20;
+    }
+
     /* Ship 6: boton flotante de heatmap. Mismo lenguaje visual que los
        controles de Leaflet (cuadro blanco, borde sutil) para que se integre.
        Se posiciona debajo del zoom (arriba-izquierda) en desktop; abajo-

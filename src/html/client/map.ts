@@ -811,6 +811,18 @@ function buildPopup(s) {
     ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
     : '<span class="popup-price-none">Sin precio</span>';
 
+  // Ship 8: link de reporte. Solo lo mostramos si hay precio publicado — si
+  // no hay, no tiene sentido reportar "precio incorrecto". data-pop-report
+  // lleva el contexto minimo (id|fuel|precio|rotulo) para que el handler en
+  // ui.ts abra el modal con los datos prefijados sin pasar por lookup adicional.
+  var reportLink = '';
+  if (mainPrice) {
+    var repPayload = id + '|' + fuel + '|' + mainPrice.toFixed(3) + '|' + (s['Rotulo'] || 'Gasolinera');
+    reportLink = '<button class="popup-report-link" data-pop-report="' + esc(repPayload) + '" type="button">'
+               + '\u{1F6A9} Reportar precio incorrecto'
+               + '</button>';
+  }
+
   return '<div class="popup-root">'
     // Cabecera — la gradiente del fondo se pinta por clase .popup-header--<color>
     + '<div class="popup-header popup-header--' + mainColor + '">'
@@ -823,6 +835,7 @@ function buildPopup(s) {
     + '  <span class="popup-fuel-label">' + esc(fuelLabel) + '</span>'
     + '  ' + priceDisplay
     + '</div>'
+    + reportLink
     + predictPlaceholder
     + savingsHtml
     // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia

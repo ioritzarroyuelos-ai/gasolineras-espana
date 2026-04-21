@@ -320,6 +320,12 @@ const routeLimiter  = new SlidingWindowLimiter(20,  60_000)  // 20 req/min por I
 // periodista / blogger / investigador lo descarga una vez al dia — 6/min es
 // generoso para uso legitimo y hace inviable el scraping continuo.
 const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
+// Ship 8: reportes de precio. 5/min/IP es suficiente margen para que un usuario
+// legitimo reporte varias estaciones de golpe (p.ej. una ruta), y bajo suficiente
+// como para frenar un bot que intente inflar reports sobre una sola estacion.
+// La dedupe aplicativa (mismo ip_hash+ideess+fuel en 1h → 409) complementa este
+// limite: el primer reporte pasa, los siguientes se rechazan antes de tocar DB.
+const reportLimiter = new SlidingWindowLimiter(5,   60_000)  // 5 reports/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
@@ -2047,6 +2053,111 @@ app.post('/api/admin/errors/autofix', async c => {
     `UPDATE client_errors SET autofix_status = ?, autofix_pr = ?, autofix_notes = ? WHERE fingerprint = ?`
   ).bind(status, pr, notes, fp).run()
   return c.json({ updated: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// ---- Ship 8: reportes de precio incorrecto ----
+// POST /api/reports/price — recibe un report anonimo del cliente. El usuario
+// llega a la gasolinera, ve un precio distinto al surtidor, y flagea aqui.
+// El admin consume los agregados via /api/admin/reports (Ship futuro) para
+// decidir si ignora, marca la estacion como dudosa o fuerza refresh.
+//
+// Flujo:
+//  1. Rate limit por IP (reportLimiter: 5/min).
+//  2. Valida body (ideess, fuel, reason obligatorios; precio opcional).
+//  3. Hashea IP+dia para almacenamiento anonimo.
+//  4. Dedupe aplicativa: si ip_hash+ideess+fuel ya reporto en la ultima hora,
+//     devuelve 409 (conflict) sin crear fila. Evita que el mismo usuario
+//     inflije metricas haciendo click varias veces.
+//  5. INSERT y devuelve ok + id del reporte.
+//
+// Fuentes de combustibles validos: los mismos codigos que expone la UI
+// (95, 98, diesel, diesel_plus, glp, gnc, gna, hidrogeno). Lista cerrada
+// para evitar basura en la tabla.
+const REPORT_REASONS = ['outdated', 'closed', 'wrong_fuel', 'other'] as const
+const REPORT_FUELS = ['95', '98', 'diesel', 'diesel_plus', 'glp', 'gnc', 'gna', 'hidrogeno'] as const
+
+app.post('/api/reports/price', async c => {
+  const key = clientKey(c)
+  const rl = reportLimiter.check(key)
+  if (!rl.allowed) return c.json({ ok: false, error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+
+  const ct = c.req.header('content-type') || ''
+  if (!ct.includes('application/json')) return c.json({ ok: false, error: 'json required' }, 415)
+
+  const raw = await c.req.text()
+  if (raw.length === 0 || raw.length > 2048) return c.json({ ok: false, error: 'bad size' }, 413)
+
+  let body: Record<string, unknown>
+  try { body = JSON.parse(raw) } catch { return c.json({ ok: false, error: 'bad json' }, 400) }
+
+  // Validacion estricta. ideess se parsea como dgito-entero en string (asi lo
+  // serializa el feed oficial); el regex permite 1-6 digitos — la BBDD actual
+  // tiene ids <100000. fuel debe estar en la whitelist. reason tambien.
+  const ideess = String(body.ideess || '').trim()
+  if (!/^[0-9]{1,7}$/.test(ideess)) return c.json({ ok: false, error: 'bad ideess' }, 400)
+
+  const fuel = String(body.fuel || '').trim()
+  if (!REPORT_FUELS.includes(fuel as typeof REPORT_FUELS[number])) {
+    return c.json({ ok: false, error: 'bad fuel' }, 400)
+  }
+
+  const reason = String(body.reason || '').trim()
+  if (!REPORT_REASONS.includes(reason as typeof REPORT_REASONS[number])) {
+    return c.json({ ok: false, error: 'bad reason' }, 400)
+  }
+
+  // Precios opcionales. Aceptamos numeros o null. Rango [0.1, 10] euros/litro
+  // — cubre todos los combustibles reales con margen.
+  const parsePriceOpt = (v: unknown): number | null => {
+    if (v === null || v === undefined || v === '') return null
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'))
+    if (!isFinite(n) || n < 0.1 || n > 10) return null
+    return Math.round(n * 1000) / 1000
+  }
+  const reportedPrice = parsePriceOpt(body.reportedPriceEur)
+  const officialPrice = parsePriceOpt(body.officialPriceEur)
+
+  // Comment: texto libre, trim, max 500 chars. Guardamos null si vacio para
+  // no contar como "hay comentario" en queries.
+  const commentRaw = typeof body.comment === 'string' ? body.comment.trim() : ''
+  const comment = commentRaw.length > 0 ? (commentRaw.length > 500 ? commentRaw.slice(0, 500) : commentRaw) : null
+
+  if (!c.env.DB) {
+    slog('warn', 'report.no_db', { key })
+    return c.json({ ok: false, error: 'db not configured' }, 503)
+  }
+
+  // IP hash: sha256(ip + YYYY-MM-DD). Asi un mismo IP genera el mismo bucket
+  // dentro del dia pero no se puede correlar entre dias. Suficiente para
+  // rate-limit + dedupe y preserva anonimato a largo plazo.
+  const day = new Date().toISOString().slice(0, 10)  // YYYY-MM-DD UTC
+  const ipHash = (await sha256Hex(key + '|' + day)).slice(0, 32)
+
+  const now = Date.now()
+  const hourAgo = now - 60 * 60 * 1000
+
+  try {
+    // Dedupe: mismo (ip_hash, ideess, fuel) en la ultima hora -> 409. El
+    // index idx_price_reports_dedupe resuelve esto en <1ms.
+    const dup = await c.env.DB.prepare(
+      `SELECT id FROM price_reports
+       WHERE ip_hash = ? AND ideess = ? AND fuel = ? AND created_at >= ?
+       LIMIT 1`
+    ).bind(ipHash, ideess, fuel, hourAgo).all<{ id: number }>()
+    if (dup.results && dup.results.length > 0) return c.json({ ok: false, error: 'duplicate' }, 409)
+
+    const res = await c.env.DB.prepare(
+      `INSERT INTO price_reports
+         (ideess, fuel, official_price_eur, reported_price_eur, reason, comment, ip_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(ideess, fuel, officialPrice, reportedPrice, reason, comment, ipHash, now).run()
+
+    slog('info', 'report.saved', { ideess, fuel, reason, hasPrice: reportedPrice != null })
+    return c.json({ ok: true, id: res.meta?.last_row_id ?? null })
+  } catch (e) {
+    slog('error', 'report.db_fail', { key, err: (e as Error).message })
+    return c.json({ ok: false, error: 'internal' }, 500)
+  }
 })
 
 // ---- Ingest de errores del cliente ----

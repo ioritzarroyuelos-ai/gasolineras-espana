@@ -1667,3 +1667,178 @@ function toggleRouteCorridor() {
   });
 })();
 
+// ---- Ship 8: REPORTE DE PRECIO INCORRECTO ----
+// Un solo IIFE que:
+//  1. Delega clicks en .popup-report-link del mapa (data-pop-report contiene
+//     ideess|fuel|officialPrice|rotulo).
+//  2. Expone openReportModal(...) por si otros contextos (lista, favoritos)
+//     quieren abrirlo en el futuro — por ahora solo el popup del mapa.
+//  3. Maneja el submit: valida, POST a /api/reports/price, muestra toast y
+//     cierra. Errores (429/409/500) se muestran inline sin cerrar para que
+//     el usuario pueda reintentar.
+(function() {
+  var modal = document.getElementById('modal-report');
+  if (!modal) return;
+  var ctxBox    = document.getElementById('report-context');
+  var selReason = document.getElementById('report-reason');
+  var inPrice   = document.getElementById('report-price');
+  var inComment = document.getElementById('report-comment');
+  var statusEl  = document.getElementById('report-status');
+  var btnClose  = document.getElementById('btn-report-close');
+  var btnCancel = document.getElementById('btn-report-cancel');
+  var btnSubmit = document.getElementById('btn-report-submit');
+
+  // Estado del modal actual (resetea en openReportModal).
+  var current = { ideess: '', fuel: '', officialPrice: null, rotulo: '' };
+
+  // Mapeo de codigos internos a etiquetas usuario-friendly. Usamos los mismos
+  // codigos que FUEL_CODES_BY_LABEL en el cliente (95, 98, diesel, ...) y el
+  // servidor valida la lista cerrada.
+  var FUEL_LABELS = {
+    '95': 'Gasolina 95',
+    '98': 'Gasolina 98',
+    'diesel': 'Di\u00E9sel A',
+    'diesel_plus': 'Di\u00E9sel Plus',
+    'glp': 'GLP (autogas)',
+    'gnc': 'GNC',
+    'gna': 'GNA',
+    'hidrogeno': 'Hidr\u00F3geno'
+  };
+
+  function setStatus(msg, isError) {
+    if (!statusEl) return;
+    statusEl.textContent = msg || '';
+    if (isError) statusEl.classList.add('error');
+    else statusEl.classList.remove('error');
+  }
+
+  function closeReport() {
+    modal.classList.remove('show');
+    setStatus('', false);
+  }
+
+  function openReportModal(ideess, fuel, officialPrice, rotulo) {
+    current.ideess = String(ideess || '').trim();
+    current.fuel = String(fuel || '').trim();
+    current.officialPrice = (typeof officialPrice === 'number' && isFinite(officialPrice)) ? officialPrice : null;
+    current.rotulo = String(rotulo || 'Gasolinera').trim();
+
+    // Caja contextual con lo que el usuario va a reportar.
+    var fuelLabel = FUEL_LABELS[current.fuel] || current.fuel;
+    var priceTxt  = current.officialPrice != null
+      ? current.officialPrice.toFixed(3) + ' \u20AC/L'
+      : 'sin precio publicado';
+    if (ctxBox) {
+      ctxBox.innerHTML = 'Reportando <strong>' + esc(current.rotulo) + '</strong>'
+                      + ' &middot; <strong>' + esc(fuelLabel) + '</strong>'
+                      + ' &middot; oficial: <strong>' + esc(priceTxt) + '</strong>';
+    }
+
+    // Reset campos a valores por defecto cada vez que se abre — evita que el
+    // usuario reporte por error la estacion X con el comentario de la Y.
+    if (selReason) selReason.value = 'outdated';
+    if (inPrice) inPrice.value = '';
+    if (inComment) inComment.value = '';
+    setStatus('', false);
+    if (btnSubmit) btnSubmit.disabled = false;
+
+    modal.classList.add('show');
+    setTimeout(function() { selReason && selReason.focus(); }, 50);
+  }
+
+  // Exponer globalmente por si otros modulos quieren abrirlo.
+  window.openReportModal = openReportModal;
+
+  // Delegacion de clicks en popup-report-link del mapa. El data-pop-report
+  // codifica "ideess|fuel|price|rotulo" (| como separador, rotulo puede
+  // contener espacios pero no | — si acaso contuviera, join('|') al desempaquetar
+  // lo reabsorberia en la parte del rotulo; cubrimos ese caso con slice(3).join).
+  document.addEventListener('click', function(e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var btn = t.closest('[data-pop-report]');
+    if (!btn) return;
+    var payload = btn.getAttribute('data-pop-report') || '';
+    var parts = payload.split('|');
+    if (parts.length < 4) return;
+    var ideess = parts[0];
+    var fuel = parts[1];
+    var price = parseFloat(parts[2]);
+    var rotulo = parts.slice(3).join('|');
+    openReportModal(ideess, fuel, isFinite(price) ? price : null, rotulo);
+  });
+
+  if (btnClose)  btnClose.addEventListener('click',  closeReport);
+  if (btnCancel) btnCancel.addEventListener('click', closeReport);
+  modal.addEventListener('click', function(e) { if (e.target === modal) closeReport(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeReport();
+  });
+
+  // Submit: validacion client-side ligera + POST. El servidor re-valida todo
+  // (ver /api/reports/price), asi que aqui solo cortamos los casos obvios
+  // para dar feedback inmediato.
+  if (btnSubmit) btnSubmit.addEventListener('click', async function() {
+    if (!current.ideess || !current.fuel) {
+      setStatus('Falta la estaci\u00F3n o el combustible.', true);
+      return;
+    }
+    var reason = selReason ? selReason.value : '';
+    if (!reason) {
+      setStatus('Elige un motivo.', true);
+      return;
+    }
+
+    // Precio opcional — parseo tolerante (coma o punto decimal).
+    var priceRaw = inPrice ? inPrice.value.trim() : '';
+    var reportedPrice = null;
+    if (priceRaw) {
+      var n = parseFloat(priceRaw.replace(',', '.'));
+      if (!isFinite(n) || n < 0.1 || n > 10) {
+        setStatus('El precio debe estar entre 0,10 y 10,00 \u20AC/L.', true);
+        return;
+      }
+      reportedPrice = n;
+    }
+    var comment = inComment ? inComment.value.trim() : '';
+    if (comment.length > 500) comment = comment.slice(0, 500);
+
+    btnSubmit.disabled = true;
+    setStatus('Enviando reporte\u2026', false);
+
+    try {
+      var r = await fetch('/api/reports/price', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ideess: current.ideess,
+          fuel: current.fuel,
+          officialPriceEur: current.officialPrice,
+          reportedPriceEur: reportedPrice,
+          reason: reason,
+          comment: comment || null
+        })
+      });
+      if (r.ok) {
+        closeReport();
+        showToast('Gracias \u2014 reporte enviado', 'success');
+        return;
+      }
+      if (r.status === 429) {
+        setStatus('Has enviado demasiados reportes. Espera un momento.', true);
+      } else if (r.status === 409) {
+        setStatus('Ya reportaste esta estaci\u00F3n en la \u00FAltima hora. Gracias.', true);
+      } else if (r.status === 400 || r.status === 413 || r.status === 415) {
+        setStatus('Datos no v\u00E1lidos. Revisa los campos y prueba de nuevo.', true);
+      } else {
+        setStatus('No se pudo enviar el reporte. Prueba en unos segundos.', true);
+      }
+      btnSubmit.disabled = false;
+    } catch (err) {
+      setStatus('Fallo de red. Comprueba tu conexi\u00F3n y prueba de nuevo.', true);
+      btnSubmit.disabled = false;
+    }
+  });
+})();
+

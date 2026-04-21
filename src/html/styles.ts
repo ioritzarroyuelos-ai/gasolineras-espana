@@ -71,6 +71,9 @@ export function getStyles(nonce: string = ''): string {
     .form-select:focus, .form-input:focus { border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.15); }
     .form-select:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
     .form-group { margin-bottom: 10px; }
+    /* Pequena anotacion junto al label (p.ej. "opcional"). Ship 8. */
+    .form-hint { font-weight: 400; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; margin-left: 4px; }
+    body.dark .form-hint { color: #64748b; }
     .input-icon-wrap { position: relative; }
     .input-icon-wrap .icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:11px; }
     .input-icon-wrap .form-input { padding-left: 28px; }
@@ -727,6 +730,32 @@ export function getStyles(nonce: string = ''): string {
     .route-stop-row .route-sug {
       position: absolute; top: 100%; left: 0; right: 44px; z-index: 20;
     }
+
+    /* ===== Ship 8: REPORTE DE PRECIO INCORRECTO ===== */
+    /* Link discreto que aparece debajo del precio en el popup. Se ve como un
+       texto pequeno subrayado punteado — no compite con los CTAs principales
+       (guardar / compartir / comparar) ni el boton de navegacion. */
+    .popup-report-link {
+      display: inline-block; margin-top: 6px; padding: 2px 0;
+      background: none; border: none; cursor: pointer;
+      font-size: 11px; color: #94a3b8; text-decoration: underline dotted;
+      text-underline-offset: 2px; text-decoration-color: #cbd5e1;
+    }
+    .popup-report-link:hover { color: #dc2626; text-decoration-color: #fca5a5; }
+    body.dark .popup-report-link { color: #64748b; text-decoration-color: #475569; }
+    body.dark .popup-report-link:hover { color: #f87171; text-decoration-color: #7f1d1d; }
+
+    /* Caja contextual arriba del modal: "Estas reportando ESSO Madrid (Diesel
+       — oficial 1,499 EUR/L)". Fondo gris claro, borde izquierdo rojo suave
+       para senalar que estamos en una accion "sensible". */
+    .report-context {
+      background: #fef2f2; border-left: 3px solid #fca5a5; border-radius: 0 8px 8px 0;
+      padding: 8px 10px; margin-bottom: 12px; font-size: 12px; color: #475569;
+      line-height: 1.4;
+    }
+    .report-context strong { color: #1e293b; }
+    body.dark .report-context { background: #1f1212; border-left-color: #7f1d1d; color: #cbd5e1; }
+    body.dark .report-context strong { color: #f1f5f9; }
 
     /* Ship 6: boton flotante de heatmap. Mismo lenguaje visual que los
        controles de Leaflet (cuadro blanco, borde sutil) para que se integre.

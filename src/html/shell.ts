@@ -911,6 +911,51 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <button type="button" id="compare-chip-clear" class="compare-chip-x" aria-label="Cancelar comparativa">&times;</button>
 </div>
 
+<!-- ============ Ship 8: MODAL REPORTAR PRECIO INCORRECTO ============ -->
+<!-- Abierto desde los popups del mapa y desde las tarjetas de la lista via
+     data-pop-report / data-report. El contenido se rellena en openReportModal()
+     leyendo los data-* (estacion, rotulo, fuel, precio oficial). El usuario
+     elige motivo en un dropdown cerrado (4 razones), opcionalmente anade el
+     precio que vio en el surtidor y un comentario corto. Al enviar, POST a
+     /api/reports/price — acuse 200 muestra toast y cierra el modal; 429/409
+     muestran el toast apropiado sin cerrar. -->
+<div id="modal-report" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="report-title">
+  <div class="modal">
+    <div class="modal-header modal-header-row">
+      <div>
+        <h2 id="report-title">&#x1F6A9; Reportar precio incorrecto</h2>
+        <p id="report-subtitle">Avisa si el precio en el surtidor no coincide con el publicado.</p>
+      </div>
+      <button id="btn-report-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="report-context" class="report-context" aria-live="polite"></div>
+      <div class="form-group">
+        <label class="form-label" for="report-reason">Motivo</label>
+        <select id="report-reason" class="form-input">
+          <option value="outdated">Precio distinto al surtidor</option>
+          <option value="closed">Gasolinera cerrada / fuera de servicio</option>
+          <option value="wrong_fuel">El combustible no coincide</option>
+          <option value="other">Otro motivo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="report-price">Precio que viste en el surtidor (&euro;/L) <span class="form-hint">opcional</span></label>
+        <input id="report-price" class="form-input" type="number" step="0.001" min="0.1" max="10" inputmode="decimal" placeholder="1,499" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="report-comment">Comentario <span class="form-hint">opcional, max 500 caracteres</span></label>
+        <textarea id="report-comment" class="form-input" rows="3" maxlength="500" placeholder="Detalles extra (ej. surtidor 3, fecha, foto subida a otro sitio...)"></textarea>
+      </div>
+      <div id="report-status" class="route-status" aria-live="polite"></div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-report-cancel" class="btn-ghost">Cancelar</button>
+      <button id="btn-report-submit" class="btn-primary">Enviar reporte</button>
+    </div>
+  </div>
+</div>
+
 ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intrusiva -->
 <div id="ts-widget"
      class="cf-turnstile ts-widget-hidden"

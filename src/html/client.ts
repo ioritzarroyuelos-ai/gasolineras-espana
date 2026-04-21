@@ -1366,12 +1366,20 @@ function buildPopup(s) {
     + '</div>'
   ) : '';
 
-  // Acciones (fav, share, copiar)
+  // Acciones (fav, share, copiar, comparar)
+  // El boton "Comparar" cambia de label segun si la estacion ya esta en la
+  // seleccion. Dos clicks consecutivos sobre la misma estacion la toggle
+  // (anadir/quitar), y al llegar a 2 el siguiente click abre el modal en
+  // vez de apilar una 3a (vease handler en el delegado).
+  var inCompare = compareIds && compareIds.indexOf(id) !== -1;
   var actionBtns =
       '<div class="popup-actions">'
     + '  <button data-pop-fav="' + esc(id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '">'
     + (fav ? '\u2605 Favorita' : '\u2606 Guardar')
     + '  </button>'
+    + '  <button data-pop-compare="' + esc(id) + '" aria-pressed="' + inCompare + '" aria-label="' + (inCompare ? 'Quitar de comparativa' : 'A\u00f1adir a comparativa') + '">'
+    + (inCompare ? '\u2696\uFE0F En comparativa' : '\u2696\uFE0F Comparar')
+    + '</button>'
     + '  <button data-pop-share="1" aria-label="Compartir gasolinera">\u{1F4E4} Compartir</button>'
     + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">\u{1F4CB} Copiar</button>'
     + '</div>';
@@ -1525,6 +1533,162 @@ var listOffset = 0;
 // cada render. null si hay menos de 10 estaciones con precio (muestra
 // estadistica demasiado pequena para llamar a algo outlier).
 var listPriceStats = null;
+
+// ---- COMPARADOR ----
+// Lista de IDs de estaciones en la seleccion actual del comparador. Max 2.
+// Se alimenta desde los popups (click en "\u2696\uFE0F Comparar") y se
+// consume al renderizar el modal (renderCompareModal). La persistencia en
+// localStorage es a proposito laxa: si el usuario recarga, la seleccion
+// se pierde — queremos que el comparador sea ef\u00edmero, no un estado
+// pegajoso que confunda.
+var compareIds = [];
+
+// Anade (o quita si ya estaba) una estacion a la seleccion. Si al anadir
+// llegamos a 2, abrimos el modal autom\u00e1ticamente — el tercer click desde
+// el popup, en cambio, actualiza la lista pero no ya abre otra vez el modal.
+function toggleCompare(id) {
+  var idx = compareIds.indexOf(id);
+  if (idx !== -1) {
+    compareIds.splice(idx, 1);
+    renderCompareChip();
+    return { action: 'removed', len: compareIds.length };
+  }
+  // Si ya hay 2, sustituimos la primera (FIFO) — evitamos lista infinita y
+  // dejamos al usuario "rotar" estaciones comparando la ultima vs. la nueva
+  // sin tener que borrar manualmente.
+  if (compareIds.length >= 2) compareIds.shift();
+  compareIds.push(id);
+  renderCompareChip();
+  return { action: 'added', len: compareIds.length };
+}
+
+function clearCompareSelection() {
+  compareIds = [];
+  renderCompareChip();
+}
+
+// Chip flotante: visible si hay 1 o 2 estaciones. Se hace foco-accesible
+// (aria-live=polite) para que los lectores de pantalla anuncien cuando el
+// usuario pasa de 0 a 1 o de 1 a 2 estaciones seleccionadas.
+function renderCompareChip() {
+  var chip = document.getElementById('compare-chip');
+  if (!chip) return;
+  var txt = document.getElementById('compare-chip-text');
+  var n = compareIds.length;
+  if (n === 0) {
+    chip.classList.remove('show');
+    chip.setAttribute('aria-hidden', 'true');
+    return;
+  }
+  chip.classList.add('show');
+  chip.setAttribute('aria-hidden', 'false');
+  if (txt) {
+    txt.textContent = n === 1
+      ? '\u2696\uFE0F 1 estacion seleccionada — anade otra'
+      : '\u2696\uFE0F 2 estaciones — pulsa para comparar';
+  }
+}
+
+// Busca el objeto estacion completo para un id dado. Primero en
+// filteredStations (lo que el usuario ve ahora); si no, en allStations
+// (snapshot completo) — asi el comparador sigue funcionando aunque el
+// usuario haya filtrado por provincia/abiertas despues de seleccionar.
+function findStationById(id) {
+  var list = filteredStations && filteredStations.length ? filteredStations : allStations;
+  if (!list) return null;
+  for (var i = 0; i < list.length; i++) {
+    if (stationId(list[i]) === id) return list[i];
+  }
+  return null;
+}
+
+// Renderiza el cuerpo del modal. Layout paralelo: cada columna pinta
+// rotulo/direccion/estado + tabla precios + meta (horario). Destacamos con
+// .compare-winner la celda con precio mas bajo por combustible. Si empatan
+// (misma cifra), ambas son winner — mejor reflejo que "no hay ganador".
+function renderCompareModal() {
+  var body = document.getElementById('compare-body');
+  if (!body) return;
+  if (compareIds.length === 0) {
+    body.innerHTML = '<div class="compare-empty">Selecciona estaciones desde el mapa o la lista para compararlas.</div>';
+    return;
+  }
+  var stations = [];
+  for (var i = 0; i < compareIds.length; i++) {
+    var s = findStationById(compareIds[i]);
+    if (s) stations.push(s);
+  }
+  if (stations.length === 0) {
+    body.innerHTML = '<div class="compare-empty">No se encontraron las estaciones seleccionadas en el snapshot actual.</div>';
+    return;
+  }
+  // Si solo hay 1, lo mostramos igual pero sin "winner" (no hay con quien
+  // comparar). Nota visual para invitar a anadir otra.
+  var fuels = [
+    ['95', 'Gasolina 95 E5'],
+    ['98', 'Gasolina 98 E5'],
+    ['diesel', 'Gas\u00f3leo A'],
+    ['diesel_plus', 'Gas\u00f3leo Premium'],
+  ];
+  // Pre-calculamos el minimo por combustible para saber quien es winner.
+  var mins = {};
+  for (var f = 0; f < fuels.length; f++) {
+    var code = fuels[f][0];
+    var lowest = null;
+    for (var si = 0; si < stations.length; si++) {
+      var p = parsePrice(stations[si][code]);
+      if (p != null && (lowest == null || p < lowest)) lowest = p;
+    }
+    mins[code] = lowest;
+  }
+  var cols = stations.map(function(s) {
+    var id = stationId(s);
+    var status = isOpenNow(s['Horario']);
+    var statusChip = status
+      ? (status.open
+          ? '<span class="status-chip status-open">\u25CF Abierta</span>'
+          : '<span class="status-chip status-closed">\u25CF Cerrada</span>')
+      : '';
+    var priceRows = fuels.map(function(ff) {
+      var code = ff[0];
+      var label = ff[1];
+      var p = parsePrice(s[code]);
+      var isWinner = p != null && mins[code] != null && Math.abs(p - mins[code]) < 0.0005;
+      var cls = 'compare-price-row' + (isWinner && stations.length > 1 ? ' compare-winner' : '');
+      var valueHtml = (p != null)
+        ? '<span class="cp-value">' + p.toFixed(3) + ' \u20AC/L</span>'
+        : '<span class="cp-value cp-value--none">Sin precio</span>';
+      return '<div class="' + cls + '"><span class="cp-label">' + esc(label) + '</span>' + valueHtml + '</div>';
+    }).join('');
+    var horario = s['Horario'] || '';
+    return ''
+      + '<div class="compare-col">'
+      +   '<h3>\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</h3>'
+      +   '<div class="compare-dir">\u{1F4CD} ' + esc(s['Direccion'] || '') + '</div>'
+      +   '<div class="compare-muni">' + esc(s['Municipio'] || '') + (s['Provincia'] ? ' &middot; ' + esc(s['Provincia']) : '') + '</div>'
+      +   (statusChip ? '<div>' + statusChip + '</div>' : '')
+      +   '<div class="compare-prices">' + priceRows + '</div>'
+      +   (horario ? '<div class="compare-meta"><span>\u{1F550} ' + esc(horario) + '</span></div>' : '')
+      + '</div>';
+  }).join('');
+  // Si solo hay 1, anadimos una columna placeholder para mantener la grid
+  // de 2-cols y evitar que la unica columna ocupe el ancho completo.
+  if (stations.length === 1) {
+    cols += '<div class="compare-col" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;"><div>\u2795<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
+  }
+  body.innerHTML = cols;
+}
+
+function openCompareModal() {
+  renderCompareModal();
+  var m = document.getElementById('modal-compare');
+  if (m) m.classList.add('show');
+}
+
+function closeCompareModal() {
+  var m = document.getElementById('modal-compare');
+  if (m) m.classList.remove('show');
+}
 
 function cardHTML(s, i, fuel, fuelLabel) {
   var price = parsePrice(s[fuel]);
@@ -2877,6 +3041,40 @@ document.addEventListener('click', function(e) {
       }).catch(function() { showToast('No se pudo copiar', 'error'); });
     } else {
       showToast('Tu navegador no permite copiar', 'warning');
+    }
+    return;
+  }
+
+  // Comparar (anadir/quitar + autoopen al llegar a 2)
+  // Comportamiento:
+  //  - 0 -> 1:  anade, muestra chip ambar. No abre modal (serviria de poco
+  //            con una sola estacion).
+  //  - 1 -> 2:  anade, muestra chip y ABRE el modal automaticamente —
+  //            el usuario ya tiene un par valido para comparar.
+  //  - click sobre la misma estacion cuando ya esta: quita (toggle).
+  //  - 2 estaciones seleccionadas + click en una 3a: FIFO, echa la mas
+  //    antigua y mete la nueva. No abre modal (el usuario ya esta
+  //    "rotando", no iniciando comparacion).
+  var cmpBtn = t.closest('[data-pop-compare]');
+  if (cmpBtn) {
+    var cmpId = cmpBtn.getAttribute('data-pop-compare');
+    if (!cmpId) return;
+    var beforeLen = compareIds.length;
+    var result = toggleCompare(cmpId);
+    // Actualizar el propio boton (dentro del popup abierto) para reflejar
+    // el nuevo estado sin cerrar ni reabrir el popup.
+    var nowIn = compareIds.indexOf(cmpId) !== -1;
+    cmpBtn.setAttribute('aria-pressed', String(nowIn));
+    cmpBtn.textContent = nowIn ? '\u2696\uFE0F En comparativa' : '\u2696\uFE0F Comparar';
+    cmpBtn.setAttribute('aria-label', nowIn ? 'Quitar de comparativa' : 'A\u00f1adir a comparativa');
+    if (result.action === 'added' && beforeLen === 1 && compareIds.length === 2) {
+      openCompareModal();
+    } else if (result.action === 'added') {
+      showToast(compareIds.length === 1
+        ? 'A\u00f1adida al comparador — elige otra'
+        : 'Lista actualizada', 'info');
+    } else {
+      showToast('Quitada del comparador', 'info');
     }
     return;
   }
@@ -5067,6 +5265,53 @@ function exitRouteMode() {
     renderStats();
     renderList();
     showToast('Diario borrado', 'info');
+  });
+})();
+
+// ============================================================
+// ===== COMPARADOR SIDE-BY-SIDE =====
+// ============================================================
+// Wiring del modal y chip flotante. La logica de estado (compareIds,
+// toggleCompare, renderCompareModal) vive arriba — aqui solo enchufamos
+// los listeners al DOM tras cargar el script.
+(function() {
+  var modal  = document.getElementById('modal-compare');
+  if (!modal) return;
+  var btnClose = document.getElementById('btn-compare-close');
+  var btnClear = document.getElementById('btn-compare-clear');
+  var btnDone  = document.getElementById('btn-compare-done');
+  var chip     = document.getElementById('compare-chip');
+  var chipX    = document.getElementById('compare-chip-clear');
+
+  if (btnClose) btnClose.addEventListener('click', closeCompareModal);
+  if (btnDone)  btnDone.addEventListener('click',  closeCompareModal);
+  // "Quitar seleccion" limpia compareIds pero deja abierto el modal (por si
+  // el usuario quiere seguir comparando otras; ahora solo vera el empty state).
+  if (btnClear) btnClear.addEventListener('click', function() {
+    clearCompareSelection();
+    renderCompareModal();
+    showToast('Seleccion del comparador vaciada', 'info');
+  });
+  // Click en el chip flotante -> abre modal (si hay al menos 1 estacion).
+  // El X dentro del chip limpia la seleccion en su lugar.
+  if (chip) chip.addEventListener('click', function(e) {
+    if (e.target && e.target.closest && e.target.closest('.compare-chip-x')) return;
+    if (compareIds.length > 0) openCompareModal();
+  });
+  if (chipX) chipX.addEventListener('click', function(e) {
+    e.stopPropagation();
+    clearCompareSelection();
+    showToast('Seleccion del comparador vaciada', 'info');
+  });
+  // Cerrar con click fuera del modal (backdrop) — patron comun con los otros
+  // modales (onboarding/favoritos/diario). El click dentro del .modal burbujeara
+  // hasta el backdrop tambien, asi que comprobamos que el target sea el propio.
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeCompareModal();
+  });
+  // Cerrar con ESC (accesibilidad basica).
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeCompareModal();
   });
 })();
 

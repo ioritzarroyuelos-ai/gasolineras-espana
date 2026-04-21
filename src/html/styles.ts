@@ -1497,5 +1497,61 @@ export function getStyles(nonce: string = ''): string {
     body.dark .kofi-support { background: #422006; color: #fcd34d; border-color: #78350f; }
     body.dark .kofi-support:hover { background: #78350f; }
 
+    /* ===== COMPARADOR SIDE-BY-SIDE =====
+       Layout de 2 columnas paralelas. En desktop van lado a lado; en movil
+       colapsan a 1-col y el usuario hace scroll vertical (menos optimo
+       pero evita lineas microscopicas que no se leerian).
+       La celda con precio mas bajo por combustible se destaca con
+       .compare-winner (tint verde + tilde). Si empatan, ambas winner. */
+    #modal-compare .modal           { max-width: 720px; }
+    .compare-grid                   { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) {
+      .compare-grid                 { grid-template-columns: 1fr; }
+    }
+    .compare-col                    { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; background: #f8fafc; display: flex; flex-direction: column; gap: 8px; }
+    body.dark .compare-col          { background: #0f172a; border-color: #334155; }
+    .compare-col h3                 { font-size: 14px; font-weight: 700; color: #14532d; line-height: 1.25; word-break: break-word; }
+    body.dark .compare-col h3       { color: #86efac; }
+    .compare-col .compare-dir       { font-size: 11px; color: #64748b; line-height: 1.3; }
+    body.dark .compare-col .compare-dir { color: #94a3b8; }
+    .compare-col .compare-muni      { font-size: 11px; color: #94a3b8; }
+    body.dark .compare-col .compare-muni { color: #64748b; }
+    .compare-prices                 { border-top: 1px dashed #e2e8f0; padding-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+    body.dark .compare-prices       { border-top-color: #334155; }
+    .compare-price-row              { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; padding: 4px 6px; border-radius: 6px; }
+    .compare-price-row .cp-label    { color: #64748b; font-weight: 500; }
+    body.dark .compare-price-row .cp-label { color: #94a3b8; }
+    .compare-price-row .cp-value    { color: #1e293b; font-weight: 700; font-variant-numeric: tabular-nums; }
+    body.dark .compare-price-row .cp-value { color: #f1f5f9; }
+    .compare-price-row .cp-value--none { color: #94a3b8; font-weight: 500; }
+    .compare-price-row.compare-winner { background: #dcfce7; }
+    .compare-price-row.compare-winner .cp-label { color: #166534; font-weight: 700; }
+    .compare-price-row.compare-winner .cp-value { color: #14532d; }
+    .compare-price-row.compare-winner .cp-value::after { content: ' \\2713'; color: #16a34a; font-weight: 900; }
+    body.dark .compare-price-row.compare-winner { background: #052e16; }
+    body.dark .compare-price-row.compare-winner .cp-label { color: #86efac; }
+    body.dark .compare-price-row.compare-winner .cp-value { color: #bbf7d0; }
+    body.dark .compare-price-row.compare-winner .cp-value::after { color: #4ade80; }
+    .compare-meta                   { font-size: 11px; color: #64748b; display: flex; flex-direction: column; gap: 3px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
+    body.dark .compare-meta         { color: #94a3b8; border-top-color: #334155; }
+    .compare-empty                  { grid-column: 1 / -1; text-align: center; padding: 24px 12px; color: #64748b; font-size: 13px; }
+    body.dark .compare-empty        { color: #94a3b8; }
+
+    /* Chip flotante abajo-dcha: aparece cuando hay 1 estacion en la seleccion
+       y se oculta tras cerrar el modal o borrar seleccion. Tono ambar para
+       diferenciarlo de los badges de estado normales. */
+    .compare-chip                   { position: fixed; right: 16px; bottom: 16px; z-index: 1500;
+                                      display: none; align-items: center; gap: 8px;
+                                      padding: 8px 10px 8px 12px; border-radius: 999px;
+                                      background: #fef3c7; color: #92400e;
+                                      border: 1px solid #fde68a; box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+                                      font-size: 12px; font-weight: 700; }
+    .compare-chip.show              { display: inline-flex; }
+    body.dark .compare-chip         { background: #422006; color: #fcd34d; border-color: #78350f; }
+    .compare-chip-x                 { border: none; background: transparent; color: inherit;
+                                      font-size: 18px; line-height: 1; cursor: pointer;
+                                      padding: 0 4px; font-weight: 700; }
+    .compare-chip-x:hover           { opacity: 0.7; }
+
   </style>`
 }

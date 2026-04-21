@@ -834,6 +834,39 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   </div>
 </div>
 
+<!-- ============ MODAL COMPARADOR SIDE-BY-SIDE ============ -->
+<!-- Se abre cuando hay 2 estaciones en el selector de comparar. Las columnas
+     son paralelas: mismo layout arriba y abajo para que el ojo compare
+     directamente fila a fila (rotulo, distancia, precios por combustible,
+     horario). La celda con menor valor se destaca con .compare-winner. -->
+<div id="modal-compare" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="compare-title">
+  <div class="modal">
+    <div class="modal-header modal-header-row">
+      <div>
+        <h2 id="compare-title">&#x2696;&#xFE0F; Comparador</h2>
+        <p>Diferencias entre dos gasolineras, combustible por combustible.</p>
+      </div>
+      <button id="btn-compare-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="compare-body" class="compare-grid">
+        <!-- Llenado dinamicamente por renderCompareModal() -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-compare-clear" class="btn-ghost">Quitar seleccion</button>
+      <button id="btn-compare-done" class="btn-primary">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chip flotante de estado del comparador: aparece cuando el usuario anade
+     la 1a estacion y desaparece al cerrar el modal o cuando borra la seleccion. -->
+<div id="compare-chip" class="compare-chip" role="status" aria-live="polite" aria-hidden="true">
+  <span id="compare-chip-text">&#x2696;&#xFE0F; 1 estacion seleccionada</span>
+  <button type="button" id="compare-chip-clear" class="compare-chip-x" aria-label="Cancelar comparativa">&times;</button>
+</div>
+
 ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intrusiva -->
 <div id="ts-widget"
      class="cf-turnstile ts-widget-hidden"

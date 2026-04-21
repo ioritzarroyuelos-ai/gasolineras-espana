@@ -484,6 +484,24 @@ export function getStyles(nonce: string = ''): string {
     body.dark .savings-badge--negative { background:#422006; color:#fcd34d; border-color:#a16207; }
     .savings-sub { font-weight:500; opacity:0.85; }
 
+    /* ---- Chip de anomalia (cardHTML) ---- */
+    /* Marca estaciones cuyo precio cae en el 10% mas caro del listado actual
+       filtrado. Paleta ambar diferenciada de savings-badge (verde ahorro) y
+       de savings-badge--negative (ambar mas tenue de "desvio no compensa")
+       — aqui es un rojo-ambar mas saturado para que llame la atencion sin
+       gritarle al usuario. */
+    .anomaly-chip {
+      display:inline-block; border-radius:6px; padding:1px 7px;
+      font-size:10px; font-weight:700; margin-top:3px; white-space:nowrap;
+      border:1px solid transparent;
+    }
+    .anomaly-chip--expensive {
+      background:#fef2f2; color:#b91c1c; border-color:#fecaca;
+    }
+    body.dark .anomaly-chip--expensive {
+      background:#450a0a; color:#fca5a5; border-color:#7f1d1d;
+    }
+
     /* ---- Predictor semanal badge (popup) ----
        Placeholder + variantes good/neutral/bad. La logica vive en
        classifyPriceVsCycle; aqui solo pintamos segun el verdict. ---- */
@@ -1012,6 +1030,13 @@ export function getStyles(nonce: string = ''): string {
       background:#dcfce7; color:#166534; font-size:11px; font-weight:700;
     }
     body.dark .hist-lowbadge { background:#14532d; color:#bbf7d0; }
+    /* Contra-badge: precio actual en el percentil >=90% del periodo consultado.
+       Mismo formato que lowbadge pero en rojo-ambar para comunicar "espera". */
+    .hist-highbadge {
+      display:inline-block; margin-top:6px; padding:3px 8px; border-radius:12px;
+      background:#fef2f2; color:#b91c1c; font-size:11px; font-weight:700;
+    }
+    body.dark .hist-highbadge { background:#450a0a; color:#fca5a5; }
 
     /* ---- Modal (onboarding / favoritos) ---- */
     .modal-backdrop {

@@ -1215,10 +1215,19 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
   // Usamos una copia ordenada para no mutar el array original.
   var sorted = vals.slice().sort(function(a, b) { return a - b; });
   var p10 = sorted[Math.max(0, Math.floor(sorted.length * 0.1) - 1)];
+  var p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
   var lowBadge = '';
-  if (currentPrice && currentPrice <= p10 + 0.0005 && sorted.length >= 5) {
-    // El +0.0005 absorbe redondeos de eurosToCents en el servidor.
-    lowBadge = '<div class="hist-lowbadge">\u{1F3C6} Precio historicamente bajo</div>';
+  var highBadge = '';
+  if (currentPrice && sorted.length >= 5) {
+    // El +/- 0.0005 absorbe redondeos de eurosToCents en el servidor (precios
+    // son multiplos de 0.001 €/L en las dos puntas).
+    if (currentPrice <= p10 + 0.0005) {
+      lowBadge = '<div class="hist-lowbadge">\u{1F3C6} Precio historicamente bajo</div>';
+    } else if (currentPrice >= p90 - 0.0005) {
+      // Senal inversa: si ha estado mas barato la mayoria de dias, espera;
+      // el combustible en Espana suele volver a su banda en 1-2 semanas.
+      highBadge = '<div class="hist-highbadge">\u{1F4B8} Precio historicamente alto</div>';
+    }
   }
   // Tendencia total sobre la ventana mostrada
   var first = vals[0], last = vals[vals.length - 1];
@@ -1243,7 +1252,8 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
     + '<div class="hist-stat"><div class="hist-stat-label">Max</div><div class="hist-stat-value">' + fmt(max) + '</div></div>'
     + '</div>'
     + trendTxt
-    + lowBadge;
+    + lowBadge
+    + highBadge;
 }
 
 function buildPopup(s) {
@@ -1509,6 +1519,12 @@ function highlightCard(idx) {
 var PAGE_SIZE = 30;
 var listStations = [];
 var listOffset = 0;
+// Estadisticas de precios del listado actualmente visible (calculadas en
+// applyFilters una sola vez por filtro). Se usan para pintar chips de
+// anomalia ("caro para el listado") en cardHTML sin tener que re-ordenar en
+// cada render. null si hay menos de 10 estaciones con precio (muestra
+// estadistica demasiado pequena para llamar a algo outlier).
+var listPriceStats = null;
 
 function cardHTML(s, i, fuel, fuelLabel) {
   var price = parsePrice(s[fuel]);
@@ -1554,6 +1570,20 @@ function cardHTML(s, i, fuel, fuelLabel) {
     }
   }
 
+  // Chip "Caro para el listado": precio >= p90 y no esta en top3 mas baratas
+  // (imposible logicamente pero defensivo). Senala al usuario que hay mejores
+  // opciones en el mismo conjunto filtrado. Se muestra aunque el savings sea
+  // negativo — son dos senales distintas: "comparado con mediana" vs
+  // "comparado con percentil 90".
+  var anomalyHtml = '';
+  if (price && listPriceStats && !topCheapIds[id]) {
+    if (price >= listPriceStats.p90) {
+      var overMed = ((price / listPriceStats.med - 1) * 100);
+      var pctTxt = overMed >= 1 ? ' (+' + overMed.toFixed(0) + '% vs mediana)' : '';
+      anomalyHtml = '<span class="anomaly-chip anomaly-chip--expensive" title="Precio entre el 10% mas caro del listado actual' + pctTxt + '">\u{1F4B8} Caro para el listado</span>';
+    }
+  }
+
   // Horario vivo
   var statusHtml = '';
   var status = isOpenNow(s['Horario']);
@@ -1590,7 +1620,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
     + '<div class="card-title">' + medal + '\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + distHtml + '</div>'
     + '<div class="card-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + '</div>'
     + '<div class="card-time">\u{1F550} ' + horarioCard(s['Horario']) + statusHtml + '</div>'
-    + (savingsHtml ? '<div class="u-mt-3">' + savingsHtml + '</div>' : '')
+    + (savingsHtml || anomalyHtml ? '<div class="u-mt-3">' + savingsHtml + (savingsHtml && anomalyHtml ? ' ' : '') + anomalyHtml + '</div>' : '')
     + '</div>'
     + '<div class="row-info-right">'
     + priceEl
@@ -1780,6 +1810,21 @@ function applyFilters() {
     .sort(function(a,b) { return a.p - b.p; });
   for (var i = 0; i < Math.min(3, ranking.length); i++) {
     topCheapIds[ranking[i].id] = i + 1;
+  }
+
+  // Estadisticas para chip de anomalia. Usamos p90 del listado filtrado:
+  // senalamos estaciones >=p90 con un chip "Caro para el listado" para que
+  // el usuario sepa que hay mejores opciones en el mismo conjunto sin tener
+  // que mirar los 3 primeros.
+  // Minimo 10 precios: por debajo, "outlier" es ruido.
+  listPriceStats = null;
+  var pricesAsc = ranking.map(function(x) { return x.p; });  // ya ordenado
+  if (pricesAsc.length >= 10) {
+    // floor en lugar de round para que la cohorte >=p90 incluya exactamente
+    // el 10% superior (o un poquito mas si el corte cae entre valores).
+    var p90 = pricesAsc[Math.floor(pricesAsc.length * 0.90)];
+    var med = pricesAsc[Math.floor(pricesAsc.length * 0.50)];
+    listPriceStats = { p90: p90, med: med, n: pricesAsc.length };
   }
 
   filteredStations = stations;

@@ -9,14 +9,22 @@ export interface SeoContext {
   provinciaId?: string
   provinciaSlug?: string
   provinciaName?: string
+  // Nivel municipio: solo poblado en rutas /gasolineras/<prov>/<mun>. Cuando
+  // viene, sobreescribe title/description/canonical/breadcrumbs al nivel mas
+  // fino. El cliente tambien autoseleccciona el <select> de municipio si
+  // municipioId esta presente.
+  municipioId?: string
+  municipioSlug?: string
+  municipioName?: string
   // Estadisticas de precios pre-computadas server-side. Si vienen, las usamos
   // para enriquecer meta description + JSON-LD Dataset + una seccion visible
   // al final del body (clave para ranking: el snapshot del crawler tiene
   // texto relevante con el nombre de la provincia y el rango de precios).
+  // Cuando municipio esta presente, stats son del municipio (no de la
+  // provincia), para que toda la pagina hable del mismo ambito geografico.
   // Keys: codigo de combustible ('95','98','diesel','diesel_plus').
   stats?: Record<string, { min: number; avg: number; max: number; count: number }>
   stationCount?: number
-  // Futuro: municipioId / municipioSlug / municipioName
 }
 
 export interface BuildPageOpts {
@@ -25,6 +33,10 @@ export interface BuildPageOpts {
   turnstileSiteKey?: string
   // Contexto SEO (rutas /gasolineras/<slug>).
   seo?: SeoContext
+  // Top municipios a enlazar desde la pagina provincial (internal linking).
+  // Solo aplica cuando seo.provinciaName esta presente y municipioName NO.
+  // Shape compatible con MunicipioEntry de ./lib/municipios.
+  municipios?: Array<{ slug: string; name: string; stationCount: number }>
 }
 
 export function buildPage(
@@ -36,29 +48,38 @@ export function buildPage(
   let origin = 'https://gasolineras.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
   const seo = opts.seo
-  const pathname = seo?.provinciaSlug ? ('/gasolineras/' + seo.provinciaSlug) : '/'
+  // Pathname progresivo: / → /gasolineras/<prov> → /gasolineras/<prov>/<mun>.
+  // La URL canonica siempre refleja el nivel mas fino disponible.
+  let pathname = '/'
+  if (seo?.provinciaSlug) pathname = '/gasolineras/' + seo.provinciaSlug
+  if (seo?.provinciaSlug && seo?.municipioSlug) pathname = '/gasolineras/' + seo.provinciaSlug + '/' + seo.municipioSlug
   const canonical = origin + pathname
-  const pageTitle = seo?.provinciaName
-    ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
+  // Geo-label: el ambito textual mas fino que mostrar al usuario ("Madrid",
+  // "Alcalá de Henares, Madrid", etc). Se reutiliza en title/description.
+  const geoLabel = seo?.municipioName && seo?.provinciaName
+    ? (seo.municipioName + ', ' + seo.provinciaName)
+    : (seo?.provinciaName || '')
+  const pageTitle = geoLabel
+    ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
     : 'Gasolineras España · Precios oficiales en tiempo real'
   // Description enriquecida cuando hay stats: incluye precio min-max de 95 y
   // numero de estaciones — mejora CTR en SERP y le da a Google material
   // ranqueable ("precio gasolina madrid" matchea directamente).
   const stats95 = seo?.stats?.['95']
-  const pageDesc = seo?.provinciaName
-    ? (stats95 && stats95.count >= 5
-        ? 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName +
+  const pageDesc = geoLabel
+    ? (stats95 && stats95.count >= 3
+        ? 'Precios actualizados de gasolina y diésel en ' + geoLabel +
           '. Gasolina 95 desde ' + stats95.min.toFixed(3) + '€ hasta ' + stats95.max.toFixed(3) + '€ (media ' + stats95.avg.toFixed(3) + '€). ' +
-          (seo.stationCount ? seo.stationCount + ' estaciones. ' : '') +
+          (seo?.stationCount ? seo.stationCount + ' estaciones. ' : '') +
           'Mapa interactivo y datos oficiales del Ministerio.'
-        : 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
+        : 'Precios actualizados de gasolina y diésel en ' + geoLabel + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
       )
     : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica.'
-  const ogTitle = seo?.provinciaName
-    ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
+  const ogTitle = geoLabel
+    ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
     : 'Gasolineras España · Precios en tiempo real'
-  const ogDesc = seo?.provinciaName
-    ? 'Mapa de precios de combustible en ' + seo.provinciaName + ', actualizados a diario. Datos oficiales.'
+  const ogDesc = geoLabel
+    ? 'Mapa de precios de combustible en ' + geoLabel + ', actualizados a diario. Datos oficiales.'
     : 'Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario.'
   // Los crawlers de Twitter/Facebook/LinkedIn no renderizan SVG en previews: usamos PNG 1200x630.
   const ogImage   = origin + '/static/og.png'
@@ -84,54 +105,104 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
   // Contexto SEO expuesto al cliente: el script arranque autoseleccionara el
   // dropdown de provincia si hay un provinciaId (via ruta /gasolineras/<slug>).
+  // Si ademas viene municipioId, autoselecciona municipio tambien.
   // Queda como window.__SEO__ y el cliente lo lee en initMap().
   const seoScript = seo?.provinciaId
     ? `<script nonce="${nonce}">window.__SEO__=${JSON.stringify({
         provinciaId: seo.provinciaId,
         provinciaSlug: seo.provinciaSlug,
         provinciaName: seo.provinciaName,
+        municipioId: seo.municipioId,
+        municipioSlug: seo.municipioSlug,
+        municipioName: seo.municipioName,
       })};</script>`
     : ''
 
   // JSON-LD: declara la aplicacion como WebApplication + el dataset de precios.
-  // Breadcrumbs: solo en rutas provinciales. Ayuda a Google a entender la
+  // Breadcrumbs: rutas provincia + municipio. Ayuda a Google a entender la
   // jerarquia y a pintar migas en los resultados.
-  const breadcrumbs = seo?.provinciaName ? [{
+  const breadcrumbItems: Array<{ '@type': 'ListItem'; position: number; name: string; item: string }> = []
+  if (seo?.provinciaName) {
+    breadcrumbItems.push({ '@type': 'ListItem', position: 1, name: 'Inicio', item: origin + '/' })
+    breadcrumbItems.push({
+      '@type': 'ListItem',
+      position: 2,
+      name: 'Gasolineras en ' + seo.provinciaName,
+      item: origin + '/gasolineras/' + seo.provinciaSlug,
+    })
+    if (seo.municipioName && seo.municipioSlug) {
+      breadcrumbItems.push({
+        '@type': 'ListItem',
+        position: 3,
+        name: 'Gasolineras en ' + seo.municipioName,
+        item: canonical,
+      })
+    }
+  }
+  const breadcrumbs = breadcrumbItems.length > 0 ? [{
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Inicio', item: origin + '/' },
-      { '@type': 'ListItem', position: 2, name: 'Gasolineras en ' + seo.provinciaName, item: canonical },
-    ],
+    itemListElement: breadcrumbItems,
   }] : []
-  // FAQ: solo en home, no tiene sentido en rutas provinciales (Google pide
-  // que el FAQ refleje el contenido visible; como la home no muestra FAQ,
-  // lo mantenemos corto y factual para evitar penalizaciones por spam).
-  const faqPage = seo?.provinciaName ? [] : [{
+  // FAQ: ahora se emite SIEMPRE (home, provincia, municipio) — y a partir de
+  // Ship 11 tambien se renderiza visible en HTML para que Google valide el
+  // FAQPage schema. En provincia/municipio anadimos 1-2 preguntas contextuales
+  // con el nombre del ambito para enriquecer la relevancia semantica.
+  const faqBaseItems = [
+    {
+      '@type': 'Question',
+      name: '¿De dónde vienen los precios?',
+      acceptedAnswer: { '@type': 'Answer', text: 'Del dataset oficial del Ministerio para la Transición Ecológica y el Reto Demográfico, actualizado a diario. La app consume directamente el snapshot público.' },
+    },
+    {
+      '@type': 'Question',
+      name: '¿Con qué frecuencia se actualizan?',
+      acceptedAnswer: { '@type': 'Answer', text: 'Una vez al día, hacia las 20:00 UTC, cuando el Ministerio publica la tanda del día. Las gasolineras tienen 48 h para comunicar cambios por ley.' },
+    },
+    {
+      '@type': 'Question',
+      name: '¿Es gratis?',
+      acceptedAnswer: { '@type': 'Answer', text: 'Sí, gratis y sin anuncios. Si te resulta útil, hay un botón de Ko-fi para invitarme a un café.' },
+    },
+    {
+      '@type': 'Question',
+      name: '¿Puedo usarla sin conexión?',
+      acceptedAnswer: { '@type': 'Answer', text: 'La app está instalable como PWA y cachea el último snapshot de precios — si pierdes cobertura, sigues viendo los datos vistos por última vez.' },
+    },
+  ]
+  const faqGeoItems = geoLabel ? [
+    {
+      '@type': 'Question',
+      name: '¿Cuántas gasolineras hay en ' + geoLabel + '?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: (seo?.stationCount
+          ? 'En el último snapshot del Ministerio constan ' + seo.stationCount + ' estaciones de servicio activas en ' + geoLabel + '. '
+          : 'La app muestra todas las estaciones activas en ' + geoLabel + ' según el snapshot oficial. ') +
+          'Puedes filtrar por marca, horario de apertura, 24h o distancia desde tu ubicación.',
+      },
+    },
+    {
+      '@type': 'Question',
+      name: '¿Cuál es el precio medio del diésel y la gasolina 95 en ' + geoLabel + '?',
+      acceptedAnswer: {
+        '@type': 'Answer',
+        text: (() => {
+          const s95 = seo?.stats?.['95']
+          const sd  = seo?.stats?.['diesel']
+          if (!s95 && !sd) return 'Los precios medios se calculan a partir del snapshot diario del Ministerio. Consulta la tabla al final de esta página para los valores actuales.'
+          const parts: string[] = []
+          if (s95 && s95.count >= 3) parts.push('gasolina 95 a una media de ' + s95.avg.toFixed(3) + ' €/L (rango ' + s95.min.toFixed(3) + '–' + s95.max.toFixed(3) + ' €)')
+          if (sd  && sd.count  >= 3) parts.push('gasóleo A a una media de ' + sd.avg.toFixed(3)  + ' €/L (rango ' + sd.min.toFixed(3)  + '–' + sd.max.toFixed(3)  + ' €)')
+          return 'Según el último snapshot del Ministerio, en ' + geoLabel + ' se encuentra ' + parts.join(' y ') + '. Los precios se actualizan a diario.'
+        })(),
+      },
+    },
+  ] : []
+  const faqPage = [{
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: [
-      {
-        '@type': 'Question',
-        name: '¿De dónde vienen los precios?',
-        acceptedAnswer: { '@type': 'Answer', text: 'Del dataset oficial del Ministerio para la Transición Ecológica y el Reto Demográfico, actualizado a diario. La app consume directamente el snapshot público.' },
-      },
-      {
-        '@type': 'Question',
-        name: '¿Con qué frecuencia se actualizan?',
-        acceptedAnswer: { '@type': 'Answer', text: 'Una vez al día, hacia las 20:00 UTC, cuando el Ministerio publica la tanda del día. Las gasolineras tienen 48 h para comunicar cambios por ley.' },
-      },
-      {
-        '@type': 'Question',
-        name: '¿Es gratis?',
-        acceptedAnswer: { '@type': 'Answer', text: 'Sí, gratis y sin anuncios. Si te resulta útil, hay un botón de Ko-fi para invitarme a un café.' },
-      },
-      {
-        '@type': 'Question',
-        name: '¿Puedo usarla sin conexión?',
-        acceptedAnswer: { '@type': 'Answer', text: 'La app está instalable como PWA y cachea el último snapshot de precios — si pierdes cobertura, sigues viendo los datos vistos por última vez.' },
-      },
-    ],
+    mainEntity: [...faqGeoItems, ...faqBaseItems],
   }]
 
   const jsonLd = JSON.stringify([
@@ -161,11 +232,11 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     {
       '@context': 'https://schema.org',
       '@type': 'Dataset',
-      name: seo?.provinciaName ? 'Precios de carburantes en ' + seo.provinciaName : 'Precios de carburantes en España',
+      name: geoLabel ? 'Precios de carburantes en ' + geoLabel : 'Precios de carburantes en España',
       description: 'Snapshot oficial de precios de estaciones de servicio terrestres.',
       license: 'https://datos.gob.es/es/catalogo/e05068001-precio-de-carburantes-en-las-gasolineras-espanolas',
       creator: { '@type': 'GovernmentOrganization', name: 'Ministerio para la Transición Ecológica y el Reto Demográfico' },
-      spatialCoverage: { '@type': 'Place', name: seo?.provinciaName || 'España' },
+      spatialCoverage: { '@type': 'Place', name: geoLabel || 'España' },
       inLanguage: 'es',
       // variableMeasured: una entry por combustible con stats reales. Google
       // y Dataset Search leen esto para indexar metricas concretas — asi un
@@ -966,15 +1037,16 @@ ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intr
      data-expired-callback="__onTsExpired"
      aria-hidden="true"></div>` : ''}
 
-${seo?.provinciaName && seo?.stats && seo.stats['95'] && seo.stats['95'].count >= 5 ? `
-<!-- Bloque SEO estatico: resumen de precios en la provincia. Se renderiza al
-     final del DOM para no desplazar el mapa/sidebar (que son lo que el
-     usuario quiere ver primero). Los crawlers sin ejecucion de JS lo leen y
-     obtienen texto canonico con el nombre de la provincia + precios reales
-     — clave para rankear queries tipo "precio gasolina madrid". -->
+${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)) ? `
+<!-- Bloque SEO estatico: resumen de precios del ambito (provincia o municipio).
+     Se renderiza al final del DOM para no desplazar el mapa/sidebar (que son
+     lo que el usuario quiere ver primero). Los crawlers sin ejecucion de JS
+     lo leen y obtienen texto canonico con el nombre del ambito + precios
+     reales — clave para rankear queries tipo "precio gasolina madrid" o
+     "gasolineras alcala de henares". -->
 <section class="seo-summary" aria-labelledby="seo-h2" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
-  <h2 id="seo-h2" style="font-size:20px;color:#14532d;margin:0 0 12px">Precios de combustible en ${seo.provinciaName}</h2>
-  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${seo.provinciaName}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <h2 id="seo-h2" style="font-size:20px;color:#14532d;margin:0 0 12px">Precios de combustible en ${geoLabel}</h2>
+  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabel}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
   <table style="width:100%;border-collapse:collapse;font-size:14px;max-width:640px">
     <thead><tr>
       <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Combustible</th>
@@ -1002,7 +1074,36 @@ ${seo?.provinciaName && seo?.stats && seo.stats['95'] && seo.stats['95'].count >
       })()}
     </tbody>
   </table>
-  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo.stationCount ? seo.stationCount + ' estaciones activas en ' + seo.provinciaName + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabel + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+</section>` : ''}
+
+<!-- FAQ visible (Ship 11): renderizamos el mismo contenido que el FAQPage
+     JSON-LD para que Google valide el schema (exige correspondencia 1:1 con
+     contenido visible). Se emite SIEMPRE (home/provincia/municipio) — en
+     provincia/municipio las dos primeras preguntas son contextualizadas con
+     el nombre del ambito, lo que enriquece la relevancia semantica. -->
+<section class="seo-faq" aria-labelledby="faq-h2" style="padding:16px 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+  <h2 id="faq-h2" style="font-size:20px;color:#14532d;margin:0 0 16px">Preguntas frecuentes${geoLabel ? ' sobre gasolineras en ' + geoLabel : ''}</h2>
+  ${[...faqGeoItems, ...faqBaseItems].map(q => `
+  <details style="border-top:1px solid #e5e7eb;padding:12px 0">
+    <summary style="cursor:pointer;font-weight:500;color:#1f2937;list-style:none;display:flex;align-items:center;gap:8px">
+      <span aria-hidden="true" style="color:#16a34a;font-size:12px">&#x25B6;</span>
+      <span>${q.name}</span>
+    </summary>
+    <p style="margin:8px 0 0 20px;color:#475569;line-height:1.6">${q.acceptedAnswer.text}</p>
+  </details>`).join('')}
+</section>
+
+${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipios.length > 0 ? `
+<!-- Enlace interno a municipios destacados de la provincia (Ship 11): mejora
+     la "internal linking" para SEO y ayuda a los crawlers a descubrir las
+     paginas municipio. Solo aparece en la pagina provincial. -->
+<section class="seo-municipios" aria-labelledby="munis-h2" style="padding:0 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+  <h2 id="munis-h2" style="font-size:18px;color:#14532d;margin:0 0 12px">Gasolineras por municipio en ${seo.provinciaName}</h2>
+  <p style="margin:0 0 12px;color:#475569;font-size:14px">Páginas dedicadas con precios y mapa de los municipios con más estaciones:</p>
+  <ul style="list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px">
+    ${opts.municipios.map(m => `<li><a href="/gasolineras/${seo.provinciaSlug}/${m.slug}" style="color:#15803d;text-decoration:none;font-size:14px">${m.name} <span style="color:#94a3b8;font-size:12px">(${m.stationCount})</span></a></li>`).join('')}
+  </ul>
 </section>` : ''}
 
 ${getClientScript(nonce, APP_VERSION)}

@@ -307,12 +307,13 @@ window.addEventListener('resize', function() {
 var __urlSyncActive = false;   // evita que la rehidratacion dispare loadStations
 function readQueryState() {
   var p = new URLSearchParams(location.search);
-  // Fallback: si la ruta es /gasolineras/<slug> y no hay ?prov, usamos __SEO__.
+  // Fallback: si la ruta es /gasolineras/<slug>[/<mun-slug>] y no hay ?prov,
+  // usamos __SEO__. Ship 11: soporta municipioId.
   var seo = null;
   try { seo = (window).__SEO__ || null; } catch(_) {}
   return {
     prov:   p.get('prov')   || (seo && seo.provinciaId) || '',
-    mun:    p.get('mun')    || '',
+    mun:    p.get('mun')    || (seo && seo.municipioId) || '',
     fuel:   p.get('fuel')   || '',
     order:  p.get('order')  || '',
     text:   p.get('text')   || '',
@@ -347,11 +348,15 @@ function writeQueryState() {
     if (radius && (order === 'cerca' || order === 'dist')) p.set('radius', radius);
     var qs = p.toString();
     var base = location.pathname;
-    // En rutas /gasolineras/<slug>, mantener la ruta pero anadir querys para
-    // filtros adicionales. La ruta ya codifica la provincia (no la duplicamos).
+    // En rutas /gasolineras/<slug>[/<mun-slug>], mantener la ruta pero anadir
+    // querys para filtros adicionales. La ruta ya codifica la provincia
+    // (y opcionalmente el municipio) — no los duplicamos.
     var seo = null; try { seo = (window).__SEO__ || null; } catch(_) {}
     if (seo && seo.provinciaId && prov === seo.provinciaId) {
       p.delete('prov');
+      if (seo.municipioId && mun === seo.municipioId) {
+        p.delete('mun');
+      }
       qs = p.toString();
     }
     history.replaceState(null, '', base + (qs ? '?' + qs : ''));

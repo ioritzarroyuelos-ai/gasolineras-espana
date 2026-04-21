@@ -19,6 +19,7 @@ import {
   safeValidate,
 } from './lib/schemas'
 import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
+import { topMunicipiosInProvincia, findMunicipioBySlug, statsForMunicipio } from './lib/municipios'
 import {
   snapshotToRows,
   buildInsertBatches,
@@ -542,6 +543,7 @@ app.get('/gasolineras/:slug', async c => {
   // pasada al snapshot que ya esta cacheado en memoria.
   let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
   let stationCount = 0
+  let municipios: Array<{ slug: string; name: string; stationCount: number }> | undefined
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
     if (snap && Array.isArray(snap.ListaEESSPrecio)) {
@@ -574,6 +576,11 @@ app.get('/gasolineras/:slug', async c => {
           count: arr.length,
         }
       }
+      // Ship 11: top municipios por nº de estaciones, para internal linking
+      // SEO y para ayudar a los crawlers a descubrir paginas municipio.
+      // Filtro de minimo 5 estaciones evita bloat con aldeas.
+      municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 15, minStations: 5 })
+        .map(m => ({ slug: m.slug, name: m.name, stationCount: m.stationCount }))
     }
   } catch (err) {
     // Fallo de snapshot: seguimos renderizando sin stats (degradacion
@@ -588,6 +595,55 @@ app.get('/gasolineras/:slug', async c => {
       provinciaId: prov.id,
       provinciaSlug: prov.slug,
       provinciaName: prov.name,
+      stats,
+      stationCount: stationCount || undefined,
+    },
+    municipios,
+  }), { headers: pageHeaders(nonce, turnstile) })
+})
+
+// ---- SEO: /gasolineras/:provinciaSlug/:municipioSlug (Ship 11) ----
+// Pagina por municipio: mismo patron que la provincia — pre-computa stats
+// restringidas al municipio y los pasa a buildPage. El slug del municipio
+// no esta hard-coded (hay ~8k municipios y el dataset cambia); se resuelve
+// al vuelo slugificando los nombres del snapshot y matcheando contra la ruta.
+// Si no se encuentra o la provincia no existe, 404 para evitar basura en el
+// indice de Google.
+app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
+  const provSlug = c.req.param('provinciaSlug')
+  const munSlug  = c.req.param('municipioSlug')
+  const prov = provinciaBySlug(provSlug)
+  if (!prov) return c.notFound()
+  const nonce = genNonce()
+  const turnstile = !!c.env.TURNSTILE_SITE_KEY
+
+  let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
+  let stationCount = 0
+  let munName: string | undefined
+  let munId: string | undefined
+  try {
+    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    const mun = findMunicipioBySlug(snap, prov.id, munSlug)
+    if (!mun) return c.notFound()
+    munName = mun.name
+    munId   = mun.id
+    const r = statsForMunicipio(snap, prov.id, mun.id)
+    stats = Object.keys(r.stats).length > 0 ? r.stats : undefined
+    stationCount = r.stationCount
+  } catch (err) {
+    slog('warn', 'seo.municipio_stats_failed', { slug: provSlug + '/' + munSlug, err: String(err).slice(0, 200) })
+    return c.notFound()
+  }
+
+  return new Response(buildPage(nonce, c.req.url, {
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+    seo: {
+      provinciaId: prov.id,
+      provinciaSlug: prov.slug,
+      provinciaName: prov.name,
+      municipioId:   munId,
+      municipioSlug: munSlug,
+      municipioName: munName,
       stats,
       stationCount: stationCount || undefined,
     },
@@ -637,16 +693,35 @@ app.get('/robots.txt', c => {
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
 })
 
-// ---- SEO: sitemap.xml (home + 52 provincias + privacidad) ----
-app.get('/sitemap.xml', c => {
+// ---- SEO: sitemap.xml (home + 52 provincias + top municipios + privacidad) ----
+// Ship 11: se añaden los top-10 municipios por provincia (filtrados a
+// estaciones >=5 para no contaminar el indice con aldeas). Se sirve async
+// porque necesitamos leer el snapshot para saber nombres+counts. Si falla,
+// degrademos al sitemap minimo (home + provincias).
+app.get('/sitemap.xml', async c => {
   const host = resolveHost(c)
   const scheme = resolveScheme(c)
   const base = scheme + '://' + host
   const today = new Date().toISOString().slice(0, 10)
   const entries: string[] = []
   entries.push(`  <url><loc>${base}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
+  // Para agregar municipios al sitemap necesitamos el snapshot. Si falla,
+  // seguimos emitiendo el sitemap basico — mejor parcialmente indexado que
+  // vacio.
+  let snap: MinistryResponse | null = null
+  try {
+    snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  } catch (err) {
+    slog('warn', 'sitemap.snapshot_failed', { err: String(err).slice(0, 200) })
+  }
   for (const p of PROVINCIAS) {
     entries.push(`  <url><loc>${base}/gasolineras/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>`)
+    if (snap) {
+      const munis = topMunicipiosInProvincia(snap, p.id, { limit: 10, minStations: 5 })
+      for (const m of munis) {
+        entries.push(`  <url><loc>${base}/gasolineras/${p.slug}/${m.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.6</priority></url>`)
+      }
+    }
   }
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)

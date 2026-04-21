@@ -584,4 +584,106 @@ function normalizeStation(s) {
   return out;
 }
 
+// ============================================================
+// ===== FOCUS TRAP para modales (Ship 2 a11y) =====
+// ============================================================
+// WCAG 2.1 SC 2.4.3 (Focus Order) + 2.1.2 (No Keyboard Trap — ESC sale)
+// + 2.4.11 (Focus Appearance).
+// Todos los .modal-backdrop[aria-modal="true"] reciben gestion automatica:
+//   - Al mostrarse (class "show" anadida), guardamos document.activeElement y
+//     enfocamos el primer elemento focusable dentro del modal.
+//   - Tab y Shift+Tab ciclan dentro del modal (trap) hasta que se cierre.
+//   - Al ocultarse, devolvemos foco al elemento original.
+// Implementacion: un MutationObserver observa el atributo 'class' de cada
+// modal. Asi no tenemos que instrumentar cada openX()/closeX() existente —
+// funciona con modales actuales (profile/favs/route/diary/compare) y con
+// futuros nuevos modales mientras mantengan la convencion .modal-backdrop.
+(function initModalFocusTrap() {
+  var FOCUSABLE = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled]):not([type="hidden"])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+    '[contenteditable="true"]',
+  ].join(',');
+  // Mapa modal -> { previousFocus, keydownHandler }. Clave por el node para
+  // poder desinstalar el handler correcto si el modal se re-muestra.
+  var state = new WeakMap();
+  function getFocusable(modal) {
+    var nodes = modal.querySelectorAll(FOCUSABLE);
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      // Ignora ocultos (display:none / visibility:hidden / disabled)
+      var rects = el.getClientRects();
+      if (rects.length === 0) continue;
+      if (el.offsetParent === null && el !== document.activeElement) continue;
+      out.push(el);
+    }
+    return out;
+  }
+  function onOpen(modal) {
+    if (state.has(modal)) return;
+    var previous = document.activeElement;
+    // Enfoca el primer focusable — o el propio modal si no hay ninguno (con
+    // tabindex=-1 temporalmente para que reciba foco programatico).
+    var focusables = getFocusable(modal);
+    var first = focusables[0];
+    if (first) {
+      try { first.focus(); } catch (_) {}
+    } else {
+      modal.setAttribute('tabindex', '-1');
+      try { modal.focus(); } catch (_) {}
+    }
+    function onKeydown(e) {
+      if (e.key !== 'Tab') return;
+      var list = getFocusable(modal);
+      if (list.length === 0) { e.preventDefault(); return; }
+      var idx = list.indexOf(document.activeElement);
+      if (e.shiftKey) {
+        if (idx <= 0) { e.preventDefault(); list[list.length - 1].focus(); }
+      } else {
+        if (idx === list.length - 1 || idx === -1) { e.preventDefault(); list[0].focus(); }
+      }
+    }
+    modal.addEventListener('keydown', onKeydown);
+    state.set(modal, { previous: previous, keydown: onKeydown });
+  }
+  function onClose(modal) {
+    var s = state.get(modal);
+    if (!s) return;
+    modal.removeEventListener('keydown', s.keydown);
+    state.delete(modal);
+    // Devolver foco al origen si sigue existiendo y es focusable.
+    if (s.previous && document.body.contains(s.previous) && typeof s.previous.focus === 'function') {
+      try { s.previous.focus(); } catch (_) {}
+    }
+  }
+  function handleMutation(modal) {
+    if (modal.classList.contains('show')) onOpen(modal);
+    else onClose(modal);
+  }
+  function register(modal) {
+    // Si ya esta visible en init, activa el trap inmediatamente.
+    if (modal.classList.contains('show')) onOpen(modal);
+    var obs = new MutationObserver(function(mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].attributeName === 'class') { handleMutation(modal); break; }
+      }
+    });
+    obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+  function init() {
+    var modals = document.querySelectorAll('.modal-backdrop[aria-modal="true"]');
+    for (var i = 0; i < modals.length; i++) register(modals[i]);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+
 `

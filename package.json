@@ -4,7 +4,8 @@
   "scripts": {
     "dev": "vite",
     "icons": "node scripts/gen-icons.mjs",
-    "prebuild": "node scripts/gen-icons.mjs",
+    "features": "node scripts/gen-features-js.mjs",
+    "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-features-js.mjs",
     "build": "vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",

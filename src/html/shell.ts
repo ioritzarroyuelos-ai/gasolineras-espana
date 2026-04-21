@@ -929,6 +929,12 @@ ${seo?.provinciaName && seo?.stats && seo.stats['95'] && seo.stats['95'].count >
 </section>` : ''}
 
 ${getClientScript(nonce, APP_VERSION)}
+<!-- Ship 1: features JS se carga como asset externo con defer. Cacheable por
+     CDN + SW, paralelo al parse HTML, no bloquea FCP. El ?v=${APP_VERSION}
+     fuerza invalidacion en cada release. Sin integrity hash (cambia por
+     release y hacerlo requeriria build-time hashing que complica el pipeline).
+     Same-origin + CSP script-src 'self' lo cubre. -->
+<script defer src="/static/features.js?v=${APP_VERSION}" nonce="${nonce}"></script>
 </body>
 </html>`
 }

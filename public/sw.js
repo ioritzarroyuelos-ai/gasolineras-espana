@@ -2,7 +2,7 @@
 // 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
 // cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
 // usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v12';
+const CACHE_NAME = 'gasolineras-v13';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia / bbox). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
@@ -26,6 +26,11 @@ const STATIC_ASSETS = [
   '/static/apple-touch-icon.png',
   '/static/icon-192.png',
   '/static/icon-512.png',
+  // Ship 1: features.js se carga con ?v=X.Y.Z en produccion para cache-busting.
+  // Precacheamos la URL sin query — el fetch handler (cache-first) servira
+  // este mismo blob aunque llegue con query distinta porque ignoraremos la
+  // query al hacer match (ver cache-first handler con {ignoreSearch:true}).
+  '/static/features.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css',
@@ -203,6 +208,24 @@ self.addEventListener('fetch', event => {
         if (cached) { networkFetch; return cached; }
         return networkFetch;
       })
+    );
+    return;
+  }
+
+  // Ship 1: features.js llega con ?v=<APP_VERSION> para invalidar el cache
+  // del navegador en cada release. Al matchear en la cache del SW usamos
+  // ignoreSearch:true asi un shell cacheado con ?v=1.8.0 sigue sirviendose
+  // mientras el nuevo ?v=1.8.1 se descarga en background (network-first
+  // efectivo porque el put cachea la URL completa y la siguiente request
+  // con la misma ?v hace hit directo).
+  if (url.pathname === '/static/features.js') {
+    event.respondWith(
+      fetch(request).then(res => {
+        if (res.ok && request.method === 'GET') {
+          caches.open(CACHE_NAME).then(cache => cache.put(request, res.clone()));
+        }
+        return res;
+      }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('/static/features.js')))
     );
     return;
   }

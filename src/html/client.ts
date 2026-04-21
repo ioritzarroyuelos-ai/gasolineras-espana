@@ -529,6 +529,9 @@ function initMap() {
     fadeAnimation: true,
     markerZoomAnimation: true,
     minZoom: 5,
+    maxZoom: 20,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
+                  // lanza "Map has no maxZoom specified" y la promesa del
+                  // layer queda sin manejar, rompiendo otros flujos UI.
     maxBounds: SPAIN_BOUNDS,
     maxBoundsViscosity: 1.0,
     worldCopyJump: false
@@ -576,7 +579,13 @@ function initMap() {
   // Liberty de OpenFreeMap, parcheamos todas las expresiones text-field para
   // que prioricen name:es con fallback a name:latin/name, y reemplazamos la
   // capa base clara. Si algo falla, nos quedamos en el raster + SPAIN_LABELS.
-  applyLibertyLanguage();
+  // .catch() obligatorio: el bridge maplibre-gl-leaflet rechaza promesas
+  // internas cuando el map no esta bien configurado (p.ej. sin maxZoom).
+  // Sin catch quedaba "Uncaught (in promise) Map has no maxZoom specified"
+  // que en algunas rutas rompia renderStations via estado incoherente del map.
+  applyLibertyLanguage().catch(function(e) {
+    console.warn('[liberty] upgrade no aplicado, seguimos con raster:', (e && e.message) || e);
+  });
 
   setTimeout(function() { map.invalidateSize(true); }, 100);
 }
@@ -704,8 +713,12 @@ async function applyLibertyLanguage() {
     }
 
     // Montamos el vector tile layer y lo swap-eamos por el raster claro.
+    // minZoom/maxZoom: el bridge maplibre-gl-leaflet valida que el layer
+    // conozca sus limites de zoom — sin ellos lanza "Map has no maxZoom".
     var libertyLayer = L.maplibreGL({
       style: style,
+      minZoom: 5,
+      maxZoom: 20,
       attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
     var wasLight = map.hasLayer(mapLayers.light);

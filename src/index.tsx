@@ -1589,10 +1589,16 @@ app.get('/api/export', async c => {
     const priceRaw = s[ministryField]
     const priceNum = parseFloat(String(priceRaw).replace(',', '.'))
     if (!Number.isFinite(priceNum)) continue
+    // El Ministerio usa claves con tilde: "Rótulo" y "Dirección" (no
+    // "Rotulo"/"Direccion"). Probamos ambas por defensa: el cliente Web
+    // usa las versiones sin tilde en algunos sitios y el snapshot podria
+    // cambiar en el futuro si cambian el endpoint.
+    const rotulo    = s['Rótulo']    || s['Rotulo']    || ''
+    const direccion = s['Dirección'] || s['Direccion'] || ''
     lines.push([
       csvEscape(s['IDEESS']),
-      csvEscape(s['Rotulo']),
-      csvEscape(s['Direccion']),
+      csvEscape(rotulo),
+      csvEscape(direccion),
       csvEscape(s['C.P.']),
       csvEscape(s['Municipio']),
       csvEscape(s['Provincia']),

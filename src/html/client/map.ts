@@ -922,7 +922,7 @@ function renderMarkers(stations) {
   map.addLayer(clusterGroup);
 
   if (bounds.length > 0) {
-    try { map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 }); }
+    try { map.fitBounds(bounds, Object.assign({}, mapAnimOpts(), { padding: [40, 40], maxZoom: 14 })); }
     catch(e) {}
   }
 }
@@ -932,7 +932,7 @@ function highlightCard(idx) {
   var card = document.querySelector('[data-idx="' + idx + '"]');
   if (card) {
     card.classList.add('active');
-    card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    card.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' });
   }
 }
 

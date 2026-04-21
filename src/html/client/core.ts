@@ -575,6 +575,39 @@ function showListError(msg, retryLabel) {
   list.appendChild(box);
 }
 
+// ============================================================
+// ===== prefers-reduced-motion helper (Ship 3 a11y) =====
+// ============================================================
+// WCAG 2.3.3 — permite a usuarios con vestibular disorder desactivar
+// animaciones. El CSS ya tiene un @media (prefers-reduced-motion: reduce)
+// global, pero hay 3 animaciones JS-driven que no cubre:
+//   1. card.scrollIntoView({behavior: 'smooth'}) en highlightCard — hace
+//      scroll animado de la lista al enfocar estacion.
+//   2. map.fitBounds({..., animate: true}) — Leaflet anima pan+zoom.
+//   3. map.flyTo() — si se usa. Por defecto anima.
+// Exponemos window.prefersReducedMotion() para que cada call-site decida.
+// Subscribimos a cambios del media query asi el toggle del SO aplica en
+// vivo sin recargar.
+var PRM_MQ = null;
+var PRM_VALUE = false;
+try {
+  if (window.matchMedia) {
+    PRM_MQ = window.matchMedia('(prefers-reduced-motion: reduce)');
+    PRM_VALUE = !!PRM_MQ.matches;
+    var update = function() { PRM_VALUE = !!PRM_MQ.matches; };
+    if (typeof PRM_MQ.addEventListener === 'function') PRM_MQ.addEventListener('change', update);
+    else if (typeof PRM_MQ.addListener === 'function') PRM_MQ.addListener(update); // Safari <14
+  }
+} catch (_) { /* no matchMedia — asumimos no-preference */ }
+function prefersReducedMotion() { return PRM_VALUE; }
+// Helper publico: resuelve el scroll-behavior segun preferencia. Uso:
+//   el.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' })
+function scrollBehavior(fallback) { return PRM_VALUE ? 'auto' : (fallback || 'smooth'); }
+// Opcion compartida para Leaflet fitBounds / setView con animacion
+// respetando la preferencia. Se pasa como opts:
+//   map.fitBounds(b, Object.assign({}, mapAnimOpts(), { padding: [40,40] }))
+function mapAnimOpts() { return { animate: !PRM_VALUE }; }
+
 // Elimina tildes de las claves del objeto estacion (evita problemas de encoding del documento)
 function normalizeStation(s) {
   var out = {};

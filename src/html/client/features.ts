@@ -358,7 +358,7 @@ function enterRouteMode(coords, stops, from, to, allCorridor) {
   routeStopsLayer.addTo(map);
 
   // Centra el mapa en la ruta completa.
-  try { map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] }); } catch (e) {}
+  try { map.fitBounds(routeLayer.getBounds(), Object.assign({}, mapAnimOpts(), { padding: [40, 40] })); } catch (e) {}
 
   // Pobla los deep-links del banner flotante (Google/Apple con paradas,
   // Waze solo al destino). Si faltan origen/destino, ocultamos el bloque.

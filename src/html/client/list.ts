@@ -78,10 +78,20 @@ function findStationById(id) {
   return null;
 }
 
-// Renderiza el cuerpo del modal. Layout paralelo: cada columna pinta
-// rotulo/direccion/estado + tabla precios + meta (horario). Destacamos con
-// .compare-winner la celda con precio mas bajo por combustible. Si empatan
-// (misma cifra), ambas son winner — mejor reflejo que "no hay ganador".
+// Ship 9: Comparador multi-combustible.
+//
+// Cambios vs version anterior:
+//  - Usa las CLAVES REALES del feed ("Precio Gasolina 95 E5", ...) — antes
+//    usaba codigos cortos ('95', 'diesel') que no existen en el objeto
+//    estacion (bug: siempre salia "Sin precio" en la tabla).
+//  - Soporta los 9 combustibles del dropdown (antes solo 4: 95/98/A/Premium).
+//  - Solo pinta filas donde al menos UNA estacion tiene precio — asi las
+//    estaciones de carretera (95/98/diesel) no muestran 5 filas vacias de
+//    GLP/GNC/H2 que nadie tiene, y a la inversa, una estacion solo-GLP
+//    no muestra 4 filas vacias de gasolina.
+//  - Calcula delta % entre el ganador y los demas por combustible, y lo
+//    muestra a la derecha del precio del no-ganador (ej. "1,589 \u20AC/L +2,1%").
+//  - Summary bar arriba: "Rotulo A gana en 3 de 4 combustibles".
 function renderCompareModal() {
   var body = document.getElementById('compare-body');
   if (!body) return;
@@ -98,25 +108,76 @@ function renderCompareModal() {
     body.innerHTML = '<div class="compare-empty">No se encontraron las estaciones seleccionadas en el snapshot actual.</div>';
     return;
   }
-  // Si solo hay 1, lo mostramos igual pero sin "winner" (no hay con quien
-  // comparar). Nota visual para invitar a anadir otra.
+
+  // Orden canonico de combustibles: priorizamos los 4 principales primero,
+  // luego alternativos. Clave = clave REAL en el objeto estacion (post-
+  // normalizeStation). Label = texto amigable para UI.
   var fuels = [
-    ['95', 'Gasolina 95 E5'],
-    ['98', 'Gasolina 98 E5'],
-    ['diesel', 'Gas\u00f3leo A'],
-    ['diesel_plus', 'Gas\u00f3leo Premium'],
+    ['Precio Gasolina 95 E5',           'Gasolina 95 E5'],
+    ['Precio Gasolina 98 E5',           'Gasolina 98 E5'],
+    ['Precio Gasoleo A',                'Gas\u00f3leo A (di\u00e9sel)'],
+    ['Precio Gasoleo Premium',          'Gas\u00f3leo Premium'],
+    ['Precio Diesel Renovable',         'Di\u00e9sel renovable'],
+    ['Precio Gases licuados del petroleo', 'GLP (autogas)'],
+    ['Precio Gas Natural Comprimido',   'Gas Natural (GNC)'],
+    ['Precio Gas Natural Licuado',      'Gas Natural (GNL)'],
+    ['Precio Hidrogeno',                'Hidr\u00f3geno']
   ];
-  // Pre-calculamos el minimo por combustible para saber quien es winner.
+
+  // Pre-calculamos minimo por combustible + filtramos filas donde NINGUNA
+  // estacion tiene precio (ruido puro). mins[key] = null si ningun precio.
   var mins = {};
+  var visibleFuels = [];
   for (var f = 0; f < fuels.length; f++) {
     var code = fuels[f][0];
     var lowest = null;
+    var anyHasPrice = false;
     for (var si = 0; si < stations.length; si++) {
       var p = parsePrice(stations[si][code]);
-      if (p != null && (lowest == null || p < lowest)) lowest = p;
+      if (p != null) {
+        anyHasPrice = true;
+        if (lowest == null || p < lowest) lowest = p;
+      }
     }
-    mins[code] = lowest;
+    if (anyHasPrice) {
+      mins[code] = lowest;
+      visibleFuels.push(fuels[f]);
+    }
   }
+
+  // Contador de victorias por estacion (empate cuenta para ambos). Usamos
+  // indice como clave — stationId podria colisionar en casos raros con strings
+  // raros, y el indice es estable dentro de esta render.
+  var winCounts = stations.map(function() { return 0; });
+  visibleFuels.forEach(function(ff) {
+    var code = ff[0];
+    var low = mins[code];
+    if (low == null) return;
+    for (var si = 0; si < stations.length; si++) {
+      var p = parsePrice(stations[si][code]);
+      if (p != null && Math.abs(p - low) < 0.0005) winCounts[si] += 1;
+    }
+  });
+
+  // Summary bar — solo con >=2 estaciones y >=1 combustible visible.
+  var summaryHtml = '';
+  if (stations.length >= 2 && visibleFuels.length >= 1) {
+    var summaryItems = stations.map(function(s, idx) {
+      var rot = esc(s['Rotulo'] || 'Gasolinera');
+      var w = winCounts[idx];
+      var badgeCls = w === 0 ? 'compare-sum-zero'
+                   : (w === visibleFuels.length ? 'compare-sum-full' : 'compare-sum-some');
+      return '<div class="compare-sum-item ' + badgeCls + '">'
+           +   '<span class="compare-sum-count">' + w + '/' + visibleFuels.length + '</span>'
+           +   '<span class="compare-sum-label">' + rot + '</span>'
+           + '</div>';
+    }).join('');
+    summaryHtml = '<div class="compare-summary">'
+               +   '<div class="compare-sum-title">\u{1F3C6} Ganador por combustible</div>'
+               +   '<div class="compare-sum-grid">' + summaryItems + '</div>'
+               + '</div>';
+  }
+
   var cols = stations.map(function(s) {
     var id = stationId(s);
     var status = isOpenNow(s['Horario']);
@@ -125,14 +186,24 @@ function renderCompareModal() {
           ? '<span class="status-chip status-open">\u25CF Abierta</span>'
           : '<span class="status-chip status-closed">\u25CF Cerrada</span>')
       : '';
-    var priceRows = fuels.map(function(ff) {
+    var priceRows = visibleFuels.map(function(ff) {
       var code = ff[0];
       var label = ff[1];
       var p = parsePrice(s[code]);
-      var isWinner = p != null && mins[code] != null && Math.abs(p - mins[code]) < 0.0005;
-      var cls = 'compare-price-row' + (isWinner && stations.length > 1 ? ' compare-winner' : '');
+      var low = mins[code];
+      var isWinner = p != null && low != null && Math.abs(p - low) < 0.0005;
+      var cls = 'compare-price-row'
+              + (isWinner && stations.length > 1 ? ' compare-winner' : '')
+              + (p == null ? ' compare-price-row--empty' : '');
+      // Delta: mostramos +X,X% si la estacion NO gana y el precio existe.
+      // Usamos (p - low) / low para que el valor positivo refleje "mas caro".
+      var deltaHtml = '';
+      if (p != null && low != null && !isWinner && stations.length > 1 && low > 0) {
+        var pct = ((p - low) / low) * 100;
+        deltaHtml = '<span class="cp-delta">+' + pct.toFixed(1).replace('.', ',') + '%</span>';
+      }
       var valueHtml = (p != null)
-        ? '<span class="cp-value">' + p.toFixed(3) + ' \u20AC/L</span>'
+        ? '<span class="cp-value">' + p.toFixed(3) + ' \u20AC/L</span>' + deltaHtml
         : '<span class="cp-value cp-value--none">Sin precio</span>';
       return '<div class="' + cls + '"><span class="cp-label">' + esc(label) + '</span>' + valueHtml + '</div>';
     }).join('');
@@ -152,7 +223,7 @@ function renderCompareModal() {
   if (stations.length === 1) {
     cols += '<div class="compare-col" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;"><div>\u2795<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
   }
-  body.innerHTML = cols;
+  body.innerHTML = summaryHtml + cols;
 }
 
 function openCompareModal() {

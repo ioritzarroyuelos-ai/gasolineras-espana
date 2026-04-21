@@ -1645,6 +1645,42 @@ export function getStyles(nonce: string = ''): string {
     body.dark .compare-price-row.compare-winner .cp-value::after { color: #4ade80; }
     .compare-meta                   { font-size: 11px; color: #64748b; display: flex; flex-direction: column; gap: 3px; border-top: 1px dashed #e2e8f0; padding-top: 6px; }
     body.dark .compare-meta         { color: #94a3b8; border-top-color: #334155; }
+
+    /* ===== Ship 9: comparador multi-combustible ===== */
+    /* Summary bar: "quien gana en cuantos combustibles". Grid 2-col (1 por
+       estacion) con contador big y rotulo debajo. full=3/3 → verde fuerte;
+       some=1/3 → verde pastel; zero=0/3 → gris (no gana en nada). */
+    .compare-summary                { grid-column: 1 / -1; background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+                                      border: 1px solid #bbf7d0; border-radius: 12px; padding: 10px 12px; margin-bottom: 4px; }
+    body.dark .compare-summary      { background: linear-gradient(135deg, #052e16 0%, #064e3b 100%); border-color: #14532d; }
+    .compare-sum-title              { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #166534; margin-bottom: 6px; }
+    body.dark .compare-sum-title    { color: #86efac; }
+    .compare-sum-grid               { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    @media (max-width: 600px) {
+      .compare-sum-grid             { grid-template-columns: 1fr; }
+    }
+    .compare-sum-item               { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px;
+                                      border-radius: 8px; background: #fff; border: 1px solid #d1fae5; }
+    body.dark .compare-sum-item     { background: #0b1522; border-color: #14532d; }
+    .compare-sum-count              { font-size: 16px; font-weight: 800; color: #166534; font-variant-numeric: tabular-nums; }
+    body.dark .compare-sum-count    { color: #86efac; }
+    .compare-sum-label              { font-size: 11px; color: #475569; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body.dark .compare-sum-label    { color: #cbd5e1; }
+    .compare-sum-item.compare-sum-full .compare-sum-count  { color: #16a34a; }
+    .compare-sum-item.compare-sum-some .compare-sum-count  { color: #65a30d; }
+    .compare-sum-item.compare-sum-zero .compare-sum-count  { color: #94a3b8; }
+    body.dark .compare-sum-item.compare-sum-full .compare-sum-count { color: #4ade80; }
+    body.dark .compare-sum-item.compare-sum-some .compare-sum-count { color: #a3e635; }
+    body.dark .compare-sum-item.compare-sum-zero .compare-sum-count { color: #64748b; }
+
+    /* Delta porcentual al lado del precio no-ganador. En rojo claro para que
+       salte pero sin gritar. En dark se recortan los tonos. */
+    .compare-price-row .cp-delta    { font-size: 10px; font-weight: 600; color: #dc2626; margin-left: 6px;
+                                      font-variant-numeric: tabular-nums; }
+    body.dark .compare-price-row .cp-delta { color: #fca5a5; }
+
+    /* Fila "Sin precio" — atenuada al 70% (no llama la atencion). */
+    .compare-price-row--empty       { opacity: 0.65; }
     .compare-empty                  { grid-column: 1 / -1; text-align: center; padding: 24px 12px; color: #64748b; font-size: 13px; }
     body.dark .compare-empty        { color: #94a3b8; }
 

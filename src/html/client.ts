@@ -1568,6 +1568,16 @@ function cardHTML(s, i, fuel, fuelLabel) {
   }
 
   var priceText = price ? fmtPriceUnit(price) : '';
+  // Coste total para un deposito completo: EUR/L x L. Usa el mismo gs_tank
+  // que el badge de ahorro. Se renderiza DEBAJO del precio/L en pequenito
+  // para que quien nunca haya hecho la cuenta mental vea el impacto real
+  // (p.ej. 1.45 vs 1.50 parece trivial hasta que ve 72.50 vs 75.00 €).
+  var tankLitersCard = parseInt(localStorage.getItem('gs_tank') || '50', 10);
+  var tankCostHtml = '';
+  if (price && tankLitersCard > 0) {
+    var tankTotal = (price * tankLitersCard).toFixed(2);
+    tankCostHtml = '<div class="row-tank-cost" title="Coste de llenar el deposito de ' + tankLitersCard + ' L">\u00d7' + tankLitersCard + 'L = ' + tankTotal + ' \u20AC</div>';
+  }
   var priceEl = price
     ? '<span class="' + badgeCls + '">' + priceText + '</span>'
     : '<span class="row-row-noprice">N/D</span>';
@@ -1584,6 +1594,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
     + '</div>'
     + '<div class="row-info-right">'
     + priceEl
+    + tankCostHtml
     + '<div class="row-fuel-label">' + esc(fuelLabel.slice(0,18)) + '</div>'
     + '</div></div></div>';
 }

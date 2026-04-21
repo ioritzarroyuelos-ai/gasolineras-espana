@@ -316,6 +316,10 @@ const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por I
 // volumen moderado.
 const routeLimiter  = new SlidingWindowLimiter(20,  60_000)  // 20 req/min por IP
                                                               // (cada plan hace 2 llamadas: ruta directa + ruta con waypoints)
+// Export CSV: payload grande (hasta ~12k filas, varios MB sin filtros). Un
+// periodista / blogger / investigador lo descarga una vez al dia — 6/min es
+// generoso para uso legitimo y hace inviable el scraping continuo.
+const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
 
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
@@ -1496,6 +1500,136 @@ app.get('/api/predict/:stationId', async c => {
     })
     return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
   }
+})
+
+// ============================================================================
+// EXPORT CSV (datos publicos)
+// ============================================================================
+// GET /api/export?fuel=95&provincia=48  (ambos opcionales)
+// Devuelve CSV con todas las estaciones (o filtradas por provincia) y el
+// precio del combustible pedido. Pensado para bloggers, periodistas,
+// investigadores academicos y analistas que quieran operar con los datos
+// sin tener que navegar el JSON del Ministerio.
+//
+// Diseno:
+// - Rate limit agresivo (exportLimiter = 6/min/IP): payload grande (~12k filas,
+//   varios MB) y uso legitimo es "descargar una vez al dia", no polling.
+// - Fuente: snapshot estatico diario (mismo que alimenta el mapa). Cache-Control
+//   1h en CDN; aunque el snapshot es diario dejamos margen por si el cron tarda.
+// - Formato: RFC 4180 — coma como separador, comillas dobles escapadas
+//   duplicandolas. Content-Disposition con filename para que el navegador
+//   descargue directamente.
+// - Columnas: ideess,rotulo,direccion,cp,municipio,provincia,lat,lng,horario,
+//   fuel,precio_eur_l,fecha (fecha = Fecha del snapshot, no el dia del request).
+// - Filas sin precio del combustible pedido: omitidas (una estacion que no
+//   vende 98 no aparece en el export de 98). Esto es lo que el consumidor
+//   espera: "dame el precio de 98 en tal provincia".
+app.get('/api/export', async c => {
+  const key = clientKey(c)
+  const rl = exportLimiter.check(key)
+  if (!rl.allowed) {
+    return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+
+  const fuel = c.req.query('fuel') || '95'
+  if (!FUEL_CODES.includes(fuel)) {
+    return c.json({ error: 'invalid_fuel', valid: FUEL_CODES }, 400)
+  }
+  // Invertir FUEL_MAP para ir de codigo a campo del Ministerio. Lo hacemos
+  // inline porque es barato y no merece otra export desde history.ts.
+  const MINISTRY_FIELD: Record<string, string> = {
+    '95':          'Precio Gasolina 95 E5',
+    '98':          'Precio Gasolina 98 E5',
+    'diesel':      'Precio Gasoleo A',
+    'diesel_plus': 'Precio Gasoleo Premium',
+  }
+  const ministryField = MINISTRY_FIELD[fuel]
+  if (!ministryField) {
+    // No deberia ocurrir si FUEL_CODES esta sincronizado, pero defensivo.
+    return c.json({ error: 'invalid_fuel' }, 400)
+  }
+
+  const provinciaRaw = c.req.query('provincia') || ''
+  let provinciaFilter: string | null = null
+  if (provinciaRaw) {
+    if (!isValidProvinciaId(provinciaRaw)) {
+      return c.json({ error: 'invalid_provincia' }, 400)
+    }
+    provinciaFilter = provinciaRaw
+  }
+
+  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  if (!snap) return c.json({ error: 'snapshot no disponible' }, 503)
+
+  const filtered = filterStations(snap, s => {
+    if (provinciaFilter && s.IDProvincia !== provinciaFilter) return false
+    // Solo incluimos estaciones con precio valido para el combustible pedido.
+    const raw = s[ministryField]
+    if (!raw) return false
+    const n = parseFloat(String(raw).replace(',', '.'))
+    return Number.isFinite(n) && n > 0
+  })
+  if (!filtered) return c.json({ error: 'snapshot corrupto' }, 503)
+
+  // Escapado RFC 4180: envuelve en comillas si hay coma, comilla, CR o LF;
+  // dentro, las comillas se duplican.
+  const csvEscape = (v: unknown): string => {
+    const s = v == null ? '' : String(v)
+    if (s.indexOf(',') < 0 && s.indexOf('"') < 0 && s.indexOf('\n') < 0 && s.indexOf('\r') < 0) return s
+    return '"' + s.replace(/"/g, '""') + '"'
+  }
+
+  const fechaSnap = typeof snap.Fecha === 'string' ? snap.Fecha : ''
+  const header = 'ideess,rotulo,direccion,cp,municipio,provincia,lat,lng,horario,fuel,precio_eur_l,fecha'
+  const lines: string[] = [header]
+  const list = filtered.ListaEESSPrecio || []
+  for (const s of list) {
+    const lat = String(s['Latitud'] ?? '').replace(',', '.')
+    const lng = String(s['Longitud (WGS84)'] ?? '').replace(',', '.')
+    const priceRaw = s[ministryField]
+    const priceNum = parseFloat(String(priceRaw).replace(',', '.'))
+    if (!Number.isFinite(priceNum)) continue
+    lines.push([
+      csvEscape(s['IDEESS']),
+      csvEscape(s['Rotulo']),
+      csvEscape(s['Direccion']),
+      csvEscape(s['C.P.']),
+      csvEscape(s['Municipio']),
+      csvEscape(s['Provincia']),
+      csvEscape(lat),
+      csvEscape(lng),
+      csvEscape(s['Horario']),
+      csvEscape(fuel),
+      csvEscape(priceNum.toFixed(3)),
+      csvEscape(fechaSnap),
+    ].join(','))
+  }
+  // Sufijo \r\n en lugar de \n por compatibilidad estricta con Excel en
+  // Windows; los parsers modernos aceptan ambos.
+  const csv = lines.join('\r\n') + '\r\n'
+
+  // Nombre de fichero descriptivo pero determinista — permite al usuario
+  // reemplazar descargas sucesivas sin colisiones raras. Sanitizamos la
+  // provincia (solo digitos) porque ya validamos arriba, pero por defensa.
+  const fname = 'gasolineras_' + fuel +
+    (provinciaFilter ? '_prov' + provinciaFilter : '') +
+    '_' + (fechaSnap || 'snapshot').replace(/[^0-9-]/g, '') + '.csv'
+
+  return new Response(csv, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="' + fname + '"',
+      // Cache CDN: el snapshot se regenera 1/dia, 1h de edge cache protege
+      // de avalanchas sin servir datos mas viejos que lo que ya es.
+      'Cache-Control': 'public, max-age=3600',
+      'X-Data-Source': 'snapshot',
+      // Permite que herramientas JS en otros origenes consuman el CSV si
+      // alguien monta un notebook (Observable, etc.) — no contiene datos
+      // privados.
+      'Access-Control-Allow-Origin': '*',
+    },
+  })
 })
 
 // ---- CRON (disparados por GitHub Actions) ----

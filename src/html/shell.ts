@@ -87,6 +87,36 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       { '@type': 'ListItem', position: 2, name: 'Gasolineras en ' + seo.provinciaName, item: canonical },
     ],
   }] : []
+  // FAQ: solo en home, no tiene sentido en rutas provinciales (Google pide
+  // que el FAQ refleje el contenido visible; como la home no muestra FAQ,
+  // lo mantenemos corto y factual para evitar penalizaciones por spam).
+  const faqPage = seo?.provinciaName ? [] : [{
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: '¿De dónde vienen los precios?',
+        acceptedAnswer: { '@type': 'Answer', text: 'Del dataset oficial del Ministerio para la Transición Ecológica y el Reto Demográfico, actualizado a diario. La app consume directamente el snapshot público.' },
+      },
+      {
+        '@type': 'Question',
+        name: '¿Con qué frecuencia se actualizan?',
+        acceptedAnswer: { '@type': 'Answer', text: 'Una vez al día, hacia las 20:00 UTC, cuando el Ministerio publica la tanda del día. Las gasolineras tienen 48 h para comunicar cambios por ley.' },
+      },
+      {
+        '@type': 'Question',
+        name: '¿Es gratis?',
+        acceptedAnswer: { '@type': 'Answer', text: 'Sí, gratis y sin anuncios. Si te resulta útil, hay un botón de Ko-fi para invitarme a un café.' },
+      },
+      {
+        '@type': 'Question',
+        name: '¿Puedo usarla sin conexión?',
+        acceptedAnswer: { '@type': 'Answer', text: 'La app está instalable como PWA y cachea el último snapshot de precios — si pierdes cobertura, sigues viendo los datos vistos por última vez.' },
+      },
+    ],
+  }]
+
   const jsonLd = JSON.stringify([
     {
       '@context': 'https://schema.org',
@@ -103,6 +133,16 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     },
     {
       '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'Gasolineras España',
+      url: origin,
+      logo: logoUrl,
+      sameAs: [
+        'https://github.com/ioritzarroyuelos-ai/gasolineras-espana',
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
       '@type': 'Dataset',
       name: seo?.provinciaName ? 'Precios de carburantes en ' + seo.provinciaName : 'Precios de carburantes en España',
       description: 'Snapshot oficial de precios de estaciones de servicio terrestres.',
@@ -111,6 +151,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       spatialCoverage: { '@type': 'Place', name: seo?.provinciaName || 'España' },
       inLanguage: 'es',
     },
+    ...faqPage,
     ...breadcrumbs,
   ])
 
@@ -456,6 +497,19 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <i class="fas fa-user-cog u-mr-6" aria-hidden="true"></i>
         <span id="btn-profile-label">Configurar mi vehículo</span>
       </button>
+
+      <!-- Ko-fi support link. noopener por seguridad (previene window.opener
+           hijacking), noreferrer para no filtrar patron de navegacion. rel
+           sponsored es la convencion para botones de donacion/afiliacion
+           — evita que Google los trate como backlinks de SEO. -->
+      <a href="https://ko-fi.com/ioritzarroyuelos"
+         class="kofi-support"
+         target="_blank"
+         rel="noopener noreferrer sponsored"
+         aria-label="Invitame a un cafe en Ko-fi">
+        <span aria-hidden="true">&#x2615;</span>
+        <span>Invítame a un café</span>
+      </a>
     </div>
 
     <!-- STATS -->

@@ -1457,6 +1457,20 @@ export function getStyles(nonce: string = ''): string {
     .row-info-right         { flex-shrink: 0; text-align: right; }
     .row-fuel-label         { font-size: 10px; color: #9ca3af; margin-top: 1px; }
     .row-row-noprice        { font-size: 11px; color: #9ca3af; }
+    /* Coste total del deposito: debajo del precio/L, tono slate para no competir
+       con el badge principal. En dark, sube el color para legibilidad sobre bg oscuro. */
+    .row-tank-cost          { font-size: 11px; color: #64748b; font-weight: 600; margin-top: 2px; white-space: nowrap; }
+    body.dark .row-tank-cost{ color: #94a3b8; }
+
+    /* Ko-fi support button — cabe discreto al pie del sidebar. Icono + texto,
+       sin colores de marca (para no pelear con el verde corporativo del header). */
+    .kofi-support           { display:flex; align-items:center; justify-content:center; gap:6px;
+                              margin: 10px 12px 14px; padding: 8px 12px; border-radius: 10px;
+                              background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600;
+                              text-decoration: none; border: 1px solid #fde68a; transition: background .15s; }
+    .kofi-support:hover     { background: #fde68a; text-decoration: none; }
+    body.dark .kofi-support { background: #422006; color: #fcd34d; border-color: #78350f; }
+    body.dark .kofi-support:hover { background: #78350f; }
 
   </style>`
 }

@@ -523,18 +523,67 @@ app.get('/', c => {
 // con meta tags especificos y el cliente auto-selecciona esa provincia via
 // window.__SEO__. Si el slug no existe (ej. /gasolineras/atlantida), 404
 // pra evitar que Google indexe URLs inventadas.
-app.get('/gasolineras/:slug', c => {
+app.get('/gasolineras/:slug', async c => {
   const slug = c.req.param('slug')
   const prov = provinciaBySlug(slug)
   if (!prov) return c.notFound()
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
+
+  // Pre-computamos stats de precios por combustible para la provincia. Sirve
+  // para: (a) meta description enriquecida, (b) Dataset variableMeasured en
+  // JSON-LD, (c) bloque SEO visible al final del body. Todo en una sola
+  // pasada al snapshot que ya esta cacheado en memoria.
+  let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
+  let stationCount = 0
+  try {
+    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    if (snap && Array.isArray(snap.ListaEESSPrecio)) {
+      const FIELD: Record<string, string> = {
+        '95':          'Precio Gasolina 95 E5',
+        '98':          'Precio Gasolina 98 E5',
+        'diesel':      'Precio Gasoleo A',
+        'diesel_plus': 'Precio Gasoleo Premium',
+      }
+      const buckets: Record<string, number[]> = { '95': [], '98': [], 'diesel': [], 'diesel_plus': [] }
+      for (const s of snap.ListaEESSPrecio) {
+        if (s.IDProvincia !== prov.id) continue
+        stationCount++
+        for (const fuelCode of Object.keys(FIELD)) {
+          const raw = s[FIELD[fuelCode]]
+          if (!raw) continue
+          const n = parseFloat(String(raw).replace(',', '.'))
+          if (Number.isFinite(n) && n > 0) buckets[fuelCode].push(n)
+        }
+      }
+      stats = {}
+      for (const fuelCode of Object.keys(buckets)) {
+        const arr = buckets[fuelCode]
+        if (arr.length === 0) continue
+        const sum = arr.reduce((a, b) => a + b, 0)
+        stats[fuelCode] = {
+          min:   Math.min(...arr),
+          max:   Math.max(...arr),
+          avg:   sum / arr.length,
+          count: arr.length,
+        }
+      }
+    }
+  } catch (err) {
+    // Fallo de snapshot: seguimos renderizando sin stats (degradacion
+    // elegante — la pagina sigue funcionando, solo pierde la descripcion
+    // enriquecida).
+    slog('warn', 'seo.stats_failed', { slug, err: String(err).slice(0, 200) })
+  }
+
   return new Response(buildPage(nonce, c.req.url, {
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
     seo: {
       provinciaId: prov.id,
       provinciaSlug: prov.slug,
       provinciaName: prov.name,
+      stats,
+      stationCount: stationCount || undefined,
     },
   }), { headers: pageHeaders(nonce, turnstile) })
 })

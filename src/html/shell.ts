@@ -9,6 +9,13 @@ export interface SeoContext {
   provinciaId?: string
   provinciaSlug?: string
   provinciaName?: string
+  // Estadisticas de precios pre-computadas server-side. Si vienen, las usamos
+  // para enriquecer meta description + JSON-LD Dataset + una seccion visible
+  // al final del body (clave para ranking: el snapshot del crawler tiene
+  // texto relevante con el nombre de la provincia y el rango de precios).
+  // Keys: codigo de combustible ('95','98','diesel','diesel_plus').
+  stats?: Record<string, { min: number; avg: number; max: number; count: number }>
+  stationCount?: number
   // Futuro: municipioId / municipioSlug / municipioName
 }
 
@@ -34,8 +41,18 @@ export function buildPage(
   const pageTitle = seo?.provinciaName
     ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
     : 'Gasolineras España · Precios oficiales en tiempo real'
+  // Description enriquecida cuando hay stats: incluye precio min-max de 95 y
+  // numero de estaciones — mejora CTR en SERP y le da a Google material
+  // ranqueable ("precio gasolina madrid" matchea directamente).
+  const stats95 = seo?.stats?.['95']
   const pageDesc = seo?.provinciaName
-    ? 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
+    ? (stats95 && stats95.count >= 5
+        ? 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName +
+          '. Gasolina 95 desde ' + stats95.min.toFixed(3) + '€ hasta ' + stats95.max.toFixed(3) + '€ (media ' + stats95.avg.toFixed(3) + '€). ' +
+          (seo.stationCount ? seo.stationCount + ' estaciones. ' : '') +
+          'Mapa interactivo y datos oficiales del Ministerio.'
+        : 'Precios actualizados de gasolina y diésel en ' + seo.provinciaName + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
+      )
     : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica.'
   const ogTitle = seo?.provinciaName
     ? 'Gasolineras en ' + seo.provinciaName + ' · Precios oficiales'
@@ -150,6 +167,29 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       creator: { '@type': 'GovernmentOrganization', name: 'Ministerio para la Transición Ecológica y el Reto Demográfico' },
       spatialCoverage: { '@type': 'Place', name: seo?.provinciaName || 'España' },
       inLanguage: 'es',
+      // variableMeasured: una entry por combustible con stats reales. Google
+      // y Dataset Search leen esto para indexar metricas concretas — asi un
+      // query "precio diesel Madrid" matchea este dataset con valor numerico.
+      variableMeasured: seo?.stats
+        ? Object.keys(seo.stats).map(fuelCode => {
+            const s = seo.stats![fuelCode]
+            const readableName: Record<string, string> = {
+              '95':          'Gasolina 95 E5',
+              '98':          'Gasolina 98 E5',
+              'diesel':      'Gasóleo A',
+              'diesel_plus': 'Gasóleo Premium',
+            }
+            return {
+              '@type': 'PropertyValue',
+              name:  readableName[fuelCode] || fuelCode,
+              unitCode: 'LTR',
+              unitText: '€/L',
+              minValue: s.min.toFixed(3),
+              maxValue: s.max.toFixed(3),
+              value:    s.avg.toFixed(3),
+            }
+          })
+        : undefined,
     },
     ...faqPage,
     ...breadcrumbs,
@@ -803,6 +843,45 @@ ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intr
      data-callback="__onTsOk"
      data-expired-callback="__onTsExpired"
      aria-hidden="true"></div>` : ''}
+
+${seo?.provinciaName && seo?.stats && seo.stats['95'] && seo.stats['95'].count >= 5 ? `
+<!-- Bloque SEO estatico: resumen de precios en la provincia. Se renderiza al
+     final del DOM para no desplazar el mapa/sidebar (que son lo que el
+     usuario quiere ver primero). Los crawlers sin ejecucion de JS lo leen y
+     obtienen texto canonico con el nombre de la provincia + precios reales
+     — clave para rankear queries tipo "precio gasolina madrid". -->
+<section class="seo-summary" aria-labelledby="seo-h2" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+  <h2 id="seo-h2" style="font-size:20px;color:#14532d;margin:0 0 12px">Precios de combustible en ${seo.provinciaName}</h2>
+  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${seo.provinciaName}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;max-width:640px">
+    <thead><tr>
+      <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Combustible</th>
+      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Más barato</th>
+      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Medio</th>
+      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Más caro</th>
+    </tr></thead>
+    <tbody>
+      ${(() => {
+        const labels: Record<string, string> = {
+          '95':          'Gasolina 95',
+          '98':          'Gasolina 98',
+          'diesel':      'Gasóleo A',
+          'diesel_plus': 'Gasóleo Premium',
+        }
+        return Object.keys(seo!.stats!).filter(k => seo!.stats![k].count >= 3).map(fuelCode => {
+          const s = seo!.stats![fuelCode]
+          return '<tr>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">' + (labels[fuelCode] || fuelCode) + '</td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace">' + s.min.toFixed(3) + ' €</td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace"><strong>' + s.avg.toFixed(3) + ' €</strong></td>'
+            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace">' + s.max.toFixed(3) + ' €</td>'
+            + '</tr>'
+        }).join('')
+      })()}
+    </tbody>
+  </table>
+  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo.stationCount ? seo.stationCount + ' estaciones activas en ' + seo.provinciaName + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+</section>` : ''}
 
 ${getClientScript(nonce, APP_VERSION)}
 </body>

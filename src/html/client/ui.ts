@@ -417,6 +417,35 @@ async function bootApp() {
     await applyQueryState(st);
     try { await loadStations(); } catch(_) {}
   }
+  // Ship 4: acciones rapidas desde Manifest shortcuts (?action=...).
+  // Soportadas: geolocate (cerca de mi), route (abrir planificador), favs
+  // (abrir modal favoritos), cheapest (sort por precio + primera provincia).
+  // Se ejecuta despues del bootstrap para que todos los handlers esten
+  // registrados. El delay es mas defensivo que necesario pero evita races
+  // con initMap/loadProvincias.
+  try {
+    var action = new URLSearchParams(location.search).get('action');
+    if (action) {
+      setTimeout(function() {
+        if (action === 'geolocate') {
+          var btn = document.getElementById('btn-geolocate');
+          if (btn) btn.click();
+        } else if (action === 'route') {
+          var btn = document.getElementById('btn-route');
+          if (btn) btn.click();
+        } else if (action === 'favs') {
+          var btn = document.getElementById('btn-favs');
+          if (btn) btn.click();
+        } else if (action === 'cheapest') {
+          // Ordena por precio y geolocaliza para contextualizar a la zona.
+          var sel = document.getElementById('sel-orden');
+          if (sel) { sel.value = 'asc'; sel.dispatchEvent(new Event('change')); }
+          var gbtn = document.getElementById('btn-geolocate');
+          if (gbtn) gbtn.click();
+        }
+      }, 300);
+    }
+  } catch (_) { /* no-op */ }
 }
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', function() { bootApp(); });

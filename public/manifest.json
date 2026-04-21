@@ -20,6 +20,27 @@
       "description": "Gasolineras cercanas a tu ubicación",
       "url": "/?action=geolocate",
       "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Más baratas cerca",
+      "short_name": "Más barata",
+      "description": "Ordenadas por precio ascendente cerca de tu ubicación",
+      "url": "/?action=cheapest",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Planificar ruta",
+      "short_name": "Ruta",
+      "description": "Abre el planificador de ruta con paradas óptimas",
+      "url": "/?action=route",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Mis favoritas",
+      "short_name": "Favoritas",
+      "description": "Abre la lista de gasolineras favoritas",
+      "url": "/?action=favs",
+      "icons": [{ "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "categories": ["utilities", "travel", "navigation"],

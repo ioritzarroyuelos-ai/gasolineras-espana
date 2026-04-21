@@ -1,0 +1,132 @@
+name: uptime-monitor — sonda externa de /api/health + /api/export
+
+# Monitor externo que corre en GitHub Actions, independiente de Cloudflare.
+# Sirve para detectar:
+#   - API caida (500/5xx, timeout)
+#   - Snapshot stale (health.stale=true -> 503)
+#   - /api/export devolviendo cosas raras (JSON en vez de CSV, 0 filas, etc.)
+#
+# Cadencia: cada 30 min. Mas frecuente seria derrochar minutos de Actions y
+# no ayuda — el usuario detecta un fallo "real" en menos de 30 min si la app
+# no carga. Esto es red de seguridad, no substitucion de uptimerobot.
+#
+# Al fallar, notifica a Telegram (mismo bot que error-monitor) con detalle
+# del fallo. No hace retry — si el fallo es transitorio, el siguiente tick
+# lo vera resuelto; si es persistente, spameariamos el chat.
+#
+# Secrets requeridos (mismos que error-monitor):
+#   TELEGRAM_BOT_TOKEN     token de @BotFather
+#   TELEGRAM_CHAT_ID       chat al que enviar
+#
+# Variables:
+#   PUBLIC_ORIGIN          https://webapp-3ft.pages.dev (opcional, default OK)
+
+on:
+  schedule:
+    # Cada 30 min. Usamos minutos 7 y 37 en lugar de 0 y 30 para evitar pile-up
+    # con otros workflows del repo que empiezan en :00 (cron-ingest, etc.).
+    - cron: '7,37 * * * *'
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: 'Enviar OK a Telegram para probar el canal'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: uptime-monitor
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe /api/health + /api/export
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUBLIC_ORIGIN:      ${{ vars.PUBLIC_ORIGIN }}
+          FORCE_NOTIFY:       ${{ github.event.inputs.force_notify }}
+        run: |
+          set -uo pipefail  # no -e: queremos capturar fallos, no abortar
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
+          FAILURES=()
+
+          # ---- 1. /api/health ----
+          echo "::group::/api/health"
+          HEALTH_RESP=$(curl -sS -m 20 -o /tmp/health.json -w '%{http_code}' "$ORIGIN/api/health" || echo "000")
+          HEALTH_BODY=$(cat /tmp/health.json 2>/dev/null || echo '{}')
+          echo "status=$HEALTH_RESP"
+          echo "body=$HEALTH_BODY"
+          echo "::endgroup::"
+          if [ "$HEALTH_RESP" != "200" ]; then
+            FAILURES+=("health: HTTP $HEALTH_RESP · body=$(echo "$HEALTH_BODY" | head -c 200)")
+          fi
+
+          # ---- 2. /api/export (fuel=95, sin provincia) ----
+          # Suficiente para validar que el endpoint responde CSV real. No
+          # descargamos todo (serian varios MB); solo cabeceras + primera linea
+          # via --range. Si el servidor no soporta range, -N nos devuelve el
+          # body entero y lo acotamos con head.
+          echo "::group::/api/export?fuel=95&provincia=48"
+          EXPORT_RESP=$(curl -sS -m 30 -H "Origin: $ORIGIN" -o /tmp/export.csv -w '%{http_code}|%{content_type}' "$ORIGIN/api/export?fuel=95&provincia=48" || echo "000|")
+          EXPORT_CODE="${EXPORT_RESP%%|*}"
+          EXPORT_CT="${EXPORT_RESP##*|}"
+          EXPORT_FIRST_LINE=$(head -n1 /tmp/export.csv 2>/dev/null || echo '')
+          EXPORT_LINES=$(wc -l < /tmp/export.csv 2>/dev/null || echo 0)
+          echo "status=$EXPORT_CODE  content-type=$EXPORT_CT  lines=$EXPORT_LINES"
+          echo "first=$EXPORT_FIRST_LINE"
+          echo "::endgroup::"
+          if [ "$EXPORT_CODE" != "200" ]; then
+            FAILURES+=("export: HTTP $EXPORT_CODE")
+          elif [[ "$EXPORT_CT" != text/csv* ]]; then
+            FAILURES+=("export: content-type='$EXPORT_CT' (esperado text/csv)")
+          elif [ "$EXPORT_LINES" -lt 2 ]; then
+            # Al menos 1 linea de cabecera + 1 de datos
+            FAILURES+=("export: solo $EXPORT_LINES lineas (esperado >=2)")
+          elif ! echo "$EXPORT_FIRST_LINE" | grep -q '^ideess,rotulo'; then
+            FAILURES+=("export: cabecera inesperada '$EXPORT_FIRST_LINE'")
+          fi
+
+          # ---- 3. /status HTML ----
+          echo "::group::/status"
+          STATUS_RESP=$(curl -sS -m 20 -o /tmp/status.html -w '%{http_code}' "$ORIGIN/status" || echo "000")
+          STATUS_HAS_LABEL=$(grep -c 'status-label' /tmp/status.html 2>/dev/null || echo 0)
+          echo "status=$STATUS_RESP  has_label=$STATUS_HAS_LABEL"
+          echo "::endgroup::"
+          # /status devuelve 503 cuando stale — lo contamos como FAIL solo
+          # cuando health tambien fallo (ya capturado). Aqui solo validamos
+          # que renderice HTML.
+          if [ "$STATUS_HAS_LABEL" -eq 0 ]; then
+            FAILURES+=("status: no renderiza (no contiene 'status-label')")
+          fi
+
+          # ---- Notify Telegram ----
+          if [ ${#FAILURES[@]} -gt 0 ]; then
+            MSG=$'\u26a0\ufe0f Uptime FAIL en Gasolineras España\n\n'
+            for f in "${FAILURES[@]}"; do
+              MSG+="• $f"$'\n'
+            done
+            MSG+=$'\nRun: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+              curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "text=${MSG}" \
+                --data-urlencode "disable_web_page_preview=true" > /dev/null || echo "::warning::Telegram send failed"
+            fi
+            echo "::error::Uptime probe failed: ${#FAILURES[@]} fallo(s)"
+            exit 1
+          fi
+
+          # Solo notificamos OK si el usuario lo pidio explicitamente.
+          if [ "${FORCE_NOTIFY:-false}" = "true" ]; then
+            if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+              curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+                --data-urlencode "text=\u2705 Uptime probe OK · health=$HEALTH_RESP · export=$EXPORT_CODE · status=$STATUS_RESP" > /dev/null || true
+            fi
+          fi
+          echo "::notice::Todas las sondas OK."

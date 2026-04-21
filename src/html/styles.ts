@@ -636,6 +636,23 @@ export function getStyles(nonce: string = ''): string {
     .route-mode-bar-exit:hover { background: #134e4a; }
     body.dark .route-mode-bar { background: rgba(6, 95, 70, 0.95); }
 
+    /* Toggle "Ver todas en ruta" dentro del banner flotante. Mismo lenguaje
+       visual que el boton de salida, pero en tono claro (outline) cuando
+       esta off y tono solido cuando esta on (aria-pressed). Asi el usuario
+       ve de un vistazo si el mapa esta en "solo paradas" vs "todas". */
+    .route-mode-bar-corridor {
+      cursor: pointer; background: transparent; color: #ecfeff;
+      border: 1px solid rgba(255,255,255,0.45); border-radius: 999px;
+      padding: 4px 10px; font-size: 12px; font-weight: 700;
+      transition: background .15s ease, color .15s ease;
+      white-space: nowrap;
+    }
+    .route-mode-bar-corridor:hover { background: rgba(255,255,255,0.1); }
+    .route-mode-bar-corridor[aria-pressed="true"] {
+      background: #ecfeff; color: #0f766e; border-color: #ecfeff;
+    }
+    .route-mode-bar-corridor[aria-pressed="true"]:hover { background: #cffafe; }
+
     /* Bloque de deep-links a apps de navegacion, en el banner flotante.
        Se oculta si no hay origen/destino confirmado. Colores de marca para
        que sean inmediatamente reconocibles sobre el banner teal. */
@@ -669,6 +686,7 @@ export function getStyles(nonce: string = ''): string {
       .route-mode-bar-nav { flex-wrap: wrap; justify-content: center; width: 100%; }
       .route-mode-bar-nav a { padding: 4px 8px; font-size: 11px; }
       .route-mode-bar-nav::before { display: none; }
+      .route-mode-bar-corridor { padding: 4px 8px; font-size: 11px; }
     }
 
     /* Botonera "Abrir ruta en..." dentro del panel del plan. */

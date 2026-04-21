@@ -589,6 +589,18 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <a id="nav-amaps" href="#" target="_blank" rel="noopener" title="Abrir ruta en Apple Maps">Apple</a>
         <a id="nav-waze"  href="#" target="_blank" rel="noopener" title="Abrir destino en Waze (no admite paradas)">Waze</a>
       </span>
+      <!-- Toggle para mostrar TODAS las gasolineras del corredor, no solo las
+           paradas recomendadas. Util cuando el plan propuesto no cuadra (ej.
+           el usuario ya sabe que quiere una marca concreta o una estacion
+           con aseos). aria-pressed refleja el estado; se hidrata desde JS. -->
+      <button id="route-mode-bar-corridor"
+              class="route-mode-bar-corridor"
+              type="button"
+              aria-pressed="false"
+              aria-label="Mostrar todas las gasolineras del corredor de la ruta"
+              title="Ver todas las gasolineras en el trayecto (no solo las paradas recomendadas)">
+        <span id="route-mode-bar-corridor-label">Ver todas en ruta</span>
+      </button>
       <button id="route-mode-bar-exit" class="route-mode-bar-exit" type="button">Salir de la ruta</button>
     </div>
 

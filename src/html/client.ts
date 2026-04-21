@@ -922,6 +922,9 @@ var minP = 0, maxP = 0;
 // exacto para poder desmontarlo limpiamente al salir.
 var routeLayer = null;         // L.polyline con la ruta real
 var routeStopsLayer = null;    // L.layerGroup con los marcadores numerados de las paradas
+var routeCorridorLayer = null; // L.layerGroup con TODAS las gasolineras del corredor (toggle)
+var routeCorridor = [];        // array de { item, kmFromOrigin, offKm, priceEurL } del corredor
+var routeCorridorVisible = false;  // estado del toggle "ver todas en ruta"
 var routeModeActive = false;   // estado para evitar doble-entrada
 
 // Estado nuevo: posicion del usuario (tras geolocalizar), ahorro.
@@ -4194,7 +4197,10 @@ var routeNavStops = null;
 // Entra en modo-ruta: oculta los marcadores generales, dibuja la polilinea y
 // los marcadores numerados de las paradas recomendadas, y centra el mapa.
 // Guarda los layers para poder desmontarlos al salir.
-function enterRouteMode(coords, stops, from, to) {
+// allCorridor: array opcional de estaciones del corredor (proyectadas con
+// kmFromOrigin/offKm/priceEurL). Se almacena para permitir al usuario toggle
+// "ver todas las gasolineras en ruta" sin recalcular la proyeccion.
+function enterRouteMode(coords, stops, from, to, allCorridor) {
   if (!map) return;
   // Oculta el cluster general; al salir lo volveremos a enganchar.
   if (clusterGroup && map.hasLayer(clusterGroup)) {
@@ -4203,6 +4209,10 @@ function enterRouteMode(coords, stops, from, to) {
   // Limpia layers previos de una ruta anterior si existiera.
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   if (routeStopsLayer) { map.removeLayer(routeStopsLayer); routeStopsLayer = null; }
+  if (routeCorridorLayer) { map.removeLayer(routeCorridorLayer); routeCorridorLayer = null; }
+  routeCorridor = Array.isArray(allCorridor) ? allCorridor : [];
+  routeCorridorVisible = false;
+  updateCorridorToggleUI();
 
   // Guarda contexto para re-generar deep-links (Waze secuencial, etc.).
   routeNavFrom = from || null;
@@ -4273,21 +4283,137 @@ function enterRouteMode(coords, stops, from, to) {
 function exitRouteMode() {
   if (routeLayer) { try { map.removeLayer(routeLayer); } catch (e) {} routeLayer = null; }
   if (routeStopsLayer) { try { map.removeLayer(routeStopsLayer); } catch (e) {} routeStopsLayer = null; }
+  if (routeCorridorLayer) { try { map.removeLayer(routeCorridorLayer); } catch (e) {} routeCorridorLayer = null; }
   if (map && clusterGroup && !map.hasLayer(clusterGroup)) {
     map.addLayer(clusterGroup);
   }
   var bar = document.getElementById('route-mode-bar');
   if (bar) bar.classList.remove('show');
   routeModeActive = false;
+  routeCorridor = [];
+  routeCorridorVisible = false;
+  updateCorridorToggleUI();
   routeNavFrom = null;
   routeNavTo = null;
   routeNavStops = null;
+}
+
+// Refresca el estado visual del boton "Ver todas en ruta" en el banner
+// flotante. Lo llamamos cuando entramos/salimos de modo ruta y cuando el
+// usuario alterna el toggle. Si no hay corredor (p.ej. no se planifico
+// ninguna ruta aun), deshabilitamos el boton en vez de ocultarlo — asi el
+// usuario ve que la opcion existe.
+function updateCorridorToggleUI() {
+  var btn = document.getElementById('route-mode-bar-corridor');
+  var label = document.getElementById('route-mode-bar-corridor-label');
+  if (!btn) return;
+  var n = routeCorridor.length;
+  btn.setAttribute('aria-pressed', routeCorridorVisible ? 'true' : 'false');
+  if (label) {
+    if (n === 0) {
+      label.textContent = 'Ver todas en ruta';
+    } else if (routeCorridorVisible) {
+      label.textContent = 'Ocultar corredor (' + n + ')';
+    } else {
+      label.textContent = 'Ver todas en ruta (' + n + ')';
+    }
+  }
+  btn.disabled = n === 0;
+}
+
+// Pinta o limpia los marcadores del corredor completo. Usa el mismo estilo
+// de icono que los markers del mapa principal (makeIcon con color dinamico)
+// para que el usuario reconozca de un vistazo el precio. Las paradas
+// recomendadas siguen visibles encima (zIndexOffset mayor).
+function renderRouteCorridorLayer() {
+  if (!map) return;
+  if (routeCorridorLayer) {
+    try { map.removeLayer(routeCorridorLayer); } catch (e) {}
+    routeCorridorLayer = null;
+  }
+  if (!routeCorridorVisible || routeCorridor.length === 0) return;
+  // Recalculamos minP/maxP del corredor solo para colorear (no tocamos los
+  // globales minP/maxP — esos son del listado filtrado general).
+  var prices = routeCorridor.map(function(c) { return c.priceEurL; }).filter(function(p) { return p > 0; });
+  var cmin = prices.length ? Math.min.apply(null, prices) : 0;
+  var cmax = prices.length ? Math.max.apply(null, prices) : 0;
+  var range = cmax - cmin;
+  function localColor(p) {
+    if (!p) return 'gray';
+    if (range < 0.001) return 'green';
+    var pct = (p - cmin) / range;
+    if (pct < 0.33) return 'green';
+    if (pct < 0.66) return 'yellow';
+    return 'red';
+  }
+  var stopIds = {};
+  (routeNavStops || []).forEach(function(st) {
+    if (st && st.item) stopIds[stationId(st.item)] = true;
+  });
+  var group = L.layerGroup();
+  var fuel = document.getElementById('sel-combustible').value;
+  routeCorridor.forEach(function(c) {
+    var s = c.item;
+    var pos = stationLatLng(s);
+    if (!pos) return;
+    var id = stationId(s);
+    // No repintar las estaciones que ya son paradas recomendadas (ya tienen
+    // un marker numerado mucho mas visible). Solo las "otras" del corredor.
+    if (stopIds[id]) return;
+    var icon = makeIcon(localColor(c.priceEurL), c.priceEurL);
+    var m = L.marker([pos.lat, pos.lng], {
+      icon: icon,
+      zIndexOffset: 300,
+      _price: c.priceEurL
+    });
+    // Mismo popup que el marcador general — asi el usuario puede "Guardar",
+    // "Compartir", "Comparar", etc. sin salir del modo ruta.
+    m.bindPopup(buildPopup(s), { maxWidth: 300, className: 'custom-popup' });
+    (function(station) {
+      var stIdLocal = stationId(station);
+      m.on('popupopen', function(e) {
+        markVisited(stIdLocal);
+        var p = parsePrice(station[fuel]);
+        if (p) pushHistoryPoint(stIdLocal, fuel, p);
+        try {
+          var node = e.popup && e.popup._contentNode;
+          if (!node) return;
+          var panel = node.querySelector('[data-hist-station]');
+          if (panel) renderHistoryPanel(panel, 30);
+          var predSlot = node.querySelector('[data-predict-station]');
+          if (predSlot) {
+            var predSt = predSlot.getAttribute('data-predict-station');
+            var predFuel = predSlot.getAttribute('data-predict-fuel');
+            var predCur = parseFloat(predSlot.getAttribute('data-predict-current') || '');
+            fetchPredict(predSt, predFuel, isFinite(predCur) ? predCur : null).then(function(pred) {
+              if (!pred) { predSlot.innerHTML = ''; return; }
+              predSlot.innerHTML = predictBadgeHTML(pred);
+            });
+          }
+        } catch (_) {}
+      });
+    })(s);
+    group.addLayer(m);
+  });
+  group.addTo(map);
+  routeCorridorLayer = group;
+}
+
+function toggleRouteCorridor() {
+  if (routeCorridor.length === 0) return;
+  routeCorridorVisible = !routeCorridorVisible;
+  renderRouteCorridorLayer();
+  updateCorridorToggleUI();
+  // Anuncio accesible: el banner es aria-live=polite, asi que actualizar
+  // el texto lo lee automaticamente en screen-readers.
 }
 
 // Hook del boton de salida del banner flotante (existe siempre en el DOM).
 (function() {
   var exitBtn = document.getElementById('route-mode-bar-exit');
   if (exitBtn) exitBtn.addEventListener('click', exitRouteMode);
+  var corrBtn = document.getElementById('route-mode-bar-corridor');
+  if (corrBtn) corrBtn.addEventListener('click', toggleRouteCorridor);
 })();
 
 (function() {
@@ -5035,8 +5161,10 @@ function exitRouteMode() {
       // 6. Entra en modo-ruta en el mapa: polilinea (posiblemente ya con
       // waypoints) + SOLO las paradas recomendadas (el usuario pidio
       // explicitamente ver solo las que debe repostar). Pasamos fromSel/toSel
-      // para construir los deep-links a Google/Apple/Waze Maps.
-      enterRouteMode(finalCoords, planResult.stops, fromSel, toSel);
+      // para construir los deep-links a Google/Apple/Waze Maps. El 5o
+      // argumento es el corredor completo (todas las gasolineras dentro del
+      // ancho usado), que se enchufa al toggle "Ver todas en ruta" del banner.
+      enterRouteMode(finalCoords, planResult.stops, fromSel, toSel, corridor);
 
       // Re-renderiza el plan con el bloque de botones de navegacion ahora
       // que tenemos from/to disponibles.

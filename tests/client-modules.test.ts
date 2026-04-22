@@ -122,6 +122,8 @@ describe('simbolos criticos presentes en el bundle', () => {
     // Ship 15: freshness badge + national stats widget.
     { name: 'function initFreshnessBadge',       in: ['core'] },
     { name: 'function initNationalStatsWidget', in: ['core'] },
+    // Ship 19: predict badge en top-3 cards del listado.
+    { name: 'function renderPredictSlots',       in: ['list'] },
   ]
   const modules: Record<string, string> = {
     core:     clientCoreScript,

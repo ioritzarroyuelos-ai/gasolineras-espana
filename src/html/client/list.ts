@@ -295,6 +295,19 @@ function cardHTML(s, i, fuel, fuelLabel) {
     }
   }
 
+  // Ship 19: predict slot SOLO en top-3 (medallas). Motivo: el predict cuesta
+  // una llamada a D1 + 1 RTT por estacion y la mayoria de usuarios solo mira
+  // las baratas del listado. Lanzar predict para 100+ cards es overkill y
+  // quemaria el rate-limit de /api/predict. Las top-3 son el segmento donde
+  // el badge aporta mas (el usuario esta a 1 tap de elegir esa estacion y
+  // quiere saber si su precio es realmente bueno vs ciclo semanal).
+  var predictSlot = '';
+  if (topCheapIds[id] && price && id) {
+    // data-predict="1" lo busca renderPredictSlots(). data-price permite
+    // al endpoint calcular percentil sin segunda query a D1.
+    predictSlot = '<span class="predict-slot" data-predict="1" data-sid="' + esc(id) + '" data-fuel="' + esc(fuel) + '" data-price="' + price.toFixed(3) + '"></span>';
+  }
+
   // Horario vivo
   var statusHtml = '';
   var status = isOpenNow(s['Horario']);
@@ -331,7 +344,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
     + '<div class="card-title">' + medal + '\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + distHtml + '</div>'
     + '<div class="card-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + '</div>'
     + '<div class="card-time">\u{1F550} ' + horarioCard(s['Horario']) + statusHtml + '</div>'
-    + (savingsHtml || anomalyHtml ? '<div class="u-mt-3">' + savingsHtml + (savingsHtml && anomalyHtml ? ' ' : '') + anomalyHtml + '</div>' : '')
+    + (savingsHtml || anomalyHtml || predictSlot ? '<div class="u-mt-3">' + savingsHtml + (savingsHtml && (anomalyHtml || predictSlot) ? ' ' : '') + anomalyHtml + (anomalyHtml && predictSlot ? ' ' : '') + predictSlot + '</div>' : '')
     + '</div>'
     + '<div class="row-info-right">'
     + priceEl
@@ -351,6 +364,35 @@ function appendPage() {
   listOffset += slice.length;
   var sentinel = list.querySelector('#list-sentinel');
   if (sentinel) sentinel.style.display = listOffset >= listStations.length ? 'none' : 'block';
+  // Ship 19: rellenamos los predict slots que se hayan insertado en esta
+  // pagina. Como el primer appendPage trae las top-3, tipicamente hay 3
+  // slots pero si el usuario pagina mas alla no hay ninguno — no pasa nada,
+  // el selector se salta silent.
+  renderPredictSlots();
+}
+
+// Ship 19: lanza un fetchPredict por cada .predict-slot nuevo (data-predict="1"),
+// pinta el badge resultado y marca el slot como "done" (data-predict="0") para
+// que re-renders posteriores no vuelvan a pedirlo. fetchPredict tiene su propio
+// cache in-memory — esto es solo el controlador UI. Errores de red caen a
+// badge vacio (sin ruido). data-fuel trae la etiqueta larga del Ministerio
+// ("Precio Gasolina 95 E5"); fetchPredict mapea internamente a codigo corto.
+function renderPredictSlots() {
+  var slots = document.querySelectorAll('.predict-slot[data-predict="1"]');
+  if (!slots.length) return;
+  for (var i = 0; i < slots.length; i++) {
+    (function(el) {
+      el.setAttribute('data-predict', '0');  // lock antes de fetch (evita doble-fire)
+      var sid = el.getAttribute('data-sid') || '';
+      var fuelLabel = el.getAttribute('data-fuel') || '';
+      var price = parseFloat(el.getAttribute('data-price') || '');
+      if (!sid || !fuelLabel || !isFinite(price)) return;
+      fetchPredict(sid, fuelLabel, price).then(function(pred) {
+        if (!pred) return;
+        el.innerHTML = predictBadgeHTML(pred);
+      }).catch(function() { /* silencioso */ });
+    })(slots[i]);
+  }
 }
 
 function renderList(stations) {

@@ -512,7 +512,7 @@ function showToast(msg, type) {
         parts.push('<div>Di\u00E9sel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
       }
       if (daysN > 0) {
-        parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">vs. media ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
+        parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">comparado con media de los \u00FAltimos ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
       }
       // innerHTML seguro: los valores numericos vienen de /api/stats/national
       // (servidor) con rangos validados; no hay texto libre del usuario.

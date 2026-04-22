@@ -736,18 +736,24 @@ app.get('/robots.txt', c => {
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
 })
 
-// ---- SEO: sitemap.xml (home + 52 provincias + top municipios + privacidad) ----
+// ---- SEO: sitemap.xml (home + 52 provincias + TODOS los municipios >=5 + privacidad) ----
 // Ship 11: se añaden los top-10 municipios por provincia (filtrados a
-// estaciones >=5 para no contaminar el indice con aldeas). Se sirve async
-// porque necesitamos leer el snapshot para saber nombres+counts. Si falla,
-// degrademos al sitemap minimo (home + provincias).
+// estaciones >=5 para no contaminar el indice con aldeas).
+// Ship 18: expandimos a TODOS los municipios que pasen el minStations=5 (no
+// solo top-10). El dataset tiene ~2500 municipios con >=5 estaciones — muy
+// por debajo del limite de 50k URLs por sitemap, asi que cabe de sobra. El
+// motivo: dejabamos ~90% de las urls municipio sin indexar por el slicing,
+// y esas son justamente las paginas long-tail donde esta la mayor parte del
+// trafico SEO potencial ("gasolineras en [mi pueblo]").
+// Ship 18: `lastmod` usa la fecha real del snapshot (Ministerio) en vez de
+// `today`. Asi Googlebot solo re-crawlea cuando el contenido cambia
+// efectivamente — mejor crawl budget.
 app.get('/sitemap.xml', async c => {
   const host = resolveHost(c)
   const scheme = resolveScheme(c)
   const base = scheme + '://' + host
   const today = new Date().toISOString().slice(0, 10)
   const entries: string[] = []
-  entries.push(`  <url><loc>${base}/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
   // Para agregar municipios al sitemap necesitamos el snapshot. Si falla,
   // seguimos emitiendo el sitemap basico — mejor parcialmente indexado que
   // vacio.
@@ -757,12 +763,24 @@ app.get('/sitemap.xml', async c => {
   } catch (err) {
     slog('warn', 'sitemap.snapshot_failed', { err: String(err).slice(0, 200) })
   }
+  // lastmod preferido: fecha del snapshot del Ministerio (formato
+  // "DD/MM/YYYY HH:mm:SS"). Fallback: hoy. Parseo defensivo — si el formato
+  // cambia, caemos a `today` sin romper el sitemap.
+  let snapLastmod = today
+  if (snap && typeof snap.Fecha === 'string') {
+    const m = snap.Fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
+    if (m) snapLastmod = `${m[3]}-${m[2]}-${m[1]}`
+  }
+  entries.push(`  <url><loc>${base}/</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
   for (const p of PROVINCIAS) {
-    entries.push(`  <url><loc>${base}/gasolineras/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>`)
+    entries.push(`  <url><loc>${base}/gasolineras/${p.slug}</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>`)
     if (snap) {
-      const munis = topMunicipiosInProvincia(snap, p.id, { limit: 10, minStations: 5 })
+      // Ship 18: todos los municipios con >=5 estaciones, no solo top-10.
+      // Usamos el limit alto (10k) efectivamente para decir "sin limite por
+      // provincia". Sigue aplicando minStations=5.
+      const munis = topMunicipiosInProvincia(snap, p.id, { limit: 10000, minStations: 5 })
       for (const m of munis) {
-        entries.push(`  <url><loc>${base}/gasolineras/${p.slug}/${m.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.6</priority></url>`)
+        entries.push(`  <url><loc>${base}/gasolineras/${p.slug}/${m.slug}</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.6</priority></url>`)
       }
     }
   }

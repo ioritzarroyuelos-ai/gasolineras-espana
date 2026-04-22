@@ -394,12 +394,29 @@ function appendPage() {
   var list = document.getElementById('station-list');
   var fuel = document.getElementById('sel-combustible').value;
   var fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text.replace(/^\S+\s*/, '');
-  var slice = listStations.slice(listOffset, listOffset + PAGE_SIZE);
-  if (!slice.length) return;
-  var frag = slice.map(function(s, j) { return cardHTML(s, listOffset + j, fuel, fuelLabel); }).join('');
-  list.insertAdjacentHTML('beforeend', frag);
-  listOffset += slice.length;
   var sentinel = list.querySelector('#list-sentinel');
+  var slice = listStations.slice(listOffset, listOffset + PAGE_SIZE);
+  if (!slice.length) {
+    // Ship 25.3: no quedan mas — ocultamos el sentinel explicitamente. Sin este
+    // branch, si el observer dispara con listOffset == listStations.length (p.ej.
+    // cuando el ultimo appendPage dejo justo todo cargado y el sentinel seguia
+    // intersectando), slice.length es 0 y retornamos sin ocultarlo — "Cargando
+    // mas..." se quedaba visible para siempre.
+    if (sentinel) sentinel.style.display = 'none';
+    return;
+  }
+  var frag = slice.map(function(s, j) { return cardHTML(s, listOffset + j, fuel, fuelLabel); }).join('');
+  // Ship 25.3: insertamos las cards ANTES del sentinel para que "Cargando mas..."
+  // quede siempre al FINAL de la lista (comportamiento estandar de infinite
+  // scroll). Antes se usaba list.insertAdjacentHTML('beforeend'), que metia
+  // las cards DESPUES del sentinel — este se quedaba pegado arriba del todo
+  // y el usuario veia "Cargando mas..." al principio de la lista (confuso).
+  if (sentinel) {
+    sentinel.insertAdjacentHTML('beforebegin', frag);
+  } else {
+    list.insertAdjacentHTML('beforeend', frag);
+  }
+  listOffset += slice.length;
   if (sentinel) sentinel.style.display = listOffset >= listStations.length ? 'none' : 'block';
   // Ship 19: rellenamos los predict slots que se hayan insertado en esta
   // pagina. Como el primer appendPage trae las top-3, tipicamente hay 3

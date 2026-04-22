@@ -8,7 +8,23 @@ export function getStyles(nonce: string = ''): string {
   return `<style${nonceAttr}>
     /* ===== RESET & BASE ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f8fafc; }
+    /* Scroll vertical habilitado en body (antes era overflow:hidden en html/body
+       lo que hacia el contenido SEO bajo el app inalcanzable — ver .seo-summary
+       / .seo-faq / .seo-municipios). Ahora el "primer pliegue" sigue siendo el
+       app (header + app-body fijos al viewport) y el resto queda below-fold
+       accesible por scroll normal. overflow-x:hidden evita scroll horizontal
+       accidental por algun elemento que rebase (leaflet tile buffer, etc.). */
+    html { height: 100%; }
+    body {
+      min-height: 100%;
+      width: 100%;
+      overflow-x: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #f8fafc;
+      /* padding-top reserva el espacio del header fijo para que el resto del
+         contenido (app-body + secciones SEO) no quede oculto debajo. */
+      padding-top: 60px;
+    }
 
     /* ===== LAYOUT PRINCIPAL ===== */
     #app-header {
@@ -18,8 +34,12 @@ export function getStyles(nonce: string = ''): string {
       display: flex; align-items: center; padding: 0 16px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     }
+    /* app-body ocupa exactamente 1 viewport menos el header => primera pantalla
+       = mapa + sidebar a pantalla completa. Al scrollear, el usuario ve el
+       contenido SEO debajo (FAQ, tabla de precios por ambito, municipios). */
     #app-body {
-      position: fixed; top: 60px; left: 0; right: 0; bottom: 0;
+      position: relative;
+      height: calc(100vh - 60px);
       display: flex; overflow: hidden;
     }
 
@@ -33,10 +53,21 @@ export function getStyles(nonce: string = ''): string {
       box-shadow: 2px 0 8px rgba(0,0,0,0.06);
       z-index: 100;
     }
+    /* Ship 25.3 — Sidebar filters NO debe dominar el alto del sidebar.
+       Antes: flex-shrink:0 + overflow-y:auto hacia que cuando el usuario
+       abria "Filtros avanzados", tenia el deposito, el widget de gasto
+       mensual y el boton Ko-fi renderizados, sidebar-filters crecia a
+       ~600-700px y station-list se quedaba con ~85px (sin aire visible
+       para las gasolineras). Con max-height:60% + flex:0 1 auto, los
+       filtros se auto-limitan a 60% del alto del sidebar (scroll interno
+       si hace falta) y station-list siempre tiene al menos un 40% de
+       espacio vertical — minimo garantizado via min-height:180px. */
     #sidebar-filters {
       padding: 12px; background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
-      overflow-y: auto; flex-shrink: 0;
+      overflow-y: auto;
+      flex: 0 1 auto;
+      max-height: 60%;
     }
     #stats-bar {
       padding: 8px 12px; background: #f0fdf4;
@@ -44,7 +75,7 @@ export function getStyles(nonce: string = ''): string {
       flex-shrink: 0; display: none;
     }
     #station-list {
-      flex: 1; overflow-y: auto;
+      flex: 1 1 auto; min-height: 180px; overflow-y: auto;
     }
     /* Ship 21: pull-to-refresh.
        El indicador esta colapsado (height:0) por defecto. El listener touch
@@ -203,12 +234,27 @@ export function getStyles(nonce: string = ''): string {
     #map-info {
       position:absolute; top:12px; left:12px; z-index:400;
       background:rgba(30,41,59,0.85); backdrop-filter:blur(6px);
-      border-radius:12px; padding:12px 16px; max-width:210px;
+      border-radius:12px; padding:12px 32px 12px 16px; max-width:210px;
       border:1px solid rgba(255,255,255,0.12);
       box-shadow:0 4px 16px rgba(0,0,0,0.25);
     }
     #map-info .info-title { color:#fff; font-weight:700; font-size:14px; margin-bottom:5px; }
     #map-info .info-desc { color:rgba(255,255,255,0.72); font-size:11px; line-height:1.5; }
+    /* Boton cerrar — 24x24 con area efectiva de 32x32 via padding; alineado al
+       angulo superior-derecho sin desplazar el contenido existente. */
+    #map-info .map-info-close {
+      position:absolute; top:4px; right:4px;
+      width:24px; height:24px;
+      background:transparent; border:0; padding:0;
+      color:rgba(255,255,255,0.55); font-size:18px; line-height:1;
+      cursor:pointer; border-radius:6px;
+      display:flex; align-items:center; justify-content:center;
+      transition:background 0.15s, color 0.15s;
+    }
+    #map-info .map-info-close:hover,
+    #map-info .map-info-close:focus-visible {
+      background:rgba(255,255,255,0.12); color:#fff; outline:none;
+    }
 
     /* ===== LEAFLET LAYER CONTROL ===== */
     .leaflet-control-layers { border-radius:10px !important; border:none !important; box-shadow:0 4px 16px rgba(0,0,0,0.15) !important; overflow:hidden; }
@@ -448,7 +494,8 @@ export function getStyles(nonce: string = ''): string {
     /* ---- Header compacto < 640px ---- */
     @media (max-width: 639px) {
       #app-header { height: 50px; padding: 0 10px; }
-      #app-body   { top: 50px; }
+      body        { padding-top: 50px; }
+      #app-body   { height: calc(100vh - 50px); }
       #sidebar    { top: 50px !important; height: calc(100% - 50px) !important; }
       .header-logo  { font-size: 18px; margin-right: 5px; }
       .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -474,6 +521,15 @@ export function getStyles(nonce: string = ''): string {
       #legend h4 { font-size: 11px; margin-bottom: 5px; }
       .legend-item { font-size: 11px; margin-bottom: 3px; }
       .legend-dot  { width: 10px; height: 10px; }
+      /* Install button: el CSS inline lo pone en bottom-right pero en mobile
+         el zoom +/- de Leaflet vive ahi. Lo subimos lo suficiente para no
+         tapar los controles de zoom (~80px de alto con margen). */
+      #btn-install-pwa {
+        bottom: 80px !important;
+        right: 8px !important;
+        font-size: 11px !important;
+        padding: 7px 12px !important;
+      }
     }
 
     /* ---- Formularios tactiles < 640px ---- */

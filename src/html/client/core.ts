@@ -248,7 +248,14 @@ function showToast(msg, type) {
     b.type = 'button';
     b.setAttribute('aria-label', 'Instalar aplicacion');
     b.textContent = '\u2B07 Instalar app';
-    b.style.cssText = 'position:fixed;bottom:16px;left:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
+    // Posicion: esquina inferior-derecha del mapa. Antes estaba bottom-left
+    // encima del sidebar y tapaba la primera card del station-list (bug
+    // elementsFromPoint devolvia .card-title debajo). Lo movemos al mapa
+    // donde no hay contenido critico. El CSS responsive en styles.ts
+    // ajusta posicion y tamano en mobile. La clase marker-hook permite
+    // overrides desde styles.ts (media queries) sin pelear con el inline.
+    b.className = 'pwa-install-btn';
+    b.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
     b.addEventListener('click', function() {
       if (!deferred) { b.remove(); return; }
       try {
@@ -315,6 +322,36 @@ function showToast(msg, type) {
       }
     }
   } catch(_) {}
+
+  // ---- Map-info callout (primer uso) ----
+  // El callout "Gasolineras en directo" es util la primera vez que el usuario
+  // ve el mapa, pero taparle el cuadrante NW cada visita sucesiva es ruido.
+  // Flag binaria: si el usuario lo cierra, localStorage guarda 'seen' y el
+  // callout no vuelve. No hay TTL — es info cosmetica, no proceso.
+  var MAP_INFO_KEY = 'map_info_dismissed';
+  function initMapInfoCallout() {
+    var card = document.getElementById('map-info');
+    if (!card) return;
+    try {
+      if (localStorage.getItem(MAP_INFO_KEY) === '1') {
+        card.remove();
+        return;
+      }
+    } catch(_) {}
+    var btn = document.getElementById('map-info-close');
+    if (btn) {
+      btn.addEventListener('click', function(ev) {
+        ev.stopPropagation();
+        card.remove();
+        try { localStorage.setItem(MAP_INFO_KEY, '1'); } catch(_) {}
+      });
+    }
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initMapInfoCallout);
+  } else {
+    initMapInfoCallout();
+  }
 })();
 
 // ---- FRESHNESS BADGE (Ship 15) ----

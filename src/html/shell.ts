@@ -525,6 +525,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 </head>
 <body>
 
+<!-- H1 semantico. En SEO pages (provincia/municipio) el <section class="seo-summary">
+     duplica un H1 visible con el mismo texto — acceptable para SEO moderno y da
+     al usuario un heading visible cuando scrollea al contenido SEO. En la home
+     solo queda este H1 como sr-only, bastante para a11y y crawlers.
+     sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
+<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabel : 'Gasolineras España'} — precios oficiales en tiempo real</h1>
+
 <!-- ============ HEADER ============ -->
 <header id="app-header">
   <button id="btn-toggle-sidebar" title="Abrir filtros" aria-label="Abrir panel de filtros">
@@ -829,8 +836,12 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </div>
     </div>
 
-    <!-- INFO CARD -->
-    <div id="map-info">
+    <!-- INFO CARD — se oculta en click y persiste via localStorage (map_info_dismissed).
+         Ver bootstrap en client/core.ts: si la flag existe, el nodo se borra antes
+         de que el usuario lo vea. -->
+    <div id="map-info" role="note">
+      <button type="button" id="map-info-close" class="map-info-close"
+              aria-label="Cerrar aviso">&times;</button>
       <div class="info-title">&#x26FD; Gasolineras en directo</div>
       <div class="info-desc">Localiza estaciones al instante, revisa su contexto y compara el precio elegido con menos fricción.</div>
     </div>
@@ -1200,12 +1211,20 @@ ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intr
 ${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)) ? `
 <!-- Bloque SEO estatico: resumen de precios del ambito (provincia o municipio).
      Se renderiza al final del DOM para no desplazar el mapa/sidebar (que son
-     lo que el usuario quiere ver primero). Los crawlers sin ejecucion de JS
-     lo leen y obtienen texto canonico con el nombre del ambito + precios
-     reales — clave para rankear queries tipo "precio gasolina madrid" o
-     "gasolineras alcala de henares". -->
-<section class="seo-summary" aria-labelledby="seo-h2" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
-  <h2 id="seo-h2" style="font-size:20px;color:#14532d;margin:0 0 12px">Precios de combustible en ${geoLabel}</h2>
+     lo que el usuario quiere ver primero). Tras arreglar overflow:hidden en
+     body, ahora es accesible por scroll normal — tanto para el crawler (texto
+     canonico) como para el usuario (FAQ expandible + tabla + municipios). -->
+<section class="seo-summary" aria-labelledby="seo-h1" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+  <!-- Breadcrumb visible — complementa al BreadcrumbList del JSON-LD dandole
+       al usuario navegacion ascendente (Inicio / Provincia). -->
+  <nav class="page-breadcrumb" aria-label="Migas de pan" style="font-size:13px;color:#64748b;margin:0 0 16px">
+    <a href="/" style="color:#15803d;text-decoration:none">Inicio</a>
+    ${seo?.provinciaName && seo?.provinciaSlug ? ' &rsaquo; ' + (seo?.municipioName
+      ? '<a href="/gasolineras/' + seo.provinciaSlug + '" style="color:#15803d;text-decoration:none">' + seo.provinciaName + '</a>'
+      : '<span aria-current="page">' + seo.provinciaName + '</span>') : ''}
+    ${seo?.municipioName ? ' &rsaquo; <span aria-current="page">' + seo.municipioName + '</span>' : ''}
+  </nav>
+  <h1 id="seo-h1" style="font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700">Precios de combustible en ${geoLabel}</h1>
   <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabel}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
   <table style="width:100%;border-collapse:collapse;font-size:14px;max-width:640px">
     <thead><tr>

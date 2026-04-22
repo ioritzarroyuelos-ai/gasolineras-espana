@@ -228,7 +228,7 @@ async function applyLibertyLanguage() {
     // conozca sus limites de zoom — sin ellos lanza "Map has no maxZoom".
     var libertyLayer = L.maplibreGL({
       style: style,
-      minZoom: 5,
+      minZoom: 4,
       maxZoom: 20,
       attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });

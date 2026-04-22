@@ -116,6 +116,9 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function prefersReducedMotion', in: ['core'] },
     { name: 'function scrollBehavior',  in: ['core'] },
     { name: 'function showToast',       in: ['core'] },
+    // Ship 14: PWA UX - install prompt + update toast + offline badge.
+    { name: 'function initPWAUX',       in: ['core'] },
+    { name: 'function showUpdateToast', in: ['ui']   },
   ]
   const modules: Record<string, string> = {
     core:     clientCoreScript,

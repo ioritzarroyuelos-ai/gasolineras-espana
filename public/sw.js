@@ -2,7 +2,7 @@
 // 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
 // cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
 // usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v13';
+const CACHE_NAME = 'gasolineras-v14';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia / bbox). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
@@ -39,14 +39,35 @@ const STATIC_ASSETS = [
   'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css',
 ];
 
-// Instalar: cachear recursos estáticos
+// Instalar: cachear recursos estáticos.
+//
+// Ship 14: YA NO llamamos skipWaiting() aqui. Razon: saltar automaticamente el
+// waiting puede romper una pestana abierta que esta a mitad de una interaccion
+// (popups, modales, streams). Preferimos:
+//   1. El nuevo SW queda 'installed' pero waiting.
+//   2. El cliente detecta 'updatefound' y muestra un toast 'Nueva version
+//      disponible' con boton 'Actualizar'.
+//   3. Al pulsar, el cliente envia postMessage({type:'SKIP_WAITING'}) y el SW
+//      reacciona (handler mas abajo) haciendo skipWaiting() + clients.claim.
+//   4. El cliente detecta 'controllerchange' y recarga la pestana.
+// Asi el usuario controla cuando recibe la nueva version; evita el clasico
+// "se me perdio el modal al recargar solo".
 self.addEventListener('install', event => {
-  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache =>
       Promise.allSettled(STATIC_ASSETS.map(url => cache.add(url)))
     )
   );
+});
+
+// Mensajes desde el cliente. Ship 14: SKIP_WAITING para promover el SW nuevo
+// cuando el usuario acepta actualizar. Ignoramos cualquier otro tipo de
+// mensaje — una extension o un iframe no confiable podria postMessage-ear
+// cosas raras; whitelist estricto.
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 // Activar: limpiar caches antiguas (incluyendo las de tiles/API huerfanas)

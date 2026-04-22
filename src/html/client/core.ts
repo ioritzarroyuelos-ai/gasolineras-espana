@@ -103,7 +103,7 @@ export const clientCoreScript = `
     if (/initMap|buildPopup|renderMarkers|createMap|computePricePercentile/.test(s)) return 'map';
     if (/renderList|renderCompareModal|buildCard|addToCompare/.test(s))            return 'list';
     if (/readQueryState|writeQueryState|applyQueryState|loadMunicipios|loadStations/.test(s)) return 'ui';
-    if (/initErrorReporter|showToast|initModalFocusTrap|initRUM/.test(s))          return 'core';
+    if (/initErrorReporter|showToast|initModalFocusTrap|initRUM|initPWAUX|showUpdateToast|renderInstallButton|renderOfflineBadge/.test(s)) return 'core';
     return 'unknown';
   }
   // ---- Ship 13: context de la sesion (ruta, filtros, red) ----
@@ -205,6 +205,117 @@ function showToast(msg, type) {
   document.body.appendChild(t);
   setTimeout(function(){ if(t.parentNode) t.remove(); }, 5000);
 }
+
+// ---- PWA UX (Ship 14) ----
+// Capta beforeinstallprompt para ofrecer un boton de "Instalar app" discreto
+// en la esquina, y pinta un badge cuando el navegador esta offline. El SW
+// lleva tiempo cacheando snapshots/tiles; esta capa sirve para que el usuario
+// SEPA que sigue funcionando sin red en lugar de creer que la app esta rota.
+//
+// No hacemos WebPush, no pedimos permisos — solo UI reactiva.
+(function initPWAUX() {
+  // ---- Install prompt ----
+  // Chrome/Edge emiten 'beforeinstallprompt' cuando creen que la PWA es
+  // instalable (cumple criterios: manifest, icons, HTTPS, engagement). Lo
+  // capturamos, lo guardamos y mostramos un boton flotante. Si el usuario
+  // ya instalo (evento 'appinstalled') o descarto, escondemos para siempre
+  // via localStorage para no volverse pesado.
+  var DISMISS_KEY = 'installPromptDismissedAt';
+  var deferred = null;
+
+  function shouldHideInstallButton() {
+    try {
+      // Ya estamos en modo standalone? -> la app ya esta instalada en este
+      // perfil de navegador, nada que ofrecer.
+      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+      // iOS Safari reporta standalone via navigator.standalone.
+      if (navigator.standalone === true) return true;
+      var dismissed = localStorage.getItem(DISMISS_KEY);
+      if (!dismissed) return false;
+      var ts = parseInt(dismissed, 10);
+      if (!isFinite(ts)) return false;
+      // Respetamos el "no" del usuario 30 dias — despues volvemos a ofrecer.
+      var THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+      return (Date.now() - ts) < THIRTY_DAYS;
+    } catch(_) { return false; }
+  }
+
+  function renderInstallButton() {
+    if (document.getElementById('btn-install-pwa')) return;
+    if (shouldHideInstallButton()) return;
+    var b = document.createElement('button');
+    b.id = 'btn-install-pwa';
+    b.type = 'button';
+    b.setAttribute('aria-label', 'Instalar aplicacion');
+    b.textContent = '\u2B07 Instalar app';
+    b.style.cssText = 'position:fixed;bottom:16px;left:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
+    b.addEventListener('click', function() {
+      if (!deferred) { b.remove(); return; }
+      try {
+        deferred.prompt();
+        deferred.userChoice.then(function(choice) {
+          // choice.outcome: 'accepted' | 'dismissed'
+          if (choice && choice.outcome === 'dismissed') {
+            try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(_) {}
+          }
+          deferred = null;
+          b.remove();
+        }).catch(function() { b.remove(); });
+      } catch(_) { b.remove(); }
+    });
+    document.body.appendChild(b);
+  }
+
+  window.addEventListener('beforeinstallprompt', function(ev) {
+    try { ev.preventDefault(); } catch(_) {}
+    deferred = ev;
+    // Retrasa el render para no pisar un primer paint — y da tiempo a que el
+    // usuario vea la app antes de ofrecerle instalarla.
+    setTimeout(renderInstallButton, 4000);
+  });
+
+  window.addEventListener('appinstalled', function() {
+    try { localStorage.removeItem(DISMISS_KEY); } catch(_) {}
+    deferred = null;
+    var b = document.getElementById('btn-install-pwa');
+    if (b) b.remove();
+    try { showToast('App instalada correctamente', 'success'); } catch(_) {}
+  });
+
+  // ---- Offline badge ----
+  // Pinta pill fija cuando navigator.onLine === false. Esencial en contextos
+  // movil-con-mala-cobertura: el usuario ve datos (desde cache del SW) pero
+  // no sabe si son frescos. El badge le da contexto inmediato.
+  function renderOfflineBadge() {
+    if (document.getElementById('offline-badge')) return;
+    var b = document.createElement('div');
+    b.id = 'offline-badge';
+    b.setAttribute('role', 'status');
+    b.setAttribute('aria-live', 'polite');
+    b.textContent = '\u26A0 Sin conexion';
+    b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:9997;pointer-events:none';
+    document.body.appendChild(b);
+  }
+  function removeOfflineBadge() {
+    var b = document.getElementById('offline-badge');
+    if (b) b.remove();
+  }
+
+  window.addEventListener('offline', renderOfflineBadge);
+  window.addEventListener('online',  removeOfflineBadge);
+
+  // Estado inicial: si cargamos offline, pinta ya.
+  try {
+    if (navigator.onLine === false) {
+      // defer un tick para que body exista seguro
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', renderOfflineBadge);
+      } else {
+        renderOfflineBadge();
+      }
+    }
+  } catch(_) {}
+})();
 
 // ---- HTML ESCAPE — previene XSS con datos del API ----
 function esc(s) {

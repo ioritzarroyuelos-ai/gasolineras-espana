@@ -1454,9 +1454,96 @@ document.addEventListener('keydown', function(e) {
 })();
 
 // ---- SERVICE WORKER (PWA) ----
+// Ship 14: registro + deteccion de updates. Cuando Cloudflare promueve un
+// nuevo deploy, el usuario ve un toast "Nueva version disponible -> Actualizar".
+// Si lo ignora, la pestana sigue con la version vieja; al recargar manualmente
+// (cerrar y abrir, F5, etc.) se cargara la nueva. Si lo acepta, postMessage al
+// SW -> skipWaiting -> controllerchange -> reload controlado.
+//
+// Guardrails:
+// - Registro diferido a window.load para no competir con el first paint.
+// - Reload se hace UNA sola vez (flag refreshing). Sin esto, si el usuario
+//   tuviera dos pestanas y ambas reciben el controllerchange, la segunda
+//   podria entrar en un bucle de recarga. Raro pero documentado.
+// - Comprobacion manual cada 60 min: updatefound solo se dispara cuando el
+//   navegador revalida el sw.js por iniciativa propia (cada vez que cargas /,
+//   con max-age override). Llamamos a registration.update() para forzar la
+//   comprobacion mientras la pestana sigue abierta — si el usuario deja la
+//   app abierta 4h y mientras tanto hay 3 deploys, eventualmente se entera.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('/sw.js').catch(function() {});
+  var swRefreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function() {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    // Pequeno delay para que el usuario vea el toast antes de perder la vista.
+    setTimeout(function() { location.reload(); }, 200);
   });
+
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('/sw.js').then(function(reg) {
+      // Comprobacion cada 60 min mientras la pestana esta abierta.
+      try {
+        setInterval(function() {
+          try { reg.update(); } catch(_) {}
+        }, 60 * 60 * 1000);
+      } catch(_) {}
+
+      // Ya hay un SW controlando la pagina (no es primera instalacion) y
+      // detectamos un nuevo SW en 'installing'.
+      reg.addEventListener('updatefound', function() {
+        var newSW = reg.installing;
+        if (!newSW) return;
+        newSW.addEventListener('statechange', function() {
+          // El nuevo SW quedo instalado Y hay un controller previo -> es un
+          // update, no el primer registro. Mostramos el toast.
+          if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+            showUpdateToast(newSW);
+          }
+        });
+      });
+    }).catch(function() { /* sin SW, offline mode no disponible, no es fatal */ });
+  });
+}
+
+// Toast persistente con boton "Actualizar" — a diferencia de showToast() que
+// se autodestruye en 5s, este se queda hasta que el usuario decide. Usa
+// nodos DOM + textContent para evitar XSS (aunque aqui no hay contenido
+// user-driven, consistencia con el resto del codebase).
+function showUpdateToast(newSW) {
+  // Si ya hay uno en pantalla, no apilar.
+  if (document.getElementById('sw-update-toast')) return;
+  var t = document.createElement('div');
+  t.id = 'sw-update-toast';
+  t.setAttribute('role', 'status');
+  t.setAttribute('aria-live', 'polite');
+  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.14);z-index:10000;display:flex;align-items:center;gap:12px;max-width:380px';
+
+  var msg = document.createElement('span');
+  msg.textContent = '\u{1F504} Nueva version disponible';
+  t.appendChild(msg);
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Actualizar';
+  btn.style.cssText = 'background:#2563eb;color:#fff;border:0;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer';
+  btn.addEventListener('click', function() {
+    try { newSW.postMessage({ type: 'SKIP_WAITING' }); } catch(_) {}
+    // Si el SW no responde en 5s, forzamos reload para no dejar al usuario
+    // atascado ante un postMessage perdido (caso raro pero defensivo).
+    setTimeout(function() { try { location.reload(); } catch(_) {} }, 5000);
+    btn.disabled = true;
+    btn.textContent = 'Actualizando...';
+  });
+  t.appendChild(btn);
+
+  var close = document.createElement('button');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Descartar');
+  close.textContent = '\u00D7';
+  close.style.cssText = 'background:transparent;color:#1e3a8a;border:0;font-size:18px;cursor:pointer;padding:0 4px;line-height:1';
+  close.addEventListener('click', function() { t.remove(); });
+  t.appendChild(close);
+
+  document.body.appendChild(t);
 }
 `

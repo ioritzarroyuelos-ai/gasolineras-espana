@@ -889,8 +889,15 @@ export function getStyles(nonce: string = ''): string {
        entre el precio y las badges de ahorro — da contexto inmediato sin
        abrir otra vista. */
     .popup-percentile           { margin: 6px 0 2px; display: flex; flex-direction: column; gap: 4px; }
-    .popup-percentile .ph-track { position: relative; height: 10px; border-radius: 5px; overflow: visible; }
-    .popup-percentile .ph-bins  { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; border-radius: 5px; overflow: hidden; }
+    /* Ship 25.6 — redise\u00f1o del marcador porque el diseno original (linea 3px con
+       gaps de 2px entre bins) podia confundir: los gaps blancos entre quintiles
+       parecian otros "marcadores". Ahora:
+         - bins sin gap (gap: 0) -> no hay mas lineas verticales que el marker
+         - ph-track con padding-top para alojar una "chincheta" por encima del bar
+         - marcador = circulo knob arriba + linea vertical pasando por el bar
+       Asi es imposible confundir el marcador con separadores visuales. */
+    .popup-percentile .ph-track { position: relative; height: 22px; padding-top: 10px; overflow: visible; }
+    .popup-percentile .ph-bins  { position: absolute; top: 10px; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border-radius: 5px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); }
     .popup-percentile .ph-bin   { height: 100%; }
     .popup-percentile .ph-bin--q0 { background: #16a34a; }
     .popup-percentile .ph-bin--q1 { background: #84cc16; }
@@ -902,16 +909,42 @@ export function getStyles(nonce: string = ''): string {
     body.dark .popup-percentile .ph-bin--q2 { background: #ca8a04; }
     body.dark .popup-percentile .ph-bin--q3 { background: #c2410c; }
     body.dark .popup-percentile .ph-bin--q4 { background: #b91c1c; }
-    /* Marcador: linea vertical estrecha con un "diente" superior — salta
-       por encima del track con triangulo apuntando abajo. Color adaptado. */
+    /* Marcador "chincheta": knob circular (::before) por encima del bar +
+       linea vertical (::after) que atraviesa el bar. No se puede confundir con
+       ningun otro elemento del histograma. */
     .popup-percentile .ph-marker {
-      position: absolute; top: -4px; bottom: -4px; width: 3px;
-      background: #111827; border-radius: 2px;
+      position: absolute; top: 0; bottom: -2px;
+      width: 12px;
       transform: translateX(-50%);
-      box-shadow: 0 0 0 2px rgba(255,255,255,0.9);
+      pointer-events: none;
+      z-index: 3;
     }
-    body.dark .popup-percentile .ph-marker {
-      background: #f1f5f9; box-shadow: 0 0 0 2px rgba(15,23,42,0.9);
+    .popup-percentile .ph-marker::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: #111827;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+    .popup-percentile .ph-marker::after {
+      content: '';
+      position: absolute;
+      top: 8px; left: 50%;
+      transform: translateX(-50%);
+      width: 3px; bottom: 0;
+      background: #111827;
+      box-shadow: 0 0 0 1.5px rgba(255,255,255,0.95);
+      border-radius: 1px;
+    }
+    body.dark .popup-percentile .ph-marker::before {
+      background: #f1f5f9; border-color: #0f172a;
+    }
+    body.dark .popup-percentile .ph-marker::after {
+      background: #f1f5f9; box-shadow: 0 0 0 1.5px rgba(15,23,42,0.95);
     }
     .popup-percentile .ph-label { font-size: 10px; line-height: 1.25; color: #475569; font-weight: 500; }
     body.dark .popup-percentile .ph-label { color: #cbd5e1; }

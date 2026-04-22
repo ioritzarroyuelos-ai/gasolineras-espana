@@ -725,8 +725,10 @@ function buildPercentileHistogram(info) {
     '<div class="ph-bin ph-bin--q3"></div>',
     '<div class="ph-bin ph-bin--q4"></div>'
   ].join('');
-  // Clamp marker al [1%..99%] para que no desaparezca en los bordes.
-  var markerPct = Math.max(1, Math.min(99, info.pct));
+  // Clamp marker al [2%..98%] para que no desaparezca en los bordes con el
+  // knob de 10px de diametro (centrado via translateX(-50%)).
+  var rawPct = typeof info.pct === 'number' && isFinite(info.pct) ? info.pct : 0;
+  var markerPct = Math.max(2, Math.min(98, rawPct));
   var label;
   if (info.rank === 1) {
     label = '\u{1F3C6} La m\u00E1s barata de su zona (' + info.total + ' estaciones)';
@@ -737,10 +739,11 @@ function buildPercentileHistogram(info) {
   } else {
     label = 'M\u00E1s barata que el ' + info.cheaperThanPct + '% de su zona (' + info.total + ')';
   }
+  var markerTitle = 'T\u00FA: posici\u00F3n ' + info.rank + ' de ' + info.total;
   return '<div class="popup-percentile" aria-label="' + esc(label) + '">'
        +   '<div class="ph-track">'
        +     '<div class="ph-bins">' + bins + '</div>'
-       +     '<div class="ph-marker" style="left:' + markerPct.toFixed(1) + '%"></div>'
+       +     '<div class="ph-marker" title="' + esc(markerTitle) + '" style="left:' + markerPct.toFixed(1) + '%"></div>'
        +   '</div>'
        +   '<div class="ph-label ph-label--q' + info.quintile + '">' + label + '</div>'
        + '</div>';

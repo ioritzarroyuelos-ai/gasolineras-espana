@@ -769,16 +769,26 @@ export interface DiarySegment {
   litros: number          // litros echados en el repostaje que cierra el tramo
   l100km: number | null   // consumo L/100km del tramo (null si km<=0)
 }
+// Info del perfil que estabiliza el calculo cuando hay pocos datos. Es opcional
+// — si no se pasa, diaryStats cae al calculo clasico solo-observado.
+export interface DiaryStatsOptions {
+  profileL100km?: number | null   // L/100km declarado en el perfil
+  tankCapacity?: number | null    // litros del deposito (si se conoce)
+}
 export interface DiaryStats {
   entries: number
   totalLiters: number
   totalSpentEur: number
   avgEurPerLitre: number | null
   totalKm: number                       // km realmente recorridos entre primera y ultima entrada
-  avgL100km: number | null              // consumo medio L/100km
+  avgL100km: number | null              // consumo medio L/100km SOLO observado (a partir de refuels)
+  profileL100km: number | null          // el que venia en el perfil (si se paso)
+  reliableL100km: number | null         // recomendado para la UI: blend observado+perfil segun cuantos datos hay
+  reliabilityWeight: number             // 0 (solo perfil) a 1 (solo observado). Para mostrar confianza en la UI
+  eurPer100km: number | null            // coste por 100 km usando reliableL100km y media €/L
   segments: DiarySegment[]              // consumo por tramo (i-1 -> i), empieza en el 2o repostaje
 }
-export function diaryStats(entries: DiaryEntry[]): DiaryStats {
+export function diaryStats(entries: DiaryEntry[], opts?: DiaryStatsOptions): DiaryStats {
   const clean = (entries || []).filter(e =>
     e &&
     typeof e.date === 'string' &&
@@ -786,6 +796,12 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
     Number.isFinite(e.eurPerLitre) && e.eurPerLitre > 0 &&
     Number.isFinite(e.kmTotales)   && e.kmTotales   >= 0
   ).sort((a, b) => a.date.localeCompare(b.date))
+  const profileL100km = opts && typeof opts.profileL100km === 'number' && opts.profileL100km > 0
+    ? opts.profileL100km
+    : null
+  const tankCapacity = opts && typeof opts.tankCapacity === 'number' && opts.tankCapacity > 0
+    ? opts.tankCapacity
+    : null
   if (clean.length === 0) {
     return {
       entries: 0,
@@ -794,6 +810,10 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
       avgEurPerLitre: null,
       totalKm: 0,
       avgL100km: null,
+      profileL100km,
+      reliableL100km: profileL100km,   // sin datos, la UI muestra lo del perfil
+      reliabilityWeight: 0,
+      eurPer100km: null,
       segments: [],
     }
   }
@@ -831,13 +851,48 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
     })
   }
 
+  // Blend observado <-> perfil para dar un numero fiable incluso con pocos
+  // datos o repostajes minusculos (ej: 10€ cada vez).
+  //
+  // Peso del observado w = min(1, max(w_km, w_litros)).
+  // - w_km = totalKm / 2000. A los 2000 km recorridos, confianza plena.
+  // - w_litros (solo si conocemos tank) = litrosParaConsumo / (tank * 2). Con
+  //   2 depositos equivalentes de combustible observado, confianza plena.
+  // Tomamos el MAX porque ambos miden lo mismo desde angulos distintos — basta
+  // con que uno de los dos tenga suficiente senal. Si no hay perfil, el blend
+  // colapsa al observado (no hay prior al que mezclar).
+  let reliabilityWeight = 0
+  let reliableL100km: number | null = null
+  if (avgL100km !== null && profileL100km !== null) {
+    const wKm = totalKm > 0 ? Math.min(1, totalKm / 2000) : 0
+    const wLitros = tankCapacity !== null && litersForConsumption > 0
+      ? Math.min(1, litersForConsumption / (tankCapacity * 2))
+      : 0
+    reliabilityWeight = Math.min(1, Math.max(wKm, wLitros))
+    reliableL100km = reliabilityWeight * avgL100km + (1 - reliabilityWeight) * profileL100km
+  } else if (avgL100km !== null) {
+    reliabilityWeight = 1
+    reliableL100km = avgL100km
+  } else if (profileL100km !== null) {
+    reliabilityWeight = 0
+    reliableL100km = profileL100km
+  }
+  const avgEurPerLitre = sumEurPerLitre / clean.length
+  const eurPer100km = reliableL100km !== null && isFinite(avgEurPerLitre)
+    ? reliableL100km * avgEurPerLitre
+    : null
+
   return {
     entries: clean.length,
     totalLiters,
     totalSpentEur: totalSpent,
-    avgEurPerLitre: sumEurPerLitre / clean.length,
+    avgEurPerLitre,
     totalKm: totalKm > 0 ? totalKm : 0,
     avgL100km,
+    profileL100km,
+    reliableL100km,
+    reliabilityWeight,
+    eurPer100km,
     segments,
   }
 }

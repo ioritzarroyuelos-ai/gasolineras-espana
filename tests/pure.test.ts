@@ -1240,4 +1240,89 @@ describe('diaryStats (estadisticas del diario de repostajes)', () => {
     expect(s.segments[0].l100km).toBeNull()
     expect(s.segments[0].km).toBe(0)
   })
+
+  // Blend observado+perfil: con pocos datos (repostajes minusculos tipo "10€
+  // cada vez"), el consumo observado es ruidoso. Mezclarlo con el perfil
+  // (L/100km declarado por el usuario) da un numero mas fiable desde el dia 1
+  // y converge a puro observado cuando hay suficientes km/litros.
+  it('sin perfil: reliableL100km = avgL100km (comportamiento clasico)', () => {
+    const entries = [
+      { date: '2026-01-10', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-05', litros: 45, eurPerLitre: 1.45, kmTotales: 10600 },
+      { date: '2026-03-01', litros: 48, eurPerLitre: 1.55, kmTotales: 11300 },
+    ]
+    const s = diaryStats(entries)
+    expect(s.profileL100km).toBeNull()
+    expect(s.reliableL100km).toBeCloseTo(s.avgL100km!, 4)
+    expect(s.reliabilityWeight).toBe(1)  // sin prior, confianza total en observado
+  })
+
+  it('sin repostajes pero con perfil: reliableL100km = profileL100km', () => {
+    const s = diaryStats([], { profileL100km: 7, tankCapacity: 50 })
+    expect(s.entries).toBe(0)
+    expect(s.profileL100km).toBe(7)
+    expect(s.reliableL100km).toBe(7)
+    expect(s.reliabilityWeight).toBe(0)
+  })
+
+  it('pocos km con perfil: el perfil pesa mas en el blend', () => {
+    // 300 km de datos reales -> w_km = 300/2000 = 0.15. Observado ruidoso
+    // (parciales de 10€): observed tendria poco peso.
+    const entries = [
+      { date: '2026-01-10', litros: 6.5, eurPerLitre: 1.53, kmTotales: 10000 },
+      { date: '2026-01-15', litros: 6.5, eurPerLitre: 1.53, kmTotales: 10150 },
+      { date: '2026-01-20', litros: 6.5, eurPerLitre: 1.53, kmTotales: 10300 },
+    ]
+    const s = diaryStats(entries, { profileL100km: 7, tankCapacity: 50 })
+    // avgL100km observado: (6.5+6.5)/(300/100) = 13/3 = 4.33 L/100km (tanque se vaciaba)
+    expect(s.avgL100km).toBeCloseTo(4.333, 2)
+    // reliabilityWeight: max(300/2000, 13/(50*2)) = max(0.15, 0.13) = 0.15
+    expect(s.reliabilityWeight).toBeCloseTo(0.15, 2)
+    // blend: 0.15 * 4.333 + 0.85 * 7 = 0.65 + 5.95 = 6.6
+    expect(s.reliableL100km).toBeCloseTo(6.6, 1)
+    // El perfil rescata al observado ruidoso — el numero final se acerca al real
+    // del perfil, no al artefactual del observado.
+  })
+
+  it('muchos km: el observado gana confianza (weight=1)', () => {
+    // 5000 km recorridos con entradas suficientes -> w_km = 1
+    const entries = [
+      { date: '2026-01-01', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-01', litros: 50, eurPerLitre: 1.50, kmTotales: 11000 },
+      { date: '2026-03-01', litros: 50, eurPerLitre: 1.50, kmTotales: 12000 },
+      { date: '2026-04-01', litros: 50, eurPerLitre: 1.50, kmTotales: 13000 },
+      { date: '2026-05-01', litros: 50, eurPerLitre: 1.50, kmTotales: 14000 },
+      { date: '2026-06-01', litros: 50, eurPerLitre: 1.50, kmTotales: 15000 },
+    ]
+    const s = diaryStats(entries, { profileL100km: 9, tankCapacity: 50 })
+    // avg observado: (50*5) / (5000/100) = 250/50 = 5 L/100km
+    expect(s.avgL100km).toBeCloseTo(5, 2)
+    expect(s.reliabilityWeight).toBe(1)
+    // reliable = observed, el perfil ya no tira
+    expect(s.reliableL100km).toBeCloseTo(5, 2)
+  })
+
+  it('eurPer100km = reliableL100km * avgEurPerLitre', () => {
+    const entries = [
+      { date: '2026-01-01', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-01', litros: 50, eurPerLitre: 1.50, kmTotales: 11000 },
+    ]
+    const s = diaryStats(entries, { profileL100km: 7 })
+    // reliable sin suficientes km: w=1000/2000=0.5. observed=50/10=5. reliable=0.5*5+0.5*7=6
+    expect(s.reliableL100km).toBeCloseTo(6, 2)
+    // eurPer100km = 6 * 1.50 = 9.00
+    expect(s.eurPer100km).toBeCloseTo(9, 2)
+  })
+
+  it('perfil invalido (negativo/cero/NaN) se ignora', () => {
+    const entries = [
+      { date: '2026-01-01', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-01', litros: 50, eurPerLitre: 1.50, kmTotales: 11000 },
+    ]
+    const s1 = diaryStats(entries, { profileL100km: -5, tankCapacity: 0 })
+    expect(s1.profileL100km).toBeNull()
+    expect(s1.reliableL100km).toBeCloseTo(s1.avgL100km!, 4)
+    const s2 = diaryStats(entries, { profileL100km: NaN })
+    expect(s2.profileL100km).toBeNull()
+  })
 })

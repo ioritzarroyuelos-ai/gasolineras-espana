@@ -1211,9 +1211,13 @@ export function getStyles(nonce: string = ''): string {
     }
     .ds-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px; }
     .ds-value { font-size:15px; font-weight:800; color:#15803d; }
+    /* Sub-texto opcional bajo el valor (ej: "calculado con tus repostajes") */
+    .ds-sub { font-size:9px; color:#64748b; margin-top:2px; line-height:1.2; font-weight:500; }
+    .ds-sub:empty { display:none; }
     body.dark .diary-stat { background:#14532d; border-color:#166534; }
     body.dark .ds-label { color:#94a3b8; }
     body.dark .ds-value { color:#86efac; }
+    body.dark .ds-sub { color:#94a3b8; }
 
     .diary-subtitle { font-size:12px; color:#334155; margin:10px 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
     body.dark .diary-subtitle { color:#cbd5e1; }

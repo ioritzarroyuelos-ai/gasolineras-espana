@@ -1027,7 +1027,12 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <div class="diary-stat"><div class="ds-label">Gasto total</div><div class="ds-value" id="ds-spent">0 &euro;</div></div>
         <div class="diary-stat"><div class="ds-label">Media &euro;/L</div><div class="ds-value" id="ds-avg">--</div></div>
         <div class="diary-stat"><div class="ds-label">Km recorridos</div><div class="ds-value" id="ds-km">0</div></div>
-        <div class="diary-stat"><div class="ds-label">Consumo real</div><div class="ds-value" id="ds-cons">--</div></div>
+        <div class="diary-stat diary-stat-cons">
+          <div class="ds-label">Consumo real</div>
+          <div class="ds-value" id="ds-cons">--</div>
+          <div class="ds-sub" id="ds-cons-sub"></div>
+        </div>
+        <div class="diary-stat"><div class="ds-label">&euro; por 100 km</div><div class="ds-value" id="ds-eurkm">--</div></div>
         <div class="diary-stat"><div class="ds-label">Litros cargados</div><div class="ds-value" id="ds-liters">0 L</div></div>
       </div>
 

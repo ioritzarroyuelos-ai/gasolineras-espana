@@ -530,7 +530,6 @@ function toggleRouteCorridor() {
 (function() {
   var modal     = document.getElementById('modal-route');
   if (!modal) return;
-  var btnOpen   = document.getElementById('btn-route');
   var btnClose  = document.getElementById('btn-route-close');
   var btnDone   = document.getElementById('btn-route-done');
   var btnGo     = document.getElementById('btn-route-go');
@@ -637,7 +636,10 @@ function toggleRouteCorridor() {
   }
   function closeRoute() { modal.classList.remove('show'); }
 
-  if (btnOpen) btnOpen.addEventListener('click', openRoute);
+  // Exponemos openRoute para que el item "Rutas" del desplegable de usuario
+  // (ui.ts) pueda abrir el modal sin necesidad de un boton de cabecera.
+  window.__openRouteModal = openRoute;
+
   if (btnClose) btnClose.addEventListener('click', closeRoute);
   if (btnDone) btnDone.addEventListener('click', closeRoute);
   modal.addEventListener('click', function(e) { if (e.target === modal) closeRoute(); });
@@ -1439,7 +1441,6 @@ function toggleRouteCorridor() {
 (function() {
   var modal  = document.getElementById('modal-diary');
   if (!modal) return;
-  var btnOpen   = document.getElementById('btn-diary');
   var btnClose  = document.getElementById('btn-diary-close');
   var btnDone   = document.getElementById('btn-diary-done');
   var btnAdd    = document.getElementById('btn-diary-add');
@@ -1660,7 +1661,10 @@ function toggleRouteCorridor() {
   }
   function closeDiary() { modal.classList.remove('show'); }
 
-  btnOpen.addEventListener('click', openDiary);
+  // Exponemos openDiary para que el item "Repostajes" del desplegable de
+  // usuario (ui.ts) pueda abrir el modal sin boton de cabecera.
+  window.__openDiaryModal = openDiary;
+
   btnClose.addEventListener('click', closeDiary);
   btnDone.addEventListener('click', closeDiary);
   modal.addEventListener('click', function(e) { if (e.target === modal) closeDiary(); });

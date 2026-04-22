@@ -1610,29 +1610,6 @@ export function getStyles(nonce: string = ''): string {
       body.dark .skeleton-card .sk-line, body.dark .skeleton-card .sk-badge { background: #334155; }
     }
 
-    /* ---- Boton estrella de favoritas en el header ---- */
-    /* Estrella con insignia numerica: la estrella se rellena cuando hay
-       favoritas y la insignia muestra el total. Sin favoritas, se queda
-       gris y la insignia oculta. */
-    .btn-header-fav {
-      position: relative;
-      background: none;
-      border: 1px solid #cbd5e1;
-      border-radius: 8px;
-      padding: 6px 10px;
-      cursor: pointer;
-      color: #64748b;
-      font-size: 14px;
-      transition: all 0.15s ease;
-    }
-    .btn-header-fav:hover { background: #f8fafc; border-color: #94a3b8; color: #374151; }
-    .btn-header-fav.has-favs { color: #f59e0b; border-color: #fde68a; background: #fffbeb; }
-    .btn-header-fav.has-favs:hover { background: #fef3c7; }
-    body.dark .btn-header-fav { border-color: #475569; color: #cbd5e1; }
-    body.dark .btn-header-fav:hover { background: #334155; }
-    body.dark .btn-header-fav.has-favs { color: #fbbf24; border-color: #78350f; background: #451a03; }
-    body.dark .btn-header-fav.has-favs:hover { background: #78350f; }
-
     /* ---- Login (Google) ---- */
     /* [hidden] pelea con display:inline-flex de los botones del header — forzamos
        que el atributo HTML mande. Esto evita que .btn-login o .user-menu aparezcan
@@ -1721,22 +1698,6 @@ export function getStyles(nonce: string = ''): string {
     .login-modal-sub { margin: 0 0 18px; font-size: 13px; color: #64748b; line-height: 1.45; }
     body.dark .login-modal-sub { color: #94a3b8; }
     .login-modal-btn { min-height: 44px; display: flex; justify-content: center; }
-
-    .fav-badge {
-      position: absolute;
-      top: -6px;
-      right: -6px;
-      background: #dc2626;
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 1px 5px;
-      border-radius: 10px;
-      min-width: 16px;
-      text-align: center;
-      line-height: 14px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-    }
 
     /* ---- Modal de favoritas + alertas ---- */
     /* Reutiliza .modal / .modal-backdrop base. Layout mas ancho para que

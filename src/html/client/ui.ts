@@ -445,11 +445,9 @@ async function bootApp() {
           var btn = document.getElementById('btn-geolocate');
           if (btn) btn.click();
         } else if (action === 'route') {
-          var btn = document.getElementById('btn-route');
-          if (btn) btn.click();
+          if (typeof window.__openRouteModal === 'function') window.__openRouteModal();
         } else if (action === 'favs') {
-          var btn = document.getElementById('btn-favs');
-          if (btn) btn.click();
+          if (typeof openFavsModal === 'function') openFavsModal();
         } else if (action === 'cheapest') {
           // Ordena por precio y geolocaliza para contextualizar a la zona.
           var sel = document.getElementById('sel-orden');
@@ -786,26 +784,10 @@ function prefetchFavsPrices(favs) {
   });
 }
 
-// Actualiza el boton estrella del header: color segun tiene/no favoritas,
-// insignia numerica solo si hay >=1. Y, si el modal esta abierto, refresca.
+// Si el modal de favoritas esta abierto, refresca su lista tras cambios.
+// (Antes tambien actualizaba la estrella de cabecera; esa estrella se
+// elimino al mover el acceso al desplegable del usuario.)
 function renderFavs() {
-  var favs = getFavs();
-  var btn = document.getElementById('btn-favs');
-  var badge = document.getElementById('fav-badge');
-  var icon = document.getElementById('btn-favs-icon');
-  if (btn && badge && icon) {
-    if (favs.length) {
-      btn.classList.add('has-favs');
-      icon.className = 'fas fa-star';
-      badge.textContent = String(favs.length);
-      badge.hidden = false;
-    } else {
-      btn.classList.remove('has-favs');
-      icon.className = 'far fa-star';
-      badge.hidden = true;
-    }
-  }
-  // Si el modal esta abierto, refrescamos su lista en vivo.
   var modal = document.getElementById('modal-favs');
   if (modal && modal.classList.contains('show')) renderFavsModalList();
 }
@@ -1522,11 +1504,9 @@ document.addEventListener('keydown', function(e) {
 (function() {
   var modal = document.getElementById('modal-favs');
   if (!modal) return;
-  var btnOpen   = document.getElementById('btn-favs');
-  var btnClose  = document.getElementById('btn-favs-close');
-  var btnDone   = document.getElementById('btn-favs-done');
+  var btnClose = document.getElementById('btn-favs-close');
+  var btnDone  = document.getElementById('btn-favs-done');
 
-  if (btnOpen)  btnOpen.addEventListener('click', openFavsModal);
   if (btnClose) btnClose.addEventListener('click', closeFavsModal);
   if (btnDone)  btnDone.addEventListener('click', closeFavsModal);
   // Cerrar con click en backdrop o Escape.
@@ -1534,10 +1514,6 @@ document.addEventListener('keydown', function(e) {
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape' && modal.classList.contains('show')) closeFavsModal();
   });
-
-  // Render inicial de la estrella (color + insignia) antes de que se carguen
-  // las gasolineras — asi el boton ya refleja las favoritas persistidas.
-  renderFavs();
 })();
 
 // ============================================================
@@ -1743,10 +1719,10 @@ function showUpdateToast(newSW) {
 //
 // Relacion con la dropdown de la cuenta (requerimiento explicito del usuario):
 // dentro del desplegable hay tres items — Favoritas, Rutas, Repostajes —
-// que cuando se clickan cierran la dropdown y disparan un click sintetico
-// sobre los botones de cabecera #btn-favs, #btn-route y #btn-diary, que ya
-// tienen handlers que abren los respectivos modales. Asi no duplicamos
-// logica de apertura ni tocamos los modulos existentes.
+// que cuando se clickan cierran la dropdown y llaman directamente a las
+// funciones que abren cada modal (openFavsModal, window.__openRouteModal,
+// window.__openDiaryModal). Ya no existen botones de cabecera para estas
+// tres features — todo el acceso va por el desplegable.
 (function() {
   var CID = (typeof window !== 'undefined') ? window.__GOOGLE_CLIENT_ID__ : null;
   if (!CID) return;
@@ -1769,22 +1745,10 @@ function showUpdateToast(newSW) {
 
   if (!btnLogin || !userMenu || !loginModal || !gsiContainer) return;
 
-  // Los tres botones de cabecera se ocultan hasta haber iniciado sesion. El
-  // shell los renderiza con [hidden] cuando hay login configurado; aqui los
-  // mostramos/ocultamos siguiendo el estado de la sesion.
-  var headerFeatureIds = ['btn-favs', 'btn-route', 'btn-diary'];
-  function setHeaderFeaturesVisible(visible) {
-    for (var i = 0; i < headerFeatureIds.length; i++) {
-      var el = document.getElementById(headerFeatureIds[i]);
-      if (el) el.hidden = !visible;
-    }
-  }
-
   function setLogged(user) {
     if (user && user.sub) {
       btnLogin.hidden = true;
       userMenu.hidden = false;
-      setHeaderFeaturesVisible(true);
       if (userAvatar && user.picture) { userAvatar.src = user.picture; userAvatar.alt = user.name || ''; }
       if (userNameEl) userNameEl.textContent = user.name || user.email || '';
       if (ddName)     ddName.textContent     = user.name  || '';
@@ -1792,7 +1756,6 @@ function showUpdateToast(newSW) {
     } else {
       userMenu.hidden = true;
       btnLogin.hidden = false;
-      setHeaderFeaturesVisible(false);
     }
   }
 
@@ -1827,15 +1790,18 @@ function showUpdateToast(newSW) {
     toggleDropdown();
   });
 
-  // Tres items de la dropdown -> delegan al boton de cabecera ya cableado.
-  function openViaHeaderButton(id) {
+  // Tres items de la dropdown -> llaman directamente a la funcion que abre
+  // el modal correspondiente. openFavsModal es global (declarada top-level);
+  // openRoute y openDiary viven dentro de IIFEs en features.ts y se exponen
+  // como window.__openRouteModal / window.__openDiaryModal al final de cada
+  // IIFE.
+  function openModalByName(openFn) {
     closeDropdown();
-    var b = document.getElementById(id);
-    if (b) b.click();
+    if (typeof openFn === 'function') openFn();
   }
-  if (btnUserFavs)  btnUserFavs.addEventListener('click',  function() { openViaHeaderButton('btn-favs'); });
-  if (btnUserRoute) btnUserRoute.addEventListener('click', function() { openViaHeaderButton('btn-route'); });
-  if (btnUserDiary) btnUserDiary.addEventListener('click', function() { openViaHeaderButton('btn-diary'); });
+  if (btnUserFavs)  btnUserFavs.addEventListener('click',  function() { openModalByName(typeof openFavsModal === 'function' ? openFavsModal : null); });
+  if (btnUserRoute) btnUserRoute.addEventListener('click', function() { openModalByName(window.__openRouteModal); });
+  if (btnUserDiary) btnUserDiary.addEventListener('click', function() { openModalByName(window.__openDiaryModal); });
 
   // ---- Login modal ----
   var gsiInitialized = false;

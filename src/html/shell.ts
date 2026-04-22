@@ -502,20 +502,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div class="header-actions">
     <span id="lbl-update" class="header-update u-hide"></span>
     <span id="lbl-count" class="header-badge u-hide"></span>
-    <!-- Acceso a favoritas / rutas / diario: cuando hay login configurado
-         (gClientId) estos tres botones se renderizan ocultos y client/ui.ts
-         los revela solo si hay sesion. Sin login (dev local sin env var) se
-         muestran siempre. -->
-    <button id="btn-favs" class="btn-header-fav" title="Mis favoritas" aria-label="Ver mis favoritas"${gClientId ? ' hidden' : ''}>
-      <i class="far fa-star" id="btn-favs-icon" aria-hidden="true"></i>
-      <span id="fav-badge" class="fav-badge" hidden>0</span>
-    </button>
-    <button id="btn-route" class="btn-header-fav" title="Ruta: mejores gasolineras del trayecto" aria-label="Planificar ruta con gasolineras"${gClientId ? ' hidden' : ''}>
-      <i class="fas fa-route" aria-hidden="true"></i>
-    </button>
-    <button id="btn-diary" class="btn-header-fav" title="Mi diario de repostajes" aria-label="Abrir diario de repostajes"${gClientId ? ' hidden' : ''}>
-      <i class="fas fa-book" aria-hidden="true"></i>
-    </button>
+    <!-- Acceso a favoritas, rutas y diario vive dentro del desplegable del
+         usuario (#user-dropdown) — no hay botones de cabecera duplicados. -->
     <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
     ${gClientId ? `
     <!-- Login Google: visible solo si hay GOOGLE_CLIENT_ID configurado. El

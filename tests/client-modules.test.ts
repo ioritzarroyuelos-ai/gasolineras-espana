@@ -111,6 +111,9 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function toggleCompare',   in: ['list'] },
     { name: 'function openCompareModal', in: ['list'] },
     { name: 'function renderCompareModal', in: ['list'] },
+    // Ship 20: modal historico reutilizado desde las cards del listado.
+    { name: 'function openHistoryModal',  in: ['list'] },
+    { name: 'function closeHistoryModal', in: ['list'] },
     { name: 'function enterRouteMode',   in: ['features'] },
     { name: 'function toggleRouteCorridor', in: ['features'] },
     { name: 'function prefersReducedMotion', in: ['core'] },

@@ -1066,6 +1066,32 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   </div>
 </div>
 
+<!-- ============ Ship 20: MODAL HISTORICO DE PRECIOS ============ -->
+<!-- Abierto desde el boton "Historico" en cada card del listado. Dentro va
+     el placeholder del panel de historico (mismo que el popup del mapa, via
+     buildHistoryPlaceholder()) + renderHistoryPanel() pinta. Asi reusamos
+     toda la logica de fetch + sparkline en un modal mas grande — util en
+     mobile donde el popup del mapa queda muy pequeno. -->
+<div id="modal-history" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="history-title">
+  <div class="modal">
+    <div class="modal-header modal-header-row">
+      <div>
+        <h2 id="history-title">&#x1F4C8; Historial de precios</h2>
+        <p id="history-subtitle">Evolucion de los ultimos dias para esta estacion.</p>
+      </div>
+      <button id="btn-history-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="history-body">
+        <!-- Llenado dinamicamente por openHistoryModal() -->
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button id="btn-history-done" class="btn-primary">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Chip flotante de estado del comparador: aparece cuando el usuario anade
      la 1a estacion y desaparece al cerrar el modal o cuando borra la seleccion. -->
 <div id="compare-chip" class="compare-chip" role="status" aria-live="polite" aria-hidden="true">

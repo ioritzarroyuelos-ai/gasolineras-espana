@@ -529,6 +529,26 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
       renderFavsPanel();
       return true;
     }
+    // Ship 20: boton historico (data-hist-open). Lo interceptamos ANTES del
+    // data-zoom para que no dispare el zoom al mapa al clicar. Resolvemos el
+    // indice contra filteredStations (que es lo que renderList acaba de pintar).
+    var histBtn = target.closest('[data-hist-open]');
+    if (histBtn) {
+      var hidx = parseInt(histBtn.getAttribute('data-hist-open'), 10);
+      if (!isNaN(hidx)) {
+        var sh = filteredStations[hidx];
+        if (sh) {
+          var fuelSel = document.getElementById('sel-combustible');
+          var fuelVal = fuelSel ? fuelSel.value : '';
+          var fuelLbl = '';
+          if (fuelSel && fuelSel.selectedOptions && fuelSel.selectedOptions[0]) {
+            fuelLbl = (fuelSel.selectedOptions[0].text || '').replace(/^\S+\s*/, '');
+          }
+          openHistoryModal(sh, fuelVal, fuelLbl);
+        }
+      }
+      return true;
+    }
     var card = target.closest('[data-zoom]');
     if (!card) return false;
     var idx = parseInt(card.getAttribute('data-idx'), 10);

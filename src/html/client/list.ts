@@ -237,6 +237,36 @@ function closeCompareModal() {
   if (m) m.classList.remove('show');
 }
 
+// Ship 20: abre el modal de historico. Reusa buildHistoryPlaceholder (mapa) +
+// renderHistoryPanel — el placeholder lleva data-* con todo lo que el renderer
+// necesita, asi que con inyectar el HTML y llamar al panel con days=30 ya
+// tenemos sparkline + stats + toggles de rango (7/30/90/1a). Los toggles
+// tienen un listener global en ui.ts que dispara re-fetch al hacer click,
+// asi que esto no toca eventos.
+function openHistoryModal(station, fuel, fuelLabel) {
+  var m = document.getElementById('modal-history');
+  var body = document.getElementById('history-body');
+  var subtitle = document.getElementById('history-subtitle');
+  if (!m || !body) return;
+  var id = stationId(station);
+  var provinciaId = station['IDProvincia'] || '';
+  var price = parsePrice(station[fuel]);
+  var rotulo = station['Rotulo'] || 'Gasolinera';
+  var loc = station['Municipio'] ? (station['Municipio'] + (station['Provincia'] ? ', ' + station['Provincia'] : '')) : '';
+  if (subtitle) subtitle.textContent = rotulo + (loc ? ' \u00B7 ' + loc : '');
+  // Inyectamos el placeholder — mismo DOM que el popup del mapa. Llamar a
+  // renderHistoryPanel(panel, 30) dispara el fetch y pinta el sparkline.
+  body.innerHTML = buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, price);
+  var panel = body.querySelector('[data-hist-station]');
+  if (panel) renderHistoryPanel(panel, 30);
+  m.classList.add('show');
+}
+
+function closeHistoryModal() {
+  var m = document.getElementById('modal-history');
+  if (m) m.classList.remove('show');
+}
+
 function cardHTML(s, i, fuel, fuelLabel) {
   var price = parsePrice(s[fuel]);
   var color = priceColor(price);
@@ -336,6 +366,12 @@ function cardHTML(s, i, fuel, fuelLabel) {
     ? '<span class="' + badgeCls + '">' + priceText + '</span>'
     : '<span class="row-row-noprice">N/D</span>';
 
+  // Ship 20: boton historico en cada card. data-hist-open lleva el indice
+  // para que el listener delegado lo resuelva y llame a openHistoryModal.
+  // No disparamos fetch al renderizar — solo al click. Boton pequeno para no
+  // robar espacio al precio.
+  var histBtn = '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">\u{1F4C8}</button>';
+
   return '<div class="station-card" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
     + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '" aria-pressed="' + fav + '">'
     + (fav ? '\u2605' : '\u2606') + '</button>'
@@ -350,6 +386,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
     + priceEl
     + tankCostHtml
     + '<div class="row-fuel-label">' + esc(fuelLabel.slice(0,18)) + '</div>'
+    + histBtn
     + '</div></div></div>';
 }
 

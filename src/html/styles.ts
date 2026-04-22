@@ -1003,6 +1003,17 @@ export function getStyles(nonce: string = ''): string {
     .fav-btn.active { color:#f59e0b; }
     body.dark .fav-btn { color:#475569; }
     body.dark .fav-btn.active { color:#fbbf24; }
+    /* Ship 20: boton 📈 de historial, alineado con el precio en la derecha
+       de la card. Tamano discreto, no compite con el precio ni con el favorito.
+       Usa font-size reducido y padding compacto; hover escala sutil como el fav. */
+    .card-hist-btn {
+      background:none; border:1px solid #e5e7eb; border-radius:6px;
+      padding:2px 6px; margin-top:4px; cursor:pointer; font-size:13px;
+      color:#64748b; line-height:1; transition:background 0.15s, transform 0.1s, border-color 0.15s;
+    }
+    .card-hist-btn:hover { background:#f1f5f9; border-color:#cbd5e1; transform:scale(1.05); }
+    body.dark .card-hist-btn { border-color:#334155; color:#94a3b8; }
+    body.dark .card-hist-btn:hover { background:#1e293b; border-color:#475569; }
     .status-chip {
       display:inline-block; padding:1px 7px; border-radius:10px;
       font-size:10px; font-weight:700; margin-left:4px; vertical-align:middle;

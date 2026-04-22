@@ -1662,6 +1662,24 @@ function toggleRouteCorridor() {
   });
 })();
 
+// ---- Ship 20: wiring del modal de historico ----
+// Mismo patron que comparador: botones close/done + click backdrop + ESC.
+// openHistoryModal se dispara desde ui.ts al clicar el boton 📈 de una card.
+(function() {
+  var modal = document.getElementById('modal-history');
+  if (!modal) return;
+  var btnClose = document.getElementById('btn-history-close');
+  var btnDone  = document.getElementById('btn-history-done');
+  if (btnClose) btnClose.addEventListener('click', closeHistoryModal);
+  if (btnDone)  btnDone.addEventListener('click',  closeHistoryModal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeHistoryModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeHistoryModal();
+  });
+})();
+
 // ---- Ship 8: REPORTE DE PRECIO INCORRECTO ----
 // Un solo IIFE que:
 //  1. Delega clicks en .popup-report-link del mapa (data-pop-report contiene

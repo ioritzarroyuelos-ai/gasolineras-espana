@@ -485,6 +485,10 @@ function renderRouteCorridorLayer() {
         try {
           var node = e.popup && e.popup._contentNode;
           if (!node) return;
+          // Mismo fix CSP que en renderMarkers: el ph-marker guarda el % en
+          // data-pct; aplicamos el left en runtime porque style="" inline esta
+          // bloqueado por style-src sin 'unsafe-inline'.
+          if (typeof applyPercentileMarkerPos === 'function') applyPercentileMarkerPos(node);
           var panel = node.querySelector('[data-hist-station]');
           if (panel) renderHistoryPanel(panel, 30);
           var predSlot = node.querySelector('[data-predict-station]');
@@ -1456,16 +1460,41 @@ function toggleRouteCorridor() {
     try { localStorage.setItem(DIARY_KEY, JSON.stringify(arr)); } catch(e) {}
   }
 
+  // Lee del perfil el consumo declarado (L/100km) y la capacidad del deposito.
+  // Si no hay perfil o faltan, devuelve nulls — diaryStats los ignora y cae
+  // al calculo clasico solo-observado.
+  function diaryProfileOpts() {
+    try {
+      var p = (typeof getProfile === 'function' ? getProfile() : null) || {};
+      var cons = null;
+      if (typeof p.consumo === 'number' && p.consumo > 0) cons = p.consumo;
+      else if (typeof p.consumoL100km === 'number' && p.consumoL100km > 0) cons = p.consumoL100km;
+      var tank = (typeof p.tank === 'number' && p.tank > 0) ? p.tank : null;
+      return { profileL100km: cons, tankCapacity: tank };
+    } catch(_) { return { profileL100km: null, tankCapacity: null }; }
+  }
+
   // Funcion pura duplicada — tests cubren la version canonica en pure.ts.
-  function diaryStats(entries) {
+  // Ver explicacion detallada de por que funciona con parciales en pure.ts.
+  function diaryStats(entries, opts) {
     var clean = (entries || []).filter(function(e) {
       return e && typeof e.date === 'string'
         && isFinite(e.litros)      && e.litros      > 0
         && isFinite(e.eurPerLitre) && e.eurPerLitre > 0
         && isFinite(e.kmTotales)   && e.kmTotales   >= 0;
     }).sort(function(a, b) { return a.date.localeCompare(b.date); });
+    var profileL100km = (opts && typeof opts.profileL100km === 'number' && opts.profileL100km > 0) ? opts.profileL100km : null;
+    var tankCapacity  = (opts && typeof opts.tankCapacity  === 'number' && opts.tankCapacity  > 0) ? opts.tankCapacity  : null;
     if (clean.length === 0) {
-      return { entries: 0, totalLiters: 0, totalSpentEur: 0, avgEurPerLitre: null, totalKm: 0, avgL100km: null };
+      return {
+        entries: 0, totalLiters: 0, totalSpentEur: 0,
+        avgEurPerLitre: null, totalKm: 0, avgL100km: null,
+        profileL100km: profileL100km,
+        reliableL100km: profileL100km,
+        reliabilityWeight: 0,
+        eurPer100km: null,
+        segments: []
+      };
     }
     var tL = 0, tS = 0, sEpl = 0;
     for (var i = 0; i < clean.length; i++) {
@@ -1477,13 +1506,50 @@ function toggleRouteCorridor() {
     var litersForCons = 0;
     for (var j = 1; j < clean.length; j++) litersForCons += clean[j].litros;
     var avgL100km = totalKm > 0 && litersForCons > 0 ? litersForCons / (totalKm / 100) : null;
+    // Consumo por tramo: empieza en el 2o repostaje.
+    var segments = [];
+    for (var k = 1; k < clean.length; k++) {
+      var segKm = clean[k].kmTotales - clean[k - 1].kmTotales;
+      segments.push({
+        date: clean[k].date,
+        km: segKm > 0 ? segKm : 0,
+        litros: clean[k].litros,
+        l100km: segKm > 0 ? clean[k].litros / (segKm / 100) : null
+      });
+    }
+    // Blend observado <-> perfil (ver pure.ts para la explicacion).
+    var reliabilityWeight = 0;
+    var reliableL100km = null;
+    if (avgL100km !== null && profileL100km !== null) {
+      var wKm = totalKm > 0 ? Math.min(1, totalKm / 2000) : 0;
+      var wLitros = (tankCapacity !== null && litersForCons > 0)
+        ? Math.min(1, litersForCons / (tankCapacity * 2))
+        : 0;
+      reliabilityWeight = Math.min(1, Math.max(wKm, wLitros));
+      reliableL100km = reliabilityWeight * avgL100km + (1 - reliabilityWeight) * profileL100km;
+    } else if (avgL100km !== null) {
+      reliabilityWeight = 1;
+      reliableL100km = avgL100km;
+    } else if (profileL100km !== null) {
+      reliabilityWeight = 0;
+      reliableL100km = profileL100km;
+    }
+    var avgEurPerLitre = sEpl / clean.length;
+    var eurPer100km = (reliableL100km !== null && isFinite(avgEurPerLitre))
+      ? reliableL100km * avgEurPerLitre
+      : null;
     return {
       entries: clean.length,
       totalLiters: tL,
       totalSpentEur: tS,
-      avgEurPerLitre: sEpl / clean.length,
+      avgEurPerLitre: avgEurPerLitre,
       totalKm: totalKm > 0 ? totalKm : 0,
-      avgL100km: avgL100km
+      avgL100km: avgL100km,
+      profileL100km: profileL100km,
+      reliableL100km: reliableL100km,
+      reliabilityWeight: reliabilityWeight,
+      eurPer100km: eurPer100km,
+      segments: segments
     };
   }
 
@@ -1495,30 +1561,90 @@ function toggleRouteCorridor() {
   }
 
   function renderStats() {
-    var s = diaryStats(getDiary());
+    var raw = getDiary();
+    var opts = diaryProfileOpts();
+    var s = diaryStats(raw, opts);
     document.getElementById('ds-entries').textContent = s.entries;
     document.getElementById('ds-spent').textContent   = s.totalSpentEur.toFixed(2) + ' \u20AC';
     document.getElementById('ds-avg').textContent     = s.avgEurPerLitre ? s.avgEurPerLitre.toFixed(3) + ' \u20AC/L' : '--';
     document.getElementById('ds-km').textContent      = s.totalKm.toFixed(0) + ' km';
-    document.getElementById('ds-cons').textContent    = s.avgL100km ? s.avgL100km.toFixed(1) + ' L/100km' : '--';
+    // Consumo: preferimos el valor "fiable" (mezcla observado+perfil). Si no
+    // hay ni datos ni perfil -> '--'.
+    var consEl = document.getElementById('ds-cons');
+    var consSubEl = document.getElementById('ds-cons-sub');
+    if (s.reliableL100km !== null && s.reliableL100km !== undefined) {
+      consEl.textContent = s.reliableL100km.toFixed(1) + ' L/100km';
+      if (consSubEl) {
+        if (s.reliabilityWeight >= 0.95 && s.profileL100km !== null) {
+          consSubEl.textContent = 'calculado con tus repostajes';
+        } else if (s.reliabilityWeight >= 0.5 && s.profileL100km !== null) {
+          consSubEl.textContent = 'tus repostajes + perfil';
+        } else if (s.avgL100km === null && s.profileL100km !== null) {
+          consSubEl.textContent = 'segun tu perfil (aun sin repostajes)';
+        } else if (s.profileL100km !== null) {
+          consSubEl.textContent = 'perfil + pocos repostajes';
+        } else {
+          consSubEl.textContent = 'solo repostajes (sin perfil)';
+        }
+      }
+    } else {
+      consEl.textContent = '--';
+      if (consSubEl) consSubEl.textContent = 'faltan datos o perfil';
+    }
+    // Coste por 100 km: reliableL100km * media €/L. Muy util porque responde
+    // directamente a "cuanto me cuesta cada 100 km en combustible".
+    var eurEl = document.getElementById('ds-eurkm');
+    if (eurEl) {
+      eurEl.textContent = (s.eurPer100km !== null && s.eurPer100km !== undefined && isFinite(s.eurPer100km))
+        ? s.eurPer100km.toFixed(2) + ' \u20AC/100km'
+        : '--';
+    }
     document.getElementById('ds-liters').textContent  = s.totalLiters.toFixed(1) + ' L';
   }
 
   function renderList() {
-    var entries = getDiary().slice().sort(function(a, b) { return b.date.localeCompare(a.date); });
-    if (entries.length === 0) {
+    var raw = getDiary();
+    if (!raw || raw.length === 0) {
       emptyWrap.style.display = '';
       listWrap.innerHTML = '';
       return;
     }
+    // Calculamos los segmentos con diaryStats (cronologico) y mapeamos por
+    // date+km para poder pintar el L/100km del tramo junto al repostaje que
+    // lo CIERRA. Los mas recientes primero (orden DESC) para mostrar.
+    // Calculamos los segmentos y los mapeamos por date+km (clave usada en el
+    // borrado tambien) para pintar el L/100km del tramo junto al repostaje
+    // que lo CIERRA.
+    var stats = diaryStats(raw);
+    var chrono = raw.slice().filter(function(e) {
+      return e && isFinite(e.litros) && e.litros > 0 && isFinite(e.kmTotales) && e.kmTotales >= 0;
+    }).sort(function(a, b) { return a.date.localeCompare(b.date); });
+    var segByKey = {};
+    for (var ci = 1; ci < chrono.length; ci++) {
+      var seg = stats.segments[ci - 1];
+      if (!seg) continue;
+      segByKey[chrono[ci].date + '|' + chrono[ci].kmTotales] = seg;
+    }
+    var entries = raw.slice().sort(function(a, b) { return b.date.localeCompare(a.date); });
     emptyWrap.style.display = 'none';
     listWrap.innerHTML = entries.map(function(e) {
+      var segKey = e.date + '|' + e.kmTotales;
+      var seg = segByKey[segKey];
+      var segLine = '';
+      if (seg && seg.l100km !== null && seg.l100km !== undefined && isFinite(seg.l100km)) {
+        segLine = '  <div class="diary-item-seg">' + seg.km.toFixed(0) + ' km desde el anterior \u2022 <strong>'
+          + seg.l100km.toFixed(1) + ' L/100km</strong></div>';
+      } else if (chrono.length > 1 && chrono[0].date === e.date && chrono[0].kmTotales === e.kmTotales) {
+        // Primer repostaje (el mas antiguo): es la referencia, no tiene tramo.
+        segLine = '  <div class="diary-item-seg diary-item-seg-muted">Referencia inicial \u2022 los siguientes repostajes calculan el consumo</div>';
+      }
       return '<div class="diary-item">'
         + '<div class="diary-item-main">'
         + '  <div class="diary-item-date">' + esc(fmtDate(e.date)) + ' \u00B7 ' + e.litros.toFixed(2) + ' L'
         + '    <span class="diary-item-sub">a ' + e.eurPerLitre.toFixed(3) + ' \u20AC/L \u00B7 ' + (e.litros * e.eurPerLitre).toFixed(2) + ' \u20AC</span>'
         + '  </div>'
         + '  <div class="diary-item-sub">Odometro: ' + e.kmTotales.toFixed(0) + ' km</div>'
+        + segLine
         + '</div>'
         + '<button class="diary-item-del" data-diary-del="' + esc(e.date + '|' + e.kmTotales) + '" aria-label="Borrar repostaje">\u2716</button>'
         + '</div>';
@@ -1803,8 +1929,8 @@ function toggleRouteCorridor() {
   var current = { ideess: '', fuel: '', officialPrice: null, rotulo: '' };
 
   // Mapeo de codigos internos a etiquetas usuario-friendly. Usamos los mismos
-  // codigos que FUEL_CODES_BY_LABEL en el cliente (95, 98, diesel, ...) y el
-  // servidor valida la lista cerrada.
+  // codigos cortos que emite map.ts (REPORT_FUEL_CODES) y que el servidor
+  // valida contra REPORT_FUELS en src/index.tsx.
   var FUEL_LABELS = {
     '95': 'Gasolina 95',
     '98': 'Gasolina 98',
@@ -1812,8 +1938,9 @@ function toggleRouteCorridor() {
     'diesel_plus': 'Di\u00E9sel Plus',
     'glp': 'GLP (autogas)',
     'gnc': 'GNC',
-    'gna': 'GNA',
-    'hidrogeno': 'Hidr\u00F3geno'
+    'gnl': 'GNL',
+    'hidrogeno': 'Hidr\u00F3geno',
+    'diesel_renov': 'Di\u00E9sel Renovable'
   };
 
   function setStatus(msg, isError) {

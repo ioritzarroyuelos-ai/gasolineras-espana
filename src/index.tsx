@@ -1,6 +1,15 @@
 import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import {
+  verifyGoogleIdToken,
+  signSessionJWT,
+  verifySessionJWT,
+  buildSessionCookie,
+  buildLogoutCookie,
+  parseSessionCookie,
+  isSyncableKey,
+} from './lib/auth'
+import {
   LRU,
   validateId,
   isValidProvinciaId,
@@ -110,6 +119,23 @@ type Env = {
   //                    https://paypal.me/<handle>, https://github.com/sponsors/<handle>.
   // Configurar con: npx wrangler pages secret put SUPPORT_URL --project-name=webapp
   SUPPORT_URL?: string
+  // ---- Google OAuth + KV sync (Ship 26) ----
+  // GOOGLE_CLIENT_ID: publico, se inyecta en el HTML para inicializar GIS.
+  GOOGLE_CLIENT_ID?: string
+  // SESSION_SECRET: secret (wrangler pages secret put). Firma los JWT de sesion
+  // con HMAC-SHA256. Si falta, /api/auth/* responde 503.
+  SESSION_SECRET?: string
+  // USER_DATA: KV namespace para sincronizar datos del usuario (favoritas,
+  // diario, rutas, perfil). Si falta, /api/sync/* responde 503 pero el login
+  // sigue funcionando sin persistencia cross-device.
+  USER_DATA?: KVNamespace
+}
+// Shape minima de KVNamespace (solo lo que usamos). Evita dep en @cloudflare/workers-types.
+type KVNamespace = {
+  get: (key: string, opts?: { type?: 'text' | 'json' }) => Promise<unknown>
+  put: (key: string, value: string, opts?: { expirationTtl?: number }) => Promise<void>
+  delete: (key: string) => Promise<void>
+  list: (opts?: { prefix?: string; limit?: number; cursor?: string }) => Promise<{ keys: Array<{ name: string }>; list_complete: boolean; cursor?: string }>
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -410,7 +436,7 @@ function genNonce(): string {
   return btoa(s)
 }
 
-function buildCsp(nonce: string, turnstile = false): string {
+function buildCsp(nonce: string, turnstile = false, googleAuth = false): string {
   const scriptSrc  = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com']
   // style-src con nonce + allowlist de CDNs. Ya NO llevamos 'unsafe-inline':
   //   - Los <style> inline (shell.ts / legalPage) emiten nonce="${nonce}" que
@@ -427,10 +453,22 @@ function buildCsp(nonce: string, turnstile = false): string {
   // connect-src: sin nominatim. Todo el geocoding pasa por /api/geocode/* (mismo
   // origen) → no expone la IP del usuario a OSM y reduce superficie de CSP.
   const connectSrc = ["'self'"]
+  const imgSrc     = ["'self'", 'data:', 'blob:', 'https:']
   if (turnstile) {
     scriptSrc.push('https://challenges.cloudflare.com')
     frameSrc.push('https://challenges.cloudflare.com')
     connectSrc.push('https://challenges.cloudflare.com')
+  }
+  if (googleAuth) {
+    // GIS necesita cargar el SDK + embedar un iframe de login + postMessage al
+    // backend (/api/auth/google pasa por 'self', pero el SDK inicializa via
+    // accounts.google.com). Solo anadimos los hosts estrictamente necesarios.
+    scriptSrc.push('https://accounts.google.com/gsi/client')
+    frameSrc.push('https://accounts.google.com/gsi/')
+    connectSrc.push('https://accounts.google.com/gsi/')
+    styleSrc.push('https://accounts.google.com/gsi/style')
+    // Avatar del usuario sale de lh3.googleusercontent.com — img-src ya es https: asi
+    // que no hace falta anadirlo explicito, pero lo dejamos documentado.
   }
   // tiles.openfreemap.org sirve vector tiles, sprites y glyphs PBF para el
   // estilo Liberty de MapLibre GL (render vectorial con toponimia name:es).
@@ -522,15 +560,20 @@ async function verifyTurnstile(
 // ---- HTML pages ----
 // Headers compartidos (CSP + seguridad + preconnect). Factorizado porque los
 // usan tanto la home como las rutas provinciales.
-function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> {
+function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Record<string, string> {
   return {
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': buildCsp(nonce, turnstile),
+    'Content-Security-Policy': buildCsp(nonce, turnstile, googleAuth),
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()',
-    'Cross-Origin-Opener-Policy': 'same-origin',
+    // GIS abre un popup cross-origin y espera un postMessage de vuelta del
+    // opener. Con 'same-origin' el navegador desconecta window.opener -> el
+    // popup recibe null y falla. 'same-origin-allow-popups' mantiene el canal
+    // abierto solo para popups que abrimos nosotros, sin empeorar el aislamiento
+    // frente a terceros. Solo lo activamos si googleAuth esta configurado.
+    'Cross-Origin-Opener-Policy': googleAuth ? 'same-origin-allow-popups' : 'same-origin',
     // CORP: impide que terceros embeban nuestras respuestas via <img>/<script>/
     // etc desde otro origen. Reduce clases de side-channel como Spectre-web.
     'Cross-Origin-Resource-Policy': 'same-origin',
@@ -553,6 +596,7 @@ function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> 
 app.get('/', async c => {
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  const googleAuth = !!c.env.GOOGLE_CLIENT_ID
   // Ship 15: exponer Fecha del snapshot para que el cliente pinte badge
   // "Precios de hace Xm". Si falla la carga, seguimos sin badge.
   let snapshotDate: string | undefined
@@ -564,7 +608,8 @@ app.get('/', async c => {
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
     snapshotDate,
     supportUrl: c.env.SUPPORT_URL,
-  }), { headers: pageHeaders(nonce, turnstile) })
+    googleClientId: c.env.GOOGLE_CLIENT_ID,
+  }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
 })
 
 // ---- Rutas SEO por provincia ----
@@ -578,6 +623,7 @@ app.get('/gasolineras/:slug', async c => {
   if (!prov) return c.notFound()
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  const googleAuth = !!c.env.GOOGLE_CLIENT_ID
 
   // Pre-computamos stats de precios por combustible para la provincia. Sirve
   // para: (a) meta description enriquecida, (b) Dataset variableMeasured en
@@ -655,7 +701,8 @@ app.get('/gasolineras/:slug', async c => {
     municipios,
     snapshotDate,
     supportUrl: c.env.SUPPORT_URL,
-  }), { headers: pageHeaders(nonce, turnstile) })
+    googleClientId: c.env.GOOGLE_CLIENT_ID,
+  }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
 })
 
 // ---- SEO: /gasolineras/:provinciaSlug/:municipioSlug (Ship 11) ----
@@ -672,6 +719,7 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
   if (!prov) return c.notFound()
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  const googleAuth = !!c.env.GOOGLE_CLIENT_ID
 
   let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
   let stationCount = 0
@@ -719,7 +767,8 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
     },
     snapshotDate,
     supportUrl: c.env.SUPPORT_URL,
-  }), { headers: pageHeaders(nonce, turnstile) })
+    googleClientId: c.env.GOOGLE_CLIENT_ID,
+  }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
 })
 
 // ---- security.txt (RFC 9116) ----
@@ -1005,6 +1054,125 @@ app.get('/privacidad', c => {
 })
 
 // ---- API ----
+
+// ---- Auth (Google OAuth + session JWT + KV sync) ----
+// Flujo completo:
+//   1) Cliente carga GIS (accounts.google.com/gsi/client).
+//   2) Usuario firma y recibe un ID token (JWT RS256 de Google).
+//   3) POST /api/auth/google { credential } con el ID token.
+//   4) Server verifica firma contra el JWKS de Google y emite una cookie de
+//      sesion firmada con HMAC-SHA256 (SESSION_SECRET, 30d, HttpOnly+Secure+Lax).
+//   5) GET /api/me devuelve { user } si hay sesion valida, o { user: null }.
+//   6) /api/sync/* lee/escribe datos en USER_DATA KV con key `u:${sub}:${dataKey}`.
+//   7) POST /api/auth/logout limpia la cookie.
+//
+// Degradacion:
+//   - Sin GOOGLE_CLIENT_ID o SESSION_SECRET: /api/auth/google -> 503.
+//   - Sin USER_DATA: /api/sync/* -> 503, pero el login funciona.
+async function getSessionUser(c: { env: Env; req: { header: (k: string) => string | undefined } }) {
+  const secret = c.env.SESSION_SECRET
+  if (!secret) return null
+  const token = parseSessionCookie(c.req.header('cookie'))
+  if (!token) return null
+  return verifySessionJWT(token, secret)
+}
+
+app.post('/api/auth/google', async c => {
+  const rl = ingestLimiter.check(clientKey(c))
+  if (!rl.allowed) return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  const clientId = c.env.GOOGLE_CLIENT_ID
+  const secret = c.env.SESSION_SECRET
+  if (!clientId || !secret) return c.json({ error: 'auth_not_configured' }, 503)
+
+  let body: { credential?: string }
+  try { body = await c.req.json() } catch { return c.json({ error: 'bad_request' }, 400) }
+  const credential = typeof body?.credential === 'string' ? body.credential : ''
+  if (!credential || credential.length > 4000) return c.json({ error: 'bad_request' }, 400)
+
+  let payload: { sub: string; email?: string; name?: string; picture?: string } | null
+  try {
+    payload = await verifyGoogleIdToken(credential, clientId)
+  } catch (e) {
+    slog('warn', 'auth.google_verify_fail', { err: String(e).slice(0, 200) })
+    return c.json({ error: 'invalid_token' }, 401)
+  }
+  if (!payload) return c.json({ error: 'invalid_token' }, 401)
+
+  const token = await signSessionJWT({
+    sub: payload.sub,
+    email: payload.email || '',
+    name: payload.name || '',
+    picture: payload.picture || '',
+  }, secret)
+
+  return c.json(
+    { user: { sub: payload.sub, email: payload.email, name: payload.name, picture: payload.picture } },
+    200,
+    { 'Set-Cookie': buildSessionCookie(token), 'Cache-Control': 'no-store' },
+  )
+})
+
+app.post('/api/auth/logout', c => {
+  return c.json({ ok: true }, 200, { 'Set-Cookie': buildLogoutCookie(), 'Cache-Control': 'no-store' })
+})
+
+app.get('/api/me', async c => {
+  const secret = c.env.SESSION_SECRET
+  if (!secret) return c.json({ user: null }, 200, { 'Cache-Control': 'no-store' })
+  const token = parseSessionCookie(c.req.header('cookie'))
+  if (!token) return c.json({ user: null }, 200, { 'Cache-Control': 'no-store' })
+  const payload = await verifySessionJWT(token, secret)
+  if (!payload) return c.json({ user: null }, 200, { 'Cache-Control': 'no-store', 'Set-Cookie': buildLogoutCookie() })
+  return c.json({
+    user: { sub: payload.sub, email: payload.email, name: payload.name, picture: payload.picture },
+  }, 200, { 'Cache-Control': 'no-store' })
+})
+
+app.get('/api/sync', async c => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const kv = c.env.USER_DATA
+  if (!kv) return c.json({ error: 'sync_not_configured' }, 503)
+  const prefix = 'u:' + user.sub + ':'
+  const list = await kv.list({ prefix, limit: 100 })
+  const out: Record<string, unknown> = {}
+  for (const { name } of list.keys) {
+    const key = name.slice(prefix.length)
+    if (!isSyncableKey(key)) continue
+    const val = await kv.get(name, { type: 'json' })
+    if (val !== null) out[key] = val
+  }
+  return c.json({ data: out }, 200, { 'Cache-Control': 'no-store' })
+})
+
+app.put('/api/sync/:key', async c => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const kv = c.env.USER_DATA
+  if (!kv) return c.json({ error: 'sync_not_configured' }, 503)
+  const dataKey = c.req.param('key')
+  if (!isSyncableKey(dataKey)) return c.json({ error: 'bad_key' }, 400)
+  let body: unknown
+  try { body = await c.req.json() } catch { return c.json({ error: 'bad_request' }, 400) }
+  // Cap al valor para evitar abuso del KV (256 KB por entrada). Si alguien
+  // mete algo gordo lo rechazamos antes de persistir.
+  const serialized = JSON.stringify(body)
+  if (serialized.length > 256 * 1024) return c.json({ error: 'payload_too_large' }, 413)
+  await kv.put('u:' + user.sub + ':' + dataKey, serialized)
+  return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
+})
+
+app.delete('/api/sync/:key', async c => {
+  const user = await getSessionUser(c)
+  if (!user) return c.json({ error: 'unauthorized' }, 401)
+  const kv = c.env.USER_DATA
+  if (!kv) return c.json({ error: 'sync_not_configured' }, 503)
+  const dataKey = c.req.param('key')
+  if (!isSyncableKey(dataKey)) return c.json({ error: 'bad_key' }, 400)
+  await kv.delete('u:' + user.sub + ':' + dataKey)
+  return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
+})
+
 app.get('/api/provincias', async c => {
   try {
     return c.json(await proxiedFetch('/Listados/Provincias/'), 200, { 'Cache-Control': 'public, max-age=3600' })

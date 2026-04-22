@@ -66,6 +66,10 @@ export interface BuildPageOpts {
   // GitHub Sponsors, etc). El render valida que sea http(s) para evitar XSS
   // por injection de javascript: URIs.
   supportUrl?: string
+  // Google OAuth Client ID (publico — sale en el HTML servido). Si esta
+  // presente, se inicializa Google Identity Services y se pinta el boton
+  // "Entrar". Si no, el panel de login se oculta y /api/auth/* responde 503.
+  googleClientId?: string
 }
 
 export function buildPage(
@@ -130,6 +134,15 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 <script defer async
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         nonce="${nonce}"></script>`
+    : ''
+
+  // Google Identity Services (GIS). Solo se carga si GOOGLE_CLIENT_ID esta
+  // configurado. El script publica `window.google.accounts.id` que el cliente
+  // usa para renderizar el boton de login dentro del modal.
+  const gClientId = opts.googleClientId
+  const googleAuthScripts = gClientId
+    ? `<script nonce="${nonce}">window.__GOOGLE_CLIENT_ID__=${JSON.stringify(gClientId)};</script>
+<script src="https://accounts.google.com/gsi/client" async defer nonce="${nonce}"></script>`
     : ''
 
   // Contexto SEO expuesto al cliente: el script arranque autoseleccionara el
@@ -459,6 +472,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   ${seoScript}
   ${snapMetaScript}
   ${turnstileScripts}
+  ${googleAuthScripts}
 
   ${getStyles(nonce)}
 </head>
@@ -504,6 +518,41 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <i class="fas fa-book" aria-hidden="true"></i>
     </button>
     <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
+    ${gClientId ? `
+    <!-- Login Google: visible solo si hay GOOGLE_CLIENT_ID configurado. El
+         boton abre el modal de login cuando no hay sesion; cuando la hay,
+         client/ui.ts lo oculta y muestra #user-menu en su lugar. -->
+    <button id="btn-login" class="btn-login" type="button" title="Iniciar sesión" aria-label="Iniciar sesión con Google" hidden>
+      <i class="fas fa-user-circle" aria-hidden="true"></i>
+      <span class="btn-login-txt">Entrar</span>
+    </button>
+    <div id="user-menu" class="user-menu" hidden>
+      <button id="btn-user" class="user-chip" type="button" aria-haspopup="true" aria-expanded="false" title="Mi cuenta">
+        <img id="user-avatar" alt="" width="24" height="24" referrerpolicy="no-referrer" />
+        <span id="user-name" class="user-name"></span>
+      </button>
+      <div id="user-dropdown" class="user-dropdown" role="menu" hidden>
+        <div class="user-dropdown-head">
+          <div class="user-dropdown-name" id="user-dropdown-name"></div>
+          <div class="user-dropdown-email" id="user-dropdown-email"></div>
+        </div>
+        <div class="user-dropdown-sep"></div>
+        <button id="btn-user-favs" class="user-dropdown-item" role="menuitem" type="button">
+          <i class="fas fa-star" aria-hidden="true"></i> Favoritas
+        </button>
+        <button id="btn-user-route" class="user-dropdown-item" role="menuitem" type="button">
+          <i class="fas fa-route" aria-hidden="true"></i> Rutas
+        </button>
+        <button id="btn-user-diary" class="user-dropdown-item" role="menuitem" type="button">
+          <i class="fas fa-book" aria-hidden="true"></i> Repostajes
+        </button>
+        <div class="user-dropdown-sep"></div>
+        <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sincronizado</div>
+        <button id="btn-logout" class="user-dropdown-item" role="menuitem" type="button">
+          <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Cerrar sesión
+        </button>
+      </div>
+    </div>` : ''}
   </div>
 </header>
 
@@ -897,6 +946,18 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     </div>
   </div>
 </div>
+
+<!-- ============ MODAL LOGIN (Google) ============ -->
+${gClientId ? `
+<div id="login-modal" class="login-modal" hidden role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
+  <div class="login-modal-backdrop" data-close="1"></div>
+  <div class="login-modal-card">
+    <button id="login-modal-close" class="login-modal-close" data-close="1" aria-label="Cerrar">&times;</button>
+    <h2 id="login-modal-title" class="login-modal-title">Inicia sesión con Google</h2>
+    <p class="login-modal-sub">Sincroniza tus favoritas, rutas y diario de repostajes entre dispositivos.</p>
+    <div id="gsi-button-container" class="login-modal-btn"></div>
+  </div>
+</div>` : ''}
 
 <!-- ============ MODAL FAVORITAS ============ -->
 <!-- Se abre desde el boton estrella del header. Solo contiene la lista de

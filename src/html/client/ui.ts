@@ -1733,4 +1733,177 @@ function showUpdateToast(newSW) {
 
   document.body.appendChild(t);
 }
+
+// ---- LOGIN GOOGLE + USER MENU (Ship auth 1.9) ----
+// Se monta solo si shell.ts inyecto window.__GOOGLE_CLIENT_ID__ (es decir, si
+// hay GOOGLE_CLIENT_ID en env). En el resto de entornos el bloque entero es
+// no-op y los nodos #btn-login / #user-menu / #login-modal ni existen en el
+// DOM, asi que todos los getElementById devuelven null y los listeners nunca
+// se registran — cero overhead.
+//
+// Relacion con la dropdown de la cuenta (requerimiento explicito del usuario):
+// dentro del desplegable hay tres items — Favoritas, Rutas, Repostajes —
+// que cuando se clickan cierran la dropdown y disparan un click sintetico
+// sobre los botones de cabecera #btn-favs, #btn-route y #btn-diary, que ya
+// tienen handlers que abren los respectivos modales. Asi no duplicamos
+// logica de apertura ni tocamos los modulos existentes.
+(function() {
+  var CID = (typeof window !== 'undefined') ? window.__GOOGLE_CLIENT_ID__ : null;
+  if (!CID) return;
+
+  var btnLogin      = document.getElementById('btn-login');
+  var userMenu      = document.getElementById('user-menu');
+  var btnUser       = document.getElementById('btn-user');
+  var userDropdown  = document.getElementById('user-dropdown');
+  var userAvatar    = document.getElementById('user-avatar');
+  var userNameEl    = document.getElementById('user-name');
+  var ddName        = document.getElementById('user-dropdown-name');
+  var ddEmail       = document.getElementById('user-dropdown-email');
+  var btnUserFavs   = document.getElementById('btn-user-favs');
+  var btnUserRoute  = document.getElementById('btn-user-route');
+  var btnUserDiary  = document.getElementById('btn-user-diary');
+  var btnLogout     = document.getElementById('btn-logout');
+  var loginModal    = document.getElementById('login-modal');
+  var loginClose    = document.getElementById('login-modal-close');
+  var gsiContainer  = document.getElementById('gsi-button-container');
+
+  if (!btnLogin || !userMenu || !loginModal || !gsiContainer) return;
+
+  function setLogged(user) {
+    if (user && user.sub) {
+      btnLogin.hidden = true;
+      userMenu.hidden = false;
+      if (userAvatar && user.picture) { userAvatar.src = user.picture; userAvatar.alt = user.name || ''; }
+      if (userNameEl) userNameEl.textContent = user.name || user.email || '';
+      if (ddName)     ddName.textContent     = user.name  || '';
+      if (ddEmail)    ddEmail.textContent    = user.email || '';
+    } else {
+      userMenu.hidden = true;
+      btnLogin.hidden = false;
+    }
+  }
+
+  function closeDropdown() {
+    if (!userDropdown) return;
+    userDropdown.hidden = true;
+    if (btnUser) btnUser.setAttribute('aria-expanded', 'false');
+  }
+  function toggleDropdown() {
+    if (!userDropdown) return;
+    var open = !userDropdown.hidden;
+    userDropdown.hidden = open;
+    if (btnUser) btnUser.setAttribute('aria-expanded', open ? 'false' : 'true');
+  }
+
+  // Click fuera de la dropdown la cierra. Se registra una sola vez.
+  document.addEventListener('click', function(ev) {
+    if (!userDropdown || userDropdown.hidden) return;
+    var t = ev.target;
+    if (t && (userMenu.contains(t))) return;
+    closeDropdown();
+  });
+  // Tecla Escape cierra dropdown y modal — consistente con el resto de UI.
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key !== 'Escape') return;
+    if (userDropdown && !userDropdown.hidden) closeDropdown();
+    if (loginModal && !loginModal.hidden) closeLoginModal();
+  });
+
+  if (btnUser) btnUser.addEventListener('click', function(ev) {
+    ev.stopPropagation();
+    toggleDropdown();
+  });
+
+  // Tres items de la dropdown -> delegan al boton de cabecera ya cableado.
+  function openViaHeaderButton(id) {
+    closeDropdown();
+    var b = document.getElementById(id);
+    if (b) b.click();
+  }
+  if (btnUserFavs)  btnUserFavs.addEventListener('click',  function() { openViaHeaderButton('btn-favs'); });
+  if (btnUserRoute) btnUserRoute.addEventListener('click', function() { openViaHeaderButton('btn-route'); });
+  if (btnUserDiary) btnUserDiary.addEventListener('click', function() { openViaHeaderButton('btn-diary'); });
+
+  // ---- Login modal ----
+  var gsiInitialized = false;
+  function openLoginModal() {
+    loginModal.hidden = false;
+    ensureGsiButton();
+  }
+  function closeLoginModal() {
+    loginModal.hidden = true;
+  }
+  loginModal.addEventListener('click', function(ev) {
+    var t = ev.target;
+    if (t && t.getAttribute && t.getAttribute('data-close') === '1') closeLoginModal();
+  });
+  if (loginClose) loginClose.addEventListener('click', closeLoginModal);
+  btnLogin.addEventListener('click', openLoginModal);
+
+  // GIS se carga async via <script> en el head. Puede no estar listo cuando
+  // el usuario abre el modal por primera vez — reintentamos hasta 5s.
+  function whenGoogleReady(cb, tries) {
+    var g = window.google;
+    if (g && g.accounts && g.accounts.id) return cb();
+    if ((tries || 0) >= 50) return;
+    setTimeout(function() { whenGoogleReady(cb, (tries || 0) + 1); }, 100);
+  }
+
+  function ensureGsiButton() {
+    if (gsiInitialized) return;
+    whenGoogleReady(function() {
+      try {
+        window.google.accounts.id.initialize({
+          client_id: CID,
+          callback: handleCredential,
+          ux_mode: 'popup',
+          auto_select: false,
+          itp_support: true,
+        });
+        window.google.accounts.id.renderButton(gsiContainer, {
+          type: 'standard',
+          theme: 'filled_blue',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'pill',
+          logo_alignment: 'left',
+          width: 280,
+        });
+        gsiInitialized = true;
+      } catch (e) {
+        gsiContainer.textContent = 'No se pudo cargar Google Sign-In. Revisa la conexion.';
+      }
+    });
+  }
+
+  function handleCredential(resp) {
+    if (!resp || !resp.credential) return;
+    fetch('/api/auth/google', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: resp.credential }),
+    }).then(function(r) {
+      if (!r.ok) throw new Error('auth_failed_' + r.status);
+      return r.json();
+    }).then(function(data) {
+      setLogged(data && data.user);
+      closeLoginModal();
+    }).catch(function() {
+      try { showToast('No se pudo iniciar sesion', 'error'); } catch(_) {}
+    });
+  }
+
+  if (btnLogout) btnLogout.addEventListener('click', function() {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+      .then(function() { setLogged(null); closeDropdown(); })
+      .catch(function() { setLogged(null); closeDropdown(); });
+  });
+
+  // Boot: /api/me para decidir si mostramos el boton Entrar o el user-menu.
+  fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' })
+    .then(function(r) { return r.ok ? r.json() : { user: null }; })
+    .then(function(data) { setLogged(data && data.user); })
+    .catch(function() { setLogged(null); });
+})();
 `

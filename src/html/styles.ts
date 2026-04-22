@@ -1632,6 +1632,96 @@ export function getStyles(nonce: string = ''): string {
     body.dark .btn-header-fav:hover { background: #334155; }
     body.dark .btn-header-fav.has-favs { color: #fbbf24; border-color: #78350f; background: #451a03; }
     body.dark .btn-header-fav.has-favs:hover { background: #78350f; }
+
+    /* ---- Login (Google) ---- */
+    /* [hidden] pelea con display:inline-flex de los botones del header — forzamos
+       que el atributo HTML mande. Esto evita que .btn-login o .user-menu aparezcan
+       mientras client/ui.ts aun no ha decidido si hay sesion. */
+    .btn-login[hidden], .user-menu[hidden], .user-dropdown[hidden], #login-modal[hidden] { display: none !important; }
+    .btn-login {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #fff; color: #166534; border: 1px solid #cbd5e1;
+      border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background 0.12s, border-color 0.12s;
+    }
+    .btn-login:hover { background: #f0fdf4; border-color: #86efac; }
+    body.dark .btn-login { background: #0f172a; color: #86efac; border-color: #334155; }
+    body.dark .btn-login:hover { background: #14532d; border-color: #166534; }
+    .btn-login i { font-size: 15px; }
+    .btn-login-txt { line-height: 1; }
+
+    .user-menu { position: relative; }
+    .user-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: #fff; border: 1px solid #cbd5e1; border-radius: 999px;
+      padding: 3px 10px 3px 3px; max-width: 180px;
+      cursor: pointer; transition: background 0.12s;
+    }
+    .user-chip:hover { background: #f0fdf4; }
+    body.dark .user-chip { background: #0f172a; border-color: #334155; }
+    body.dark .user-chip:hover { background: #14532d; }
+    .user-chip img {
+      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
+      background: #e2e8f0;
+    }
+    .user-chip .user-name {
+      font-size: 12px; font-weight: 600; color: #334155;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
+    }
+    body.dark .user-chip .user-name { color: #cbd5e1; }
+
+    .user-dropdown {
+      position: absolute; top: calc(100% + 6px); right: 0; min-width: 240px;
+      background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      padding: 10px 0; z-index: 2500;
+    }
+    body.dark .user-dropdown { background: #1e293b; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
+    .user-dropdown-head { padding: 4px 14px 10px; }
+    .user-dropdown-name { font-weight: 700; font-size: 14px; color: #0f172a; line-height: 1.2; }
+    .user-dropdown-email { font-size: 12px; color: #64748b; margin-top: 2px; word-break: break-all; }
+    body.dark .user-dropdown-name { color: #f1f5f9; }
+    body.dark .user-dropdown-email { color: #94a3b8; }
+    .user-dropdown-sep { height: 1px; background: #e2e8f0; margin: 6px 0; }
+    body.dark .user-dropdown-sep { background: #334155; }
+    .user-dropdown-sync { padding: 4px 14px; font-size: 11px; color: #16a34a; }
+    .user-dropdown-sync.error { color: #dc2626; }
+    body.dark .user-dropdown-sync { color: #86efac; }
+    body.dark .user-dropdown-sync.error { color: #f87171; }
+    .user-dropdown-item {
+      display: flex; align-items: center; gap: 10px;
+      width: 100%; background: none; border: none; cursor: pointer;
+      padding: 9px 14px; font-size: 13px; color: #334155;
+      font-weight: 500; text-align: left;
+    }
+    .user-dropdown-item i { width: 16px; color: #64748b; }
+    .user-dropdown-item:hover { background: #f0fdf4; color: #14532d; }
+    .user-dropdown-item:hover i { color: #14532d; }
+    body.dark .user-dropdown-item { color: #cbd5e1; }
+    body.dark .user-dropdown-item i { color: #94a3b8; }
+    body.dark .user-dropdown-item:hover { background: #14532d; color: #bbf7d0; }
+    body.dark .user-dropdown-item:hover i { color: #bbf7d0; }
+
+    .login-modal { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; }
+    .login-modal-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,0.55); }
+    .login-modal-card {
+      position: relative; background: #fff; border-radius: 14px;
+      padding: 28px 28px 24px; max-width: 360px; width: calc(100% - 32px);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    body.dark .login-modal-card { background: #1e293b; }
+    .login-modal-close {
+      position: absolute; top: 8px; right: 10px;
+      background: none; border: none; font-size: 24px; line-height: 1;
+      cursor: pointer; color: #94a3b8; padding: 4px 8px;
+    }
+    .login-modal-close:hover { color: #334155; }
+    body.dark .login-modal-close:hover { color: #e2e8f0; }
+    .login-modal-title { margin: 0 0 8px; font-size: 17px; color: #0f172a; }
+    body.dark .login-modal-title { color: #f1f5f9; }
+    .login-modal-sub { margin: 0 0 18px; font-size: 13px; color: #64748b; line-height: 1.45; }
+    body.dark .login-modal-sub { color: #94a3b8; }
+    .login-modal-btn { min-height: 44px; display: flex; justify-content: center; }
+
     .fav-badge {
       position: absolute;
       top: -6px;

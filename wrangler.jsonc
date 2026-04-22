@@ -15,8 +15,21 @@
   // al dominio canonico de prod es correcto siempre que el snapshot de prod
   // este razonablemente fresco (lo esta: GHA commitea 2 veces/dia).
   "vars": {
-    "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev"
+    "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev",
+    "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com"
   },
+
+  // ---- KV (login + sincronizacion cross-device) ----
+  // USER_DATA guarda, por usuario autenticado con Google, los datos que deben
+  // sincronizarse entre dispositivos: favoritas, diario de repostajes, perfil
+  // de coche, rutas guardadas, etc. (ver SYNCABLE_KEYS en src/lib/auth.ts).
+  // SESSION_SECRET (secret, `wrangler pages secret put`) firma los JWT de sesion.
+  "kv_namespaces": [
+    {
+      "binding": "USER_DATA",
+      "id": "ddf3b7cfded545bb9201acb42ad2ee73"
+    }
+  ],
 
   // ---- D1 ----
   // Binding `DB` -> base de datos con el historico de precios por estacion/dia.

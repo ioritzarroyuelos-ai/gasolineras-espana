@@ -3,6 +3,11 @@ export const clientMapScript = `
 var map;
 var mapLayers = {};
 
+// Ultimos bounds aplicados por renderMarkers. Los guardamos para que el toggle
+// del sidebar (ui.ts) pueda re-encajar las gasolineras con la padding correcta
+// tras cambiar el ancho del contenedor.
+var lastFitBounds = null;
+
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
@@ -1030,7 +1035,10 @@ function renderMarkers(stations) {
       // Mantenemos fitBounds para centrar igual que en modo cluster.
       try {
         var bnds = heatPoints.map(function(pt) { return [pt[0], pt[1]]; });
-        if (bnds.length) map.fitBounds(bnds, Object.assign({}, mapAnimOpts(), { padding: [40, 40], maxZoom: 13 }));
+        if (bnds.length) {
+          lastFitBounds = bnds;
+          map.fitBounds(bnds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 13 }));
+        }
       } catch(e) {}
       return;
     }
@@ -1120,9 +1128,20 @@ function renderMarkers(stations) {
   map.addLayer(clusterGroup);
 
   if (bounds.length > 0) {
-    try { map.fitBounds(bounds, Object.assign({}, mapAnimOpts(), { padding: [40, 40], maxZoom: 14 })); }
+    lastFitBounds = bounds;
+    try { map.fitBounds(bounds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 })); }
     catch(e) {}
   }
+}
+
+// Re-aplicar el ultimo fitBounds con la padding actual. Lo usa el toggle del
+// sidebar para re-centrar las gasolineras tras cambiar el ancho del contenedor
+// (sin esto, invalidateSize preserva el centro geografico pero no reajusta la
+// bbox, dejando las gasolineras desencajadas cuando se abre/cierra el sidebar).
+function refitLastBounds() {
+  if (!map || !lastFitBounds || !lastFitBounds.length) return;
+  try { map.fitBounds(lastFitBounds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 })); }
+  catch(e) {}
 }
 
 function highlightCard(idx) {

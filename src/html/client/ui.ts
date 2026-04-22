@@ -204,7 +204,16 @@ function toggleDesktopSidebar() {
   sidebar.classList.toggle('collapsed', !isCollapsed);
   localStorage.setItem('gs_sb', isCollapsed ? '1' : '0');
   sidebarIcon();
-  setTimeout(function() { if (map) map.invalidateSize(true); }, 300);
+  // Tras la transicion CSS (280ms), invalidateSize para que Leaflet vea el
+  // nuevo ancho y refitLastBounds para re-centrar las gasolineras visibles
+  // con la padding correcta (mapFitPadding ya ajusta segun sidebar abierto/
+  // cerrado). Sin el refit, invalidateSize preservaba el centro geografico
+  // pero dejaba los marcadores desencajados o incluso tapados por el sidebar.
+  setTimeout(function() {
+    if (!map) return;
+    map.invalidateSize(true);
+    if (typeof refitLastBounds === 'function') refitLastBounds();
+  }, 300);
 }
 
 // Restaurar estado al cargar

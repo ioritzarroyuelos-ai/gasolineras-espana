@@ -1150,8 +1150,33 @@ function prefersReducedMotion() { return PRM_VALUE; }
 function scrollBehavior(fallback) { return PRM_VALUE ? 'auto' : (fallback || 'smooth'); }
 // Opcion compartida para Leaflet fitBounds / setView con animacion
 // respetando la preferencia. Se pasa como opts:
-//   map.fitBounds(b, Object.assign({}, mapAnimOpts(), { padding: [40,40] }))
+//   map.fitBounds(b, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 }))
 function mapAnimOpts() { return { animate: !PRM_VALUE }; }
+
+// Padding para fitBounds que compensa el sidebar cuando esta abierto en
+// desktop. Sin esto, fitBounds centraba las gasolineras en el ancho total del
+// contenedor (incluyendo los 320px que ocupa el sidebar por la izquierda), con
+// lo que el cluster visualmente aparecia pegado al borde del sidebar o incluso
+// tapado por el. En movil el sidebar es position:fixed (overlay) y no reduce
+// el area del mapa cuando esta cerrado — pero si esta abierto, tambien lo
+// compensamos para que cuando el usuario abra la lista y use un deep-link no
+// le salga el mapa detras del overlay.
+function mapFitPadding() {
+  var sb = document.getElementById('sidebar');
+  if (!sb) return { padding: [40, 40] };
+  var isDesktop = window.innerWidth >= 1024;
+  if (isDesktop && !sb.classList.contains('collapsed')) {
+    // Desktop con sidebar expandido (~320px). paddingTopLeft corre el bounds
+    // hacia la derecha para que las gasolineras queden centradas en la zona
+    // visible, no del contenedor total.
+    return { paddingTopLeft: [360, 60], paddingBottomRight: [40, 40] };
+  }
+  if (!isDesktop && sb.classList.contains('open')) {
+    // Movil con sidebar overlay abierto (~340px).
+    return { paddingTopLeft: [380, 60], paddingBottomRight: [40, 40] };
+  }
+  return { padding: [40, 40] };
+}
 
 // Elimina tildes de las claves del objeto estacion (evita problemas de encoding del documento)
 function normalizeStation(s) {

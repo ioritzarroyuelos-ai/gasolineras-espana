@@ -181,66 +181,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     '@type': 'BreadcrumbList',
     itemListElement: breadcrumbItems,
   }] : []
-  // FAQ: ahora se emite SIEMPRE (home, provincia, municipio) — y a partir de
-  // Ship 11 tambien se renderiza visible en HTML para que Google valide el
-  // FAQPage schema. En provincia/municipio anadimos 1-2 preguntas contextuales
-  // con el nombre del ambito para enriquecer la relevancia semantica.
-  const faqBaseItems = [
-    {
-      '@type': 'Question',
-      name: '¿De dónde vienen los precios?',
-      acceptedAnswer: { '@type': 'Answer', text: 'Del dataset oficial del Ministerio para la Transición Ecológica y el Reto Demográfico, actualizado a diario. La app consume directamente el snapshot público.' },
-    },
-    {
-      '@type': 'Question',
-      name: '¿Con qué frecuencia se actualizan?',
-      acceptedAnswer: { '@type': 'Answer', text: 'Una vez al día, hacia las 20:00 UTC, cuando el Ministerio publica la tanda del día. Las gasolineras tienen 48 h para comunicar cambios por ley.' },
-    },
-    {
-      '@type': 'Question',
-      name: '¿Es gratis?',
-      acceptedAnswer: { '@type': 'Answer', text: 'Sí, gratis y sin anuncios. Si te resulta útil, hay un botón de Ko-fi para invitarme a un café.' },
-    },
-    {
-      '@type': 'Question',
-      name: '¿Puedo usarla sin conexión?',
-      acceptedAnswer: { '@type': 'Answer', text: 'La app está instalable como PWA y cachea el último snapshot de precios — si pierdes cobertura, sigues viendo los datos vistos por última vez.' },
-    },
-  ]
-  const faqGeoItems = geoLabel ? [
-    {
-      '@type': 'Question',
-      name: '¿Cuántas gasolineras hay en ' + geoLabel + '?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: (seo?.stationCount
-          ? 'En el último snapshot del Ministerio constan ' + seo.stationCount + ' estaciones de servicio activas en ' + geoLabel + '. '
-          : 'La app muestra todas las estaciones activas en ' + geoLabel + ' según el snapshot oficial. ') +
-          'Puedes filtrar por marca, horario de apertura, 24h o distancia desde tu ubicación.',
-      },
-    },
-    {
-      '@type': 'Question',
-      name: '¿Cuál es el precio medio del diésel y la gasolina 95 en ' + geoLabel + '?',
-      acceptedAnswer: {
-        '@type': 'Answer',
-        text: (() => {
-          const s95 = seo?.stats?.['95']
-          const sd  = seo?.stats?.['diesel']
-          if (!s95 && !sd) return 'Los precios medios se calculan a partir del snapshot diario del Ministerio. Consulta la tabla al final de esta página para los valores actuales.'
-          const parts: string[] = []
-          if (s95 && s95.count >= 3) parts.push('gasolina 95 a una media de ' + s95.avg.toFixed(3) + ' €/L (rango ' + s95.min.toFixed(3) + '–' + s95.max.toFixed(3) + ' €)')
-          if (sd  && sd.count  >= 3) parts.push('gasóleo A a una media de ' + sd.avg.toFixed(3)  + ' €/L (rango ' + sd.min.toFixed(3)  + '–' + sd.max.toFixed(3)  + ' €)')
-          return 'Según el último snapshot del Ministerio, en ' + geoLabel + ' se encuentra ' + parts.join(' y ') + '. Los precios se actualizan a diario.'
-        })(),
-      },
-    },
-  ] : []
-  const faqPage = [{
-    '@context': 'https://schema.org',
-    '@type': 'FAQPage',
-    mainEntity: [...faqGeoItems, ...faqBaseItems],
-  }]
 
   const jsonLd = JSON.stringify([
     {
@@ -299,7 +239,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           })
         : undefined,
     },
-    ...faqPage,
     ...breadcrumbs,
     // Ship 17: ItemList → GasStation. Solo emitimos cuando hay topStations
     // (provincia/municipio). Google indexa las entidades como nodos separados,
@@ -1257,7 +1196,7 @@ ${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || 
      Se renderiza al final del DOM para no desplazar el mapa/sidebar (que son
      lo que el usuario quiere ver primero). Tras arreglar overflow:hidden en
      body, ahora es accesible por scroll normal — tanto para el crawler (texto
-     canonico) como para el usuario (FAQ expandible + tabla + municipios). -->
+     canonico) como para el usuario (tabla + municipios). -->
 <section class="seo-summary" aria-labelledby="seo-h1" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
   <!-- Breadcrumb visible — complementa al BreadcrumbList del JSON-LD dandole
        al usuario navegacion ascendente (Inicio / Provincia). -->
@@ -1299,23 +1238,6 @@ ${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || 
   </table>
   <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabel + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
 </section>` : ''}
-
-<!-- FAQ visible (Ship 11): renderizamos el mismo contenido que el FAQPage
-     JSON-LD para que Google valide el schema (exige correspondencia 1:1 con
-     contenido visible). Se emite SIEMPRE (home/provincia/municipio) — en
-     provincia/municipio las dos primeras preguntas son contextualizadas con
-     el nombre del ambito, lo que enriquece la relevancia semantica. -->
-<section class="seo-faq" aria-labelledby="faq-h2" style="padding:16px 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
-  <h2 id="faq-h2" style="font-size:20px;color:#14532d;margin:0 0 16px">Preguntas frecuentes${geoLabel ? ' sobre gasolineras en ' + geoLabel : ''}</h2>
-  ${[...faqGeoItems, ...faqBaseItems].map(q => `
-  <details style="border-top:1px solid #e5e7eb;padding:12px 0">
-    <summary style="cursor:pointer;font-weight:500;color:#1f2937;list-style:none;display:flex;align-items:center;gap:8px">
-      <span aria-hidden="true" style="color:#16a34a;font-size:12px">&#x25B6;</span>
-      <span>${q.name}</span>
-    </summary>
-    <p style="margin:8px 0 0 20px;color:#475569;line-height:1.6">${q.acceptedAnswer.text}</p>
-  </details>`).join('')}
-</section>
 
 ${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipios.length > 0 ? `
 <!-- Enlace interno a municipios destacados de la provincia (Ship 11): mejora

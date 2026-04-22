@@ -99,6 +99,14 @@ describe('features string (fuente del prebuild)', () => {
   })
 })
 
+describe('features string — swipe-to-dismiss bottom sheet (Ship 22)', () => {
+  it('tiene el wiring de arrastre para cerrar bottom sheets en movil', () => {
+    expect(clientFeaturesScript).toContain('Ship 22')
+    expect(clientFeaturesScript).toContain('.modal-backdrop.show')
+    expect(clientFeaturesScript).toContain('translateY(')
+  })
+})
+
 describe('list string — pull-to-refresh (Ship 21)', () => {
   // El IIFE de PTR no exporta funciones (solo wires touch handlers al DOM),
   // asi que validamos por presencia de los simbolos clave del gesto. Si

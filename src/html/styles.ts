@@ -1258,6 +1258,60 @@ export function getStyles(nonce: string = ''): string {
     .modal-body { padding:8px 20px 16px; }
     .modal-footer { padding:12px 20px 16px; display:flex; justify-content:flex-end; gap:8px; border-top:1px solid #e2e8f0; }
     body.dark .modal-footer { border-top-color:#334155; }
+
+    /* ===== Ship 22: BOTTOM SHEET EN MOVIL ===== */
+    /* Breakpoint 640px (iPhone SE y superiores en portrait). En mobile el
+       modal centrado se siente flotante y pequeno; el patron nativo es una
+       "hoja inferior" pegada a la base con handle arriba, bordes redondeados
+       superiores y animacion de slide-up.
+       Aplicamos a TODOS los modales (.modal-backdrop) sin necesidad de
+       tocar el DOM: solo CSS con pseudo-elemento para el handle.
+       Reduce motion respetado — sin animacion de entrada. */
+    @media (max-width: 639px) {
+      .modal-backdrop {
+        align-items: flex-end;
+        padding: 0;
+      }
+      .modal {
+        max-width: 100%;
+        width: 100%;
+        max-height: 88vh;
+        border-radius: 20px 20px 0 0;
+        position: relative;
+        animation: sheet-slide-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+        padding-top: 18px; /* hueco para el handle */
+        box-shadow: 0 -8px 32px rgba(0,0,0,0.25);
+      }
+      .modal::before {
+        content: '';
+        position: absolute;
+        top: 8px; left: 50%;
+        transform: translateX(-50%);
+        width: 42px; height: 4px;
+        background: #cbd5e1; border-radius: 2px;
+      }
+      body.dark .modal::before { background: #475569; }
+      .modal-header { padding-top: 8px; }
+      /* El cierre con la X sigue en su sitio; ampliamos area de toque en
+         movil para cumplir el minimo de 44px de Apple HIG. */
+      .modal-close-x {
+        min-width: 36px; min-height: 36px;
+        display: flex; align-items: center; justify-content: center;
+      }
+      /* En sobre-override para modales que definen max-width mayor
+         (comparador/favoritos/diario) — en movil todos son full-width. */
+      #modal-compare .modal, #modal-favs .modal, #modal-diary .modal,
+      #modal-history .modal, #modal-report .modal, #modal-onboarding .modal {
+        max-width: 100%;
+      }
+    }
+    @keyframes sheet-slide-up {
+      from { transform: translateY(100%); }
+      to   { transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .modal { animation: none !important; }
+    }
     .btn-ghost {
       background:none; border:1px solid #cbd5e1; color:#64748b;
       border-radius:8px; padding:7px 14px; font-size:13px; font-weight:600; cursor:pointer;

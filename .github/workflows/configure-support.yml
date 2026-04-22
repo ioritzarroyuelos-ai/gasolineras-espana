@@ -82,15 +82,34 @@ jobs:
           esac
 
           # 3. Reachability — evitar publicar un link 404/roto.
-          # Usamos UA de navegador porque Ko-fi/Stripe devuelven 403 a curl por defecto.
+          # Usamos UA de navegador porque las plataformas de donacion (Ko-fi,
+          # BMC, etc.) estan detras de Cloudflare y devuelven 403 a curl por
+          # defecto. Ojo: aun con UA de navegador, Ko-fi devuelve 403 a IPs de
+          # runners GHA (bot protection por IP no-residencial). Por eso
+          # aceptamos 403 explicitamente como "host responde, solo nos bloquea
+          # por ser CI" — combinado con la allowlist del paso anterior es
+          # suficiente (si el handle no existiera, Ko-fi devolveria 404).
           STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -L --max-time 20 \
             -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36" \
             "$URL")
-          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
-            echo "::error::URL devuelve HTTP $STATUS — la pagina no existe o esta caida. Verifica el handle."
-            exit 1
-          fi
-          echo "✓ URL valida: $URL (host=$HOST, HTTP $STATUS)"
+          case "$STATUS" in
+            2??|3??|401|403|429)
+              # 2xx/3xx: todo bien. 401/403: gatekeeping (la pagina existe).
+              # 429: rate-limited (tambien implica host alive).
+              echo "✓ URL valida: $URL (host=$HOST, HTTP $STATUS)"
+              ;;
+            404|410)
+              echo "::error::URL devuelve HTTP $STATUS — la pagina no existe. Verifica el handle en $HOST."
+              exit 1
+              ;;
+            5??|000)
+              echo "::error::URL devuelve HTTP $STATUS — host caido o timeout. Reintenta en unos minutos."
+              exit 1
+              ;;
+            *)
+              echo "::warning::URL devuelve HTTP $STATUS — status inesperado, sigo pero revisa manualmente que el link funciona."
+              ;;
+          esac
 
       - name: Install deps para wrangler
         run: npm ci --no-audit --no-fund

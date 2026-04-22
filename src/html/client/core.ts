@@ -717,146 +717,166 @@ function checkPriceDropsAndUpdateBaselines(stations, fuel) {
 }
 
 // ============================================================
-// Ship 23: WEB PUSH — alertas que funcionan con la app cerrada
+// Ship 25: ALERTAS POR TELEGRAM — sustituye Web Push (Ship 23, retirado).
 // ============================================================
-// Complementa las alertas locales (que solo funcionan con tab abierta)
-// registrando una PushSubscription en el servidor. El servidor ejecuta un
-// cron que compara precios y dispara pushes via VAPID. El Service Worker
-// los recibe y muestra notificacion nativa — funciona con el browser en
-// background e incluso si la app esta instalada como PWA.
+// Telegram gana sobre Web Push en este caso de uso:
+//   - Funciona en iOS sin instalar la PWA como standalone.
+//   - Los mensajes persisten en el historial del chat (no se pierden).
+//   - Zero criptografia: una llamada sendMessage y listo.
+//   - El user ya confia en Telegram — menos fricción al dar permisos.
 //
 // Flujo:
-//   1. user clic "Activar alertas push" -> pedir Notification.permission
-//   2. obtener VAPID public key del servidor -> pushManager.subscribe()
-//   3. POST la suscripcion + station_id + fuel_code por cada favorita
-//   4. al unsubscribe, DELETE en el servidor
-var PUSH_SUBS_KEY = 'gs_push_subs_v1';  // flag local: "tengo subs registradas"
+//   1. user clic "Activar alertas Telegram" -> POST /api/telegram/start-link
+//      devuelve { token, deepLink: "https://t.me/<Bot>?start=<token>" }.
+//   2. abrimos el deepLink -> en Telegram el user pulsa START -> el bot
+//      recibe "/start <token>" y actualiza telegram_pending_tokens con
+//      chat_id = update.message.from.id.
+//   3. la web hace polling GET /api/telegram/confirm?token=... cada 2s
+//      (timeout 180s). Cuando detecta confirmed=true + chat_id, llama
+//      POST /api/telegram/subscribe con los favoritos.
+//   4. localStorage guarda el chat_id — asi la UI sabe que esta activo.
+//   5. para desactivar: POST /api/telegram/unsubscribe { chat_id } + borrar
+//      chat_id del localStorage. (El user tambien puede mandar /stop al bot
+//      — /api/telegram/webhook borra sus subs y cierra el loop).
+var TG_CHAT_KEY = 'gs_tg_chat_v1';  // localStorage: chat_id si tiene alertas activas
 
-function pushSupported() {
-  return ('serviceWorker' in navigator)
-      && ('PushManager' in window)
-      && ('Notification' in window);
+// Combustible seleccionado -> fuel_code para el backend.
+function fuelSelectorToCode() {
+  var sel = document.getElementById('sel-combustible');
+  var cur = sel ? sel.value : 'Precio Gasolina 95 E5';
+  var map = {
+    'Precio Gasolina 95 E5':    '95',
+    'Precio Gasolina 98 E5':    '98',
+    'Precio Gasoleo A':         'diesel',
+    'Precio Gasoleo Premium':   'diesel_plus',
+  };
+  return map[cur] || '95';
 }
 
-// Convierte una clave VAPID base64url a Uint8Array (formato que
-// pushManager.subscribe espera como applicationServerKey).
-function vapidKeyToUint8(b64url) {
-  var padding = '='.repeat((4 - b64url.length % 4) % 4);
-  var b64 = (b64url + padding).replace(/-/g, '+').replace(/_/g, '/');
-  var raw = atob(b64);
-  var out = new Uint8Array(raw.length);
-  for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-  return out;
-}
-
-// Suscribe a todas las favoritas del usuario actual. Si ya hay una
-// PushSubscription valida, la reutiliza — un device = un endpoint.
-// Devuelve { ok: boolean, error?: string, count?: number }.
-async function enablePushAlerts() {
-  if (!pushSupported()) {
-    return { ok: false, error: 'push_no_soportado' };
+// Pide al servidor un token + deepLink. Devuelve { ok, token?, deepLink?, error? }.
+async function startTelegramLink() {
+  try {
+    var res = await fetch('/api/telegram/start-link', { method: 'POST' });
+    if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
+    if (!res.ok) return { ok: false, error: 'start_link_fallo' };
+    var j = await res.json();
+    if (!j || !j.ok) return { ok: false, error: 'start_link_fallo' };
+    return { ok: true, token: j.token, deepLink: j.deepLink };
+  } catch (e) {
+    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
   }
+}
+
+// Polling hasta confirmar que el user pulso START en Telegram.
+// Timeout total: 180s (90 intentos x 2s). En la mayoria de casos el user
+// pulsa en <10s; el timeout largo cubre "pierde el foco, vuelve despues".
+async function waitTelegramConfirm(token, maxAttempts) {
+  var tries = maxAttempts || 90;
+  for (var i = 0; i < tries; i++) {
+    try {
+      var res = await fetch('/api/telegram/confirm?token=' + encodeURIComponent(token));
+      if (res.ok) {
+        var j = await res.json();
+        if (j && j.confirmed && j.chat_id) return { ok: true, chat_id: j.chat_id };
+        if (j && j.expired) return { ok: false, error: 'token_caducado' };
+      }
+    } catch (_) {/* reintentamos */}
+    // Espera 2s entre intentos
+    await new Promise(function(r) { setTimeout(r, 2000); });
+  }
+  return { ok: false, error: 'timeout' };
+}
+
+// Sube los favoritos al servidor asociados al chat_id ya confirmado.
+async function subscribeTelegramFavs(token, favs) {
+  var fc = fuelSelectorToCode();
+  var payload = {
+    token: token,
+    threshold_cents: 15,
+    favs: favs.map(function(f) {
+      return { station_id: f.id, fuel_code: fc };
+    }),
+  };
+  try {
+    var res = await fetch('/api/telegram/subscribe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { ok: false, error: 'subscribe_' + res.status };
+    var j = await res.json();
+    return j && j.ok ? { ok: true, chat_id: j.chat_id, subscribed: j.subscribed } : { ok: false, error: 'subscribe_fallo' };
+  } catch (e) {
+    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
+  }
+}
+
+// Orquesta todo el flow: desde el click del user hasta alertas activas.
+// Devuelve { ok, deepLink?, chat_id?, subscribed?, error? }. El caller
+// debe:
+//   - mostrar el deepLink al user (ventana/popup) INMEDIATAMENTE al recibir
+//     ok=true en la primera mitad (no esperamos al confirm para abrir)
+//   - mostrar "esperando confirmacion en Telegram..." mientras hace polling
+//   - mostrar exito/error al resolver
+//
+// Para simplificar el UI, aqui hacemos todo secuencial y la UI muestra
+// toasts intermedios. Si prefieres control mas fino, llama a las funciones
+// de bajo nivel (startTelegramLink + waitTelegramConfirm + subscribeTelegramFavs).
+async function enableTelegramAlerts(onDeepLink) {
   var favs = (typeof getFavs === 'function') ? getFavs() : [];
-  if (!favs.length) {
-    return { ok: false, error: 'sin_favoritos' };
+  if (!favs.length) return { ok: false, error: 'sin_favoritos' };
+  var link = await startTelegramLink();
+  if (!link.ok) return link;
+  // Notificamos al UI el deepLink para que lo abra inmediatamente.
+  if (typeof onDeepLink === 'function') {
+    try { onDeepLink(link.deepLink); } catch(_) {}
+  } else {
+    try { window.open(link.deepLink, '_blank', 'noopener'); } catch(_) {}
   }
-  try {
-    var perm = await Notification.requestPermission();
-    if (perm !== 'granted') {
-      return { ok: false, error: 'permiso_denegado' };
-    }
-    // Pedir la clave publica VAPID al servidor.
-    var keyRes = await fetch('/api/push/vapid-key');
-    if (!keyRes.ok) {
-      return { ok: false, error: 'push_no_configurado' };
-    }
-    var keyJson = await keyRes.json();
-    if (!keyJson || !keyJson.publicKey) {
-      return { ok: false, error: 'push_no_configurado' };
-    }
-    var appServerKey = vapidKeyToUint8(keyJson.publicKey);
-    var reg = await navigator.serviceWorker.ready;
-    // Si ya hay una suscripcion, comprobamos que usa la misma VAPID key.
-    // Si no, la desuscribimos y creamos una nueva (el backend la reemplazara).
-    var existing = await reg.pushManager.getSubscription();
-    var sub = existing;
-    if (!sub) {
-      sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: appServerKey,
-      });
-    }
-    var subJSON = sub.toJSON();
-    // Combustible actual (el dropdown) — lo usamos para todas las favs.
-    // Nota: cada fav guarda su propio fuel preferido en el futuro, pero para
-    // el MVP todas comparten el combustible actualmente seleccionado.
-    var sel = document.getElementById('sel-combustible');
-    var fuelCode = sel ? sel.value : '95';
-    var count = 0;
-    for (var i = 0; i < favs.length; i++) {
-      var fav = favs[i];
-      // Combustible -> fuel_code para el backend (95/98/diesel/diesel_plus).
-      var map = {
-        'Precio Gasolina 95 E5':    '95',
-        'Precio Gasolina 98 E5':    '98',
-        'Precio Gasoleo A':         'diesel',
-        'Precio Gasoleo Premium':   'diesel_plus',
-      };
-      var fc = map[fuelCode] || '95';
-      var body = {
-        endpoint: subJSON.endpoint,
-        keys: subJSON.keys,
-        station_id: fav.id,
-        fuel_code: fc,
-        threshold_cents: 15,   // default 1.5 cents
-      };
-      try {
-        var res = await fetch('/api/push/subscribe', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        if (res.ok) count++;
-      } catch(_) {}
-    }
-    try { localStorage.setItem(PUSH_SUBS_KEY, String(Date.now())); } catch(_) {}
-    return { ok: true, count: count };
-  } catch (e) {
-    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
-  }
+  var confirmed = await waitTelegramConfirm(link.token);
+  if (!confirmed.ok) return confirmed;
+  var sub = await subscribeTelegramFavs(link.token, favs);
+  if (!sub.ok) return sub;
+  try { localStorage.setItem(TG_CHAT_KEY, String(sub.chat_id)); } catch(_) {}
+  return { ok: true, chat_id: sub.chat_id, subscribed: sub.subscribed, deepLink: link.deepLink };
 }
 
-// Desuscribe — borra la PushSubscription local y notifica al backend.
-async function disablePushAlerts() {
-  try {
-    var reg = await navigator.serviceWorker.ready;
-    var sub = await reg.pushManager.getSubscription();
-    if (sub) {
-      var endpoint = sub.endpoint;
-      try {
-        await fetch('/api/push/unsubscribe', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ endpoint: endpoint }),
-        });
-      } catch(_) {}
-      try { await sub.unsubscribe(); } catch(_) {}
-    }
-    try { localStorage.removeItem(PUSH_SUBS_KEY); } catch(_) {}
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
+// Desactiva: borra todas las subs del chat y limpia localStorage.
+async function disableTelegramAlerts() {
+  var raw = null;
+  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
+  var chatId = raw ? parseInt(raw, 10) : NaN;
+  if (!isFinite(chatId)) {
+    // Ya estaba apagado o nunca se activo — nada que hacer
+    try { localStorage.removeItem(TG_CHAT_KEY); } catch(_) {}
+    return { ok: true, note: 'no_activo' };
   }
+  try {
+    await fetch('/api/telegram/unsubscribe', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId }),
+    });
+  } catch(_) {}
+  try { localStorage.removeItem(TG_CHAT_KEY); } catch(_) {}
+  return { ok: true };
 }
 
-// Comprueba si el usuario YA tiene pushes activos (hay PushSubscription
-// registrada en el SW). Devuelve Promise<boolean>.
-async function pushAlertsActive() {
-  if (!pushSupported()) return false;
+// Sincrono: el UI lo usa para render inicial del panel. Fuente de verdad
+// es localStorage — no hacemos round-trip al server aqui para no bloquear.
+function telegramAlertsActive() {
   try {
-    var reg = await navigator.serviceWorker.ready;
-    var sub = await reg.pushManager.getSubscription();
-    return !!sub;
+    var raw = localStorage.getItem(TG_CHAT_KEY);
+    return !!(raw && /^\d+$/.test(raw));
+  } catch (_) { return false; }
+}
+
+// Consulta la config del servidor (solo para saber si el bot esta configurado).
+// El UI oculta el panel si esto devuelve false.
+async function telegramServerConfigured() {
+  try {
+    var res = await fetch('/api/telegram/config');
+    return res.status === 200;
   } catch (_) { return false; }
 }
 

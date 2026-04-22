@@ -1,0 +1,54 @@
+name: Telegram cron — comprobador de bajadas de precio (cada 2h)
+
+# Ship 25: sustituye cron-push-check.yml (Ship 23). Cada 2h (:30 para no pisarse
+# con cron-ingest :20 ni cron-purge) invoca /api/cron/telegram-check, que itera
+# las suscripciones en telegram_subscriptions, compara precios contra baseline y
+# manda mensajes via bot de Telegram cuando la bajada supera el umbral.
+#
+# Ventajas sobre Web Push:
+#   - Funciona en iOS Safari y cualquier navegador.
+#   - El usuario no necesita conceder permisos de notificacion del navegador.
+#   - Los mensajes persisten en el historial de Telegram (auditables).
+#
+# Requisitos:
+#   - secrets.CRON_TOKEN (mismo que cron-ingest/cron-purge).
+#   - En Cloudflare Pages env vars: TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME
+#     (TELEGRAM_WEBHOOK_SECRET solo se usa en el webhook, no aqui).
+#     Si TELEGRAM_BOT_TOKEN falta, el endpoint devuelve 503 y este workflow
+#     fallara — es lo que queremos (alerta loud) hasta configurar el bot.
+#
+# Setup one-shot: ver .github/workflows/configure-telegram.yml
+
+on:
+  schedule:
+    - cron: '30 */2 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: cron-telegram-check
+  cancel-in-progress: false
+
+jobs:
+  telegram-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: POST /api/cron/telegram-check
+        env:
+          CRON_TOKEN:    ${{ secrets.CRON_TOKEN }}
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::CRON_TOKEN secret no configurado — abortando."
+            exit 1
+          fi
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
+          echo "Invocando ${ORIGIN}/api/cron/telegram-check"
+          # --fail-with-body: sigue siendo curl-fail pero nos deja ver el body
+          # en 503 (util para diagnosticar "telegram_not_configured" en prod).
+          curl -fsS --retry 2 --retry-delay 10 --max-time 120 \
+            -X POST "$ORIGIN/api/cron/telegram-check" \
+            -H "Authorization: Bearer $CRON_TOKEN" \
+            -H "Accept: application/json" \
+            -w "\nHTTP %{http_code} in %{time_total}s\n"

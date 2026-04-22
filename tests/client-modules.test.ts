@@ -136,11 +136,11 @@ describe('simbolos criticos presentes en el bundle', () => {
     // Ship 20: modal historico reutilizado desde las cards del listado.
     { name: 'function openHistoryModal',  in: ['list'] },
     { name: 'function closeHistoryModal', in: ['list'] },
-    // Ship 23: Web Push.
-    { name: 'function enablePushAlerts',  in: ['core'] },
-    { name: 'function disablePushAlerts', in: ['core'] },
-    { name: 'function pushAlertsActive',  in: ['core'] },
-    { name: 'function pushSupported',     in: ['core'] },
+    // Ship 25: Telegram alerts (sustituye Web Push Ship 23).
+    { name: 'function enableTelegramAlerts',      in: ['core'] },
+    { name: 'function disableTelegramAlerts',     in: ['core'] },
+    { name: 'function telegramAlertsActive',      in: ['core'] },
+    { name: 'function telegramServerConfigured',  in: ['core'] },
     { name: 'function enterRouteMode',   in: ['features'] },
     { name: 'function toggleRouteCorridor', in: ['features'] },
     { name: 'function prefersReducedMotion', in: ['core'] },

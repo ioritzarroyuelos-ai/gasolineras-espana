@@ -45,9 +45,9 @@
   // Cloudflare Pages NO soporta "triggers.crons" (es una feature solo de
   // Workers puros). Asi que los crons se disparan desde GitHub Actions:
   //
-  //   .github/workflows/cron-ingest.yml     → `0 20 * * *`   → POST /api/cron/ingest
-  //   .github/workflows/cron-purge.yml      → `0 3 * * 0`    → POST /api/cron/purge
-  //   .github/workflows/cron-push-check.yml → `15 */2 * * *` → POST /api/cron/push-check (Ship 23)
+  //   .github/workflows/cron-ingest.yml         → `0 20 * * *`   → POST /api/cron/ingest
+  //   .github/workflows/cron-purge.yml          → `0 3 * * 0`    → POST /api/cron/purge
+  //   .github/workflows/cron-telegram-check.yml → `30 */2 * * *` → POST /api/cron/telegram-check (Ship 25)
   //
   // Todos los endpoints exigen `Authorization: Bearer <CRON_TOKEN>`. El token vive
   // en dos sitios:
@@ -57,21 +57,25 @@
   // Valor recomendado: generar con `openssl rand -hex 32` y pegar el MISMO
   // valor en los dos sitios.
   //
-  // ---- Web Push VAPID keys (Ship 23) ----
+  // ---- Telegram bot (Ship 25 — sustituye Web Push del Ship 23) ----
   // Setup (una sola vez):
-  //   1) Generar el par VAPID. Opciones:
-  //      a) npx web-push generate-vapid-keys  (recomendado — paquete npm bien probado)
-  //      b) Invocar generateVapidKeys() del helper src/lib/webpush.ts desde un script.
+  //   1) Hablar con @BotFather en Telegram:
+  //        /newbot  →  elige nombre  →  elige username (p.ej. GasolinerasAlertasBot)
+  //        BotFather devuelve un token con formato `<id>:<hash>` de ~46 chars.
   //   2) En Cloudflare Pages dashboard → Settings → Environment variables (Production):
-  //        VAPID_PUBLIC_KEY  = <la publicKey base64url, 65 bytes EC no-comprimido>
-  //        VAPID_PRIVATE_KEY = <la privateKey base64url, 32 bytes componente d>
-  //        VAPID_SUBJECT     = "mailto:tu-email@dominio.com"
-  //      Marca _PRIVATE_KEY como Secret (encrypted). _PUBLIC_KEY puede ser plain.
-  //   3) Aplica la migracion 0005 en D1 remoto:
+  //        TELEGRAM_BOT_TOKEN      = <token de BotFather>                            [Secret]
+  //        TELEGRAM_BOT_USERNAME   = <username sin la @, p.ej. GasolinerasAlertasBot> [Plain]
+  //        TELEGRAM_WEBHOOK_SECRET = <openssl rand -hex 32>                          [Secret]
+  //   3) Aplica migraciones 0006 (nueva tabla) y 0007 (drop push_subscriptions):
   //        npx wrangler d1 migrations apply gasolineras-history --remote
+  //   4) Registra el webhook con Telegram (una vez por cambio de dominio):
+  //        curl -sS "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  //             -d url=https://webapp-3ft.pages.dev/api/telegram/webhook \
+  //             -d secret_token=<TELEGRAM_WEBHOOK_SECRET>
   //
-  // Si las vars no estan, todos los /api/push/* responden 503 y el panel de
-  // "Activar alertas" se oculta del UI — sin errores ni degradacion visible.
+  // Si TELEGRAM_BOT_TOKEN/USERNAME no estan, todos los /api/telegram/* responden 503
+  // y el panel "Activar alertas en Telegram" se oculta del UI — sin errores.
+  // El workflow `.github/workflows/configure-telegram.yml` automatiza los pasos 2-4.
 
   // ---- Hardening adicional a configurar en el dashboard de Cloudflare ----
   //

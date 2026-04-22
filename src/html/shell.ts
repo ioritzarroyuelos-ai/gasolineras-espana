@@ -904,17 +904,17 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <button id="btn-favs-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
     </div>
     <div class="modal-body">
-      <!-- Ship 23: panel de alertas push. Se oculta si el navegador no
-           soporta Web Push (solo click bloquea hasta la activacion). -->
-      <div id="push-alerts-panel" class="push-alerts-panel" hidden>
-        <div class="push-alerts-info">
-          <span class="push-alerts-icon" aria-hidden="true">&#x1F514;</span>
-          <div class="push-alerts-text">
-            <strong>Alertas de precio</strong>
-            <small id="push-alerts-status">Recibe un aviso cuando baje una de tus favoritas (incluso con la app cerrada).</small>
+      <!-- Ship 25: panel de alertas por Telegram. Se oculta si el servidor
+           no tiene el bot configurado (GET /api/telegram/config -> 503). -->
+      <div id="tg-alerts-panel" class="tg-alerts-panel" hidden>
+        <div class="tg-alerts-info">
+          <span class="tg-alerts-icon" aria-hidden="true">&#x2708;&#xFE0F;</span>
+          <div class="tg-alerts-text">
+            <strong>Alertas por Telegram</strong>
+            <small id="tg-alerts-status">Recibe un aviso por Telegram cuando baje una de tus favoritas. Funciona tambien con la app cerrada.</small>
           </div>
         </div>
-        <button id="btn-push-toggle" class="btn-primary push-alerts-btn">Activar</button>
+        <button id="btn-tg-toggle" class="btn-primary tg-alerts-btn">Activar alertas en Telegram</button>
       </div>
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">

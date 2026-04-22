@@ -89,13 +89,20 @@ type Env = {
   // `Authorization: Bearer <CRON_TOKEN>` en los POST a /api/cron/*. Si no
   // esta definido, los endpoints de cron responden 503 (modo dev sin cron).
   CRON_TOKEN?: string
-  // Ship 23: claves VAPID para Web Push. Publica se expone via API (el browser
-  // la necesita para pushManager.subscribe). Privada SOLO en secrets — firma
-  // el JWT VAPID al enviar pushes desde /api/cron/push-check. Si alguna falta,
-  // los endpoints de push responden 503 (modo dev).
-  VAPID_PUBLIC_KEY?:  string
-  VAPID_PRIVATE_KEY?: string
-  VAPID_SUBJECT?:     string  // "mailto:admin@tudominio.com"
+  // Ship 25: bot de Telegram dedicado para alertas de bajadas de precio.
+  // Sustituye a Web Push (Ship 23, retirado). Si alguna falta, los endpoints
+  // /api/telegram/* responden 503 y el panel de alertas se oculta del UI.
+  //   TELEGRAM_BOT_TOKEN      — secret_text. Dado por @BotFather al crear el bot.
+  //   TELEGRAM_BOT_USERNAME   — plain_text. Username sin @, ej: "GasAlertasEsBot".
+  //                             Se expone al cliente para construir deep links
+  //                             t.me/<username>?start=<token>.
+  //   TELEGRAM_WEBHOOK_SECRET — secret_text. Random que pasamos a setWebhook y
+  //                             luego validamos en el header
+  //                             `X-Telegram-Bot-Api-Secret-Token` de cada update.
+  //                             Evita que un atacante simule updates al webhook.
+  TELEGRAM_BOT_TOKEN?:      string
+  TELEGRAM_BOT_USERNAME?:   string
+  TELEGRAM_WEBHOOK_SECRET?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -2114,111 +2121,288 @@ app.post('/api/cron/purge', async c => {
 })
 
 // ============================================================
-// Ship 23: WEB PUSH — alertas de precio activas (aunque la app este cerrada).
+// Ship 25: ALERTAS POR TELEGRAM — reemplaza Web Push (Ship 23, retirado).
 // ============================================================
-// Flow:
-//   1. Cliente pide permiso Notification y registra una PushSubscription con
-//      pushManager.subscribe({applicationServerKey: VAPID_PUBLIC_KEY}).
-//   2. Envia la suscripcion (endpoint + keys.p256dh + keys.auth) a
-//      POST /api/push/subscribe junto con station_id + fuel_code.
-//   3. El worker guarda en D1 con baseline_cents = precio actual.
-//   4. Cron GHA (cron-push-check.yml) invoca POST /api/cron/push-check cada
-//      N horas. El worker itera subscriptions, compara precio actual vs
-//      baseline, y si la caida supera threshold_cents envia un push via VAPID.
-//   5. El Service Worker (public/sw.js) recibe el `push` event y muestra una
-//      notif generica "Tu gasolinera ha bajado — abre la app". Al clickar,
-//      focus a la tab abierta o abre la app.
+// Flow de vinculacion bot↔web:
+//   1. Web llama POST /api/telegram/start-link → server genera token random,
+//      lo inserta en telegram_pending_tokens (chat_id NULL, expires en 10min),
+//      y devuelve { token, deepLink: "https://t.me/<BotUsername>?start=<tok>" }.
+//   2. Cliente abre el deepLink (window.open en una pestana o deep link movil).
+//      En Telegram el user pulsa START — Telegram envia "/start <tok>" al bot.
+//   3. El webhook /api/telegram/webhook recibe el update (valida el secret
+//      `X-Telegram-Bot-Api-Secret-Token`), parsea /start <tok>, y actualiza
+//      telegram_pending_tokens SET chat_id = update.message.from.id,
+//      confirmed_at = now WHERE token = ? AND expires_at > now. Responde al
+//      user con sendMessage("✅ Vinculado, vuelve a la web").
+//   4. La web hace polling a GET /api/telegram/confirm?token=... cada 2s.
+//      Cuando el endpoint devuelve confirmed=true + chat_id, la web llama
+//      POST /api/telegram/subscribe con el token y la lista de favoritos.
+//   5. /subscribe valida el token, inserta una fila en telegram_subscriptions
+//      por cada favorito, y borra el pending token.
 //
-// Importante: si VAPID_PUBLIC_KEY o _PRIVATE_KEY no estan configurados,
-// todos los endpoints de push devuelven 503 — no rompemos la app, solo la
-// feature queda apagada en dev/preview sin secrets.
+// Flow de alertas:
+//   - Cron GHA (.github/workflows/cron-telegram-check.yml) invoca cada 2h
+//     POST /api/cron/telegram-check con Authorization Bearer CRON_TOKEN.
+//   - El worker lee el snapshot /data/stations.json una vez, indexa por
+//     station_id, y itera todas las filas de telegram_subscriptions.
+//   - Si precio actual < baseline_cents - threshold_cents y ha pasado el
+//     cooldown de 12h, envia sendMessage al chat_id con el detalle y
+//     actualiza baseline_cents + last_notified_at.
+//
+// Si TELEGRAM_BOT_TOKEN no esta configurado los endpoints responden 503 y
+// el panel del UI se oculta — el resto de la app funciona igual.
 
-function isPushConfigured(env: Env): boolean {
-  return !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT)
+function isTelegramConfigured(env: Env): boolean {
+  return !!(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_BOT_USERNAME && env.TELEGRAM_WEBHOOK_SECRET)
 }
 
-// GET /api/push/vapid-key — devuelve la clave publica VAPID para que el
-// cliente la pase a pushManager.subscribe(). Publica por diseno (el punto
-// publico EC no compromete nada). Si no hay clave configurada, 503.
-app.get('/api/push/vapid-key', c => {
-  const key = c.env.VAPID_PUBLIC_KEY
-  if (!key) return c.json({ ok: false, error: 'push_not_configured' }, 503, { 'Cache-Control': 'no-store' })
-  return c.json({ ok: true, publicKey: key }, 200, {
-    // La clave es estable; cache moderado para ahorrar requests.
-    'Cache-Control': 'public, max-age=3600',
+// GET /api/telegram/config — el cliente la llama al abrir el panel para saber
+// si las alertas Telegram estan disponibles y cual es el username del bot
+// (necesario para construir deep links t.me/<bot>?start=...). Publica.
+app.get('/api/telegram/config', c => {
+  const ok = !!(c.env.TELEGRAM_BOT_TOKEN && c.env.TELEGRAM_BOT_USERNAME)
+  if (!ok) return c.json({ ok: false, error: 'telegram_not_configured' }, 503, { 'Cache-Control': 'no-store' })
+  return c.json({ ok: true, username: c.env.TELEGRAM_BOT_USERNAME }, 200, {
+    // Cache corto: si roto el bot username queremos propagacion rapida.
+    'Cache-Control': 'public, max-age=300',
   })
 })
 
-// POST /api/push/subscribe — guarda la suscripcion en D1.
-// Body esperado: { endpoint, keys: { p256dh, auth }, station_id, fuel_code, threshold_cents?, baseline_cents? }
-app.post('/api/push/subscribe', async c => {
-  if (!isPushConfigured(c.env)) return c.json({ ok: false, error: 'push_not_configured' }, 503)
+const PENDING_TOKEN_TTL_MS = 10 * 60 * 1000  // 10 min
+
+// POST /api/telegram/start-link — genera token + deepLink para iniciar el flow.
+app.post('/api/telegram/start-link', async c => {
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-  let body: Record<string, unknown>
-  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
-  const endpoint = typeof body.endpoint === 'string' ? body.endpoint : ''
-  const keys = (body.keys && typeof body.keys === 'object') ? body.keys as Record<string, unknown> : null
-  const p256dh = keys && typeof keys.p256dh === 'string' ? keys.p256dh : ''
-  const auth   = keys && typeof keys.auth   === 'string' ? keys.auth   : ''
-  const stationId = typeof body.station_id === 'string' ? body.station_id : ''
-  const fuelCode  = typeof body.fuel_code  === 'string' ? body.fuel_code  : ''
-  const thresholdCents = typeof body.threshold_cents === 'number' && Number.isFinite(body.threshold_cents)
-    ? Math.max(1, Math.min(200, Math.round(body.threshold_cents)))
-    : 15  // default: 1.5 centimos
-  const baselineCents = typeof body.baseline_cents === 'number' && Number.isFinite(body.baseline_cents)
-    ? Math.round(body.baseline_cents)
-    : null
-  // Validacion defensiva — evita INSERT de basura.
-  if (!endpoint || !endpoint.startsWith('https://') || endpoint.length > 500) {
-    return c.json({ ok: false, error: 'invalid_endpoint' }, 400)
-  }
-  if (!p256dh || !auth || !stationId || !fuelCode) {
-    return c.json({ ok: false, error: 'missing_fields' }, 400)
-  }
-  const userAgent = (c.req.header('user-agent') || '').slice(0, 200)
+  const { generateLinkToken } = await import('./lib/telegram')
+  const token = generateLinkToken()
   const now = Date.now()
   try {
     await c.env.DB.prepare(
-      `INSERT OR REPLACE INTO push_subscriptions
-       (endpoint, keys_p256dh, keys_auth, station_id, fuel_code, threshold_cents, baseline_cents, created_at, user_agent)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).bind(endpoint, p256dh, auth, stationId, fuelCode, thresholdCents, baselineCents, now, userAgent).run()
-    slog('info', 'push_subscribe', { station_id: stationId, fuel_code: fuelCode })
-    return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
+      'INSERT INTO telegram_pending_tokens (token, chat_id, confirmed_at, created_at, expires_at) VALUES (?, NULL, NULL, ?, ?)'
+    ).bind(token, now, now + PENDING_TOKEN_TTL_MS).run()
+    return c.json({
+      ok: true,
+      token,
+      deepLink: `https://t.me/${c.env.TELEGRAM_BOT_USERNAME}?start=${token}`,
+      expiresInSec: Math.floor(PENDING_TOKEN_TTL_MS / 1000),
+    }, 200, { 'Cache-Control': 'no-store' })
   } catch (e) {
-    slog('error', 'push_subscribe_error', { message: (e as Error).message })
+    slog('error', 'telegram_start_link_error', { message: (e as Error).message })
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
 
-// POST /api/push/unsubscribe — remove por endpoint.
-app.post('/api/push/unsubscribe', async c => {
+// POST /api/telegram/webhook — recibe updates del bot. Validamos el secret
+// para estar seguros de que el request viene de Telegram (seteamos el secret
+// con setWebhook y Telegram nos lo devuelve en el header). Responde SIEMPRE
+// 200 si el secret es valido, incluso si el update no es procesable — asi
+// Telegram no reintenta indefinidamente.
+app.post('/api/telegram/webhook', async c => {
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-  let body: Record<string, unknown>
+  const got = c.req.header('x-telegram-bot-api-secret-token') || ''
+  // tokensEqualConstTime para evitar timing attacks (el secret es relativamente corto).
+  if (!tokensEqualConstTime(got, c.env.TELEGRAM_WEBHOOK_SECRET!)) {
+    slog('warn', 'telegram_webhook_bad_secret', {})
+    return c.json({ ok: false, error: 'bad_secret' }, 401)
+  }
+  let update: any
+  try { update = await c.req.json() } catch { return c.json({ ok: true }, 200) }
+  const msg = update?.message
+  if (!msg || typeof msg.text !== 'string' || !msg.chat?.id) {
+    // No es un mensaje de texto — ignoramos silenciosamente.
+    return c.json({ ok: true }, 200)
+  }
+  const chatId = Number(msg.chat.id)
+  const text = String(msg.text).trim()
+  const { tgSendMessage, tgEscapeHtml } = await import('./lib/telegram')
+  // Comandos soportados:
+  //   /start <token> — vincula la web con este chat_id
+  //   /start (sin token) — welcome con link a la web
+  //   /help — ayuda
+  //   /stop — el user pide baja voluntaria (borramos todas sus subs)
+  //   cualquier otra cosa — echo con ayuda basica
+  if (text.startsWith('/start ')) {
+    const token = text.slice('/start '.length).trim()
+    const now = Date.now()
+    // Valida y actualiza
+    const r = await c.env.DB.prepare(
+      `UPDATE telegram_pending_tokens
+         SET chat_id = ?, confirmed_at = ?
+       WHERE token = ? AND expires_at > ? AND chat_id IS NULL`
+    ).bind(chatId, now, token, now).run()
+    const ok = (r.meta?.changes ?? 0) > 0
+    const reply = ok
+      ? '✅ <b>Vinculado.</b>\n\nVuelve a la web y espera un par de segundos — se activaran tus alertas de precio automaticamente.\n\nSi alguna vez quieres darte de baja, manda /stop aqui.'
+      : '⚠️ <b>Token no valido o caducado</b> (>10 min desde que se genero).\n\nVuelve a la web y pulsa "Activar alertas" de nuevo.'
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
+    slog('info', 'telegram_bind', { ok, chat_id: chatId })
+    return c.json({ ok: true }, 200)
+  }
+  if (text === '/start') {
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+      `👋 ¡Hola! Este bot te avisa cuando baja el precio de tus gasolineras favoritas.\n\n` +
+      `Para activarlo:\n` +
+      `1. Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}\n` +
+      `2. Marca como favoritas las estaciones que quieras vigilar\n` +
+      `3. En el panel de favoritos, pulsa "Activar alertas por Telegram"\n\n` +
+      `Yo te avisare cuando alguna baje ≥1.5 ct/L (configurable).`,
+    )
+    return c.json({ ok: true }, 200)
+  }
+  if (text === '/help') {
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+      `<b>Comandos:</b>\n` +
+      `/start — volver a empezar\n` +
+      `/stop — darte de baja (borra todas tus alertas)\n` +
+      `/help — esta ayuda`,
+    )
+    return c.json({ ok: true }, 200)
+  }
+  if (text === '/stop') {
+    const r = await c.env.DB.prepare(
+      'DELETE FROM telegram_subscriptions WHERE chat_id = ?'
+    ).bind(chatId).run()
+    const n = r.meta?.changes ?? 0
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+      n > 0
+        ? `🗑️ Borradas <b>${n}</b> alerta(s). Si cambias de opinion, vuelve a la web y pulsa "Activar alertas" de nuevo.`
+        : `No tenias alertas activas. Nada que borrar.`,
+    )
+    slog('info', 'telegram_stop', { chat_id: chatId, removed: n })
+    return c.json({ ok: true }, 200)
+  }
+  // Cualquier otro texto — ayuda breve.
+  await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+    `No entiendo eso. Manda /help para ver los comandos.`,
+  )
+  return c.json({ ok: true }, 200)
+})
+
+// GET /api/telegram/confirm?token=... — polling endpoint para la web.
+// Devuelve { ok, confirmed, chat_id? } — chat_id solo si confirmed=true.
+app.get('/api/telegram/confirm', async c => {
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  const token = c.req.query('token') || ''
+  if (!token || token.length !== 32 || !/^[a-f0-9]+$/.test(token)) {
+    return c.json({ ok: false, error: 'invalid_token' }, 400, { 'Cache-Control': 'no-store' })
+  }
+  // Nota: el tipo local D1PreparedStatement solo expone `.all()` y `.run()`
+  // (ver declaracion en la cabecera del archivo), asi que usamos `.all()` y
+  // tomamos `results[0]` en vez de `.first()`.
+  const r = await c.env.DB.prepare(
+    'SELECT chat_id, confirmed_at, expires_at FROM telegram_pending_tokens WHERE token = ?'
+  ).bind(token).all<{ chat_id: number | null; confirmed_at: number | null; expires_at: number }>()
+  const row = r.results[0]
+  if (!row) return c.json({ ok: true, confirmed: false, expired: true }, 200, { 'Cache-Control': 'no-store' })
+  if (row.expires_at < Date.now() && !row.confirmed_at) {
+    return c.json({ ok: true, confirmed: false, expired: true }, 200, { 'Cache-Control': 'no-store' })
+  }
+  if (row.confirmed_at && row.chat_id) {
+    return c.json({ ok: true, confirmed: true, chat_id: row.chat_id }, 200, { 'Cache-Control': 'no-store' })
+  }
+  return c.json({ ok: true, confirmed: false }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/telegram/subscribe — asocia favoritos al chat_id tras confirmar token.
+// Body: { token, favs: [{station_id, fuel_code}], threshold_cents? }
+app.post('/api/telegram/subscribe', async c => {
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  let body: any
   try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
-  const endpoint = typeof body.endpoint === 'string' ? body.endpoint : ''
-  if (!endpoint) return c.json({ ok: false, error: 'missing_endpoint' }, 400)
+  const token = typeof body?.token === 'string' ? body.token : ''
+  const favs = Array.isArray(body?.favs) ? body.favs : []
+  const thresholdCents = typeof body?.threshold_cents === 'number' && Number.isFinite(body.threshold_cents)
+    ? Math.max(1, Math.min(200, Math.round(body.threshold_cents)))
+    : 15
+  if (!token || token.length !== 32 || !/^[a-f0-9]+$/.test(token)) {
+    return c.json({ ok: false, error: 'invalid_token' }, 400)
+  }
+  if (!favs.length || favs.length > 100) {
+    return c.json({ ok: false, error: 'invalid_favs' }, 400)
+  }
+  // Valida el token y recupera chat_id (via .all() — ver nota en /confirm).
+  const r = await c.env.DB.prepare(
+    'SELECT chat_id, confirmed_at, expires_at FROM telegram_pending_tokens WHERE token = ?'
+  ).bind(token).all<{ chat_id: number | null; confirmed_at: number | null; expires_at: number }>()
+  const row = r.results[0]
+  if (!row || !row.chat_id || !row.confirmed_at) {
+    return c.json({ ok: false, error: 'token_not_confirmed' }, 400)
+  }
+  if (row.expires_at < Date.now()) {
+    // Ya no lo usamos pero por limpieza
+    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE token = ?').bind(token).run()
+    return c.json({ ok: false, error: 'token_expired' }, 400)
+  }
+  const chatId = row.chat_id
+  const now = Date.now()
+  // Inserta cada favorito (INSERT OR REPLACE preserva baseline si ya existia).
+  let inserted = 0
+  for (const f of favs) {
+    const stationId = typeof f?.station_id === 'string' ? f.station_id : ''
+    const fuelCode  = typeof f?.fuel_code  === 'string' ? f.fuel_code  : ''
+    const baselineCents = typeof f?.baseline_cents === 'number' && Number.isFinite(f.baseline_cents)
+      ? Math.round(f.baseline_cents)
+      : null
+    if (!stationId || !fuelCode) continue
+    try {
+      await c.env.DB.prepare(
+        `INSERT OR REPLACE INTO telegram_subscriptions
+         (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`
+      ).bind(chatId, stationId, fuelCode, thresholdCents, baselineCents, now).run()
+      inserted++
+    } catch (e) {
+      slog('error', 'telegram_subscribe_row_error', { message: (e as Error).message })
+    }
+  }
+  // Limpiamos el token (ya cumplio su proposito)
+  await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE token = ?').bind(token).run()
+  slog('info', 'telegram_subscribe', { chat_id: chatId, subscribed: inserted })
+  return c.json({ ok: true, chat_id: chatId, subscribed: inserted }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/telegram/unsubscribe — borra alertas de un chat.
+// Body: { chat_id, station_id?, fuel_code? }  (si no pasas station+fuel, borra todas)
+app.post('/api/telegram/unsubscribe', async c => {
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
+  const chatId = typeof body?.chat_id === 'number' && Number.isFinite(body.chat_id) ? body.chat_id : NaN
+  if (!Number.isFinite(chatId)) return c.json({ ok: false, error: 'missing_chat_id' }, 400)
+  const stationId = typeof body?.station_id === 'string' ? body.station_id : ''
+  const fuelCode  = typeof body?.fuel_code  === 'string' ? body.fuel_code  : ''
   try {
-    await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run()
+    if (stationId && fuelCode) {
+      await c.env.DB.prepare(
+        'DELETE FROM telegram_subscriptions WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+      ).bind(chatId, stationId, fuelCode).run()
+    } else {
+      await c.env.DB.prepare(
+        'DELETE FROM telegram_subscriptions WHERE chat_id = ?'
+      ).bind(chatId).run()
+    }
     return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
   } catch (e) {
-    slog('error', 'push_unsubscribe_error', { message: (e as Error).message })
+    slog('error', 'telegram_unsubscribe_error', { message: (e as Error).message })
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
 
-// POST /api/cron/push-check — iterador server-side. Lee suscripciones,
-// consulta precios actuales del snapshot, y envia pushes para las que han
-// bajado mas que threshold_cents. Requiere CRON_TOKEN (Authorization Bearer).
-// Se invoca desde GHA (.github/workflows/cron-push-check.yml, cada 2h).
-app.post('/api/cron/push-check', async c => {
+// POST /api/cron/telegram-check — iterador server-side.
+// Mismo patron que el antiguo /api/cron/push-check: lee snapshot, compara
+// precio actual vs baseline, envia sendMessage si la caida supera threshold.
+// Requiere CRON_TOKEN. Se invoca desde GHA cada 2h (cron-telegram-check.yml).
+app.post('/api/cron/telegram-check', async c => {
   const authz = await authorizeCron(c)
   if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
-  if (!isPushConfigured(c.env)) return c.json({ ok: false, error: 'push_not_configured' }, 503)
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-  // Snapshot actual — lo leemos una vez desde /data/stations.json (servido
-  // por el worker con la misma URL que el cliente).
+  // Snapshot actual
   let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
   try {
     const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
@@ -2227,35 +2411,38 @@ app.post('/api/cron/push-check', async c => {
   if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
     return c.json({ ok: false, error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
   }
-  // Indexamos el snapshot por station_id para O(1) lookup.
   const byStation = new Map<string, Record<string, string>>()
   for (const st of snap.ListaEESSPrecio) {
     const id = st['IDEESS'] || st['IDEESS_'] || ''
     if (id) byStation.set(String(id), st)
   }
-  // Mapeo fuel_code -> columna del snapshot (igual que el cliente).
   const fuelCol: Record<string, string> = {
     '95':          'Precio Gasolina 95 E5',
     '98':          'Precio Gasolina 98 E5',
     'diesel':      'Precio Gasoleo A',
     'diesel_plus': 'Precio Gasoleo Premium',
   }
+  const fuelLabel: Record<string, string> = {
+    '95':          'Gasolina 95',
+    '98':          'Gasolina 98',
+    'diesel':      'Diesel',
+    'diesel_plus': 'Diesel Premium',
+  }
   function parsePrice(s: string | undefined): number | null {
     if (!s) return null
     const n = parseFloat(String(s).replace(',', '.'))
     return Number.isFinite(n) && n > 0 ? n : null
   }
-  // Cooldown: no re-notificamos el mismo endpoint mas de una vez cada 12h.
   const COOLDOWN_MS = 12 * 60 * 60 * 1000
   const now = Date.now()
-  // Lee todas las suscripciones activas
   const all = await c.env.DB.prepare(
-    'SELECT endpoint, station_id, fuel_code, threshold_cents, baseline_cents, last_notified_at FROM push_subscriptions'
+    'SELECT chat_id, station_id, fuel_code, threshold_cents, baseline_cents, last_notified_at FROM telegram_subscriptions'
   ).all<{
-    endpoint: string; station_id: string; fuel_code: string;
+    chat_id: number; station_id: string; fuel_code: string;
     threshold_cents: number; baseline_cents: number | null; last_notified_at: number | null
   }>()
   const subs = all.results || []
+  const { tgSendMessage, tgEscapeHtml } = await import('./lib/telegram')
   let sent = 0, purged = 0, skipped = 0, errors = 0
   for (const sub of subs) {
     const st = byStation.get(sub.station_id)
@@ -2265,57 +2452,62 @@ app.post('/api/cron/push-check', async c => {
     const p = parsePrice(st[col])
     if (!p) { skipped++; continue }
     const pCents = Math.round(p * 1000)
-    // Sin baseline previa, la establecemos ahora y no notificamos.
     if (sub.baseline_cents == null) {
       await c.env.DB.prepare(
-        'UPDATE push_subscriptions SET baseline_cents = ? WHERE endpoint = ?'
-      ).bind(pCents, sub.endpoint).run()
+        'UPDATE telegram_subscriptions SET baseline_cents = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+      ).bind(pCents, sub.chat_id, sub.station_id, sub.fuel_code).run()
       skipped++; continue
     }
     const dropCents = sub.baseline_cents - pCents
-    // No bajo suficiente, o subio. Actualizamos baseline DESPACIO (al final)
-    // para no perder oportunidades de alerta — solo movemos baseline cuando
-    // enviamos push, o cuando el precio subio (nueva referencia mas alta).
     if (dropCents < sub.threshold_cents) {
       if (pCents > sub.baseline_cents) {
         await c.env.DB.prepare(
-          'UPDATE push_subscriptions SET baseline_cents = ? WHERE endpoint = ?'
-        ).bind(pCents, sub.endpoint).run()
+          'UPDATE telegram_subscriptions SET baseline_cents = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+        ).bind(pCents, sub.chat_id, sub.station_id, sub.fuel_code).run()
       }
       skipped++; continue
     }
-    // Cooldown check
     if (sub.last_notified_at && (now - sub.last_notified_at) < COOLDOWN_MS) {
       skipped++; continue
     }
-    // Enviar push
+    // Construir el mensaje
+    const rotulo = tgEscapeHtml(String(st['Rotulo'] || 'Gasolinera'))
+    const direccion = tgEscapeHtml(String(st['Direccion'] || ''))
+    const municipio = tgEscapeHtml(String(st['Municipio'] || ''))
+    const fuelLbl = fuelLabel[sub.fuel_code] || sub.fuel_code
+    const deltaEur = (dropCents / 1000).toFixed(3)
+    const priceEur = (pCents / 1000).toFixed(3)
+    const mapsUrl = `${origin}/?station=${encodeURIComponent(sub.station_id)}`
+    const text = `⛽ <b>${rotulo}</b>\n` +
+      `<i>${direccion}, ${municipio}</i>\n\n` +
+      `<b>${fuelLbl}</b> ha bajado a <b>${priceEur} €/L</b>\n` +
+      `(−${deltaEur} €/L desde la ultima referencia)\n\n` +
+      `<a href="${tgEscapeHtml(mapsUrl)}">Ver en el mapa</a>`
     try {
-      const { sendWebPush } = await import('./lib/webpush')
-      const result = await sendWebPush(sub.endpoint, {
-        publicKey:  c.env.VAPID_PUBLIC_KEY!,
-        privateKey: c.env.VAPID_PRIVATE_KEY!,
-        subject:    c.env.VAPID_SUBJECT!,
-      })
+      const result = await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, sub.chat_id, text)
       if (result.ok) {
         sent++
-        // Actualizamos baseline y last_notified
         await c.env.DB.prepare(
-          'UPDATE push_subscriptions SET baseline_cents = ?, last_notified_at = ? WHERE endpoint = ?'
-        ).bind(pCents, now, sub.endpoint).run()
+          'UPDATE telegram_subscriptions SET baseline_cents = ?, last_notified_at = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+        ).bind(pCents, now, sub.chat_id, sub.station_id, sub.fuel_code).run()
       } else if (result.gone) {
-        // Suscripcion revocada — purgar.
-        await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(sub.endpoint).run()
+        // User bloqueo al bot o borro el chat — purgar todas sus subs.
+        await c.env.DB.prepare('DELETE FROM telegram_subscriptions WHERE chat_id = ?').bind(sub.chat_id).run()
         purged++
       } else {
         errors++
-        slog('warn', 'push_send_failed', { status: result.status, body: result.bodyText })
+        slog('warn', 'telegram_send_failed', { status: result.status, description: result.description })
       }
     } catch (e) {
       errors++
-      slog('error', 'push_send_exception', { message: (e as Error).message })
+      slog('error', 'telegram_send_exception', { message: (e as Error).message })
     }
   }
-  slog('info', 'push_check_done', { total: subs.length, sent, purged, skipped, errors })
+  // Purga de tokens pendientes caducados — oportunistico.
+  try {
+    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?').bind(now).run()
+  } catch {}
+  slog('info', 'telegram_check_done', { total: subs.length, sent, purged, skipped, errors })
   return c.json({ ok: true, total: subs.length, sent, purged, skipped, errors },
     200, { 'Cache-Control': 'no-store' })
 })

@@ -1439,38 +1439,38 @@ export function getStyles(nonce: string = ''): string {
       font-size: 12px;
       color: #64748b;
     }
-    /* Ship 23: panel de alertas push en el modal de favoritas */
-    .push-alerts-panel {
+    /* Ship 25: panel de alertas Telegram en el modal de favoritas (sustituye Web Push). */
+    .tg-alerts-panel {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px; margin-bottom: 10px;
-      background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
-      border: 1px solid #bfdbfe; border-radius: 10px;
+      background: linear-gradient(135deg, #e0f2fe 0%, #eff6ff 100%);
+      border: 1px solid #7dd3fc; border-radius: 10px;
     }
-    .push-alerts-panel.active {
+    .tg-alerts-panel.active {
       background: linear-gradient(135deg, #dcfce7 0%, #f0fdf4 100%);
       border-color: #bbf7d0;
     }
-    .push-alerts-icon { font-size: 24px; flex-shrink: 0; }
-    .push-alerts-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-    .push-alerts-text { flex: 1; min-width: 0; }
-    .push-alerts-text strong { display: block; font-size: 13px; color: #0369a1; margin-bottom: 2px; }
-    .push-alerts-text small { display: block; font-size: 11px; color: #64748b; line-height: 1.3; }
-    .push-alerts-panel.active .push-alerts-text strong { color: #15803d; }
-    .push-alerts-btn {
+    .tg-alerts-icon { font-size: 22px; flex-shrink: 0; }
+    .tg-alerts-info { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+    .tg-alerts-text { flex: 1; min-width: 0; }
+    .tg-alerts-text strong { display: block; font-size: 13px; color: #0369a1; margin-bottom: 2px; }
+    .tg-alerts-text small { display: block; font-size: 11px; color: #64748b; line-height: 1.3; }
+    .tg-alerts-panel.active .tg-alerts-text strong { color: #15803d; }
+    .tg-alerts-btn {
       padding: 7px 14px !important; font-size: 12px !important;
       white-space: nowrap; flex-shrink: 0;
     }
-    body.dark .push-alerts-panel {
-      background: linear-gradient(135deg, #0c4a6e 0%, #1e3a8a 100%);
-      border-color: #1e40af;
+    body.dark .tg-alerts-panel {
+      background: linear-gradient(135deg, #0c4a6e 0%, #082f49 100%);
+      border-color: #0369a1;
     }
-    body.dark .push-alerts-panel.active {
+    body.dark .tg-alerts-panel.active {
       background: linear-gradient(135deg, #14532d 0%, #166534 100%);
       border-color: #16a34a;
     }
-    body.dark .push-alerts-text strong { color: #7dd3fc; }
-    body.dark .push-alerts-text small  { color: #94a3b8; }
-    body.dark .push-alerts-panel.active .push-alerts-text strong { color: #86efac; }
+    body.dark .tg-alerts-text strong { color: #7dd3fc; }
+    body.dark .tg-alerts-text small  { color: #94a3b8; }
+    body.dark .tg-alerts-panel.active .tg-alerts-text strong { color: #86efac; }
     .favs-empty i { display: block; font-size: 22px; margin-bottom: 6px; color: #cbd5e1; }
     body.dark .favs-empty { background: #0f172a; border-color: #334155; color: #94a3b8; }
     body.dark .favs-empty i { color: #475569; }

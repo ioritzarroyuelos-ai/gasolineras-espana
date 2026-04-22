@@ -1667,6 +1667,117 @@ function toggleRouteCorridor() {
   });
 })();
 
+// ============================================================
+// Ship 22: SWIPE-DOWN-TO-DISMISS para bottom sheets (movil)
+// ============================================================
+// Cuando el modal se muestra como bottom sheet (width <= 639px), el usuario
+// espera poder cerrarlo arrastrando hacia abajo. Delegamos en document para
+// cubrir todos los modales (.modal-backdrop.show) sin duplicar logica.
+// Solo engancha cuando el modal-body esta en scrollTop=0 (asi el scroll
+// interno sigue funcionando cuando hay contenido largo).
+(function() {
+  var activeModal = null;
+  var startY = 0, currDelta = 0, dragging = false;
+
+  function isMobile() {
+    return window.innerWidth <= 639;
+  }
+  function findModal(target) {
+    if (!target || !target.closest) return null;
+    var backdrop = target.closest('.modal-backdrop.show');
+    if (!backdrop) return null;
+    var modal = backdrop.querySelector('.modal');
+    return modal ? { backdrop: backdrop, modal: modal } : null;
+  }
+  function canDrag(modal, target) {
+    // Si el usuario toca DENTRO de modal-body y este tiene scroll hacia abajo,
+    // el gesto es "scroll interno", no "cerrar sheet". Solo dejamos arrastrar
+    // cuando el contenido esta arriba del todo.
+    if (modal.scrollTop > 0) return false;
+    // Evitar conflicto con form fields, sliders, etc.
+    if (target && target.closest) {
+      if (target.closest('input, textarea, select, button, [role="slider"], [data-hist-range], .hist-toggle')) return false;
+    }
+    return true;
+  }
+
+  document.addEventListener('touchstart', function(e) {
+    if (!isMobile()) return;
+    var found = findModal(e.target);
+    if (!found) return;
+    if (!canDrag(found.modal, e.target)) return;
+    activeModal = found;
+    startY = e.touches[0].clientY;
+    currDelta = 0;
+    dragging = true;
+    found.modal.style.transition = 'none';
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!dragging || !activeModal) return;
+    var delta = e.touches[0].clientY - startY;
+    if (delta <= 0) {
+      currDelta = 0;
+      activeModal.modal.style.transform = '';
+      return;
+    }
+    currDelta = delta;
+    activeModal.modal.style.transform = 'translateY(' + delta + 'px)';
+    // Atenuar el backdrop conforme se arrastra para dar feedback
+    var opacity = Math.max(0.2, 1 - (delta / 400));
+    activeModal.backdrop.style.background = 'rgba(15,23,42,' + (opacity * 0.6).toFixed(3) + ')';
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!dragging || !activeModal) return;
+    dragging = false;
+    activeModal.modal.style.transition = '';
+    activeModal.backdrop.style.background = '';
+    if (currDelta > 120) {
+      // Cerrar: slide completo hacia abajo y remover .show
+      activeModal.modal.style.transform = 'translateY(100%)';
+      var backdrop = activeModal.backdrop;
+      setTimeout(function() {
+        backdrop.classList.remove('show');
+        backdrop.querySelector('.modal').style.transform = '';
+      }, 220);
+    } else {
+      // Snap back
+      activeModal.modal.style.transform = '';
+    }
+    activeModal = null;
+    currDelta = 0;
+  }, { passive: true });
+
+  document.addEventListener('touchcancel', function() {
+    if (!dragging || !activeModal) return;
+    dragging = false;
+    activeModal.modal.style.transition = '';
+    activeModal.modal.style.transform = '';
+    activeModal.backdrop.style.background = '';
+    activeModal = null;
+    currDelta = 0;
+  }, { passive: true });
+})();
+
+// ---- Ship 20: wiring del modal de historico ----
+// Mismo patron que comparador: botones close/done + click backdrop + ESC.
+// openHistoryModal se dispara desde ui.ts al clicar el boton 📈 de una card.
+(function() {
+  var modal = document.getElementById('modal-history');
+  if (!modal) return;
+  var btnClose = document.getElementById('btn-history-close');
+  var btnDone  = document.getElementById('btn-history-done');
+  if (btnClose) btnClose.addEventListener('click', closeHistoryModal);
+  if (btnDone)  btnDone.addEventListener('click',  closeHistoryModal);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeHistoryModal();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) closeHistoryModal();
+  });
+})();
+
 // ---- Ship 8: REPORTE DE PRECIO INCORRECTO ----
 // Un solo IIFE que:
 //  1. Delega clicks en .popup-report-link del mapa (data-pop-report contiene

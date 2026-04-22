@@ -1,0 +1,205 @@
+name: Configure Telegram bot (one-shot)
+
+# Ship 25 setup: registra el bot de Telegram en CF Pages + aplica migraciones
+# 0006 (nueva tabla) y 0007 (drop push_subscriptions obsoleta) + registra el
+# webhook en Telegram + redeploy + verifica. Disenado para correr una vez; re-
+# ejecutarlo rota el TELEGRAM_WEBHOOK_SECRET, lo que invalida intentos de
+# replay del secret antiguo pero NO afecta a suscripciones existentes (el
+# chat_id no cambia). Por eso exige `force=true` si ya hay bot configurado.
+#
+# Flujo:
+#   1) Valida el TOKEN hablando con getMe (detecta token invalido temprano).
+#   2) Escribe TELEGRAM_BOT_TOKEN/USERNAME/WEBHOOK_SECRET como env vars del
+#      environment "production" del proyecto CF Pages (todos como secret_text).
+#   3) Aplica migraciones pendientes (0006 + 0007) en D1 remoto.
+#   4) Fuerza un deploy nuevo para que las env vars entren en efecto.
+#   5) Registra el webhook con Telegram apuntando a /api/telegram/webhook.
+#   6) Verifica que /api/telegram/config responde 200 con el username correcto.
+#
+# Requisitos (ya configurados):
+#   - secrets.CLOUDFLARE_API_TOKEN con scopes Pages:Edit + D1:Edit
+#   - secrets.CLOUDFLARE_ACCOUNT_ID
+#
+# El usuario debe proporcionar:
+#   - token: el TOKEN de BotFather, formato <id>:<hash>
+#   - username: el username del bot sin la @ (p.ej. GasolinerasAlertasBot)
+#
+# El TELEGRAM_WEBHOOK_SECRET se genera aqui con openssl rand -hex 32.
+
+on:
+  workflow_dispatch:
+    inputs:
+      token:
+        description: "TELEGRAM_BOT_TOKEN (de @BotFather, formato <id>:<hash>)"
+        required: true
+      username:
+        description: "Username del bot sin la @ (p.ej. GasolinerasAlertasBot)"
+        required: true
+      force:
+        description: "Sobreescribir si ya hay bot configurado (rota el webhook_secret)"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: configure-telegram
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT: webapp
+      PUBLIC_ORIGIN: https://webapp-3ft.pages.dev
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Safety check — abortar si ya hay bot salvo force=true
+        run: |
+          STATUS=$(curl -sS --max-time 15 -o /tmp/tg.json -w "%{http_code}" \
+            "${PUBLIC_ORIGIN}/api/telegram/config" || echo "000")
+          if [ "$STATUS" = "200" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "::error::Telegram bot ya configurado en prod. Re-ejecutar con force=true si de verdad quieres cambiar de bot (rota el webhook_secret; las suscripciones de D1 siguen validas)."
+            cat /tmp/tg.json
+            exit 1
+          fi
+          echo "safety ok — status=$STATUS, force=${{ inputs.force }}"
+
+      - name: Validar token con getMe
+        id: validate
+        env:
+          TOKEN: ${{ inputs.token }}
+          EXPECTED_USER: ${{ inputs.username }}
+        run: |
+          # Enmascaramos el token en los logs por si algun paso lo imprime.
+          echo "::add-mask::$TOKEN"
+          RES=$(curl -sS --max-time 15 "https://api.telegram.org/bot${TOKEN}/getMe")
+          echo "getMe raw: $RES"
+          OK=$(echo "$RES" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then
+            echo "::error::token invalido — Telegram rechazo getMe: $(echo "$RES" | jq -r '.description')"
+            exit 1
+          fi
+          GOT_USER=$(echo "$RES" | jq -r '.result.username')
+          if [ "$GOT_USER" != "$EXPECTED_USER" ]; then
+            echo "::error::el username real del bot es '$GOT_USER', pero pasaste '$EXPECTED_USER'. Corrige el input."
+            exit 1
+          fi
+          echo "✓ token valido — bot @$GOT_USER (id $(echo "$RES" | jq -r '.result.id'))"
+
+      - name: Generar TELEGRAM_WEBHOOK_SECRET
+        id: secret
+        run: |
+          SEC=$(openssl rand -hex 32)
+          echo "::add-mask::$SEC"
+          echo "value=$SEC" >> $GITHUB_OUTPUT
+          echo "webhook_secret generado (long=${#SEC})"
+
+      - name: Install deps para wrangler
+        run: npm ci --no-audit --no-fund
+
+      - name: Set env vars Telegram en Cloudflare Pages (production)
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TOKEN:                 ${{ inputs.token }}
+          USERNAME:              ${{ inputs.username }}
+          SECRET:                ${{ steps.secret.outputs.value }}
+        run: |
+          # Usamos `wrangler pages secret put` (los 3 como secret_text).
+          # TELEGRAM_BOT_USERNAME no es secreto en sentido estricto (aparece en el
+          # deep link t.me/<username>), pero ponerlo como secret_text evita el
+          # error "fail_open validation" del PATCH global que nos paso con VAPID.
+          set -e
+          echo -n "$TOKEN"    | npx wrangler@4 pages secret put TELEGRAM_BOT_TOKEN      --project-name="$PROJECT"
+          echo -n "$USERNAME" | npx wrangler@4 pages secret put TELEGRAM_BOT_USERNAME   --project-name="$PROJECT"
+          echo -n "$SECRET"   | npx wrangler@4 pages secret put TELEGRAM_WEBHOOK_SECRET --project-name="$PROJECT"
+          echo "3 env vars Telegram puestas OK"
+
+      - name: Aplicar migraciones D1 (0006 + 0007)
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # `migrations apply` es idempotente: solo aplica las que aun no estan
+          # en la tabla d1_migrations. En CI/CD wrangler v4 salta el prompt
+          # automaticamente (sin --yes).
+          npx wrangler@4 d1 migrations apply gasolineras-history --remote
+
+      - name: Re-build y re-deploy para que las env vars entren en efecto
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Las env vars recien seteadas NO aplican a deployments existentes;
+          # solo a nuevos. Forzamos un deploy del HEAD actual.
+          npm run icons
+          npm run build
+          test -f dist/_worker.js || { echo "::error::build fallo — _worker.js missing"; exit 1; }
+          npx wrangler@4 pages deploy dist \
+            --project-name="${PROJECT}" \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash="${{ github.sha }}"
+
+      - name: Registrar webhook en Telegram
+        env:
+          TOKEN:  ${{ inputs.token }}
+          SECRET: ${{ steps.secret.outputs.value }}
+        run: |
+          # setWebhook asocia la URL a nuestro endpoint con un secret_token que
+          # Telegram envia en el header X-Telegram-Bot-Api-Secret-Token. El
+          # worker compara con tokensEqualConstTime antes de procesar.
+          # drop_pending_updates: descarta cualquier update que el bot haya
+          # recibido mientras no tenia webhook — evita replays.
+          RES=$(curl -sS --max-time 15 "https://api.telegram.org/bot${TOKEN}/setWebhook" \
+            --data-urlencode "url=${PUBLIC_ORIGIN}/api/telegram/webhook" \
+            --data-urlencode "secret_token=${SECRET}" \
+            --data-urlencode 'allowed_updates=["message"]' \
+            --data-urlencode 'drop_pending_updates=true')
+          echo "setWebhook raw: $RES"
+          OK=$(echo "$RES" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then
+            echo "::error::setWebhook fallo: $(echo "$RES" | jq -r '.description')"
+            exit 1
+          fi
+          echo "✓ webhook registrado en ${PUBLIC_ORIGIN}/api/telegram/webhook"
+
+      - name: Verificar /api/telegram/config en prod
+        env:
+          EXPECTED_USER: ${{ inputs.username }}
+        run: |
+          # CF Pages necesita ~15s para propagar el deploy a la URL canonica.
+          sleep 25
+          RES=$(curl -fsS --max-time 20 --retry 3 --retry-delay 10 \
+            "${PUBLIC_ORIGIN}/api/telegram/config")
+          echo "response: $RES"
+          GOT_USER=$(echo "$RES" | jq -r '.username')
+          if [ "$GOT_USER" != "$EXPECTED_USER" ]; then
+            echo "::error::username en prod no coincide"
+            echo "expected: $EXPECTED_USER"
+            echo "got:      $GOT_USER"
+            exit 1
+          fi
+          echo "✓ prod devuelve el username correcto"
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "### Telegram bot configurado" >> $GITHUB_STEP_SUMMARY
+          echo "- TELEGRAM_BOT_USERNAME: \`@${{ inputs.username }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- TELEGRAM_BOT_TOKEN: [masked — guardado en CF Pages como secret_text]" >> $GITHUB_STEP_SUMMARY
+          echo "- TELEGRAM_WEBHOOK_SECRET: [generado en runner — guardado como secret_text]" >> $GITHUB_STEP_SUMMARY
+          echo "- Migraciones D1 0006 + 0007: aplicadas (idempotente)" >> $GITHUB_STEP_SUMMARY
+          echo "- Webhook registrado en: ${PUBLIC_ORIGIN}/api/telegram/webhook" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy nuevo: emitido para que las env vars entren en efecto" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Prueba: abre ${PUBLIC_ORIGIN}, marca un favorito, y pulsa \"Activar alertas en Telegram\" en el modal de favoritos. Se abrira t.me/${{ inputs.username }}?start=<token> y tras pulsar Start en Telegram, la app confirmara la vinculacion." >> $GITHUB_STEP_SUMMARY

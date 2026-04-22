@@ -103,6 +103,13 @@ type Env = {
   TELEGRAM_BOT_TOKEN?:      string
   TELEGRAM_BOT_USERNAME?:   string
   TELEGRAM_WEBHOOK_SECRET?: string
+  // Ship 25.2: URL de la plataforma de donaciones/propinas que se renderiza en
+  // el boton "Invitame a un cafe" del footer. Si no esta definida o no es una
+  // URL http(s) valida, el boton se omite del render (sin layout shift).
+  // Valores aceptados: https://ko-fi.com/<handle>, https://buymeacoffee.com/<handle>,
+  //                    https://paypal.me/<handle>, https://github.com/sponsors/<handle>.
+  // Configurar con: npx wrangler pages secret put SUPPORT_URL --project-name=webapp
+  SUPPORT_URL?: string
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -551,6 +558,7 @@ app.get('/', async c => {
   return new Response(buildPage(nonce, c.req.url, {
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
     snapshotDate,
+    supportUrl: c.env.SUPPORT_URL,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 
@@ -641,6 +649,7 @@ app.get('/gasolineras/:slug', async c => {
     },
     municipios,
     snapshotDate,
+    supportUrl: c.env.SUPPORT_URL,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 
@@ -704,6 +713,7 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
       topStations,
     },
     snapshotDate,
+    supportUrl: c.env.SUPPORT_URL,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 

@@ -76,6 +76,24 @@
   // Si TELEGRAM_BOT_TOKEN/USERNAME no estan, todos los /api/telegram/* responden 503
   // y el panel "Activar alertas en Telegram" se oculta del UI — sin errores.
   // El workflow `.github/workflows/configure-telegram.yml` automatiza los pasos 2-4.
+  //
+  // ---- Boton "Invitame a un cafe" (Ship 25.2) ----
+  // Variable OPCIONAL. Si no esta definida o la URL no es http(s), el boton
+  // se omite por completo del render (ni DOM ni espacio reservado — cero
+  // layout shift). Asi se cambia de plataforma sin tocar codigo.
+  //
+  //   SUPPORT_URL = https://ko-fi.com/<handle>
+  //               | https://buymeacoffee.com/<handle>
+  //               | https://paypal.me/<handle>
+  //               | https://github.com/sponsors/<handle>
+  //
+  // Setup:
+  //   npx wrangler pages secret put SUPPORT_URL --project-name=webapp
+  //   # (plain_text tambien vale; lo metemos como secret por consistencia
+  //   #  con el resto de env vars del proyecto — no hay datos sensibles aqui.)
+  //
+  // El render en src/html/shell.ts valida con regex /^https?:\/\/[^\s"'<>]+$/i
+  // y HTML-escapea por defensa en profundidad (bloquea javascript:/data: URIs).
 
   // ---- Hardening adicional a configurar en el dashboard de Cloudflare ----
   //

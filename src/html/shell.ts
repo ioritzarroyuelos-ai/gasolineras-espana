@@ -59,6 +59,13 @@ export interface BuildPageOpts {
   // el cliente pinte un badge "Precios de hace Xm" cuando el snapshot tiene
   // > 30 min. Cuando es nula, no se pinta el badge.
   snapshotDate?: string
+  // Ship 25.2: URL de donacion/propina ("Invitame a un cafe"). Viene de la
+  // env var SUPPORT_URL en CF Pages. Si no esta definida, el boton se omite
+  // del render — asi el dev no tiene que editar codigo para activarlo/
+  // desactivarlo o cambiar de plataforma (Ko-fi, Buy Me a Coffee, PayPal.me,
+  // GitHub Sponsors, etc). El render valida que sea http(s) para evitar XSS
+  // por injection de javascript: URIs.
+  supportUrl?: string
 }
 
 export function buildPage(
@@ -355,6 +362,30 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         }]
       : []),
   ])
+
+  // Ship 25.2: boton de donacion opcional. Solo pintamos el <a> si la env var
+  // SUPPORT_URL esta definida y es un URL http(s) — evita XSS por javascript:
+  // o data: URIs si alguien en el futuro se confunde con el origen de la var.
+  // Sanitizamos tambien con replace de comillas por si la URL contiene chars
+  // raros (aunque validamos el schema, defensa en profundidad).
+  const supportUrlRaw = (opts.supportUrl || '').trim()
+  const supportUrlValid = /^https?:\/\/[^\s"'<>]+$/i.test(supportUrlRaw)
+  const supportUrlSafe = supportUrlValid
+    ? supportUrlRaw.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    : ''
+  // rel="noopener noreferrer sponsored": sponsored es la convencion para
+  // botones de donacion/afiliacion — evita que Google los trate como
+  // backlinks de SEO. noopener previene window.opener hijacking.
+  const supportBlockHtml = supportUrlSafe
+    ? `<a href="${supportUrlSafe}"
+         class="kofi-support"
+         target="_blank"
+         rel="noopener noreferrer sponsored"
+         aria-label="Invitame a un cafe">
+        <span aria-hidden="true">&#x2615;</span>
+        <span>Inv&iacute;tame a un caf&eacute;</span>
+      </a>`
+    : ''
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -709,18 +740,10 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <span id="btn-profile-label">Configurar mi vehículo</span>
       </button>
 
-      <!-- Ko-fi support link. noopener por seguridad (previene window.opener
-           hijacking), noreferrer para no filtrar patron de navegacion. rel
-           sponsored es la convencion para botones de donacion/afiliacion
-           — evita que Google los trate como backlinks de SEO. -->
-      <a href="https://ko-fi.com/ioritzarroyuelos"
-         class="kofi-support"
-         target="_blank"
-         rel="noopener noreferrer sponsored"
-         aria-label="Invitame a un cafe en Ko-fi">
-        <span aria-hidden="true">&#x2615;</span>
-        <span>Invítame a un café</span>
-      </a>
+      <!-- Ship 25.2: boton "Invitame a un cafe" renderizado condicionalmente
+           desde env.SUPPORT_URL. Si no hay SUPPORT_URL, este slot queda vacio
+           (no hay DOM ni espacio reservado — sin layout shift). -->
+      ${supportBlockHtml}
     </div>
 
     <!-- STATS -->

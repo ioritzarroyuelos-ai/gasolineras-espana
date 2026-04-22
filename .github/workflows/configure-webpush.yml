@@ -121,7 +121,9 @@ jobs:
         run: |
           # `migrations apply` es idempotente: solo aplica las que aun no estan
           # en la tabla d1_migrations. Si 0005 ya estaba, esto es un no-op.
-          npx wrangler d1 migrations apply gasolineras-history --remote --yes
+          # En CI/CD wrangler salta el prompt de confirmacion automaticamente
+          # (no necesita --yes; ese flag no existe en v4).
+          npx wrangler@4 d1 migrations apply gasolineras-history --remote
 
       - name: Re-build y re-deploy para que las env vars entren en efecto
         env:

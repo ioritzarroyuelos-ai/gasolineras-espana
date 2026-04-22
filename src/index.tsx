@@ -523,11 +523,19 @@ function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> 
   }
 }
 
-app.get('/', c => {
+app.get('/', async c => {
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  // Ship 15: exponer Fecha del snapshot para que el cliente pinte badge
+  // "Precios de hace Xm". Si falla la carga, seguimos sin badge.
+  let snapshotDate: string | undefined
+  try {
+    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
+  } catch { /* degradacion silenciosa */ }
   return new Response(buildPage(nonce, c.req.url, {
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+    snapshotDate,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 
@@ -550,8 +558,10 @@ app.get('/gasolineras/:slug', async c => {
   let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
   let stationCount = 0
   let municipios: Array<{ slug: string; name: string; stationCount: number }> | undefined
+  let snapshotDate: string | undefined  // Ship 15: Fecha del Ministerio para el badge de frescura.
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
     if (snap && Array.isArray(snap.ListaEESSPrecio)) {
       const FIELD: Record<string, string> = {
         '95':          'Precio Gasolina 95 E5',
@@ -605,6 +615,7 @@ app.get('/gasolineras/:slug', async c => {
       stationCount: stationCount || undefined,
     },
     municipios,
+    snapshotDate,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 
@@ -627,8 +638,10 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
   let stationCount = 0
   let munName: string | undefined
   let munId: string | undefined
+  let snapshotDate: string | undefined  // Ship 15
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
     const mun = findMunicipioBySlug(snap, prov.id, munSlug)
     if (!mun) return c.notFound()
     munName = mun.name
@@ -653,6 +666,7 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
       stats,
       stationCount: stationCount || undefined,
     },
+    snapshotDate,
   }), { headers: pageHeaders(nonce, turnstile) })
 })
 
@@ -1617,6 +1631,127 @@ app.get('/api/history/province/:id', async c => {
     slog('error', 'history.province_median_failed', {
       provinciaId: id,
       fuel,
+      days,
+      err: String(err).slice(0, 300),
+    })
+    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+  }
+})
+
+// ---- STATS NACIONALES (Ship 15) ----
+// Precio medio nacional por dia para los dos combustibles mas consumidos
+// (gasolina 95 + gasoleo A). Devuelve, para cada fuel:
+//
+//   - today     : media del ultimo dia disponible en price_history
+//   - avg30d    : media simple de las medias diarias del periodo
+//   - delta_pct : (today - avg30d) / avg30d * 100 — positivo = mas caro hoy
+//   - samples   : cuantas estaciones aportaron hoy (sanity check / confianza)
+//
+// Usamos AVG(price_cents) via SQL (30 filas × 2 fuels = 60 filas transferidas,
+// independiente del numero de estaciones). La mediana seria mas robusta a
+// outliers pero requiere traer todas las filas (600k/mes peor caso) y SQLite
+// no tiene PERCENTILE nativo. A escala nacional con ~11k estaciones/dia, el
+// 5% de outliers raramente desplaza la media > 1 cent — acceptable.
+//
+// Motivacion: el usuario abre la app en la home sin saber si el precio que ve
+// en su ciudad es "bueno" o "malo" en contexto. Un "precio medio nacional
+// hoy: 1.48 € ↓ 0.2% vs. 30d" da contexto inmediato.
+//
+// Cache-Control: public, max-age=3600 — igual que history/*. Tras el cron
+// diario los valores cambian, pero dentro del dia son constantes.
+app.get('/api/stats/national', async c => {
+  const key = clientKey(c)
+  const rl = histLimiter.check(key)
+  if (!rl.allowed) {
+    return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
+  }
+
+  // days: clamp [7, 90]. Minimo 7 para que "avg30d" tenga sentido estadistico;
+  // maximo 90 para acotar el coste y porque tendencias > 3 meses no son utiles
+  // como contexto de "¿esta caro hoy?".
+  const daysParam = c.req.query('days')
+  let days = 30
+  if (daysParam != null) {
+    const n = parseInt(daysParam, 10)
+    if (!Number.isFinite(n) || n < 7 || n > 90) {
+      return c.json({ error: 'invalid_days' }, 400)
+    }
+    days = n
+  }
+
+  if (!c.env.DB) {
+    return c.json({ error: 'stats_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+
+  const cutoffDate = new Date()
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+
+  // Solo 2 combustibles: gasolina 95 y diesel A — cubren ~90% del uso civil.
+  // Si en futuro anadimos 98/diesel_plus, basta con extender FUELS (y la UI).
+  const FUELS = ['95', 'diesel'] as const
+  type FuelCode = typeof FUELS[number]
+
+  try {
+    const stmt = c.env.DB
+      .prepare(
+        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents, COUNT(*) AS n ' +
+        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
+        'GROUP BY date, fuel_code ORDER BY date ASC'
+      )
+      .bind(FUELS[0], FUELS[1], cutoff)
+    const { results } = await stmt.all<{ date: string; fuel_code: string; avg_cents: number; n: number }>()
+
+    // Agrupamos por fuel_code. Clave: solo entran FUELS reconocidos (ya filtra
+    // el WHERE, pero defensivo por si el esquema cambia).
+    const byFuel = new Map<string, Array<{ date: string; avg_cents: number; n: number }>>()
+    for (const f of FUELS) byFuel.set(f, [])
+    for (const r of results) {
+      const arr = byFuel.get(r.fuel_code)
+      if (!arr) continue
+      arr.push({ date: r.date, avg_cents: r.avg_cents, n: r.n })
+    }
+
+    const out: Record<string, {
+      today: number | null
+      avg30d: number | null
+      delta_pct: number | null
+      samples_today: number
+      days_available: number
+    }> = {}
+
+    for (const fuel of FUELS) {
+      const arr = byFuel.get(fuel) || []
+      if (arr.length === 0) {
+        out[fuel] = { today: null, avg30d: null, delta_pct: null, samples_today: 0, days_available: 0 }
+        continue
+      }
+      // Ultimo dia disponible (ya viene ORDER BY date ASC).
+      const last = arr[arr.length - 1]
+      const todayEur = centsToEuros(Math.round(last.avg_cents))
+      // Media de medias diarias (simple, no ponderada por count — todos los dias
+      // pesan igual independientemente de cuantas estaciones reportaran).
+      let sum = 0
+      for (const r of arr) sum += r.avg_cents
+      const avgCents = sum / arr.length
+      const avgEur = centsToEuros(Math.round(avgCents))
+      const deltaPct = avgCents > 0 ? ((last.avg_cents - avgCents) / avgCents) * 100 : 0
+      out[fuel] = {
+        today: todayEur,
+        avg30d: avgEur,
+        delta_pct: Math.round(deltaPct * 100) / 100,  // 2 decimales
+        samples_today: last.n,
+        days_available: arr.length,
+      }
+    }
+
+    return c.json(
+      { days, fuels: out },
+      200,
+      { 'Cache-Control': 'public, max-age=3600' },
+    )
+  } catch (err) {
+    slog('error', 'stats.national_failed', {
       days,
       err: String(err).slice(0, 300),
     })

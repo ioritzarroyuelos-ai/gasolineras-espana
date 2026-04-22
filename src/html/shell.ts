@@ -37,6 +37,11 @@ export interface BuildPageOpts {
   // Solo aplica cuando seo.provinciaName esta presente y municipioName NO.
   // Shape compatible con MunicipioEntry de ./lib/municipios.
   municipios?: Array<{ slug: string; name: string; stationCount: number }>
+  // Ship 15: fecha del snapshot del Ministerio (string tal cual llega,
+  // formato "DD/MM/YYYY HH:mm:SS"). Se expone en window.__SNAP_AT__ para que
+  // el cliente pinte un badge "Precios de hace Xm" cuando el snapshot tiene
+  // > 30 min. Cuando es nula, no se pinta el badge.
+  snapshotDate?: string
 }
 
 export function buildPage(
@@ -117,6 +122,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         municipioName: seo.municipioName,
       })};</script>`
     : ''
+
+  // Ship 15: snapshot freshness badge + home flag.
+  // __SNAP_AT__ es la fecha cruda del Ministerio (formato "DD/MM/YYYY HH:mm:SS").
+  // __IS_HOME__ true cuando no hay provincia/municipio en la ruta — el cliente
+  // lo usa para decidir si renderizar el widget de stats nacionales.
+  const snapMetaScript = `<script nonce="${nonce}">${
+    opts.snapshotDate ? `window.__SNAP_AT__=${JSON.stringify(opts.snapshotDate)};` : ''
+  }window.__IS_HOME__=${!seo?.provinciaId};</script>`
 
   // JSON-LD: declara la aplicacion como WebApplication + el dataset de precios.
   // Breadcrumbs: rutas provincia + municipio. Ayuda a Google a entender la
@@ -397,6 +410,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <script type="application/ld+json" nonce="${nonce}">${jsonLd}</script>
 
   ${seoScript}
+  ${snapMetaScript}
   ${turnstileScripts}
 
   ${getStyles(nonce)}

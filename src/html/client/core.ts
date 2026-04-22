@@ -103,7 +103,7 @@ export const clientCoreScript = `
     if (/initMap|buildPopup|renderMarkers|createMap|computePricePercentile/.test(s)) return 'map';
     if (/renderList|renderCompareModal|buildCard|addToCompare/.test(s))            return 'list';
     if (/readQueryState|writeQueryState|applyQueryState|loadMunicipios|loadStations/.test(s)) return 'ui';
-    if (/initErrorReporter|showToast|initModalFocusTrap|initRUM|initPWAUX|showUpdateToast|renderInstallButton|renderOfflineBadge/.test(s)) return 'core';
+    if (/initErrorReporter|showToast|initModalFocusTrap|initRUM|initPWAUX|showUpdateToast|renderInstallButton|renderOfflineBadge|initFreshnessBadge|initNationalStatsWidget/.test(s)) return 'core';
     return 'unknown';
   }
   // ---- Ship 13: context de la sesion (ruta, filtros, red) ----
@@ -313,6 +313,136 @@ function showToast(msg, type) {
       } else {
         renderOfflineBadge();
       }
+    }
+  } catch(_) {}
+})();
+
+// ---- FRESHNESS BADGE (Ship 15) ----
+// Pinta pill "Precios: hace Xm" en esquina superior derecha cuando el snapshot
+// tiene > 30 min. Si tiene < 30 min, no pintamos nada (el usuario asume que es
+// fresco, el badge solo molesta). Si supera 6h, badge rojo de aviso — el cron
+// corre 2 veces/dia (12:00 y 00:00 CET via GHA), asi que > 6h implica que algo
+// esta atascado.
+//
+// Formato de window.__SNAP_AT__: "DD/MM/YYYY HH:mm:SS" (horario Madrid, tal cual
+// viene del Ministerio). Parseamos como local time — correcto para visitantes
+// ES (mayoria); para un visitante en NY el delta sera 6h mayor, acceptable.
+(function initFreshnessBadge() {
+  try {
+    var raw = window.__SNAP_AT__;
+    if (!raw || typeof raw !== 'string') return;
+    // new RegExp en lugar de /literal/: el outer template literal (clientCoreScript)
+    // rechaza secuencias \d como escape invalida en ES2015+. Con string doble-escaped
+    // el wrapper pasa parse y el regex se construye bien en runtime.
+    var m = new RegExp('^(\\d{2})/(\\d{2})/(\\d{4})\\s+(\\d{2}):(\\d{2}):(\\d{2})$').exec(raw.trim());
+    if (!m) return;
+    var snapAt = new Date(
+      parseInt(m[3], 10),
+      parseInt(m[2], 10) - 1,
+      parseInt(m[1], 10),
+      parseInt(m[4], 10),
+      parseInt(m[5], 10),
+      parseInt(m[6], 10)
+    );
+    var ageMin = Math.max(0, Math.floor((Date.now() - snapAt.getTime()) / 60000));
+    if (ageMin < 30) return;  // < 30 min: consideramos fresco, no pintamos
+
+    var label;
+    if (ageMin < 60) label = 'hace ' + ageMin + ' min';
+    else if (ageMin < 60 * 24) label = 'hace ' + Math.floor(ageMin / 60) + ' h';
+    else label = 'hace ' + Math.floor(ageMin / (60 * 24)) + ' d';
+
+    var stale = ageMin > 6 * 60;  // > 6h → rojo
+    function paint() {
+      if (document.getElementById('freshness-badge')) return;
+      var b = document.createElement('div');
+      b.id = 'freshness-badge';
+      b.setAttribute('role', 'status');
+      b.setAttribute('aria-label', 'Edad de los datos de precios');
+      b.title = 'Datos del Ministerio actualizados ' + label + ' (' + raw + ')';
+      b.textContent = '\u{1F55B} ' + label;
+      var bg = stale ? '#fef2f2' : '#f0fdf4';
+      var bd = stale ? '#fca5a5' : '#86efac';
+      var fg = stale ? '#b91c1c' : '#15803d';
+      b.style.cssText = 'position:fixed;top:12px;right:12px;background:' + bg + ';border:1px solid ' + bd + ';color:' + fg + ';padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.08);z-index:9996;pointer-events:auto;cursor:help';
+      document.body.appendChild(b);
+    }
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', paint);
+    } else {
+      paint();
+    }
+  } catch(_) { /* defensivo: no dejar que un parse error rompa la app */ }
+})();
+
+// ---- NATIONAL STATS WIDGET (Ship 15) ----
+// En la home (sin provincia en la URL), hace fetch a /api/stats/national?days=30
+// y pinta un pill discreto abajo-derecha con el precio medio nacional de
+// gasolina 95 y diesel + delta porcentual vs. 30d. El SW cachea la respuesta
+// network-first, asi que tambien funciona offline si se visito antes.
+//
+// Si la respuesta es 503 (dev sin D1) o error de red sin cache -> no pintamos.
+// Si la provincia esta en la URL -> no pintamos (el usuario ya esta viendo
+// datos locales, no le interesa el nacional).
+(function initNationalStatsWidget() {
+  try {
+    if (!window.__IS_HOME__) return;
+    if (!window.fetch) return;
+
+    function fmtEur(n) {
+      if (n == null || !isFinite(n)) return '--';
+      // Precio con 3 decimales (convencion Ministerio: 1.479 €/L).
+      return n.toFixed(3) + ' \u20AC';
+    }
+    function fmtDelta(pct) {
+      if (pct == null || !isFinite(pct)) return '';
+      var sign = pct > 0 ? '\u2191' : pct < 0 ? '\u2193' : '=';
+      var color = pct > 0 ? '#dc2626' : pct < 0 ? '#15803d' : '#6b7280';
+      var abs = Math.abs(pct).toFixed(2);
+      return '<span style="color:' + color + ';font-weight:700">' + sign + abs + '%</span>';
+    }
+
+    function paint(data) {
+      if (!data || !data.fuels) return;
+      var g95 = data.fuels['95'];
+      var di  = data.fuels.diesel;
+      // Si ambos fuels vienen vacios, no pintamos (no hay backfill suficiente).
+      if ((!g95 || g95.today == null) && (!di || di.today == null)) return;
+      if (document.getElementById('stats-nacional')) return;
+
+      var w = document.createElement('div');
+      w.id = 'stats-nacional';
+      w.setAttribute('role', 'complementary');
+      w.setAttribute('aria-label', 'Precio medio nacional');
+      w.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:9995;max-width:320px;line-height:1.5';
+      var parts = [];
+      parts.push('<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px">Media nacional hoy</div>');
+      if (g95 && g95.today != null) {
+        parts.push('<div>95: <strong>' + fmtEur(g95.today) + '/L</strong> ' + fmtDelta(g95.delta_pct) + '</div>');
+      }
+      if (di && di.today != null) {
+        parts.push('<div>Di\u00E9sel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
+      }
+      parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">vs. media ' + (data.days || 30) + ' d\u00EDas</div>');
+      // innerHTML seguro: los valores numericos vienen de /api/stats/national
+      // (servidor) con rangos validados; no hay texto libre del usuario.
+      w.innerHTML = parts.join('');
+      document.body.appendChild(w);
+    }
+
+    function load() {
+      fetch('/api/stats/national?days=30', { method: 'GET', credentials: 'same-origin' })
+        .then(function(r) { return r.ok ? r.json() : null; })
+        .then(function(j) { if (j) paint(j); })
+        .catch(function() { /* sin red + sin cache -> no pintamos */ });
+    }
+
+    // Deferred: esperamos a que la app cargue (2s) para no competir con los
+    // fetches criticos del snapshot, markers, etc.
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function() { setTimeout(load, 2000); });
+    } else {
+      setTimeout(load, 2000);
     }
   } catch(_) {}
 })();

@@ -119,6 +119,9 @@ describe('simbolos criticos presentes en el bundle', () => {
     // Ship 14: PWA UX - install prompt + update toast + offline badge.
     { name: 'function initPWAUX',       in: ['core'] },
     { name: 'function showUpdateToast', in: ['ui']   },
+    // Ship 15: freshness badge + national stats widget.
+    { name: 'function initFreshnessBadge',       in: ['core'] },
+    { name: 'function initNationalStatsWidget', in: ['core'] },
   ]
   const modules: Record<string, string> = {
     core:     clientCoreScript,

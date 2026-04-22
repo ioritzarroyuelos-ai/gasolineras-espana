@@ -116,6 +116,9 @@ function shouldCacheApi(url) {
   if (url.pathname.startsWith('/api/estaciones')) return true;
   if (url.pathname.startsWith('/api/history/')) return true;
   if (url.pathname.startsWith('/api/predict/')) return true;
+  // Ship 15: stats nacionales. Cambian solo 1 vez/dia con el cron — cachear
+  // offline tiene sentido (el widget sigue pintando precios aun sin red).
+  if (url.pathname.startsWith('/api/stats/')) return true;
   return false;
 }
 

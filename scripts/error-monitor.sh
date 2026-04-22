@@ -12,12 +12,19 @@
 #   TELEGRAM_BOT_TOKEN  (@BotFather)
 #   TELEGRAM_CHAT_ID    (obtener con @userinfobot o getUpdates)
 #   PUBLIC_ORIGIN       (opcional, default https://webapp-3ft.pages.dev)
-#   FORCE_NOTIFY        (opcional, 'true' para enviar aunque no haya errores)
+#   FORCE_NOTIFY        (retrocompat, ya sin efecto: siempre enviamos)
+#
+# Politica (Ship 16): el monitor ya siempre manda heartbeat al canal — cero
+# errores → mensaje verde "OK", >=1 error → resumen rojo con el top-10. El
+# motivo es operativo: preferimos el ruido leve de 3 confirmaciones/dia antes
+# que el silencio ambiguo ("¿esta caido el bot o no hay errores?"). Si hace
+# falta bajar el ritmo, se toca el cron del workflow — no esta logica.
 
 set -euo pipefail
 
 ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
-FORCE="${FORCE_NOTIFY:-false}"
+# FORCE_NOTIFY se mantiene como variable para no romper invocaciones antiguas,
+# pero la rama silent fue eliminada: todos los ticks notifican.
 
 # Escape MarkdownV2 — Telegram requiere escapar: _ * [ ] ( ) ~ ` > # + - = | { } . !
 # Pero mandamos texto plano, asi que evitamos formato y usamos parse_mode vacio.
@@ -36,10 +43,9 @@ echo "[monitor] ${COUNT} errores nuevos"
 TS=$(date -u +"%Y-%m-%d %H:%M UTC")
 
 if [ "$COUNT" -eq 0 ]; then
-  if [ "$FORCE" != "true" ]; then
-    echo "[monitor] Sin errores, sin notificacion (FORCE_NOTIFY!=true)."
-    exit 0
-  fi
+  # Ship 16: heartbeat siempre — mensaje verde corto para confirmar que el
+  # pipeline (GHA + endpoint admin + Telegram) sigue vivo. Sin esto el
+  # silencio es indistinguible de un bot roto.
   MSG="✅ ${TS}
 Cero errores nuevos en prod."
 else

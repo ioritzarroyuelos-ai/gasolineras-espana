@@ -189,3 +189,60 @@ jobs:
           echo "Trigger: \`${{ github.event_name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "URL: https://webapp-3ft.pages.dev" >> $GITHUB_STEP_SUMMARY
           echo "Health: \`$(cat /tmp/health.json 2>/dev/null || echo 'n/a')\`" >> $GITHUB_STEP_SUMMARY
+
+      # Ship 16: ping Telegram tras el smoke verde. Confirma deploy en el mismo
+      # canal que el error-monitor, con formato distinto (🚀 vs ⚠️/✅) para
+      # diferenciar a primera vista. Solo corre si todos los pasos previos
+      # fueron OK — un deploy roto no manda mensaje (GHA ya deja el run rojo
+      # y un sub-workflow de fallos podria anadirse aparte si se quiere).
+      #
+      # Si faltan los secretos (TELEGRAM_*), el step hace warn + exit 0 en vez
+      # de fallar el deploy — la app YA esta arriba, no queremos rojo solo por
+      # no haber podido avisar.
+      - name: Notify Telegram (deploy OK)
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          HEAD_SHA:           ${{ steps.ci.outputs.head_sha }}
+          TRIGGER:            ${{ github.event_name }}
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "::warning::TELEGRAM_* no configurado, skip notify"
+            exit 0
+          fi
+          SHORT_SHA=$(echo "$HEAD_SHA" | cut -c1-7)
+          # Asunto del commit (primera linea del mensaje), truncado a 100 chars
+          # para que el mensaje Telegram quepa holgado. git log -1 funciona
+          # porque el step 'Checkout' nos dejo el commit HEAD ya apuntando al
+          # head_sha resuelto arriba.
+          SUBJECT=$(git log -1 --format=%s 2>/dev/null | head -c 100 || echo "")
+          HEALTH=$(cat /tmp/health.json 2>/dev/null || echo "")
+          TS=$(date -u +"%Y-%m-%d %H:%M UTC")
+          MSG="🚀 ${TS}
+Deploy OK en prod (${TRIGGER})
+
+Commit: ${SHORT_SHA}
+Msg:    ${SUBJECT}
+URL:    https://webapp-3ft.pages.dev
+Health: ${HEALTH}"
+          # Best-effort: si Telegram rechaza (bot banneado, chat borrado, etc.)
+          # NO queremos que esto rompa el deploy que ya esta verde en prod.
+          # De ahi el set +e y el warning en vez de error.
+          set +e
+          TG_RESP=$(curl -sS --max-time 15 \
+            -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "disable_web_page_preview=true")
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "::warning::curl a Telegram fallo (exit $RC), deploy verde igual"
+            exit 0
+          fi
+          TG_OK=$(echo "$TG_RESP" | jq -r '.ok // "false"')
+          if [ "$TG_OK" != "true" ]; then
+            echo "::warning::Telegram rechazo: $TG_RESP"
+            exit 0
+          fi
+          echo "Telegram notified OK"

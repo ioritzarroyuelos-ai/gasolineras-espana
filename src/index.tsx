@@ -2811,10 +2811,63 @@ app.post('/api/admin/errors/autofix', async c => {
   return c.json({ updated: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
 })
 
+// ============================================================================
+// ADMIN — REPORTES DE PRECIO INCORRECTO (digest diario a Telegram)
+// ============================================================================
+// GET  /api/admin/reports?unnotified=1&limit=100  → lista pendientes
+// POST /api/admin/reports/ack?ids=1,2,3           → marca como vistos
+//
+// Replica el patron de /api/admin/errors: un cron corre 1 vez/dia, pregunta los
+// reportes con reviewed_at=NULL, los formatea y los manda a Telegram, luego
+// hace ACK para que el siguiente tick solo traiga los nuevos. Todo gated con
+// CRON_TOKEN (mismo secret que cron-ingest, cron-purge, error-monitor).
+app.get('/api/admin/reports', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
+
+  const unnotified = c.req.query('unnotified') === '1'
+  const limit = Math.min(parseInt(c.req.query('limit') || '100', 10) || 100, 500)
+
+  let sql = `SELECT id, ideess, fuel, official_price_eur, reported_price_eur,
+                    reason, comment, created_at, reviewed_at
+             FROM price_reports`
+  if (unnotified) sql += ' WHERE reviewed_at IS NULL'
+  sql += ' ORDER BY created_at DESC LIMIT ?'
+
+  const { results } = await c.env.DB.prepare(sql).bind(limit).all()
+  return c.json({ reports: results || [], ts: new Date().toISOString() }, 200, { 'Cache-Control': 'no-store' })
+})
+
+// POST /api/admin/reports/ack?ids=1,2,3 — marca reportes como vistos (reviewed).
+// Idempotente: volver a ack-ear un id ya revisado no rompe nada (UPDATE vacio).
+app.post('/api/admin/reports/ack', async c => {
+  const auth = await authorizeCron(c)
+  if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
+
+  const idsParam = c.req.query('ids') || ''
+  // Solo aceptamos enteros positivos (PK autoincrement). Cualquier otra cosa se
+  // descarta silenciosamente — mismo patron que /api/admin/errors/ack.
+  const ids = idsParam
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => /^\d{1,10}$/.test(s))
+    .map(s => parseInt(s, 10))
+  if (ids.length === 0) return c.json({ acknowledged: 0 })
+
+  const placeholders = ids.map(() => '?').join(',')
+  const now = Date.now()
+  const res = await c.env.DB.prepare(
+    `UPDATE price_reports SET reviewed_at = ? WHERE id IN (${placeholders}) AND reviewed_at IS NULL`
+  ).bind(now, ...ids).run()
+  return c.json({ acknowledged: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
+})
+
 // ---- Ship 8: reportes de precio incorrecto ----
 // POST /api/reports/price — recibe un report anonimo del cliente. El usuario
 // llega a la gasolinera, ve un precio distinto al surtidor, y flagea aqui.
-// El admin consume los agregados via /api/admin/reports (Ship futuro) para
+// El admin consume los agregados via /api/admin/reports (ver arriba) para
 // decidir si ignora, marca la estacion como dudosa o fuerza refresh.
 //
 // Flujo:

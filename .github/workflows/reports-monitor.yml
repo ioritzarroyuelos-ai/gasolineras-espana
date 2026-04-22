@@ -1,0 +1,63 @@
+name: reports-monitor — digest diario de reportes de precio incorrecto
+
+# Corre 1 vez/dia a las 07:00 UTC (09:00 CEST verano / 08:00 CET invierno). Se
+# eligio manana temprano para que el primer vistazo del dia incluya ya el
+# resumen. No coincide con otros crons: ingest=20:00 UTC, purge=03:00 UTC,
+# error-monitor=00/08/16.
+#
+# A diferencia de error-monitor, este NO manda heartbeat cuando hay 0 reportes
+# pendientes — lo normal los dias tranquilos es 0, y no queremos saturar el
+# chat admin con "sin reportes" cada manana. Si algun dia dudas si el pipeline
+# funciona, dispara con workflow_dispatch + force_notify=true.
+#
+# Secrets requeridos:
+#   CRON_TOKEN          (ya existe, compartido con el resto de crons)
+#   TELEGRAM_BOT_TOKEN  (@BotFather, ya existe)
+#   TELEGRAM_CHAT_ID    (chat admin, ya existe)
+#
+# Variable opcional:
+#   PUBLIC_ORIGIN       (default https://webapp-3ft.pages.dev)
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      force_notify:
+        description: 'Enviar heartbeat aunque no haya reportes (test pipeline)'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: reports-monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/reports-monitor.sh
+          sparse-checkout-cone-mode: false
+
+      - name: Check & notify
+        env:
+          CRON_TOKEN:         ${{ secrets.CRON_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PUBLIC_ORIGIN:      ${{ vars.PUBLIC_ORIGIN }}
+          FORCE_NOTIFY:       ${{ github.event.inputs.force_notify }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::CRON_TOKEN no configurado"; exit 1
+          fi
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados"; exit 1
+          fi
+          chmod +x scripts/reports-monitor.sh
+          bash scripts/reports-monitor.sh

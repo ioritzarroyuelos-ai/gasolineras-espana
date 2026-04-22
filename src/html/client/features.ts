@@ -480,6 +480,10 @@ function renderRouteCorridorLayer() {
         try {
           var node = e.popup && e.popup._contentNode;
           if (!node) return;
+          // Mismo fix CSP que en renderMarkers: el ph-marker guarda el % en
+          // data-pct; aplicamos el left en runtime porque style="" inline esta
+          // bloqueado por style-src sin 'unsafe-inline'.
+          if (typeof applyPercentileMarkerPos === 'function') applyPercentileMarkerPos(node);
           var panel = node.querySelector('[data-hist-station]');
           if (panel) renderHistoryPanel(panel, 30);
           var predSlot = node.querySelector('[data-predict-station]');

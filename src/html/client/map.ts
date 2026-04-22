@@ -740,13 +740,33 @@ function buildPercentileHistogram(info) {
     label = 'M\u00E1s barata que el ' + info.cheaperThanPct + '% de su zona (' + info.total + ')';
   }
   var markerTitle = 'T\u00FA: posici\u00F3n ' + info.rank + ' de ' + info.total;
+  // IMPORTANTE: no usamos style="left:X%" inline porque el CSP (style-src sin
+  // 'unsafe-inline') los bloquea y el marcador acaba en left:auto = 0 (extremo
+  // izquierdo, zona verde) aunque el precio sea el mas caro. En su lugar
+  // guardamos el porcentaje en data-pct y el handler de popupopen aplica
+  // element.style.left en runtime (asignacion JS no cae bajo style-src).
+  // Ver commit que corrige este bug para contexto completo.
   return '<div class="popup-percentile" aria-label="' + esc(label) + '">'
        +   '<div class="ph-track">'
        +     '<div class="ph-bins">' + bins + '</div>'
-       +     '<div class="ph-marker" title="' + esc(markerTitle) + '" style="left:' + markerPct.toFixed(1) + '%"></div>'
+       +     '<div class="ph-marker" title="' + esc(markerTitle) + '" data-pct="' + markerPct.toFixed(1) + '"></div>'
        +   '</div>'
        +   '<div class="ph-label ph-label--q' + info.quintile + '">' + label + '</div>'
        + '</div>';
+}
+
+// Ship 25.6 (fix) — Aplica el left:X% del marcador via JS una vez que el
+// popup esta en el DOM. Se llama desde el handler de popupopen en
+// renderMarkers/features. Esta separacion existe porque CSP con style-src sin
+// 'unsafe-inline' strippea los style inline del HTML y el marcador acabaria
+// siempre en la zona verde (left default=0) aunque el precio fuese el mas caro.
+function applyPercentileMarkerPos(popupNode) {
+  if (!popupNode) return;
+  var nodes = popupNode.querySelectorAll('.ph-marker[data-pct]');
+  for (var i = 0; i < nodes.length; i++) {
+    var pct = parseFloat(nodes[i].getAttribute('data-pct'));
+    if (isFinite(pct)) nodes[i].style.left = pct.toFixed(1) + '%';
+  }
 }
 
 function buildPopup(s) {
@@ -1051,6 +1071,9 @@ function renderMarkers(stations) {
       try {
         var node = e.popup && e.popup._contentNode;
         if (!node) return;
+        // CSP (style-src sin 'unsafe-inline') bloquea style="" del HTML
+        // asi que aplicamos el left% del ph-marker via JS.
+        applyPercentileMarkerPos(node);
         var panel = node.querySelector('[data-hist-station]');
         if (panel) renderHistoryPanel(panel, 30);
         // Predictor: fetch asincrono del veredicto y reemplazo del placeholder

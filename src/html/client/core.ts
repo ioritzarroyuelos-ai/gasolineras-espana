@@ -725,19 +725,21 @@ function checkPriceDropsAndUpdateBaselines(stations, fuel) {
 //   - Zero criptografia: una llamada sendMessage y listo.
 //   - El user ya confia en Telegram — menos fricción al dar permisos.
 //
-// Flujo:
+// Flujo (Ship 25.1 — un round-trip menos que 25.0):
 //   1. user clic "Activar alertas Telegram" -> POST /api/telegram/start-link
-//      devuelve { token, deepLink: "https://t.me/<Bot>?start=<token>" }.
-//   2. abrimos el deepLink -> en Telegram el user pulsa START -> el bot
-//      recibe "/start <token>" y actualiza telegram_pending_tokens con
-//      chat_id = update.message.from.id.
+//      body {favs: [{station_id, fuel_code}], threshold_cents: 15}.
+//      Servidor guarda los favs en el pending_token y devuelve
+//      { token, deepLink: "https://t.me/<Bot>?start=<token>" }.
+//   2. abrimos el deepLink -> en Telegram el user pulsa START -> el webhook
+//      del bot recibe "/start <token>" y en una sola transaccion:
+//      (a) confirma el token, (b) inserta los favs en telegram_subscriptions,
+//      (c) manda mensaje listando las gasolineras vigiladas.
 //   3. la web hace polling GET /api/telegram/confirm?token=... cada 2s
-//      (timeout 180s). Cuando detecta confirmed=true + chat_id, llama
-//      POST /api/telegram/subscribe con los favoritos.
-//   4. localStorage guarda el chat_id — asi la UI sabe que esta activo.
-//   5. para desactivar: POST /api/telegram/unsubscribe { chat_id } + borrar
+//      (timeout 180s). Cuando detecta confirmed=true + chat_id, guarda el
+//      chat_id en localStorage y listo.
+//   4. para desactivar: POST /api/telegram/unsubscribe { chat_id } + borrar
 //      chat_id del localStorage. (El user tambien puede mandar /stop al bot
-//      — /api/telegram/webhook borra sus subs y cierra el loop).
+//      — el webhook borra sus subs y cierra el loop).
 var TG_CHAT_KEY = 'gs_tg_chat_v1';  // localStorage: chat_id si tiene alertas activas
 
 // Combustible seleccionado -> fuel_code para el backend.
@@ -753,10 +755,24 @@ function fuelSelectorToCode() {
   return map[cur] || '95';
 }
 
-// Pide al servidor un token + deepLink. Devuelve { ok, token?, deepLink?, error? }.
-async function startTelegramLink() {
+// Pide al servidor un token + deepLink. Manda los favoritos en el body asi
+// cuando el webhook procesa /start <token> ya los tiene a mano y puede (a)
+// insertarlos en telegram_subscriptions en la misma transaccion, (b) listarlos
+// en el mensaje de confirmacion. Devuelve { ok, token?, deepLink?, error? }.
+async function startTelegramLink(favs) {
+  var fc = fuelSelectorToCode();
+  var payload = {
+    threshold_cents: 15,
+    favs: (favs || []).map(function(f) {
+      return { station_id: f.id, fuel_code: fc };
+    }),
+  };
   try {
-    var res = await fetch('/api/telegram/start-link', { method: 'POST' });
+    var res = await fetch('/api/telegram/start-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
     if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
     if (!res.ok) return { ok: false, error: 'start_link_fallo' };
     var j = await res.json();
@@ -787,29 +803,9 @@ async function waitTelegramConfirm(token, maxAttempts) {
   return { ok: false, error: 'timeout' };
 }
 
-// Sube los favoritos al servidor asociados al chat_id ya confirmado.
-async function subscribeTelegramFavs(token, favs) {
-  var fc = fuelSelectorToCode();
-  var payload = {
-    token: token,
-    threshold_cents: 15,
-    favs: favs.map(function(f) {
-      return { station_id: f.id, fuel_code: fc };
-    }),
-  };
-  try {
-    var res = await fetch('/api/telegram/subscribe', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) return { ok: false, error: 'subscribe_' + res.status };
-    var j = await res.json();
-    return j && j.ok ? { ok: true, chat_id: j.chat_id, subscribed: j.subscribed } : { ok: false, error: 'subscribe_fallo' };
-  } catch (e) {
-    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
-  }
-}
+// Ship 25.1: /api/telegram/subscribe eliminado — los favoritos viajan con
+// /start-link y el webhook los inserta en la misma transaccion que la
+// confirmacion del token (ver backend).
 
 // Orquesta todo el flow: desde el click del user hasta alertas activas.
 // Devuelve { ok, deepLink?, chat_id?, subscribed?, error? }. El caller
@@ -818,14 +814,10 @@ async function subscribeTelegramFavs(token, favs) {
 //     ok=true en la primera mitad (no esperamos al confirm para abrir)
 //   - mostrar "esperando confirmacion en Telegram..." mientras hace polling
 //   - mostrar exito/error al resolver
-//
-// Para simplificar el UI, aqui hacemos todo secuencial y la UI muestra
-// toasts intermedios. Si prefieres control mas fino, llama a las funciones
-// de bajo nivel (startTelegramLink + waitTelegramConfirm + subscribeTelegramFavs).
 async function enableTelegramAlerts(onDeepLink) {
   var favs = (typeof getFavs === 'function') ? getFavs() : [];
   if (!favs.length) return { ok: false, error: 'sin_favoritos' };
-  var link = await startTelegramLink();
+  var link = await startTelegramLink(favs);
   if (!link.ok) return link;
   // Notificamos al UI el deepLink para que lo abra inmediatamente.
   if (typeof onDeepLink === 'function') {
@@ -835,10 +827,8 @@ async function enableTelegramAlerts(onDeepLink) {
   }
   var confirmed = await waitTelegramConfirm(link.token);
   if (!confirmed.ok) return confirmed;
-  var sub = await subscribeTelegramFavs(link.token, favs);
-  if (!sub.ok) return sub;
-  try { localStorage.setItem(TG_CHAT_KEY, String(sub.chat_id)); } catch(_) {}
-  return { ok: true, chat_id: sub.chat_id, subscribed: sub.subscribed, deepLink: link.deepLink };
+  try { localStorage.setItem(TG_CHAT_KEY, String(confirmed.chat_id)); } catch(_) {}
+  return { ok: true, chat_id: confirmed.chat_id, subscribed: favs.length, deepLink: link.deepLink };
 }
 
 // Desactiva: borra todas las subs del chat y limpia localStorage.

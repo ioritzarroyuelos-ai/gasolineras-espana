@@ -1035,6 +1035,27 @@ export function getStyles(nonce: string = ''): string {
     body.dark .profile-autonomy-input { color: #6ee7b7; }
     body.dark .profile-autonomy-unit { color: #a7f3d0; }
 
+    /* Ship 25.4: variante readonly — mismo estilo visual que el input editable,
+       pero sin borde focus ni hover-pencil (no se puede editar; es un display).
+       El numero se actualiza en vivo desde JS. */
+    .profile-autonomy--readonly { cursor: default; }
+    .profile-autonomy--readonly:focus-within { box-shadow: none; border-color: #34d399; }
+    .profile-autonomy-value {
+      font-size: 28px; font-weight: 800; color: #065f46; letter-spacing: -0.02em;
+      line-height: 1; min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums;
+    }
+    body.dark .profile-autonomy-value { color: #6ee7b7; }
+    .profile-autonomy-hint {
+      display: block; margin-top: 6px; font-size: 11px; color: #64748b;
+      font-weight: 400;
+    }
+    .profile-autonomy-hint code {
+      background: #f1f5f9; padding: 1px 6px; border-radius: 4px;
+      font-size: 11px; color: #0f172a; font-family: ui-monospace, SFMono-Regular, monospace;
+    }
+    body.dark .profile-autonomy-hint { color: #94a3b8; }
+    body.dark .profile-autonomy-hint code { background: #1e293b; color: #e2e8f0; }
+
     /* ---- Bloque "Tu coche (segun perfil)" en modal ruta ----
        Resumen read-only de tank + consumo + autonomia derivada. La fila
        de autonomia se resalta porque es la que mas le importa al usuario

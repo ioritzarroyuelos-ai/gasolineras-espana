@@ -866,7 +866,22 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <p>Solo se guarda en tu navegador. Puedes cambiarlo cuando quieras.</p>
     </div>
     <div class="modal-body">
+      <!-- Ship 25.4: Tipo de coche (combustion / electrico). Condiciona las
+           unidades del resto de inputs: L vs kWh para capacidad y L/100km
+           vs kWh/100km para consumo. La formula de autonomia es la misma en
+           ambos casos porque las unidades cancelan:
+              autonomia_km = (capacidad / consumo) * 100
+           es valida tanto con (L, L/100km) como con (kWh, kWh/100km).
+           Las etiquetas de los sliders se actualizan en JS (ui.ts) al
+           cambiar el tipo; los valores numericos se preservan. -->
       <div class="form-group">
+        <label class="form-label">&#x1F697; Tipo de coche</label>
+        <div id="chips-cartype" class="chip-group" role="radiogroup" aria-label="Tipo de coche">
+          <button class="chip" data-cartype="combustion" role="radio">&#x26FD; Combusti&oacute;n</button>
+          <button class="chip" data-cartype="electrico"  role="radio">&#x26A1; El&eacute;ctrico</button>
+        </div>
+      </div>
+      <div class="form-group" id="profile-fuel-group">
         <label class="form-label">&#x26FD; Qué combustible usas</label>
         <div id="chips-fuel" class="chip-group" role="radiogroup" aria-label="Combustible">
           <button class="chip" data-fuel="Precio Gasolina 95 E5"   role="radio">Gasolina 95</button>
@@ -887,32 +902,33 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="in-consumo">&#x1F4A7; Consumo medio (L/100km)</label>
+        <label class="form-label" for="in-consumo" id="lbl-consumo-head">&#x1F4A7; Consumo medio (L/100km)</label>
         <div class="range-group">
           <input id="in-consumo" type="range" min="3" max="15" step="0.5" value="6.5" aria-label="Consumo en litros por 100 kilómetros" />
           <span class="range-val" id="lbl-consumo">6,5 L</span>
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label" for="in-tank-modal">&#x26FD; Capacidad del depósito</label>
+        <label class="form-label" for="in-tank-modal" id="lbl-tank-head">&#x26FD; Capacidad del dep&oacute;sito</label>
         <div class="range-group">
           <input id="in-tank-modal" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
           <span class="range-val" id="lbl-tank-modal">50 L</span>
         </div>
       </div>
-      <!-- Autonomia: valor FIJO que pone el usuario. Primera vez lo
-           precalculamos como deposito / consumo * 100 para dar un default
-           razonable, pero una vez editado se mantiene independiente: cambiar
-           deposito o consumo no lo mueve. Mostramos un icono de lapiz para
-           que se vea claramente que es editable (un numero grande "normal"
-           se confunde con un texto estatico). -->
+      <!-- Ship 25.4: Autonomia 100% auto-calculada desde la formula
+              autonomia_km = (capacidad / consumo) * 100
+           No es editable (readonly) — se actualiza en vivo al mover los
+           sliders de capacidad/consumo o al cambiar el tipo de coche.
+           Antes era un campo editable con lapiz; lo hemos simplificado
+           porque no tiene sentido declarar autonomia a mano si ya tenemos
+           capacidad + consumo y la relacion es exacta. -->
       <div class="form-group" id="profile-autonomy-box">
-        <label class="form-label" for="in-autonomy">&#x1F6E3;&#xFE0F; Autonom&iacute;a con dep&oacute;sito lleno</label>
-        <div class="profile-autonomy">
-          <input id="in-autonomy" class="profile-autonomy-input" type="number" min="50" max="2000" step="10" value="769" inputmode="numeric" aria-label="Autonom&iacute;a en kil&oacute;metros" title="Pulsa para editar" />
+        <label class="form-label">&#x1F6E3;&#xFE0F; Autonom&iacute;a estimada</label>
+        <div class="profile-autonomy profile-autonomy--readonly">
+          <span id="out-autonomy" class="profile-autonomy-value" aria-live="polite">769</span>
           <span class="profile-autonomy-unit">km</span>
-          <span class="profile-autonomy-pencil" aria-hidden="true">&#x270F;&#xFE0F;</span>
         </div>
+        <small class="profile-autonomy-hint">Se calcula autom&aacute;ticamente como <code>(capacidad / consumo) &times; 100</code></small>
       </div>
     </div>
     <div class="modal-footer">

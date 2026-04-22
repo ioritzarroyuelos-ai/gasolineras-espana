@@ -1212,43 +1212,114 @@ function updateMonthlyWidget() {
 // ---- ONBOARDING / PERFIL ----
 (function() {
   var modal = document.getElementById('modal-profile');
+  var chipsCarType = document.getElementById('chips-cartype');
   var chipsFuel = document.getElementById('chips-fuel');
+  var fuelGroup = document.getElementById('profile-fuel-group');
   var chipsKm   = document.getElementById('chips-km');
   var inCons    = document.getElementById('in-consumo');
   var lblCons   = document.getElementById('lbl-consumo');
+  var lblConsHead = document.getElementById('lbl-consumo-head');
   var inTankM   = document.getElementById('in-tank-modal');
   var lblTankM  = document.getElementById('lbl-tank-modal');
-  var inAuto    = document.getElementById('in-autonomy');
+  var lblTankHead = document.getElementById('lbl-tank-head');
+  var outAuto   = document.getElementById('out-autonomy');
 
-  // Autonomia es un campo INDEPENDIENTE. tmpProfile.autonomy se setea una
-  // vez (como default al abrir el modal: deposito/consumo*100) y a partir
-  // de ahi solo cambia si el usuario lo edita. Cambiar deposito o consumo
-  // NO lo mueve — el usuario ya declaro un valor fijo.
-  var tmpProfile = { fuel: '', km: 0, consumo: 6.5, tank: 50, autonomy: 0, strictFuel: true };
+  // Ship 25.4: tmpProfile incluye carType ('combustion' | 'electrico').
+  // La autonomia YA NO es editable — se calcula automaticamente con
+  //     autonomy_km = (tank / consumo) * 100
+  // al cambiar tank, consumo o carType. Persiste en el perfil para que el
+  // planificador de rutas la use sin recalcularla cada vez.
+  var tmpProfile = {
+    carType: 'combustion',
+    fuel: '', km: 0,
+    consumo: 6.5, tank: 50,
+    autonomy: 0,
+    strictFuel: true
+  };
 
-  // Autonomia por defecto: si el perfil aun no tiene autonomy guardada, la
-  // derivamos de tank+cons para dar un valor de partida razonable. Si ya
-  // existe (el usuario la guardo antes), la respetamos tal cual.
-  function deriveDefaultAutonomy(cur) {
-    var t = (typeof cur.tank === 'number' && cur.tank > 0) ? cur.tank : 50;
-    var c = (typeof cur.consumo === 'number' && cur.consumo > 0) ? cur.consumo : 6.5;
+  // Formula de autonomia — valida para combustion (L, L/100km) y electrico
+  // (kWh, kWh/100km) porque las unidades cancelan.
+  function computeAutonomy(tank, consumo) {
+    var t = (typeof tank === 'number' && tank > 0) ? tank : 0;
+    var c = (typeof consumo === 'number' && consumo > 0) ? consumo : 0;
+    if (!t || !c) return 0;
     return Math.round((t / c) * 100);
+  }
+
+  // Re-renderiza el numero grande de autonomia y actualiza tmpProfile.autonomy.
+  // Se invoca desde cada listener (sliders + cambio de tipo).
+  function refreshAutonomy() {
+    tmpProfile.autonomy = computeAutonomy(tmpProfile.tank, tmpProfile.consumo);
+    if (outAuto) outAuto.textContent = String(tmpProfile.autonomy);
+  }
+
+  // Ajusta las unidades visibles (L vs kWh) segun el tipo de coche.
+  // Los valores numericos de los sliders se mantienen — solo cambia la
+  // etiqueta. La formula da el mismo resultado en km para ambos sistemas.
+  function applyCarTypeUI(type) {
+    var isElec = type === 'electrico';
+    // Cabeceras de los sliders
+    if (lblTankHead) {
+      lblTankHead.innerHTML = isElec
+        ? '\u26A1 Capacidad de la bater\u00EDa'
+        : '\u26FD Capacidad del dep\u00F3sito';
+    }
+    if (lblConsHead) {
+      lblConsHead.innerHTML = isElec
+        ? '\uD83D\uDCA7 Consumo medio (kWh/100km)'
+        : '\uD83D\uDCA7 Consumo medio (L/100km)';
+    }
+    // Unidades del valor actual junto a cada slider
+    var unitCap = isElec ? 'kWh' : 'L';
+    var unitCons = isElec ? 'kWh' : 'L';
+    if (lblTankM) lblTankM.textContent = tmpProfile.tank + ' ' + unitCap;
+    if (lblCons) lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unitCons;
+    // ARIA labels
+    if (inTankM) inTankM.setAttribute('aria-label',
+      isElec ? 'Capacidad de la bater\u00EDa en kWh' : 'Capacidad del dep\u00F3sito en litros');
+    if (inCons) inCons.setAttribute('aria-label',
+      isElec ? 'Consumo en kWh por 100 km' : 'Consumo en litros por 100 km');
+    // Rangos del slider de consumo: combustion 3-15 L/100km; electrico 10-30 kWh/100km.
+    // Solo cambiamos el maximo (el minimo 3 es seguro en ambos). Ajustamos el valor
+    // si queda fuera del nuevo rango para evitar que el slider se quede "pegado".
+    if (inCons) {
+      if (isElec) {
+        inCons.min = '10'; inCons.max = '30'; inCons.step = '0.5';
+        if (tmpProfile.consumo < 10) { tmpProfile.consumo = 18; inCons.value = '18'; }
+        if (tmpProfile.consumo > 30) { tmpProfile.consumo = 30; inCons.value = '30'; }
+      } else {
+        inCons.min = '3'; inCons.max = '15'; inCons.step = '0.5';
+        if (tmpProfile.consumo > 15) { tmpProfile.consumo = 6.5; inCons.value = '6.5'; }
+        if (tmpProfile.consumo < 3)  { tmpProfile.consumo = 6.5; inCons.value = '6.5'; }
+      }
+      lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unitCons;
+    }
+    // El grupo "Que combustible usas" no aplica a electricos — lo ocultamos.
+    // Guardamos fuel='' para que el perfil no arrastre un combustible fantasma.
+    if (fuelGroup) fuelGroup.style.display = isElec ? 'none' : '';
+    if (isElec) tmpProfile.fuel = '';
+    refreshAutonomy();
   }
 
   function openModal() {
     var cur = getProfile() || {};
-    // Autonomia: si el perfil ya tiene un valor guardado (>0), lo usamos;
-    // si no, la derivamos de tank/cons UNA SOLA VEZ como default inicial.
-    // A partir de ese momento vive independiente.
-    var savedAuto = (typeof cur.autonomy === 'number' && cur.autonomy > 0) ? cur.autonomy : 0;
     tmpProfile = {
+      carType: cur.carType === 'electrico' ? 'electrico' : 'combustion',
       fuel: cur.fuel || '',
       km: cur.km || 0,
       consumo: cur.consumo || 6.5,
       tank: cur.tank || 50,
-      autonomy: savedAuto || deriveDefaultAutonomy(cur),
+      autonomy: 0,
       strictFuel: cur.strictFuel !== false
     };
+    // Marcar chip tipo de coche
+    if (chipsCarType) {
+      Array.prototype.forEach.call(chipsCarType.querySelectorAll('.chip'), function(c) {
+        var sel = c.getAttribute('data-cartype') === tmpProfile.carType;
+        c.classList.toggle('selected', sel);
+        c.setAttribute('aria-checked', String(sel));
+      });
+    }
     Array.prototype.forEach.call(chipsFuel.querySelectorAll('.chip'), function(c) {
       c.classList.toggle('selected', c.getAttribute('data-fuel') === tmpProfile.fuel);
       c.setAttribute('aria-checked', String(c.getAttribute('data-fuel') === tmpProfile.fuel));
@@ -1258,13 +1329,28 @@ function updateMonthlyWidget() {
       c.setAttribute('aria-checked', String(parseInt(c.getAttribute('data-km'),10) === tmpProfile.km));
     });
     inCons.value = tmpProfile.consumo;
-    lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
     inTankM.value = tmpProfile.tank;
-    lblTankM.textContent = tmpProfile.tank + ' L';
-    if (inAuto) inAuto.value = String(tmpProfile.autonomy);
+    // applyCarTypeUI setea labels + refreshAutonomy; no hace falta repetir.
+    applyCarTypeUI(tmpProfile.carType);
     modal.classList.add('show');
   }
   function closeModal() { modal.classList.remove('show'); }
+
+  // Listener tipo de coche
+  if (chipsCarType) {
+    chipsCarType.addEventListener('click', function(e) {
+      var c = e.target.closest('.chip'); if (!c) return;
+      var type = c.getAttribute('data-cartype');
+      if (type !== 'combustion' && type !== 'electrico') return;
+      tmpProfile.carType = type;
+      Array.prototype.forEach.call(chipsCarType.querySelectorAll('.chip'), function(x) {
+        var sel = x === c;
+        x.classList.toggle('selected', sel);
+        x.setAttribute('aria-checked', String(sel));
+      });
+      applyCarTypeUI(type);
+    });
+  }
 
   chipsFuel.addEventListener('click', function(e) {
     var c = e.target.closest('.chip'); if (!c) return;
@@ -1284,55 +1370,27 @@ function updateMonthlyWidget() {
       x.setAttribute('aria-checked', String(sel));
     });
   });
-  // Los sliders de consumo y deposito ya NO tocan la autonomia: son campos
-  // independientes. La autonomia es un dato que el usuario declara (y que
-  // domina en el planificador de rutas).
+  // Ship 25.4: los sliders SI actualizan la autonomia en vivo (formula:
+  // (tank/consumo)*100). Antes autonomia era un campo independiente; ahora
+  // se deriva — es lo que pidio el usuario para que "se calcule sola".
   inCons.addEventListener('input', function() {
     tmpProfile.consumo = parseFloat(inCons.value);
-    lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' L';
+    var unit = tmpProfile.carType === 'electrico' ? 'kWh' : 'L';
+    lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unit;
+    refreshAutonomy();
   });
   inTankM.addEventListener('input', function() {
     tmpProfile.tank = parseInt(inTankM.value, 10);
-    lblTankM.textContent = tmpProfile.tank + ' L';
+    var unit = tmpProfile.carType === 'electrico' ? 'kWh' : 'L';
+    lblTankM.textContent = tmpProfile.tank + ' ' + unit;
+    refreshAutonomy();
   });
 
-  // Autonomia independiente: el usuario la fija y se queda fija. Solo
-  // validamos el rango [50, 2000] para evitar valores absurdos (y para
-  // que el planificador de rutas no se rompa). Listener en 'change' (no
-  // 'input') para no pelearse con cada tecla intermedia.
-  if (inAuto) {
-    inAuto.addEventListener('change', function() {
-      var km = parseInt(inAuto.value, 10);
-      if (!isFinite(km) || km <= 0) {
-        // Valor invalido: restauramos lo que habia.
-        inAuto.value = String(tmpProfile.autonomy);
-        return;
-      }
-      if (km < 50) km = 50;
-      if (km > 2000) km = 2000;
-      tmpProfile.autonomy = km;
-      inAuto.value = String(km);
-    });
-  }
-
   document.getElementById('btn-profile-save').addEventListener('click', function() {
-    // Lectura defensiva de autonomia justo antes de guardar: algunos moviles
-    // / navegadores no disparan 'change' cuando el usuario teclea un valor y
-    // pulsa directamente "Guardar". Si confiamos solo en tmpProfile podemos
-    // persistir el default derivado en vez del valor tecleado. Leemos el
-    // input directo como ultima palabra.
-    if (inAuto) {
-      var kmNow = parseInt(inAuto.value, 10);
-      if (isFinite(kmNow) && kmNow > 0) {
-        if (kmNow < 50) kmNow = 50;
-        if (kmNow > 2000) kmNow = 2000;
-        tmpProfile.autonomy = kmNow;
-      }
-    }
-    // Defensa extra: coercion a numero por si algun flujo antiguo dejo string.
-    if (typeof tmpProfile.autonomy !== 'number' || !isFinite(tmpProfile.autonomy)) {
-      tmpProfile.autonomy = parseInt(String(tmpProfile.autonomy), 10) || 0;
-    }
+    // Ship 25.4: autonomia se recalcula aqui por ultima vez para asegurar
+    // que persistimos el valor derivado del tank+consumo actuales (y no uno
+    // viejo que pudo quedar en tmpProfile si algun listener fallo).
+    tmpProfile.autonomy = computeAutonomy(tmpProfile.tank, tmpProfile.consumo);
     setProfile(tmpProfile);
     try { localStorage.setItem('gs_tank', String(tmpProfile.tank)); } catch(e) {}
     // Sincronizar combustible y slider deposito del sidebar

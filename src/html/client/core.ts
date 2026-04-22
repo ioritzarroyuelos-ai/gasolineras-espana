@@ -254,8 +254,14 @@ function showToast(msg, type) {
     // donde no hay contenido critico. El CSS responsive en styles.ts
     // ajusta posicion y tamano en mobile. La clase marker-hook permite
     // overrides desde styles.ts (media queries) sin pelear con el inline.
+    // Ship 25.3: bottom:120px para quedar por encima de los controles de
+    // zoom Leaflet (bottomright, ocupan bottom 24-104px con su margen). A
+    // 120px dejamos ~16px de aire sobre los botones +/-. En mobile la
+    // media query en styles.ts lo mueve a bottom:150px para no tapar
+    // tampoco la "Media nacional" si se pintase abajo (ahora va arriba
+    // derecha, pero preservamos el margen por si cambia).
     b.className = 'pwa-install-btn';
-    b.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
+    b.style.cssText = 'position:fixed;bottom:120px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
     b.addEventListener('click', function() {
       if (!deferred) { b.remove(); return; }
       try {
@@ -451,7 +457,14 @@ function showToast(msg, type) {
       w.id = 'stats-nacional';
       w.setAttribute('role', 'complementary');
       w.setAttribute('aria-label', 'Precio medio nacional');
-      w.style.cssText = 'position:fixed;bottom:16px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:9995;max-width:320px;line-height:1.5';
+      // Ship 25.3: top-right en vez de bottom-right. Antes estaba a
+       // bottom:16px right:16px, MISMA posicion que los controles de zoom de
+       // Leaflet (bottomright) — el widget se pintaba ENCIMA de los botones
+       // +/- del mapa. Ahora top:74px para quedar justo debajo del header
+       // (60px alto + 14px de aire). En mobile (<640px) el header es 50px,
+       // ajustamos con media query via CSS class en styles.ts.
+      w.className = 'stats-nacional-widget';
+      w.style.cssText = 'position:fixed;top:74px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:9995;max-width:320px;line-height:1.5';
       var parts = [];
       parts.push('<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px">Media nacional hoy</div>');
       if (g95 && g95.today != null) {

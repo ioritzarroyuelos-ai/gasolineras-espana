@@ -224,8 +224,13 @@ export function getStyles(nonce: string = ''): string {
     .spinner { border:3px solid #e5e7eb; border-top:3px solid #16a34a; border-radius:50%; width:36px; height:36px; animation:spin 0.75s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* ===== LEYENDA ===== */
-    #legend { position:absolute; bottom:24px; left:12px; background:rgba(255,255,255,0.95); backdrop-filter:blur(4px); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); padding:12px 14px; z-index:400; border:1px solid #e2e8f0; min-width:130px; }
+    /* ===== LEYENDA =====
+       Ship 25.3: bottom:56px (antes 24px) — dejamos ~20px de aire bajo la
+       leyenda para que la barra de escala Leaflet (pill con su propio shadow
+       en bottom:12px) no quede pegada. Antes la leyenda estaba a 24px del
+       borde y la escala a 12px; con la escala ahora como pill de ~24px alto,
+       los dos bloques quedaban a 0px de distancia visual. */
+    #legend { position:absolute; bottom:56px; left:12px; background:rgba(255,255,255,0.95); backdrop-filter:blur(4px); border-radius:12px; box-shadow:0 4px 16px rgba(0,0,0,0.1); padding:12px 14px; z-index:400; border:1px solid #e2e8f0; min-width:130px; }
     #legend h4 { font-size:12px; font-weight:700; color:#374151; margin-bottom:8px; text-align:center; letter-spacing:0.05em; }
     .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; color:#4b5563; margin-bottom:4px; }
     .legend-dot { width:13px; height:13px; border-radius:50%; flex-shrink:0; }
@@ -332,17 +337,31 @@ export function getStyles(nonce: string = ''): string {
     body.dark .leaflet-control-zoom a:hover { background: #303134 !important; color: #fff !important; }
     body.dark .leaflet-bar a { border-bottom-color: #3c4043 !important; }
 
-    /* Scale — estilo Google: fondo blanco semi, texto gris oscuro, sin borde
-       visible por arriba (solo linea inferior como Google). */
+    /* Scale — pill blanco con shadow matching la leyenda/stats-nacional para
+       que la esquina inferior izquierda se sienta cohesiva. Ship 25.3: antes el
+       scale aparecia como una barrita Google-style con border solo top/bottom
+       que chocaba visualmente con la leyenda (panel redondeado con shadow)
+       justo encima — se veia desconectado. Ahora los 2 son pills del mismo
+       estilo separados por 8px. */
     .leaflet-control-scale { margin: 0 0 12px 12px !important; }
     .leaflet-control-scale-line {
-      border-color: #5f6368 !important; color: #3c4043; font-size: 11px !important;
-      background: rgba(255,255,255,0.92) !important; padding: 2px 6px !important;
-      border-radius: 2px; border-top: none !important;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.10);
-      font-weight: 500;
+      border: 1px solid #e2e8f0 !important;
+      border-radius: 10px !important;
+      background: rgba(255,255,255,0.95) !important;
+      backdrop-filter: blur(4px);
+      color: #4b5563 !important;
+      font-size: 11px !important;
+      padding: 4px 10px !important;
+      font-weight: 600;
+      font-family: inherit;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+      letter-spacing: 0.02em;
     }
-    body.dark .leaflet-control-scale-line { background: rgba(32,33,36,0.92) !important; color: #e8eaed; border-color: #9aa0a6 !important; }
+    body.dark .leaflet-control-scale-line {
+      background: rgba(15,23,42,0.95) !important;
+      border-color: #334155 !important;
+      color: #e2e8f0 !important;
+    }
 
     /* Control de capas — pill flotante blanco tipo Google "chip selector". */
     .leaflet-control-layers { margin: 10px 10px 0 0 !important; }
@@ -517,7 +536,7 @@ export function getStyles(nonce: string = ''): string {
     /* ---- Overlays del mapa < 768px ---- */
     @media (max-width: 767px) {
       #map-info { display: none; }
-      #legend { bottom: 12px; left: 8px; padding: 8px 10px; min-width: 110px; }
+      #legend { bottom: 48px; left: 8px; padding: 8px 10px; min-width: 110px; }
       #legend h4 { font-size: 11px; margin-bottom: 5px; }
       .legend-item { font-size: 11px; margin-bottom: 3px; }
       .legend-dot  { width: 10px; height: 10px; }
@@ -529,6 +548,17 @@ export function getStyles(nonce: string = ''): string {
         right: 8px !important;
         font-size: 11px !important;
         padding: 7px 12px !important;
+      }
+      /* Ship 25.3: Media nacional tambien se reposiciona en mobile. El header
+         aqui es 50px (no 60px), asi que pegamos el widget justo debajo con
+         10px de aire. Tambien apretamos el padding y max-width para que no
+         tape medio mapa en mobiles estrechos. */
+      #stats-nacional {
+        top: 60px !important;
+        right: 8px !important;
+        max-width: 180px !important;
+        padding: 6px 10px !important;
+        font-size: 11px !important;
       }
     }
 

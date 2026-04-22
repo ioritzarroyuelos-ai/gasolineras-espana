@@ -219,13 +219,17 @@ jobs:
           SUBJECT=$(git log -1 --format=%s 2>/dev/null | head -c 100 || echo "")
           HEALTH=$(cat /tmp/health.json 2>/dev/null || echo "")
           TS=$(date -u +"%Y-%m-%d %H:%M UTC")
-          MSG="🚀 ${TS}
-Deploy OK en prod (${TRIGGER})
-
-Commit: ${SHORT_SHA}
-Msg:    ${SUBJECT}
-URL:    https://webapp-3ft.pages.dev
-Health: ${HEALTH}"
+          # printf con \n — mas robusto que un string multilinea dentro de YAML,
+          # porque `run: |` confunde las lineas que arrancan en columna 0 (crashea
+          # el parser). Con printf el YAML ve una sola linea fisica y bash
+          # inserta los newlines en el string final.
+          MSG=$(printf '%s\n%s\n\n%s\n%s\n%s\n%s' \
+            "🚀 ${TS}" \
+            "Deploy OK en prod (${TRIGGER})" \
+            "Commit: ${SHORT_SHA}" \
+            "Msg:    ${SUBJECT}" \
+            "URL:    https://webapp-3ft.pages.dev" \
+            "Health: ${HEALTH}")
           # Best-effort: si Telegram rechaza (bot banneado, chat borrado, etc.)
           # NO queremos que esto rompa el deploy que ya esta verde en prod.
           # De ahi el set +e y el warning en vez de error.

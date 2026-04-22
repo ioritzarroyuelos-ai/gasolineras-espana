@@ -1759,16 +1759,27 @@ function showUpdateToast(newSW) {
     }
   }
 
+  // El widget "Media nacional hoy" (#stats-nacional) vive fuera del header
+  // y con z-index 1005 — al abrir el desplegable, se solapaba visualmente
+  // porque el header crea stacking context (z:1000) que capa el z:2500 del
+  // dropdown. Lo ocultamos mientras el desplegable esta abierto.
+  function setStatsWidgetHidden(hide) {
+    var w = document.getElementById('stats-nacional');
+    if (w) w.style.display = hide ? 'none' : '';
+  }
+
   function closeDropdown() {
     if (!userDropdown) return;
     userDropdown.hidden = true;
     if (btnUser) btnUser.setAttribute('aria-expanded', 'false');
+    setStatsWidgetHidden(false);
   }
   function toggleDropdown() {
     if (!userDropdown) return;
     var open = !userDropdown.hidden;
     userDropdown.hidden = open;
     if (btnUser) btnUser.setAttribute('aria-expanded', open ? 'false' : 'true');
+    setStatsWidgetHidden(!open);
   }
 
   // Click fuera de la dropdown la cierra. Se registra una sola vez.

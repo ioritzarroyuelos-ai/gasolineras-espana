@@ -464,7 +464,12 @@ function showToast(msg, type) {
        // (60px alto + 14px de aire). En mobile (<640px) el header es 50px,
        // ajustamos con media query via CSS class en styles.ts.
       w.className = 'stats-nacional-widget';
-      w.style.cssText = 'position:fixed;top:74px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:9995;max-width:320px;line-height:1.5';
+      // z-index:1005 por encima de controles Leaflet (1000). El desplegable
+      // de usuario vive dentro del stacking context del header (z:1000), asi
+      // que su z:2500 nominal se capa a 1000 — el widget lo tapa. Lo
+      // gestiona la logica del dropdown (ui.ts) ocultando el widget mientras
+      // esta abierto.
+      w.style.cssText = 'position:fixed;top:74px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:1005;max-width:320px;line-height:1.5';
       var parts = [];
       parts.push('<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px">Media nacional hoy</div>');
       if (g95 && g95.today != null) {

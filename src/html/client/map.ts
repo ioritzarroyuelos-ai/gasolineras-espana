@@ -27,12 +27,18 @@ function initMap() {
     zoomAnimation: true,
     fadeAnimation: true,
     markerZoomAnimation: true,
-    minZoom: 5,
+    minZoom: 4,   // 4 (no 5) para que fitBounds(SPAIN_BOUNDS) quepa en
+                  // moviles de 375px de ancho. A zoom 5 Espana (24.5 deg lng,
+                  // de El Hierro a Menorca) no cabe y queda clipada -> el
+                  // usuario ve solo parte del pais y con viscosity:1 la
+                  // sensacion es "atascado". A zoom 4 entra entera.
     maxZoom: 20,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
                   // lanza "Map has no maxZoom specified" y la promesa del
                   // layer queda sin manejar, rompiendo otros flujos UI.
     maxBounds: SPAIN_BOUNDS,
-    maxBoundsViscosity: 1.0,
+    maxBoundsViscosity: 0.8,  // 0.8 (no 1.0) para que se pueda arrastrar con
+                              // un poco de resistencia en los bordes en vez
+                              // de sentirlo totalmente bloqueado.
     worldCopyJump: false
   });
   // Vista inicial: encajamos SPAIN_BOUNDS (Peninsula + Baleares + Ceuta/Melilla
@@ -50,7 +56,7 @@ function initMap() {
   // municipios/calles/POIs de OSM, en castellano cuando existe el tag.
   mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 4, noWrap: true, bounds: SPAIN_BOUNDS
   });
   // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
   // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
@@ -58,7 +64,7 @@ function initMap() {
   // mantenemos coherencia con "todo en castellano".
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: SPAIN_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 4, noWrap: true, bounds: SPAIN_BOUNDS
   });
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);

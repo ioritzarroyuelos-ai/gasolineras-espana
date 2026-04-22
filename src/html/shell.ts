@@ -502,19 +502,18 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div class="header-actions">
     <span id="lbl-update" class="header-update u-hide"></span>
     <span id="lbl-count" class="header-badge u-hide"></span>
-    <!-- Acceso a favoritas: abre el modal con la lista + alertas. La estrella
-         se rellena cuando hay >=1 favorita, y la insignia numerica solo se
-         muestra en ese caso. -->
-    <button id="btn-favs" class="btn-header-fav" title="Mis favoritas" aria-label="Ver mis favoritas">
+    <!-- Acceso a favoritas / rutas / diario: cuando hay login configurado
+         (gClientId) estos tres botones se renderizan ocultos y client/ui.ts
+         los revela solo si hay sesion. Sin login (dev local sin env var) se
+         muestran siempre. -->
+    <button id="btn-favs" class="btn-header-fav" title="Mis favoritas" aria-label="Ver mis favoritas"${gClientId ? ' hidden' : ''}>
       <i class="far fa-star" id="btn-favs-icon" aria-hidden="true"></i>
       <span id="fav-badge" class="fav-badge" hidden>0</span>
     </button>
-    <!-- Ruta optima A->B: abre modal para buscar las mas baratas del trayecto -->
-    <button id="btn-route" class="btn-header-fav" title="Ruta: mejores gasolineras del trayecto" aria-label="Planificar ruta con gasolineras">
+    <button id="btn-route" class="btn-header-fav" title="Ruta: mejores gasolineras del trayecto" aria-label="Planificar ruta con gasolineras"${gClientId ? ' hidden' : ''}>
       <i class="fas fa-route" aria-hidden="true"></i>
     </button>
-    <!-- Diario de repostajes: gasto mensual real + consumo real + top estaciones -->
-    <button id="btn-diary" class="btn-header-fav" title="Mi diario de repostajes" aria-label="Abrir diario de repostajes">
+    <button id="btn-diary" class="btn-header-fav" title="Mi diario de repostajes" aria-label="Abrir diario de repostajes"${gClientId ? ' hidden' : ''}>
       <i class="fas fa-book" aria-hidden="true"></i>
     </button>
     <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>

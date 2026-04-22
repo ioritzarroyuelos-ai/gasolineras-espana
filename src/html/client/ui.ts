@@ -1769,10 +1769,22 @@ function showUpdateToast(newSW) {
 
   if (!btnLogin || !userMenu || !loginModal || !gsiContainer) return;
 
+  // Los tres botones de cabecera se ocultan hasta haber iniciado sesion. El
+  // shell los renderiza con [hidden] cuando hay login configurado; aqui los
+  // mostramos/ocultamos siguiendo el estado de la sesion.
+  var headerFeatureIds = ['btn-favs', 'btn-route', 'btn-diary'];
+  function setHeaderFeaturesVisible(visible) {
+    for (var i = 0; i < headerFeatureIds.length; i++) {
+      var el = document.getElementById(headerFeatureIds[i]);
+      if (el) el.hidden = !visible;
+    }
+  }
+
   function setLogged(user) {
     if (user && user.sub) {
       btnLogin.hidden = true;
       userMenu.hidden = false;
+      setHeaderFeaturesVisible(true);
       if (userAvatar && user.picture) { userAvatar.src = user.picture; userAvatar.alt = user.name || ''; }
       if (userNameEl) userNameEl.textContent = user.name || user.email || '';
       if (ddName)     ddName.textContent     = user.name  || '';
@@ -1780,6 +1792,7 @@ function showUpdateToast(newSW) {
     } else {
       userMenu.hidden = true;
       btnLogin.hidden = false;
+      setHeaderFeaturesVisible(false);
     }
   }
 

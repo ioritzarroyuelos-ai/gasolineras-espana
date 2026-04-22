@@ -733,21 +733,50 @@ export function computeL100km(litros: number, kmNow: number, kmPrev: number): nu
 
 // Dado un array de entradas del diario { date, litros, eurPerLitre, kmTotales }
 // ordenadas cronologicamente, calcula estadisticas agregadas utiles para el
-// widget: gasto total, media €/L, consumo medio L/100km, km recorridos.
-// Ignora la PRIMERA entrada para computar km/consumo (no tenemos baseline).
+// widget: gasto total, media €/L, consumo medio L/100km, km recorridos y
+// consumo por tramo.
+//
+// Consumo L/100km (siempre funciona con repostajes parciales):
+// Formula: suma de litros de todas las entradas salvo la primera, dividida
+// entre los km recorridos (km del ultimo repostaje - km del primero).
+//
+// Intuicion: no sabemos cuanto combustible habia en el deposito antes del
+// primer apunte del diario (por eso ignoramos los litros de la entrada 1).
+// Desde ahi, cada litro que echamos en fills posteriores ES combustible que
+// el coche usara para recorrer los km_total. Asumiendo que al primer fill y
+// al ultimo fill el deposito estaba en un nivel parecido (el conductor suele
+// repostar siempre en torno al mismo indicador de reserva), la suma de litros
+// echados equivale a lo consumido. El error residual es, como mucho, la
+// diferencia de nivel del deposito entre ambos extremos — ridiculo frente a
+// decenas/cientos de litros consumidos a lo largo de miles de km.
+//
+// Por tanto: NO hace falta que el deposito este lleno. Funciona con parciales
+// y la media se estabiliza cuanto mas entradas haya.
+//
+// Adicionalmente devolvemos `segments`: L/100km por cada tramo entre dos
+// repostajes consecutivos (litros echados en el fill i / km desde fill i-1).
+// Util para que el usuario vea sus consumos reales por viaje y entienda de
+// donde sale la media.
 export interface DiaryEntry {
   date: string            // ISO YYYY-MM-DD
   litros: number
   eurPerLitre: number     // €/L al que repostaste
   kmTotales: number       // odometro al repostar
 }
+export interface DiarySegment {
+  date: string            // fecha del repostaje que CIERRA el tramo
+  km: number              // km recorridos en este tramo
+  litros: number          // litros echados en el repostaje que cierra el tramo
+  l100km: number | null   // consumo L/100km del tramo (null si km<=0)
+}
 export interface DiaryStats {
   entries: number
   totalLiters: number
   totalSpentEur: number
   avgEurPerLitre: number | null
-  totalKm: number            // km realmente recorridos entre entradas
-  avgL100km: number | null
+  totalKm: number                       // km realmente recorridos entre primera y ultima entrada
+  avgL100km: number | null              // consumo medio L/100km
+  segments: DiarySegment[]              // consumo por tramo (i-1 -> i), empieza en el 2o repostaje
 }
 export function diaryStats(entries: DiaryEntry[]): DiaryStats {
   const clean = (entries || []).filter(e =>
@@ -765,6 +794,7 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
       avgEurPerLitre: null,
       totalKm: 0,
       avgL100km: null,
+      segments: [],
     }
   }
   let totalLiters = 0
@@ -778,6 +808,7 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
   // Km reales recorridos = diferencia entre primera y ultima lectura del odometro.
   // No sumamos intervalos porque el odometro es monotono creciente.
   const totalKm = clean[clean.length - 1].kmTotales - clean[0].kmTotales
+
   // Consumo real: litros consumidos ENTRE repostajes (ignorando el litraje del
   // primero, que reposto antes de empezar el diario) / km recorridos.
   let litersForConsumption = 0
@@ -785,6 +816,21 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
   const avgL100km = totalKm > 0 && litersForConsumption > 0
     ? litersForConsumption / (totalKm / 100)
     : null
+
+  // Consumo por tramo: para cada entrada i >= 1, el fill de i cubre los km
+  // recorridos desde i-1 hasta i (asumiendo nivel similar del deposito en ambos
+  // extremos). Si i es tramo raro (0 km, km retrocede) devolvemos null.
+  const segments: DiarySegment[] = []
+  for (let i = 1; i < clean.length; i++) {
+    const segKm = clean[i].kmTotales - clean[i - 1].kmTotales
+    segments.push({
+      date: clean[i].date,
+      km: segKm > 0 ? segKm : 0,
+      litros: clean[i].litros,
+      l100km: segKm > 0 ? clean[i].litros / (segKm / 100) : null,
+    })
+  }
+
   return {
     entries: clean.length,
     totalLiters,
@@ -792,6 +838,7 @@ export function diaryStats(entries: DiaryEntry[]): DiaryStats {
     avgEurPerLitre: sumEurPerLitre / clean.length,
     totalKm: totalKm > 0 ? totalKm : 0,
     avgL100km,
+    segments,
   }
 }
 

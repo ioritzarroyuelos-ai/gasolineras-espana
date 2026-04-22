@@ -1188,4 +1188,56 @@ describe('diaryStats (estadisticas del diario de repostajes)', () => {
     expect(s.entries).toBe(2)
     expect(s.totalLiters).toBe(98)
   })
+
+  // Consumo por tramo: cada segmento muestra L/100km del viaje entre dos
+  // repostajes consecutivos. Es lo que pintamos junto a cada entrada en el
+  // historial del modal.
+  it('devuelve un segmento por cada tramo entre repostajes', () => {
+    const entries = [
+      { date: '2026-01-10', litros: 50, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-02-05', litros: 45, eurPerLitre: 1.45, kmTotales: 10600 }, // 600 km, 45 L -> 7.5 L/100km
+      { date: '2026-03-01', litros: 48, eurPerLitre: 1.55, kmTotales: 11300 }, // 700 km, 48 L -> 6.857 L/100km
+    ]
+    const s = diaryStats(entries)
+    expect(s.segments).toHaveLength(2)
+    expect(s.segments[0].date).toBe('2026-02-05')
+    expect(s.segments[0].km).toBe(600)
+    expect(s.segments[0].litros).toBe(45)
+    expect(s.segments[0].l100km).toBeCloseTo(7.5, 2)
+    expect(s.segments[1].date).toBe('2026-03-01')
+    expect(s.segments[1].km).toBe(700)
+    expect(s.segments[1].l100km).toBeCloseTo(6.857, 2)
+  })
+
+  // Con repostajes parciales (depositos a medias), el calculo no se rompe:
+  // seguimos aplicando la misma formula y el resultado es util. Lo que pasa
+  // es que los tramos individuales pueden diferir de la media global
+  // (el nivel del deposito al repostar introduce ruido que se promedia con
+  // mas datos).
+  it('funciona con repostajes parciales — no requiere deposito lleno', () => {
+    const entries = [
+      { date: '2026-01-10', litros: 20, eurPerLitre: 1.50, kmTotales: 10000 }, // parcial (20L a medias)
+      { date: '2026-01-20', litros: 25, eurPerLitre: 1.50, kmTotales: 10300 }, // parcial (25L)
+      { date: '2026-02-01', litros: 30, eurPerLitre: 1.50, kmTotales: 10700 }, // parcial (30L)
+    ]
+    const s = diaryStats(entries)
+    expect(s.totalKm).toBe(700)
+    // Consumo: (25 + 30) / 7 = 55/7 = 7.857 L/100km (parciales siguen dando numero util)
+    expect(s.avgL100km).toBeCloseTo(7.857, 2)
+    // Segmentos: 25L / 300km = 8.33, 30L / 400km = 7.5
+    expect(s.segments).toHaveLength(2)
+    expect(s.segments[0].l100km).toBeCloseTo(8.333, 2)
+    expect(s.segments[1].l100km).toBeCloseTo(7.5, 2)
+  })
+
+  it('segment.l100km es null si no hay km entre dos repostajes', () => {
+    const entries = [
+      { date: '2026-01-10', litros: 40, eurPerLitre: 1.50, kmTotales: 10000 },
+      { date: '2026-01-11', litros: 10, eurPerLitre: 1.50, kmTotales: 10000 }, // mismo km (reposto 2 veces misma parada?)
+    ]
+    const s = diaryStats(entries)
+    expect(s.segments).toHaveLength(1)
+    expect(s.segments[0].l100km).toBeNull()
+    expect(s.segments[0].km).toBe(0)
+  })
 })

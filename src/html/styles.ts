@@ -1233,6 +1233,14 @@ export function getStyles(nonce: string = ''): string {
     .diary-item-sub { font-size:10px; color:#64748b; margin-top:2px; }
     body.dark .diary-item-date { color:#f1f5f9; }
     body.dark .diary-item-sub { color:#94a3b8; }
+    /* L/100km por tramo: linea verde destacada bajo el odometro para que el
+       usuario vea el consumo de cada trayecto y entienda de donde sale la media. */
+    .diary-item-seg { font-size:11px; color:#15803d; margin-top:3px; font-weight:600; }
+    .diary-item-seg strong { color:#0f7a34; }
+    .diary-item-seg-muted { color:#94a3b8; font-weight:500; font-style:italic; }
+    body.dark .diary-item-seg { color:#86efac; }
+    body.dark .diary-item-seg strong { color:#bbf7d0; }
+    body.dark .diary-item-seg-muted { color:#64748b; }
     .diary-item-del {
       background:none; border:none; color:#dc2626; cursor:pointer; padding:4px 8px;
       border-radius:6px; font-size:13px;

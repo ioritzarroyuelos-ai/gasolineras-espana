@@ -1456,6 +1456,7 @@ function toggleRouteCorridor() {
   }
 
   // Funcion pura duplicada — tests cubren la version canonica en pure.ts.
+  // Ver explicacion detallada de por que funciona con parciales en pure.ts.
   function diaryStats(entries) {
     var clean = (entries || []).filter(function(e) {
       return e && typeof e.date === 'string'
@@ -1464,7 +1465,7 @@ function toggleRouteCorridor() {
         && isFinite(e.kmTotales)   && e.kmTotales   >= 0;
     }).sort(function(a, b) { return a.date.localeCompare(b.date); });
     if (clean.length === 0) {
-      return { entries: 0, totalLiters: 0, totalSpentEur: 0, avgEurPerLitre: null, totalKm: 0, avgL100km: null };
+      return { entries: 0, totalLiters: 0, totalSpentEur: 0, avgEurPerLitre: null, totalKm: 0, avgL100km: null, segments: [] };
     }
     var tL = 0, tS = 0, sEpl = 0;
     for (var i = 0; i < clean.length; i++) {
@@ -1476,13 +1477,25 @@ function toggleRouteCorridor() {
     var litersForCons = 0;
     for (var j = 1; j < clean.length; j++) litersForCons += clean[j].litros;
     var avgL100km = totalKm > 0 && litersForCons > 0 ? litersForCons / (totalKm / 100) : null;
+    // Consumo por tramo: empieza en el 2o repostaje.
+    var segments = [];
+    for (var k = 1; k < clean.length; k++) {
+      var segKm = clean[k].kmTotales - clean[k - 1].kmTotales;
+      segments.push({
+        date: clean[k].date,
+        km: segKm > 0 ? segKm : 0,
+        litros: clean[k].litros,
+        l100km: segKm > 0 ? clean[k].litros / (segKm / 100) : null
+      });
+    }
     return {
       entries: clean.length,
       totalLiters: tL,
       totalSpentEur: tS,
       avgEurPerLitre: sEpl / clean.length,
       totalKm: totalKm > 0 ? totalKm : 0,
-      avgL100km: avgL100km
+      avgL100km: avgL100km,
+      segments: segments
     };
   }
 
@@ -1504,20 +1517,48 @@ function toggleRouteCorridor() {
   }
 
   function renderList() {
-    var entries = getDiary().slice().sort(function(a, b) { return b.date.localeCompare(a.date); });
-    if (entries.length === 0) {
+    var raw = getDiary();
+    if (!raw || raw.length === 0) {
       emptyWrap.style.display = '';
       listWrap.innerHTML = '';
       return;
     }
+    // Calculamos los segmentos con diaryStats (cronologico) y mapeamos por
+    // date+km para poder pintar el L/100km del tramo junto al repostaje que
+    // lo CIERRA. Los mas recientes primero (orden DESC) para mostrar.
+    // Calculamos los segmentos y los mapeamos por date+km (clave usada en el
+    // borrado tambien) para pintar el L/100km del tramo junto al repostaje
+    // que lo CIERRA.
+    var stats = diaryStats(raw);
+    var chrono = raw.slice().filter(function(e) {
+      return e && isFinite(e.litros) && e.litros > 0 && isFinite(e.kmTotales) && e.kmTotales >= 0;
+    }).sort(function(a, b) { return a.date.localeCompare(b.date); });
+    var segByKey = {};
+    for (var ci = 1; ci < chrono.length; ci++) {
+      var seg = stats.segments[ci - 1];
+      if (!seg) continue;
+      segByKey[chrono[ci].date + '|' + chrono[ci].kmTotales] = seg;
+    }
+    var entries = raw.slice().sort(function(a, b) { return b.date.localeCompare(a.date); });
     emptyWrap.style.display = 'none';
     listWrap.innerHTML = entries.map(function(e) {
+      var segKey = e.date + '|' + e.kmTotales;
+      var seg = segByKey[segKey];
+      var segLine = '';
+      if (seg && seg.l100km !== null && seg.l100km !== undefined && isFinite(seg.l100km)) {
+        segLine = '  <div class="diary-item-seg">' + seg.km.toFixed(0) + ' km desde el anterior \u2022 <strong>'
+          + seg.l100km.toFixed(1) + ' L/100km</strong></div>';
+      } else if (chrono.length > 1 && chrono[0].date === e.date && chrono[0].kmTotales === e.kmTotales) {
+        // Primer repostaje (el mas antiguo): es la referencia, no tiene tramo.
+        segLine = '  <div class="diary-item-seg diary-item-seg-muted">Referencia inicial \u2022 los siguientes repostajes calculan el consumo</div>';
+      }
       return '<div class="diary-item">'
         + '<div class="diary-item-main">'
         + '  <div class="diary-item-date">' + esc(fmtDate(e.date)) + ' \u00B7 ' + e.litros.toFixed(2) + ' L'
         + '    <span class="diary-item-sub">a ' + e.eurPerLitre.toFixed(3) + ' \u20AC/L \u00B7 ' + (e.litros * e.eurPerLitre).toFixed(2) + ' \u20AC</span>'
         + '  </div>'
         + '  <div class="diary-item-sub">Odometro: ' + e.kmTotales.toFixed(0) + ' km</div>'
+        + segLine
         + '</div>'
         + '<button class="diary-item-del" data-diary-del="' + esc(e.date + '|' + e.kmTotales) + '" aria-label="Borrar repostaje">\u2716</button>'
         + '</div>';

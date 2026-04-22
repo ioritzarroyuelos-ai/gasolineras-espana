@@ -1956,12 +1956,13 @@ app.get('/api/stats/national', async c => {
       delta_pct: number | null
       samples_today: number
       days_available: number
+      last_date: string | null
     }> = {}
 
     for (const fuel of FUELS) {
       const arr = byFuel.get(fuel) || []
       if (arr.length === 0) {
-        out[fuel] = { today: null, avg30d: null, delta_pct: null, samples_today: 0, days_available: 0 }
+        out[fuel] = { today: null, avg30d: null, delta_pct: null, samples_today: 0, days_available: 0, last_date: null }
         continue
       }
       // Ultimo dia disponible (ya viene ORDER BY date ASC).
@@ -1980,6 +1981,7 @@ app.get('/api/stats/national', async c => {
         delta_pct: Math.round(deltaPct * 100) / 100,  // 2 decimales
         samples_today: last.n,
         days_available: arr.length,
+        last_date: last.date,
       }
     }
 

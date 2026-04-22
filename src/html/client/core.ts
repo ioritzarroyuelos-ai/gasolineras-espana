@@ -453,6 +453,34 @@ function showToast(msg, type) {
       if ((!g95 || g95.today == null) && (!di || di.today == null)) return;
       if (document.getElementById('stats-nacional')) return;
 
+      // Honestidad del label: solo decimos "hoy" si la ultima fecha en D1 es
+      // realmente hoy (UTC). Si es mas antigua (cron fallo, tracking arranco
+      // hace poco, etc) mostramos "Ultima medicion: DD/MM" para no enganar.
+      function todayUTC() {
+        var d = new Date();
+        return d.getUTCFullYear() + '-' +
+               String(d.getUTCMonth() + 1).padStart(2, '0') + '-' +
+               String(d.getUTCDate()).padStart(2, '0');
+      }
+      function fmtDDMM(iso) {
+        // 'YYYY-MM-DD' -> 'DD/MM'
+        if (!iso || iso.length < 10) return '';
+        return iso.slice(8, 10) + '/' + iso.slice(5, 7);
+      }
+      var today = todayUTC();
+      var lastDate = null;
+      if (g95 && g95.last_date) lastDate = g95.last_date;
+      if (di && di.last_date && (lastDate == null || di.last_date > lastDate)) lastDate = di.last_date;
+      var isToday = lastDate === today;
+      var title = isToday ? 'Media nacional hoy' : 'Última medición: ' + fmtDDMM(lastDate);
+
+      // "vs. media N dias" usando el numero real de dias en D1, no un 30
+      // hardcoded. Tomamos el mayor entre ambos combustibles.
+      var daysN = 0;
+      if (g95 && g95.days_available) daysN = Math.max(daysN, g95.days_available);
+      if (di  && di.days_available)  daysN = Math.max(daysN, di.days_available);
+      if (!daysN) daysN = data.days || 0;
+
       var w = document.createElement('div');
       w.id = 'stats-nacional';
       w.setAttribute('role', 'complementary');
@@ -471,14 +499,21 @@ function showToast(msg, type) {
       // esta abierto.
       w.style.cssText = 'position:fixed;top:74px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:1005;max-width:320px;line-height:1.5';
       var parts = [];
-      parts.push('<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px">Media nacional hoy</div>');
+      // textContent del titulo via nodo DOM para que fmtDDMM no inyecte nada
+      // raro si lastDate viniera malformado del server.
+      var titleDiv = document.createElement('div');
+      titleDiv.style.cssText = 'font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px';
+      titleDiv.textContent = title;
+      parts.push(titleDiv.outerHTML);
       if (g95 && g95.today != null) {
         parts.push('<div>95: <strong>' + fmtEur(g95.today) + '/L</strong> ' + fmtDelta(g95.delta_pct) + '</div>');
       }
       if (di && di.today != null) {
         parts.push('<div>Di\u00E9sel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
       }
-      parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">vs. media ' + (data.days || 30) + ' d\u00EDas</div>');
+      if (daysN > 0) {
+        parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">vs. media ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
+      }
       // innerHTML seguro: los valores numericos vienen de /api/stats/national
       // (servidor) con rangos validados; no hay texto libre del usuario.
       w.innerHTML = parts.join('');

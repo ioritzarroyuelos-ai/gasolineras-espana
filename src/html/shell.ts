@@ -809,8 +809,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <i class="fa-solid fa-fire" aria-hidden="true"></i>
     </button>
 
-    <!-- Ship 25.5: toggle de puntos de recarga eléctrica (OpenChargeMap).
-         Lazy-load: el snapshot JSON (~400KB gzip, ~18k puntos en España) solo
+    <!-- Ship 25.5: toggle de puntos de recarga eléctrica (OpenStreetMap).
+         Lazy-load: el snapshot JSON (~400KB gzip, ~20k puntos en España) solo
          se fetchea la primera vez que el usuario pulsa el botón — los usuarios
          con coche de combustión nunca lo descargan. Capa separada del cluster
          de gasolineras con icono ⚡ azul para distinción visual inmediata. -->
@@ -819,7 +819,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
             type="button"
             aria-pressed="false"
             aria-label="Mostrar puntos de recarga para coche eléctrico"
-            title="Ver recargadores eléctricos (OpenChargeMap)">
+            title="Ver recargadores eléctricos (OpenStreetMap)">
       <i class="fa-solid fa-bolt" aria-hidden="true"></i>
     </button>
 

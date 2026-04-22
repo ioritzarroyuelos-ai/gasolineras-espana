@@ -1,17 +1,15 @@
 name: Fetch EV chargers snapshot
 
 # Ship 25.5 — Refresca public/data/chargers.json una vez por semana desde
-# OpenChargeMap. No tiene sentido hacerlo mas seguido: los puntos de recarga
-# no cambian de precio (la mayoria no tienen precio en OCM); solo cambian
-# cuando se instalan nuevos. Una vez por semana cubre el ritmo real.
+# OpenStreetMap via Overpass API. No tiene sentido hacerlo mas seguido: los
+# puntos de recarga no cambian de precio; solo cambian cuando se instalan
+# nuevos. Una vez por semana cubre el ritmo real.
 #
-# Se puede disparar manual con workflow_dispatch para un refresh urgente (p.ej.
-# al configurar OPENCHARGEMAP_KEY por primera vez).
+# Se puede disparar manual con workflow_dispatch para un refresh urgente.
 #
-# El secreto OPENCHARGEMAP_KEY es OPCIONAL. Sin el, OCM limita a ~200 req/dia
-# por IP, pero como este workflow hace UNA sola request, funciona sin key. El
-# secret esta para subir el rate limit si en el futuro queremos refrescar mas
-# a menudo o si OCM baja el limite anonimo.
+# Fuente: OSM Overpass API (anonima, sin secretos). Probamos OCM inicialmente
+# pero devuelve 403 sin API key — no queremos depender de un secreto para
+# una data fuente que deberia ser libre.
 
 on:
   schedule:
@@ -43,9 +41,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Fetch snapshot de OpenChargeMap
-        env:
-          OPENCHARGEMAP_KEY: ${{ secrets.OPENCHARGEMAP_KEY }}
+      - name: Fetch snapshot de OSM Overpass
         run: node scripts/fetch-chargers.mjs
 
       - name: Commit snapshot si hay cambios

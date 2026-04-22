@@ -1170,7 +1170,7 @@ function chargerPopupHTML(entry) {
             : '')
        +   '<div class="charger-popup-row">'
        +     '<span class="charger-popup-label">Fuente</span>'
-       +     '<span class="charger-popup-value" style="font-size:11px;font-weight:500;opacity:0.7">OpenChargeMap</span>'
+       +     '<span class="charger-popup-value" style="font-size:11px;font-weight:500;opacity:0.7">OpenStreetMap</span>'
        +   '</div>'
        + '</div>';
 }

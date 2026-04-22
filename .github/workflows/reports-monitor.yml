@@ -1,14 +1,14 @@
-name: reports-monitor — digest diario de reportes de precio incorrecto
+name: reports-monitor — digest de reportes de precio incorrecto (cada 8h)
 
-# Corre 1 vez/dia a las 07:00 UTC (09:00 CEST verano / 08:00 CET invierno). Se
-# eligio manana temprano para que el primer vistazo del dia incluya ya el
-# resumen. No coincide con otros crons: ingest=20:00 UTC, purge=03:00 UTC,
-# error-monitor=00/08/16.
+# Corre cada 8h a las 01:00/09:00/17:00 UTC (03:00/11:00/19:00 CEST en verano,
+# 02:00/10:00/18:00 CET en invierno). Offset de 1h respecto a error-monitor
+# (00/08/16) para no solapar y desatascar el rate limit de la API de Telegram.
+# Otros crons: ingest=20:00 UTC, purge=03:00 UTC.
 #
 # A diferencia de error-monitor, este NO manda heartbeat cuando hay 0 reportes
-# pendientes — lo normal los dias tranquilos es 0, y no queremos saturar el
-# chat admin con "sin reportes" cada manana. Si algun dia dudas si el pipeline
-# funciona, dispara con workflow_dispatch + force_notify=true.
+# pendientes — lo normal es 0, y no queremos saturar el chat admin con "sin
+# reportes" 3 veces al dia. Si algun dia dudas si el pipeline funciona,
+# dispara con workflow_dispatch + force_notify=true.
 #
 # Secrets requeridos:
 #   CRON_TOKEN          (ya existe, compartido con el resto de crons)
@@ -20,7 +20,7 @@ name: reports-monitor — digest diario de reportes de precio incorrecto
 
 on:
   schedule:
-    - cron: '0 7 * * *'
+    - cron: '0 1,9,17 * * *'
   workflow_dispatch:
     inputs:
       force_notify:

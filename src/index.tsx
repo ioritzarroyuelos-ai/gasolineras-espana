@@ -19,7 +19,8 @@ import {
   safeValidate,
 } from './lib/schemas'
 import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
-import { topMunicipiosInProvincia, findMunicipioBySlug, statsForMunicipio } from './lib/municipios'
+import { topMunicipiosInProvincia, findMunicipioBySlug, statsForMunicipio, topCheapestStationsIn } from './lib/municipios'
+import type { StationLite } from './lib/municipios'
 import {
   snapshotToRows,
   buildInsertBatches,
@@ -559,10 +560,19 @@ app.get('/gasolineras/:slug', async c => {
   let stationCount = 0
   let municipios: Array<{ slug: string; name: string; stationCount: number }> | undefined
   let snapshotDate: string | undefined  // Ship 15: Fecha del Ministerio para el badge de frescura.
+  let topStations: StationLite[] | undefined  // Ship 17: top-10 baratas en 95 para JSON-LD ItemList.
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
     if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
     if (snap && Array.isArray(snap.ListaEESSPrecio)) {
+      // Top-10 mas baratas en 95 para JSON-LD ItemList (rich results).
+      // Scope provincial — el municipal tiene su propio handler.
+      topStations = topCheapestStationsIn(snap, {
+        provinciaId: prov.id,
+        fuelCode: '95',
+        limit: 10,
+      })
+      if (topStations.length === 0) topStations = undefined
       const FIELD: Record<string, string> = {
         '95':          'Precio Gasolina 95 E5',
         '98':          'Precio Gasolina 98 E5',
@@ -613,6 +623,7 @@ app.get('/gasolineras/:slug', async c => {
       provinciaName: prov.name,
       stats,
       stationCount: stationCount || undefined,
+      topStations,
     },
     municipios,
     snapshotDate,
@@ -639,6 +650,7 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
   let munName: string | undefined
   let munId: string | undefined
   let snapshotDate: string | undefined  // Ship 15
+  let topStations: StationLite[] | undefined  // Ship 17
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
     if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
@@ -649,6 +661,16 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
     const r = statsForMunicipio(snap, prov.id, mun.id)
     stats = Object.keys(r.stats).length > 0 ? r.stats : undefined
     stationCount = r.stationCount
+    // Top-10 baratas dentro del municipio para ItemList/GasStation en JSON-LD.
+    // Si el municipio tiene <10 estaciones con 95, devuelve las que haya; si
+    // no tiene ninguna con 95, queda undefined (no emitimos ItemList).
+    topStations = topCheapestStationsIn(snap, {
+      provinciaId: prov.id,
+      municipioId: mun.id,
+      fuelCode: '95',
+      limit: 10,
+    })
+    if (topStations.length === 0) topStations = undefined
   } catch (err) {
     slog('warn', 'seo.municipio_stats_failed', { slug: provSlug + '/' + munSlug, err: String(err).slice(0, 200) })
     return c.notFound()
@@ -665,6 +687,7 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
       municipioName: munName,
       stats,
       stationCount: stationCount || undefined,
+      topStations,
     },
     snapshotDate,
   }), { headers: pageHeaders(nonce, turnstile) })

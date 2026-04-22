@@ -25,6 +25,23 @@ export interface SeoContext {
   // Keys: codigo de combustible ('95','98','diesel','diesel_plus').
   stats?: Record<string, { min: number; avg: number; max: number; count: number }>
   stationCount?: number
+  // Ship 17: top-N estaciones baratas precomputadas server-side. Se emiten
+  // como ItemList de GasStation en JSON-LD para rich results tipo carrusel en
+  // Google. Solo se rellena en provincia/municipio (en / no tiene sentido una
+  // lista de "top 10 estaciones de toda España"). El fuelCode se inyecta en
+  // el Offer para que Google entienda que precio es.
+  topStations?: Array<{
+    id: string
+    name: string
+    address: string
+    postalCode?: string
+    municipio: string
+    provincia: string
+    lat: number
+    lon: number
+    price: number
+    fuelCode: string
+  }>
 }
 
 export interface BuildPageOpts {
@@ -277,6 +294,66 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     },
     ...faqPage,
     ...breadcrumbs,
+    // Ship 17: ItemList → GasStation. Solo emitimos cuando hay topStations
+    // (provincia/municipio). Google indexa las entidades como nodos separados,
+    // lo que habilita rich results tipo carrusel ("gasolineras mas baratas en
+    // Madrid" → tarjetas con nombre + direccion + precio). Cada item es un
+    // GasStation con PostalAddress + GeoCoordinates + Offer (precio + fuel).
+    ...(seo?.topStations && seo.topStations.length > 0
+      ? [{
+          '@context': 'https://schema.org',
+          '@type': 'ItemList',
+          name: geoLabel
+            ? 'Gasolineras mas baratas en ' + geoLabel
+            : 'Gasolineras mas baratas',
+          numberOfItems: seo.topStations.length,
+          itemListOrder: 'https://schema.org/ItemListOrderAscending',
+          itemListElement: seo.topStations.map((st, idx) => {
+            const fuelName: Record<string, string> = {
+              '95':          'Gasolina 95 E5',
+              '98':          'Gasolina 98 E5',
+              'diesel':      'Gasoleo A',
+              'diesel_plus': 'Gasoleo Premium',
+            }
+            return {
+              '@type': 'ListItem',
+              position: idx + 1,
+              item: {
+                '@type': 'GasStation',
+                name: st.name,
+                address: {
+                  '@type': 'PostalAddress',
+                  streetAddress: st.address || undefined,
+                  addressLocality: st.municipio || undefined,
+                  addressRegion: st.provincia || undefined,
+                  postalCode: st.postalCode || undefined,
+                  addressCountry: 'ES',
+                },
+                geo: {
+                  '@type': 'GeoCoordinates',
+                  latitude: st.lat,
+                  longitude: st.lon,
+                },
+                // Google admite `priceRange` como string (el que se ve en el
+                // perfil de negocio local), pero el dato numerico fuerte va
+                // en `makesOffer` con unitCode LTR.
+                priceRange: st.price.toFixed(3) + ' EUR',
+                makesOffer: {
+                  '@type': 'Offer',
+                  itemOffered: {
+                    '@type': 'Product',
+                    name: fuelName[st.fuelCode] || st.fuelCode,
+                  },
+                  price: st.price.toFixed(3),
+                  priceCurrency: 'EUR',
+                  eligibleQuantity: { '@type': 'QuantitativeValue', unitCode: 'LTR', value: 1 },
+                  availability: 'https://schema.org/InStock',
+                },
+              },
+            }
+          }),
+        }]
+      : []),
   ])
 
   return `<!DOCTYPE html>

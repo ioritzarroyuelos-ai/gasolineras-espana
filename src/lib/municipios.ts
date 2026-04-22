@@ -140,6 +140,92 @@ export function findMunicipioBySlug(
 }
 
 /**
+ * Top-N estaciones mas baratas dentro de un scope (provincia o municipio).
+ *
+ * Motivacion (Ship 17): servirlas via JSON-LD ItemList → GasStation permite
+ * a Google pintar un carrusel con las mas baratas en los resultados de
+ * busqueda. Sin esto el crawler solo ve stats agregadas — con esto ve
+ * establecimientos individuales indexables.
+ *
+ * Filtros: precio > 0, lat/lon validos (hay estaciones con coords 0,0 que
+ * rompen el JSON-LD). Orden: precio asc. Empate: nombre alfabetico para
+ * que el orden sea determinista (importante porque el SSR se cachea tras
+ * CDN).
+ *
+ * Se pide `fuelCode` como parametro porque cada ruta (home, provincia,
+ * municipio) puede preferir un combustible distinto (generalmente 95 por
+ * ser el mas comun). Si el codigo no aparece en ninguna estacion del scope,
+ * devuelve [].
+ */
+export interface StationLite {
+  id: string
+  name: string            // "CEPSA", "REPSOL", etc
+  address: string         // "Av. de Madrid, 12"
+  postalCode?: string
+  municipio: string       // para PostalAddress.addressLocality
+  provincia: string       // para PostalAddress.addressRegion
+  lat: number
+  lon: number
+  price: number           // €/L del fuelCode solicitado
+  fuelCode: string        // el mismo que se paso (para que el caller lo refleje en el Offer)
+}
+
+export function topCheapestStationsIn(
+  snap: SnapshotLike | null | undefined,
+  opts: {
+    provinciaId: string
+    municipioId?: string
+    fuelCode?: string
+    limit?: number
+  },
+): StationLite[] {
+  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) return []
+  const fuelCode = opts.fuelCode ?? '95'
+  const limit = opts.limit ?? 10
+  const FIELD: Record<string, string> = {
+    '95':          'Precio Gasolina 95 E5',
+    '98':          'Precio Gasolina 98 E5',
+    'diesel':      'Precio Gasoleo A',
+    'diesel_plus': 'Precio Gasoleo Premium',
+  }
+  const priceField = FIELD[fuelCode]
+  if (!priceField) return []
+  const out: StationLite[] = []
+  for (const s of snap.ListaEESSPrecio) {
+    if (s.IDProvincia !== opts.provinciaId) continue
+    if (opts.municipioId && s.IDMunicipio !== opts.municipioId) continue
+    const raw = (s as Record<string, unknown>)[priceField]
+    if (!raw) continue
+    const price = parseFloat(String(raw).replace(',', '.'))
+    if (!Number.isFinite(price) || price <= 0) continue
+    const lat = parseFloat(String((s as Record<string, unknown>)['Latitud'] ?? '').replace(',', '.'))
+    const lon = parseFloat(String((s as Record<string, unknown>)['Longitud (WGS84)'] ?? '').replace(',', '.'))
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
+    if (lat === 0 && lon === 0) continue
+    const sr = s as Record<string, unknown>
+    const rotulo = String(sr['Rótulo'] || sr['Rotulo'] || '').trim()
+    if (!rotulo) continue
+    const direccion = String(sr['Dirección'] || sr['Direccion'] || '').trim()
+    const id = String(sr['IDEESS'] || '').trim()
+    if (!id) continue
+    out.push({
+      id,
+      name: rotulo,
+      address: direccion,
+      postalCode: String(sr['C.P.'] || '').trim() || undefined,
+      municipio: String(sr['Municipio'] || '').trim(),
+      provincia: String(sr['Provincia'] || '').trim(),
+      lat,
+      lon,
+      price,
+      fuelCode,
+    })
+  }
+  out.sort((a, b) => a.price - b.price || a.name.localeCompare(b.name))
+  return out.slice(0, limit)
+}
+
+/**
  * Calcula stats de precios para las estaciones de un municipio dado.
  * Misma forma que stats por provincia (en shell.ts/buildPage).
  */

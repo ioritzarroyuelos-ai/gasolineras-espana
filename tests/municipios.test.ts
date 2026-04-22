@@ -10,6 +10,7 @@ import {
   topMunicipiosInProvincia,
   findMunicipioBySlug,
   statsForMunicipio,
+  topCheapestStationsIn,
 } from '../src/lib/municipios'
 
 describe('slugifyMunicipio', () => {
@@ -139,5 +140,93 @@ describe('statsForMunicipio', () => {
   it('stationCount 0 para municipio inexistente', () => {
     const r = statsForMunicipio(FIXTURE, '28', '999')
     expect(r.stationCount).toBe(0)
+  })
+})
+
+// Ship 17: topCheapestStationsIn — rich fixture con los campos que el helper
+// exige (IDEESS, Rotulo, Direccion, Latitud, Longitud, Municipio, Provincia).
+// FIXTURE no los incluye y no queremos mutarlo para no romper los otros tests.
+const RICH_FIXTURE = {
+  ListaEESSPrecio: [
+    {
+      IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Provincia: 'Madrid',
+      IDEESS: '1001', 'Rótulo': 'REPSOL A', 'Dirección': 'Calle 1',
+      Latitud: '40,41', 'Longitud (WGS84)': '-3,70', 'C.P.': '28001',
+      'Precio Gasolina 95 E5': '1,600',
+    },
+    {
+      IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Provincia: 'Madrid',
+      IDEESS: '1002', 'Rótulo': 'CEPSA B', 'Dirección': 'Calle 2',
+      Latitud: '40,42', 'Longitud (WGS84)': '-3,69', 'C.P.': '28002',
+      'Precio Gasolina 95 E5': '1,550',
+    },
+    {
+      IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Provincia: 'Madrid',
+      IDEESS: '1003', 'Rótulo': 'BP C', 'Dirección': 'Calle 3',
+      Latitud: '40,43', 'Longitud (WGS84)': '-3,68', 'C.P.': '28003',
+      'Precio Gasolina 95 E5': '1,500',
+    },
+    // Sin precio 95 — debe filtrarse
+    {
+      IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Provincia: 'Madrid',
+      IDEESS: '1004', 'Rótulo': 'SINPRECIO', 'Dirección': 'Calle 4',
+      Latitud: '40,44', 'Longitud (WGS84)': '-3,67',
+    },
+    // Coords invalidas (0,0) — debe filtrarse
+    {
+      IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Provincia: 'Madrid',
+      IDEESS: '1005', 'Rótulo': 'BAD COORDS', 'Dirección': 'Calle 5',
+      Latitud: '0', 'Longitud (WGS84)': '0',
+      'Precio Gasolina 95 E5': '1,450',
+    },
+    // Otra provincia — debe filtrarse por provinciaId
+    {
+      IDProvincia: '08', IDMunicipio: '081', Municipio: 'Barcelona', Provincia: 'Barcelona',
+      IDEESS: '2001', 'Rótulo': 'REPSOL BCN', 'Dirección': 'Gran Via 1',
+      Latitud: '41,38', 'Longitud (WGS84)': '2,17',
+      'Precio Gasolina 95 E5': '1,400',
+    },
+  ],
+}
+
+describe('topCheapestStationsIn', () => {
+  it('devuelve las estaciones mas baratas en 95 ordenadas asc', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: '95' })
+    expect(r).toHaveLength(3)
+    expect(r[0].price).toBe(1.500)
+    expect(r[0].name).toBe('BP C')
+    expect(r[1].price).toBe(1.550)
+    expect(r[2].price).toBe(1.600)
+  })
+  it('filtra por municipioId cuando se proporciona', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', municipioId: '281', fuelCode: '95' })
+    expect(r).toHaveLength(3)
+    expect(r.every(s => s.municipio === 'Madrid')).toBe(true)
+  })
+  it('ignora estaciones sin precio valido del combustible pedido', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: '95' })
+    // 1004 (sin precio) no debe aparecer
+    expect(r.find(s => s.id === '1004')).toBeUndefined()
+  })
+  it('ignora estaciones con coords (0,0)', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: '95' })
+    // 1005 (coords 0,0) no debe aparecer — invalida para JSON-LD GeoCoordinates
+    expect(r.find(s => s.id === '1005')).toBeUndefined()
+  })
+  it('filtra por provinciaId — no mezcla Madrid con Barcelona', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: '95' })
+    expect(r.find(s => s.provincia === 'Barcelona')).toBeUndefined()
+  })
+  it('respeta el limit', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: '95', limit: 2 })
+    expect(r).toHaveLength(2)
+  })
+  it('devuelve [] si no hay estaciones con el combustible pedido', () => {
+    const r = topCheapestStationsIn(RICH_FIXTURE, { provinciaId: '28', fuelCode: 'diesel_plus' })
+    expect(r).toEqual([])
+  })
+  it('devuelve [] si snapshot es null', () => {
+    const r = topCheapestStationsIn(null, { provinciaId: '28' })
+    expect(r).toEqual([])
   })
 })

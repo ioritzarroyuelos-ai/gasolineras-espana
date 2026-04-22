@@ -1,0 +1,153 @@
+name: Configure SUPPORT_URL (one-shot)
+
+# Ship 25.2 setup: registra SUPPORT_URL en CF Pages (secret_text) para que el
+# boton "Invitame a un cafe" se renderice con el href correcto. Ver
+# src/html/shell.ts — si la env var falta o no es http(s) valida, el boton se
+# omite del DOM. Por eso el workflow valida la URL *antes* de escribirla.
+#
+# Por que secret_text y no plain_text si la URL es publica?
+#   - Consistencia con el resto de env vars del proyecto (TELEGRAM_* tambien son
+#     secret_text aunque el username sea publico).
+#   - Evita el error "fail_open validation" que nos paso con el PATCH global al
+#     intentar poner vars mixtas con VAPID en Ship 23.
+#
+# Flujo:
+#   1) Valida el input: URL http(s), dominio en allowlist, alcanzable (HTTP 2xx/3xx).
+#   2) Escribe SUPPORT_URL como secret_text del environment "production".
+#   3) Redeploy del HEAD actual (las env vars no aplican a deployments existentes).
+#   4) Verifica que el HTML de la home incluye el <a class="kofi-support">.
+#
+# Requisitos (ya configurados — mismo patron que configure-telegram):
+#   - secrets.CLOUDFLARE_API_TOKEN con scope Pages:Edit
+#   - secrets.CLOUDFLARE_ACCOUNT_ID
+#
+# Re-ejecutar para cambiar de plataforma:
+#   El workflow sobreescribe sin protecciones — no hay estado que rotar como con
+#   el webhook_secret de Telegram. Dispatch de nuevo con otra URL basta.
+
+on:
+  workflow_dispatch:
+    inputs:
+      support_url:
+        description: "URL de donaciones (ej: https://ko-fi.com/gasolineras_espana)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: configure-support
+  cancel-in-progress: false
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    env:
+      PROJECT: webapp
+      PUBLIC_ORIGIN: https://webapp-3ft.pages.dev
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Validar URL — formato, allowlist y reachability
+        env:
+          URL: ${{ inputs.support_url }}
+        run: |
+          set -e
+          # 1. Formato http(s) sin espacios/quotes/brackets — mismo regex que shell.ts
+          if ! echo "$URL" | grep -qE '^https?://[^[:space:]"<>'"'"']+$'; then
+            echo "::error::URL no cumple /^https?:\/\/[^\s\"'<>]+$/i — revisa el valor"
+            exit 1
+          fi
+
+          # 2. Allowlist de plataformas de donacion conocidas. Amplia si hace falta,
+          # pero cualquier URL suelta deberia pasar por aqui primero para que no se
+          # nos cuele un typo (ko-fi.xyz) o un dominio de phishing.
+          HOST=$(echo "$URL" | awk -F/ '{print $3}' | tr '[:upper:]' '[:lower:]')
+          case "$HOST" in
+            ko-fi.com | www.ko-fi.com) ;;
+            buymeacoffee.com | www.buymeacoffee.com) ;;
+            paypal.me | www.paypal.me) ;;
+            github.com | www.github.com) ;;
+            liberapay.com | www.liberapay.com) ;;
+            patreon.com | www.patreon.com) ;;
+            *)
+              echo "::error::host '$HOST' no esta en la allowlist. Plataformas admitidas: ko-fi.com, buymeacoffee.com, paypal.me, github.com/sponsors, liberapay.com, patreon.com. Si necesitas otra, amplia el case del workflow y re-lanza."
+              exit 1
+              ;;
+          esac
+
+          # 3. Reachability — evitar publicar un link 404/roto.
+          # Usamos UA de navegador porque Ko-fi/Stripe devuelven 403 a curl por defecto.
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" -L --max-time 20 \
+            -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36" \
+            "$URL")
+          if [ "$STATUS" -lt 200 ] || [ "$STATUS" -ge 400 ]; then
+            echo "::error::URL devuelve HTTP $STATUS — la pagina no existe o esta caida. Verifica el handle."
+            exit 1
+          fi
+          echo "✓ URL valida: $URL (host=$HOST, HTTP $STATUS)"
+
+      - name: Install deps para wrangler
+        run: npm ci --no-audit --no-fund
+
+      - name: Set SUPPORT_URL en Cloudflare Pages (production)
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          URL:                   ${{ inputs.support_url }}
+        run: |
+          set -e
+          echo -n "$URL" | npx wrangler@4 pages secret put SUPPORT_URL --project-name="$PROJECT"
+          echo "SUPPORT_URL puesto OK"
+
+      - name: Re-build y re-deploy para que la env var entre en efecto
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # Las env vars recien seteadas NO aplican a deployments existentes;
+          # solo a nuevos. Forzamos deploy del HEAD actual (mismo patron que
+          # configure-telegram).
+          npm run icons
+          npm run build
+          test -f dist/_worker.js || { echo "::error::build fallo — _worker.js missing"; exit 1; }
+          npx wrangler@4 pages deploy dist \
+            --project-name="${PROJECT}" \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash="${{ github.sha }}"
+
+      - name: Verificar que el boton aparece en el HTML de prod
+        env:
+          URL: ${{ inputs.support_url }}
+        run: |
+          # CF Pages tarda ~15-30s en propagar el deploy a la URL canonica.
+          sleep 30
+          HTML=$(curl -fsS --max-time 20 --retry 3 --retry-delay 10 "${PUBLIC_ORIGIN}/")
+          if echo "$HTML" | grep -qE 'class="kofi-support"[^>]*href="'"$URL"'"' \
+             || echo "$HTML" | grep -qE 'href="'"$URL"'"[^>]*class="kofi-support"'; then
+            echo "✓ El boton <a class=\"kofi-support\" href=\"$URL\"> esta en el HTML de prod"
+          else
+            echo "::error::el boton kofi-support no aparece en el HTML — revisa SUPPORT_URL en CF Pages"
+            echo "--- fragmento relevante del HTML: ---"
+            echo "$HTML" | grep -i -E 'kofi|support' | head -20 || echo "(ninguna coincidencia 'kofi'/'support')"
+            exit 1
+          fi
+
+      - name: Resumen
+        if: always()
+        env:
+          URL: ${{ inputs.support_url }}
+        run: |
+          echo "### SUPPORT_URL configurado" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: \`$URL\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Env var: SUPPORT_URL en CF Pages production (secret_text)" >> $GITHUB_STEP_SUMMARY
+          echo "- Deploy nuevo: emitido" >> $GITHUB_STEP_SUMMARY
+          echo "- Verificado: boton presente en HTML de ${PUBLIC_ORIGIN}/" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Para cambiar de plataforma: vuelve a lanzar este workflow con otra URL. Para desactivar el boton: borra la var desde el dashboard de Cloudflare (Pages → webapp → Settings → Environment variables → Production → SUPPORT_URL → Delete)." >> $GITHUB_STEP_SUMMARY

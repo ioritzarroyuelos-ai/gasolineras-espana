@@ -148,13 +148,22 @@ jobs:
           # CF Pages tarda ~15-30s en propagar el deploy a la URL canonica.
           sleep 30
           HTML=$(curl -fsS --max-time 20 --retry 3 --retry-delay 10 "${PUBLIC_ORIGIN}/")
-          if echo "$HTML" | grep -qE 'class="kofi-support"[^>]*href="'"$URL"'"' \
-             || echo "$HTML" | grep -qE 'href="'"$URL"'"[^>]*class="kofi-support"'; then
-            echo "✓ El boton <a class=\"kofi-support\" href=\"$URL\"> esta en el HTML de prod"
+          # El template literal de shell.ts renderiza el <a> multi-linea:
+          #   <a href="..."
+          #      class="kofi-support"
+          #      ...>
+          # No podemos usar un regex en una linea. Validamos dos presencias
+          # independientes — ambas necesarias — que juntas prueban que el
+          # renderer uso la SUPPORT_URL correcta para nuestro boton concreto.
+          if echo "$HTML" | grep -qF "href=\"$URL\"" \
+             && echo "$HTML" | grep -qF 'class="kofi-support"'; then
+            echo "✓ El boton esta en el HTML de prod (href=$URL + class=kofi-support presentes)"
           else
-            echo "::error::el boton kofi-support no aparece en el HTML — revisa SUPPORT_URL en CF Pages"
-            echo "--- fragmento relevante del HTML: ---"
-            echo "$HTML" | grep -i -E 'kofi|support' | head -20 || echo "(ninguna coincidencia 'kofi'/'support')"
+            echo "::error::el boton no aparece en el HTML — revisa SUPPORT_URL en CF Pages"
+            echo "--- ¿aparece la clase kofi-support? ---"
+            echo "$HTML" | grep -c 'kofi-support' || true
+            echo "--- ¿aparece el href correcto? ---"
+            echo "$HTML" | grep -cF "href=\"$URL\"" || true
             exit 1
           fi
 

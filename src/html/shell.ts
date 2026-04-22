@@ -1220,7 +1220,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </div>
       <div class="form-group">
         <label class="form-label" for="report-price">Precio que viste en el surtidor (&euro;/L) <span class="form-hint">opcional</span></label>
-        <input id="report-price" class="form-input" type="number" step="0.001" min="0.1" max="10" inputmode="decimal" placeholder="1,499" />
+        <!-- type="text" (no "number") para aceptar coma decimal en locale espanol.
+             En Chrome/Win con locale ES, un input type=number rechaza "1,499" y
+             muestra un tooltip tipo "Introduzca un numero valido" que el usuario
+             lee como "es obligatorio". inputmode=decimal hace que el teclado de
+             movil siga siendo numerico; pattern deja pasar tanto punto como coma.
+             Validacion real la hace el JS en features.ts (replace(",","."))
+             y el backend (parsePriceOpt). -->
+        <input id="report-price" class="form-input" type="text" inputmode="decimal" autocomplete="off" pattern="^[0-9]+([.,][0-9]{1,3})?$" placeholder="1,499" />
       </div>
       <div class="form-group">
         <label class="form-label" for="report-comment">Comentario <span class="form-hint">opcional, max 500 caracteres</span></label>

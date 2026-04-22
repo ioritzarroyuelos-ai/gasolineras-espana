@@ -343,12 +343,17 @@ const routeLimiter  = new SlidingWindowLimiter(20,  60_000)  // 20 req/min por I
 // periodista / blogger / investigador lo descarga una vez al dia — 6/min es
 // generoso para uso legitimo y hace inviable el scraping continuo.
 const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
-// Ship 8: reportes de precio. 5/min/IP es suficiente margen para que un usuario
-// legitimo reporte varias estaciones de golpe (p.ej. una ruta), y bajo suficiente
-// como para frenar un bot que intente inflar reports sobre una sola estacion.
-// La dedupe aplicativa (mismo ip_hash+ideess+fuel en 1h → 409) complementa este
-// limite: el primer reporte pasa, los siguientes se rechazan antes de tocar DB.
-const reportLimiter = new SlidingWindowLimiter(5,   60_000)  // 5 reports/min por IP
+// Ship 8: reportes de precio. 10/min/IP — margen holgado para un usuario
+// legitimo reportando varias estaciones de una ruta o reintentando tras errores
+// de validacion (formato de precio, etc). Bajo suficiente para frenar un bot
+// que intente inflar reports sobre una sola estacion. La dedupe aplicativa
+// (mismo ip_hash+ideess+fuel en 1h → 409) complementa este limite: el primer
+// reporte pasa, los siguientes sobre la misma (estacion,fuel) se rechazan
+// antes de tocar DB.
+// Historia: empezamos con 5/min, pero humanos rellenando un form y corrigiendo
+// errores de formato (coma vs punto, locale ES) agotaban la ventana en 2-3
+// reintentos y quedaban bloqueados con un mensaje confuso. 10/min da oxigeno.
+const reportLimiter = new SlidingWindowLimiter(10,  60_000)  // 10 reports/min por IP
 // Ship 12: Real User Monitoring (Web Vitals LCP/INP/CLS/TTFB/FCP). El cliente
 // manda UN beacon por sesion (en visibilitychange=hidden) con los 5 valores
 // agregados. Un usuario normal no genera > 1-2 beacons / hora; 30/min deja

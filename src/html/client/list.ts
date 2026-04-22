@@ -350,6 +350,12 @@ function cardHTML(s, i, fuel, fuelLabel) {
                  + (status.opensAt ? ' &middot; abre ' + esc(status.opensAt) : '') + '</span>';
     }
   }
+  // Ship 25.6: chip "Solo socios" para Costco. Mismo criterio que el popup —
+  // que el usuario sepa antes de decidir conducir hasta ahi que necesita
+  // tarjeta del club.
+  if ((s['Rotulo'] || '').toUpperCase().indexOf('COSTCO') >= 0) {
+    statusHtml += '<span class="status-chip status-members" aria-label="Solo para socios de Costco Club" title="Necesitas tarjeta de socio Costco Club para repostar">\u{1F511} Solo socios</span>';
+  }
 
   var priceText = price ? fmtPriceUnit(price) : '';
   // Coste total para un deposito completo: EUR/L x L. Usa el mismo gs_tank

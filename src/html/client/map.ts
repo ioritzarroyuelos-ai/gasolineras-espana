@@ -769,6 +769,15 @@ function buildPopup(s) {
       : '<span class="status-chip status-closed">\u25CF Cerrada' + (status.opensAt ? ' hasta ' + esc(status.opensAt) : '') + '</span>';
   }
 
+  // Ship 25.6: Badge "Solo socios" para Costco. El Ministerio publica sus
+  // precios (obligados por ley) pero repostar requiere tarjeta Costco Club.
+  // Aviso en el popup para que el usuario no conduzca hasta ahi sin saberlo.
+  var rotuloUpper = (s['Rotulo'] || '').toUpperCase();
+  if (rotuloUpper.indexOf('COSTCO') >= 0) {
+    statusHtml = (statusHtml ? statusHtml + ' ' : '')
+      + '<span class="status-chip status-members">\u{1F511} Solo socios Costco Club</span>';
+  }
+
   // Distancia (la calculamos antes del ahorro para que el ahorro neto pueda
   // restar el coste del desvio).
   var distHtml = '';

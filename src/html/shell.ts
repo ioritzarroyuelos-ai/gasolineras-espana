@@ -710,6 +710,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
               <option value="EROSKI">Eroski</option>
               <option value="BONAREA">BonÀrea</option>
               <option value="MEROIL">Meroil</option>
+              <option value="COSTCO">Costco (solo socios)</option>
               <option value="__LOWCOST__">Low-cost (sin marca conocida)</option>
             </select>
           </div>

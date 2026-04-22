@@ -1246,6 +1246,11 @@ export function getStyles(nonce: string = ''): string {
     .status-closed { background:#fef2f2; color:#dc2626; }
     body.dark .status-open { background:#14532d; color:#86efac; }
     body.dark .status-closed { background:#450a0a; color:#fca5a5; }
+    /* Ship 25.6: badge "solo socios" — Costco y similares. Amarillo ambar
+       para llamar la atencion sin ser alarmante (no es un error, es una
+       restriccion de acceso). */
+    .status-members { background:#fef3c7; color:#92400e; }
+    body.dark .status-members { background:#78350f; color:#fde68a; }
 
     /* ---- Skeleton loader para la lista ---- */
     .skeleton-card {

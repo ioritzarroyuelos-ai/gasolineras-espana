@@ -6,8 +6,8 @@
 #   2. Si 0 reportes -> silencio (a diferencia de error-monitor, aqui 0 es el
 #      estado esperado la mayoria de dias; no spameamos el chat). Se puede
 #      forzar un mensaje vacio con FORCE_NOTIFY=true para test manual.
-#   3. Si >=1 -> formatea agrupando por (ideess, fuel, reason) con contadores
-#      y delta de precio, manda a Telegram.
+#   3. Si >=1 -> formatea una linea por reporte (ordenadas por estacion, top 20),
+#      lo manda a Telegram.
 #   4. POST /api/admin/reports/ack?ids=...  (marca reviewed_at=now).
 #
 # Env vars:
@@ -36,7 +36,7 @@ TS=$(date -u +"%Y-%m-%d %H:%M UTC")
 if [ "$COUNT" -eq 0 ]; then
   if [ "$FORCE" = "true" ]; then
     echo "[reports] FORCE_NOTIFY=true — envio mensaje heartbeat a Telegram"
-    MSG="✅ ${TS}
+    MSG="OK ${TS}
 Sin reportes de precio pendientes.
 (Test manual: pipeline de reports-monitor funciona.)"
     curl -fsS --max-time 15 \
@@ -51,43 +51,32 @@ Sin reportes de precio pendientes.
   exit 0
 fi
 
-# Formateo del resumen:
-#   - Agrupamos por (ideess, fuel, reason) -> contador
-#   - Incluimos delta si hay reported_price_eur (usuario escribio el precio)
-#   - Top 15 grupos, resto como "(+N mas)"
+# Formato (simple y robusto): una linea por reporte, top 20. jq minimalista,
+# sin aggregaciones raras — preferimos 20 lineas legibles que un group-by que
+# falle por un edge case. El admin puede pedir el JSON completo si necesita mas.
 #
-# jq hace todo el trabajo. Nota: reported - official = delta en €/L.
+#   • id=10595 95 [outdated] oficial=1.509 visto=1.489 Δ-0.020 💬 surtidor...
+#
+# - oficial/visto = precios en €/L con 3 decimales (o "-" si null).
+# - 💬 solo si hay comentario, truncado a 80 chars.
+echo "[reports] Formateando mensaje..."
 SUMMARY=$(echo "$RESP" | jq -r '
   .reports
-  | group_by(.ideess + "|" + .fuel + "|" + .reason)
-  | map({
-      n: length,
-      ideess: .[0].ideess,
-      fuel: .[0].fuel,
-      reason: .[0].reason,
-      deltas: ([ .[] | select(.reported_price_eur != null and .official_price_eur != null) | (.reported_price_eur - .official_price_eur) ]),
-      comments: ([ .[] | select(.comment != null and .comment != "") | .comment ])
-    })
-  | sort_by(-.n)
-  | .[0:15]
+  | .[0:20]
   | map(
-      "• \(.n)× id=\(.ideess) \(.fuel) [\(.reason)]"
-      + (if (.deltas | length) > 0
-           then " Δ\((.deltas | add / length) | . * 1000 | round / 1000)€/L"
-           else "" end)
-      + (if (.comments | length) > 0
-           then "\n   💬 \(.comments[0][0:120])"
-           else "" end)
+      "• id=\(.ideess) \(.fuel) [\(.reason)]"
+      + " of=\(if .official_price_eur == null then "-" else (.official_price_eur | tostring) end)"
+      + " rep=\(if .reported_price_eur == null then "-" else (.reported_price_eur | tostring) end)"
+      + (if (.comment != null) and (.comment != "") then " 💬 \(.comment[0:80])" else "" end)
     )
   | join("\n")
 ')
 
 EXTRA=""
-GROUPS=$(echo "$RESP" | jq -r '.reports | group_by(.ideess + "|" + .fuel + "|" + .reason) | length')
-if [ "$GROUPS" -gt 15 ]; then
+if [ "$COUNT" -gt 20 ]; then
   EXTRA="
 
-(+$((GROUPS-15)) grupos mas)"
+(+$((COUNT-20)) mas)"
 fi
 
 MSG="⚠️ ${TS}

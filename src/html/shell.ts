@@ -733,6 +733,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       </div>
     </div>
 
+    <!-- Ship 21: indicador pull-to-refresh. Oculto (height:0) por defecto;
+         el listener en list.ts lo expande conforme el usuario tira hacia abajo
+         desde arriba de la lista. Solo aparece en dispositivos touch. -->
+    <div id="ptr-indicator" class="ptr-indicator" aria-hidden="true">
+      <span class="ptr-arrow" aria-hidden="true">&#x2193;</span>
+      <span class="ptr-text">Tira para actualizar</span>
+    </div>
+
     <!-- LISTA -->
     <div id="station-list" aria-label="Lista de gasolineras" aria-live="polite" aria-busy="false">
       <div class="empty-state">

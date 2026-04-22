@@ -1093,4 +1093,128 @@ function clearGeolocationMode() {
     selOrden.value = 'precio';
   }
 }
+
+// ============================================================
+// Ship 21: PULL-TO-REFRESH (solo touch)
+// ============================================================
+// Gesto nativo: el usuario tira hacia abajo desde arriba de la lista cuando
+// scrollTop=0. Si la distancia tirada supera PTR_THRESHOLD px, al soltar se
+// dispara forceReload() (misma logica que el boton "Actualizar" del stale
+// indicator). Visualmente, un indicador colapsado se expande conforme el
+// usuario tira, la flecha rota a 180deg al pasar el umbral, y al soltar se
+// anima el spinner mientras dura el fetch.
+//
+// Decisiones:
+//  - Solo touch (detectado via ontouchstart o maxTouchPoints). En desktop el
+//    usuario tiene los botones "Buscar" y "Actualizar" — el gesto carece de
+//    sentido.
+//  - Si no hay provincia seleccionada, no hace nada (forceReload es no-op).
+//  - touchmove usa passive:false solo cuando hace falta preventDefault (tirar
+//    hacia abajo desde scrollTop=0). En otros casos, passive:true para no
+//    romper el scroll nativo.
+//  - Escucha directamente en #station-list, no en window — no interferimos
+//    con otros gestos (abrir/cerrar sidebar en movil, etc.).
+(function() {
+  var list = document.getElementById('station-list');
+  var indicator = document.getElementById('ptr-indicator');
+  if (!list || !indicator) return;
+  // Solo dispositivos touch
+  var isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints && navigator.maxTouchPoints > 0);
+  if (!isTouch) return;
+
+  var PTR_THRESHOLD = 70;   // px minimos para disparar refresh
+  var PTR_MAX       = 110;  // px max que el indicador se expande (con elasticidad)
+  var PTR_REFRESH_H = 52;   // altura visible mientras refresca
+
+  var startY = 0, currDelta = 0, pulling = false, refreshing = false;
+  var arrow = indicator.querySelector('.ptr-arrow');
+  var text  = indicator.querySelector('.ptr-text');
+
+  function setHeight(h) {
+    indicator.style.height = h > 0 ? (h + 'px') : '';
+  }
+  function reset() {
+    indicator.classList.remove('ready');
+    setHeight(0);
+    if (text) text.textContent = 'Tira para actualizar';
+  }
+
+  list.addEventListener('touchstart', function(e) {
+    if (refreshing || !e.touches || !e.touches.length) return;
+    if (list.scrollTop > 0) { pulling = false; return; }
+    startY = e.touches[0].clientY;
+    currDelta = 0;
+    pulling = true;
+    // Sin transition durante el drag — que siga el dedo al ms
+    indicator.style.transition = 'none';
+  }, { passive: true });
+
+  list.addEventListener('touchmove', function(e) {
+    if (!pulling || refreshing || !e.touches || !e.touches.length) return;
+    var delta = e.touches[0].clientY - startY;
+    if (delta <= 0) {
+      currDelta = 0;
+      setHeight(0);
+      indicator.classList.remove('ready');
+      return;
+    }
+    // Elasticidad: al acercarnos a PTR_MAX, reducimos la ganancia para que se
+    // sienta gomoso. delta lineal hasta ~70% de PTR_MAX, luego asintotico.
+    var h;
+    if (delta <= PTR_MAX * 0.7) {
+      h = delta;
+    } else {
+      var over = delta - PTR_MAX * 0.7;
+      h = PTR_MAX * 0.7 + (over * 0.4);
+      if (h > PTR_MAX) h = PTR_MAX;
+    }
+    currDelta = h;
+    setHeight(h);
+    if (h >= PTR_THRESHOLD) {
+      indicator.classList.add('ready');
+      if (text) text.textContent = 'Suelta para actualizar';
+    } else {
+      indicator.classList.remove('ready');
+      if (text) text.textContent = 'Tira para actualizar';
+    }
+    // Bloquear el "overscroll" del navegador (que rebotaria la pagina)
+    if (e.cancelable) {
+      try { e.preventDefault(); } catch(_) {}
+    }
+  }, { passive: false });
+
+  list.addEventListener('touchend', function() {
+    if (!pulling) return;
+    pulling = false;
+    // Restaurar transition para el snap-back / mantenimiento
+    indicator.style.transition = '';
+    if (currDelta >= PTR_THRESHOLD && !refreshing) {
+      // Mantener visible mientras refresca
+      refreshing = true;
+      indicator.classList.remove('ready');
+      indicator.classList.add('refreshing');
+      if (text) text.textContent = 'Actualizando...';
+      setHeight(PTR_REFRESH_H);
+      try { forceReload(); } catch(_) {}
+      // Cerrar el indicador tras un tiempo prudente — forceReload es async
+      // pero no devuelve promesa aqui. 1500ms es suficiente para ver el
+      // spinner y ya tener los nuevos datos cargados (fetch + render ~300ms).
+      setTimeout(function() {
+        indicator.classList.remove('refreshing');
+        reset();
+        refreshing = false;
+      }, 1500);
+    } else {
+      reset();
+    }
+  }, { passive: true });
+
+  // Si el usuario cancela el toque (salta llamada telefono, etc.), restauramos.
+  list.addEventListener('touchcancel', function() {
+    if (!pulling) return;
+    pulling = false;
+    indicator.style.transition = '';
+    reset();
+  }, { passive: true });
+})();
 `

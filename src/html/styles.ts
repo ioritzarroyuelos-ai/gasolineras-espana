@@ -46,6 +46,46 @@ export function getStyles(nonce: string = ''): string {
     #station-list {
       flex: 1; overflow-y: auto;
     }
+    /* Ship 21: pull-to-refresh.
+       El indicador esta colapsado (height:0) por defecto. El listener touch
+       en list.ts le asigna una altura inline durante el gesto (hasta PTR_MAX
+       px). Al soltar, vuelve a 0 (via transition) o queda en 60px mientras
+       dura el refresh. La flecha rota 180deg cuando se supera el threshold
+       para senalar que soltar ahora dispara el refresh.
+       Con prefers-reduced-motion, la transition se anula (sigue funcional
+       pero sin el "rubber band" animado). */
+    .ptr-indicator {
+      height: 0; overflow: hidden;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      background: linear-gradient(180deg, #f0f9ff 0%, #f8fafc 100%);
+      color: #64748b; font-size: 13px; font-weight: 500;
+      border-bottom: 1px solid transparent; flex-shrink: 0;
+      transition: height 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+      will-change: height;
+    }
+    .ptr-indicator.refreshing { border-bottom-color: #bae6fd; }
+    .ptr-arrow {
+      font-size: 16px; color: #0284c7;
+      transition: transform 0.2s ease;
+      display: inline-block; line-height: 1;
+    }
+    .ptr-indicator.ready .ptr-arrow { transform: rotate(180deg); }
+    .ptr-indicator.refreshing .ptr-arrow {
+      animation: ptr-spin 0.8s linear infinite;
+    }
+    @keyframes ptr-spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+    body.dark .ptr-indicator {
+      background: linear-gradient(180deg, #0c4a6e 0%, #1e293b 100%);
+      color: #94a3b8;
+    }
+    body.dark .ptr-arrow { color: #38bdf8; }
+    @media (prefers-reduced-motion: reduce) {
+      .ptr-indicator, .ptr-arrow { transition: none; }
+      .ptr-indicator.refreshing .ptr-arrow { animation: none; }
+    }
 
     /* ===== MAPA ===== */
     /* z-index: 0 crea un stacking context — evita que los controles internos

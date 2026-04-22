@@ -99,6 +99,20 @@ describe('features string (fuente del prebuild)', () => {
   })
 })
 
+describe('list string — pull-to-refresh (Ship 21)', () => {
+  // El IIFE de PTR no exporta funciones (solo wires touch handlers al DOM),
+  // asi que validamos por presencia de los simbolos clave del gesto. Si
+  // alguien borra la logica por accidente, el test falla.
+  it('tiene el wiring pull-to-refresh', () => {
+    expect(clientListScript).toContain('ptr-indicator')
+    expect(clientListScript).toContain('touchstart')
+    expect(clientListScript).toContain('touchmove')
+    expect(clientListScript).toContain('touchend')
+    expect(clientListScript).toContain('PTR_THRESHOLD')
+    expect(clientListScript).toContain('forceReload')
+  })
+})
+
 describe('simbolos criticos presentes en el bundle', () => {
   // Funciones y variables globales que forman el contrato implicito entre
   // modulos. Si uno se elimina por error, el cliente rompe silenciosamente

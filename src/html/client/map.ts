@@ -1106,4 +1106,187 @@ function highlightCard(idx) {
   });
 })();
 
+// ---- Ship 25.5: PUNTOS DE RECARGA ELECTRICA (OpenChargeMap) ----
+//
+// Lazy-load: el snapshot /data/chargers.json (~400KB gzip) solo se descarga
+// cuando el usuario toca el boton #btn-chargers. Los usuarios con coche de
+// combustion no pagan ese coste de red.
+//
+// Capa separada del clusterGroup de gasolineras: los precios y los
+// recargadores son dominios distintos y mezclarlos en un solo cluster
+// confundiria los iconos (precio €/L vs potencia kW). Toggle on/off añade/
+// quita la capa; los datos quedan cacheados en memoria hasta recarga de
+// pagina.
+var chargersLayer = null;        // L.markerClusterGroup (null = aun no se ha tocado el toggle)
+var chargersDataLoaded = false;  // evita re-fetch si el usuario abre/cierra varias veces
+var chargersVisible = false;
+
+// Normaliza kW a una clase de pin (afecta color y etiqueta):
+//   <50 kW  → normal (AC / slow DC)
+//   50-149  → fast   (DC rapido tipico CCS/CHAdeMO hasta 149)
+//   >=150   → ultra  (hipercargadores, Tesla V3, CCS 250+)
+function chargerClass(kw) {
+  if (kw >= 150) return 'ultra';
+  if (kw >= 50)  return 'fast';
+  return 'normal';
+}
+
+function chargerPinIcon(kw) {
+  var klass = chargerClass(kw);
+  var cls = 'charger-pin' + (klass === 'normal' ? '' : ' charger-pin--' + klass);
+  return L.divIcon({
+    html: '<div class="' + cls + '" aria-hidden="true">\u26A1</div>',
+    className: '',
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
+    popupAnchor: [0, -13]
+  });
+}
+
+// Escapa HTML para el popup (no hay escapeHtml global accesible aqui, pero
+// sí existe esc() definida mas arriba en este mismo modulo).
+function chargerPopupHTML(entry) {
+  // entry = [lat, lng, title, operator, maxKw, connectors]
+  var title = esc(entry[2] || 'Recargador eléctrico');
+  var op    = entry[3] ? esc(entry[3]) : '';
+  var kw    = entry[4] || 0;
+  var conns = entry[5] || '';
+  var kwClass = chargerClass(kw);
+  var kwExtraCls = kwClass === 'normal' ? '' : ' charger-popup-kw--' + kwClass;
+  var kwLabel = kw > 0 ? kw + ' kW' : 'N/D';
+  var kwBadge = kwClass === 'ultra' ? ' (ultra)' : (kwClass === 'fast' ? ' (rápido)' : '');
+  return '<div class="charger-popup">'
+       +   '<div class="charger-popup-title">\u26A1 ' + title + '</div>'
+       +   (op ? '<div class="charger-popup-op">' + op + '</div>' : '')
+       +   '<div class="charger-popup-row">'
+       +     '<span class="charger-popup-label">Potencia</span>'
+       +     '<span class="charger-popup-value charger-popup-kw' + kwExtraCls + '">' + kwLabel + kwBadge + '</span>'
+       +   '</div>'
+       +   (conns
+            ? '<div class="charger-popup-row">'
+              + '<span class="charger-popup-label">Conectores</span>'
+              + '<span class="charger-popup-value">' + esc(conns) + '</span>'
+              + '</div>'
+            : '')
+       +   '<div class="charger-popup-row">'
+       +     '<span class="charger-popup-label">Fuente</span>'
+       +     '<span class="charger-popup-value" style="font-size:11px;font-weight:500;opacity:0.7">OpenChargeMap</span>'
+       +   '</div>'
+       + '</div>';
+}
+
+function buildChargersLayer(chargers) {
+  // Cluster azul con contador de puntos — mismo patron visual que las
+  // gasolineras pero sin badge de precio.
+  var layer = L.markerClusterGroup({
+    maxClusterRadius: 60,
+    iconCreateFunction: function(cluster) {
+      var count = cluster.getChildCount();
+      var sz = count > 200 ? 52 : count > 50 ? 44 : 36;
+      return L.divIcon({
+        html: '<div class="charger-cluster" style="width:' + sz + 'px;height:' + sz + 'px">' + count + '</div>',
+        className: '',
+        iconSize: [sz, sz],
+        iconAnchor: [sz / 2, sz / 2]
+      });
+    }
+  });
+
+  chargers.forEach(function(c) {
+    var lat = c[0], lng = c[1];
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    var kw = c[4] || 0;
+    var m = L.marker([lat, lng], { icon: chargerPinIcon(kw) });
+    // Bind popup lazy: solo construimos el HTML cuando se abre el popup, no
+    // al crear 18k markers. Ahorra mucho tiempo de render inicial.
+    m.bindPopup(function() { return chargerPopupHTML(c); }, {
+      maxWidth: 280,
+      className: 'charger-leaflet-popup'
+    });
+    layer.addLayer(m);
+  });
+
+  return layer;
+}
+
+// Fetch del snapshot (una sola vez por sesion) + toggle on/off.
+(function() {
+  var btn = document.getElementById('btn-chargers');
+  if (!btn) return;
+
+  function setLoading(isLoading) {
+    if (isLoading) {
+      btn.setAttribute('data-loading', '1');
+      btn.style.opacity = '0.6';
+      btn.style.cursor = 'wait';
+    } else {
+      btn.removeAttribute('data-loading');
+      btn.style.opacity = '';
+      btn.style.cursor = '';
+    }
+  }
+
+  function loadChargersOnce() {
+    if (chargersDataLoaded) return Promise.resolve(chargersLayer);
+    setLoading(true);
+    return fetch('/data/chargers.json', { cache: 'force-cache' })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        var arr = (data && Array.isArray(data.chargers)) ? data.chargers : [];
+        chargersLayer = buildChargersLayer(arr);
+        chargersDataLoaded = true;
+        setLoading(false);
+        try {
+          if (typeof showToast === 'function') {
+            if (arr.length) {
+              showToast('Cargados ' + arr.length + ' puntos de recarga', 'info');
+            } else {
+              showToast('Aun no hay snapshot de recargadores — vuelve en unos minutos', 'warn');
+            }
+          }
+        } catch (_) {}
+        return chargersLayer;
+      })
+      .catch(function(e) {
+        setLoading(false);
+        console.warn('[chargers] fetch fallo:', e && e.message);
+        try {
+          if (typeof showToast === 'function') {
+            showToast('No se pudo cargar el mapa de recargadores', 'warn');
+          }
+        } catch (_) {}
+        return null;
+      });
+  }
+
+  btn.addEventListener('click', function() {
+    // Caso 1: primer click, aun no hay datos → carga y muestra.
+    if (!chargersDataLoaded) {
+      loadChargersOnce().then(function(layer) {
+        if (!layer) return;  // error ya notificado
+        map.addLayer(layer);
+        chargersVisible = true;
+        btn.setAttribute('aria-pressed', 'true');
+        btn.setAttribute('aria-label', 'Ocultar puntos de recarga electrica');
+      });
+      return;
+    }
+    // Caso 2: datos ya en memoria, toggle rapido add/remove de capa.
+    if (chargersVisible) {
+      if (chargersLayer) map.removeLayer(chargersLayer);
+      chargersVisible = false;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', 'Mostrar puntos de recarga para coche electrico');
+    } else {
+      if (chargersLayer) map.addLayer(chargersLayer);
+      chargersVisible = true;
+      btn.setAttribute('aria-pressed', 'true');
+      btn.setAttribute('aria-label', 'Ocultar puntos de recarga electrica');
+    }
+  });
+})();
+
 `

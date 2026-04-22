@@ -789,6 +789,12 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div id="map-container">
     <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
 
+    <!-- Botones flotantes sobre el mapa. Apilados verticalmente en la esquina
+         superior-izquierda (por encima del control de escala, por debajo del
+         header). Cada botón comparte la clase .map-floating-btn y se posiciona
+         por su ID para que el stacking sea explícito (en vez de depender del
+         orden DOM o de un flex wrapper que complicaría el layout mobile). -->
+
     <!-- Ship 6: toggle heatmap. Cambia la vista de cluster a mapa de calor
          donde el color indica densidad de precios bajos (mas rojo = mas
          barato). Util para decidir zonas en viajes largos sin tener que
@@ -801,6 +807,20 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
             aria-label="Activar mapa de calor de precios"
             title="Vista de mapa de calor (más rojo = más barato)">
       <i class="fa-solid fa-fire" aria-hidden="true"></i>
+    </button>
+
+    <!-- Ship 25.5: toggle de puntos de recarga eléctrica (OpenChargeMap).
+         Lazy-load: el snapshot JSON (~400KB gzip, ~18k puntos en España) solo
+         se fetchea la primera vez que el usuario pulsa el botón — los usuarios
+         con coche de combustión nunca lo descargan. Capa separada del cluster
+         de gasolineras con icono ⚡ azul para distinción visual inmediata. -->
+    <button id="btn-chargers"
+            class="map-floating-btn map-floating-btn--chargers"
+            type="button"
+            aria-pressed="false"
+            aria-label="Mostrar puntos de recarga para coche eléctrico"
+            title="Ver recargadores eléctricos (OpenChargeMap)">
+      <i class="fa-solid fa-bolt" aria-hidden="true"></i>
     </button>
 
     <!-- Banner "modo ruta" flotante sobre el mapa. Se activa al planificar

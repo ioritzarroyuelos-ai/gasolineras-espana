@@ -945,6 +945,83 @@ export function getStyles(nonce: string = ''): string {
       background: #dc2626; color: #fff; border-color: #991b1b;
     }
 
+    /* Ship 25.5: segundo boton flotante (#btn-chargers) apilado debajo del de
+       heatmap. 34px alto + 8px gap = offset de 42px respecto a top:90px → 132px.
+       Color "activo" azul eléctrico (#2563eb) para diferenciar semanticamente
+       del rojo del heatmap (precios) — cuando ambos estan pulsados el usuario
+       ve dos estados distintos sin tener que leer el icono. */
+    .map-floating-btn--chargers {
+      top: 132px;
+    }
+    .map-floating-btn--chargers:hover { color: #2563eb; }
+    .map-floating-btn--chargers[aria-pressed="true"] {
+      background: #2563eb; color: #fff; border-color: #1d4ed8;
+    }
+    body.dark .map-floating-btn--chargers:hover { color: #60a5fa; }
+    body.dark .map-floating-btn--chargers[aria-pressed="true"] {
+      background: #2563eb; color: #fff; border-color: #1e40af;
+    }
+
+    /* Ship 25.5: pin de punto de recarga electrica. Circulo azul con icono de
+       rayo blanco. Tamaño compacto (26px) para que no compita visualmente con
+       los pins-precio de gasolineras — mismas convenciones de sombra/borde. */
+    .charger-pin {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: #2563eb; color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+      border: 2px solid #fff;
+      box-shadow: 0 2px 6px rgba(37,99,235,0.45), 0 0 0 1px rgba(0,0,0,0.08);
+    }
+    /* Fast DC (>=50kW) en verde azulado mas llamativo para señalar potencia. */
+    .charger-pin--fast {
+      background: #0891b2;
+      box-shadow: 0 2px 6px rgba(8,145,178,0.5), 0 0 0 1px rgba(0,0,0,0.08);
+    }
+    /* Ultra (>=150kW) en violeta — mismo lenguaje que Tesla/CCS ultra. */
+    .charger-pin--ultra {
+      background: #7c3aed;
+      box-shadow: 0 2px 6px rgba(124,58,237,0.5), 0 0 0 1px rgba(0,0,0,0.08);
+    }
+    body.dark .charger-pin { border-color: #0f172a; }
+
+    /* Cluster de recargadores: similar al de gasolineras pero en azul, sin
+       badge de precio (los puntos de recarga rara vez publican tarifa). */
+    .charger-cluster {
+      background: rgba(37,99,235,0.85); color: #fff;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 12px;
+      border: 3px solid rgba(255,255,255,0.9);
+      box-shadow: 0 4px 12px rgba(37,99,235,0.35);
+    }
+    body.dark .charger-cluster { border-color: rgba(15,23,42,0.9); }
+
+    /* Popup de recargador. Heredamos tipografia del popup de gasolineras pero
+       con cabecera en azul. Mantener compacto: titulo + operador + lista de
+       conectores con potencia. */
+    .charger-popup { min-width: 200px; font-size: 13px; line-height: 1.45; }
+    .charger-popup-title { font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px; }
+    .charger-popup-op { color: #64748b; font-size: 12px; margin-bottom: 8px; }
+    .charger-popup-row {
+      display: flex; justify-content: space-between; gap: 10px;
+      padding: 4px 0; border-top: 1px solid #e2e8f0;
+    }
+    .charger-popup-row:first-of-type { border-top: none; }
+    .charger-popup-label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+    .charger-popup-value { color: #0f172a; font-weight: 600; }
+    .charger-popup-kw { color: #2563eb; font-weight: 700; }
+    .charger-popup-kw--fast { color: #0891b2; }
+    .charger-popup-kw--ultra { color: #7c3aed; }
+    body.dark .charger-popup-title { color: #f1f5f9; }
+    body.dark .charger-popup-op { color: #94a3b8; }
+    body.dark .charger-popup-row { border-top-color: #334155; }
+    body.dark .charger-popup-label { color: #94a3b8; }
+    body.dark .charger-popup-value { color: #e2e8f0; }
+    body.dark .charger-popup-kw { color: #60a5fa; }
+    body.dark .charger-popup-kw--fast { color: #22d3ee; }
+    body.dark .charger-popup-kw--ultra { color: #a78bfa; }
+
     /* Botonera "Abrir ruta en..." dentro del panel del plan. */
     .route-nav-title {
       margin-top: 14px; margin-bottom: 6px;

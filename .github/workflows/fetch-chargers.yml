@@ -1,0 +1,114 @@
+name: Fetch EV chargers snapshot
+
+# Ship 25.5 — Refresca public/data/chargers.json una vez por semana desde
+# OpenChargeMap. No tiene sentido hacerlo mas seguido: los puntos de recarga
+# no cambian de precio (la mayoria no tienen precio en OCM); solo cambian
+# cuando se instalan nuevos. Una vez por semana cubre el ritmo real.
+#
+# Se puede disparar manual con workflow_dispatch para un refresh urgente (p.ej.
+# al configurar OPENCHARGEMAP_KEY por primera vez).
+#
+# El secreto OPENCHARGEMAP_KEY es OPCIONAL. Sin el, OCM limita a ~200 req/dia
+# por IP, pero como este workflow hace UNA sola request, funciona sin key. El
+# secret esta para subir el rate limit si en el futuro queremos refrescar mas
+# a menudo o si OCM baja el limite anonimo.
+
+on:
+  schedule:
+    # Lunes 05:00 UTC = 06:00/07:00 Madrid. Hora baja de trafico para no
+    # interferir con el cron de precios (07:00 y 19:00 UTC).
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Forzar deploy a Pages aunque no haya cambios en el snapshot'
+        type: boolean
+        default: false
+
+concurrency:
+  group: fetch-chargers
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Fetch snapshot de OpenChargeMap
+        env:
+          OPENCHARGEMAP_KEY: ${{ secrets.OPENCHARGEMAP_KEY }}
+        run: node scripts/fetch-chargers.mjs
+
+      - name: Commit snapshot si hay cambios
+        id: commit
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/chargers.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en chargers.json"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore(data): actualizar snapshot de recargadores $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Auto-deploy si cambia el snapshot (mismo patron que fetch-prices.yml).
+  deploy:
+    needs: fetch
+    if: needs.fetch.outputs.changed == 'true' || github.event.inputs.force_deploy == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Verificar que los secrets existen
+        id: secrets
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN no configurado — snapshot en repo pero no llega a prod hasta deploy manual."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        if: steps.secrets.outputs.present == 'true'
+        run: npm ci
+
+      - name: Build bundle
+        if: steps.secrets.outputs.present == 'true'
+        run: npm run build
+
+      - name: Deploy a Cloudflare Pages
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler pages deploy dist \
+            --project-name=webapp \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-message="auto-deploy: chargers refresh $(date -u +%Y-%m-%dT%H:%MZ)"

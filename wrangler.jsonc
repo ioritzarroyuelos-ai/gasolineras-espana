@@ -43,18 +43,35 @@
 
   // ---- Cron ----
   // Cloudflare Pages NO soporta "triggers.crons" (es una feature solo de
-  // Workers puros). Asi que los dos crons se disparan desde GitHub Actions:
+  // Workers puros). Asi que los crons se disparan desde GitHub Actions:
   //
-  //   .github/workflows/cron-ingest.yml → `0 20 * * *` → POST /api/cron/ingest
-  //   .github/workflows/cron-purge.yml  → `0 3 * * 0`  → POST /api/cron/purge
+  //   .github/workflows/cron-ingest.yml     → `0 20 * * *`   → POST /api/cron/ingest
+  //   .github/workflows/cron-purge.yml      → `0 3 * * 0`    → POST /api/cron/purge
+  //   .github/workflows/cron-push-check.yml → `15 */2 * * *` → POST /api/cron/push-check (Ship 23)
   //
-  // Ambos endpoints exigen `Authorization: Bearer <CRON_TOKEN>`. El token vive
+  // Todos los endpoints exigen `Authorization: Bearer <CRON_TOKEN>`. El token vive
   // en dos sitios:
   //   - GitHub Actions Secrets (CRON_TOKEN) para que el workflow lo envie
   //   - Cloudflare Pages env var (CRON_TOKEN) para que el Worker lo valide
   //
   // Valor recomendado: generar con `openssl rand -hex 32` y pegar el MISMO
   // valor en los dos sitios.
+  //
+  // ---- Web Push VAPID keys (Ship 23) ----
+  // Setup (una sola vez):
+  //   1) Generar el par VAPID. Opciones:
+  //      a) npx web-push generate-vapid-keys  (recomendado — paquete npm bien probado)
+  //      b) Invocar generateVapidKeys() del helper src/lib/webpush.ts desde un script.
+  //   2) En Cloudflare Pages dashboard → Settings → Environment variables (Production):
+  //        VAPID_PUBLIC_KEY  = <la publicKey base64url, 65 bytes EC no-comprimido>
+  //        VAPID_PRIVATE_KEY = <la privateKey base64url, 32 bytes componente d>
+  //        VAPID_SUBJECT     = "mailto:tu-email@dominio.com"
+  //      Marca _PRIVATE_KEY como Secret (encrypted). _PUBLIC_KEY puede ser plain.
+  //   3) Aplica la migracion 0005 en D1 remoto:
+  //        npx wrangler d1 migrations apply gasolineras-history --remote
+  //
+  // Si las vars no estan, todos los /api/push/* responden 503 y el panel de
+  // "Activar alertas" se oculta del UI — sin errores ni degradacion visible.
 
   // ---- Hardening adicional a configurar en el dashboard de Cloudflare ----
   //

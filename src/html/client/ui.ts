@@ -1473,6 +1473,90 @@ document.addEventListener('keydown', function(e) {
   renderFavs();
 })();
 
+// ============================================================
+// Ship 23: WIRING del panel de alertas push en el modal de favoritas.
+// ============================================================
+// Se muestra si el browser soporta Web Push y hay al menos una favorita.
+// El estado del boton (Activar / Desactivar) refleja si hay PushSubscription
+// registrada. En un intento de activacion llama a enablePushAlerts() (definida
+// en core.ts), que pide permiso + suscribe + envia al backend.
+(function() {
+  var panel = document.getElementById('push-alerts-panel');
+  var btn   = document.getElementById('btn-push-toggle');
+  var statusEl = document.getElementById('push-alerts-status');
+  if (!panel || !btn) return;
+
+  // Sin Web Push soportado => ocultar silencioso (el fallback de toast/local
+  // notif sigue funcionando).
+  if (typeof pushSupported !== 'function' || !pushSupported()) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  async function refreshPanel() {
+    var favs = (typeof getFavs === 'function') ? getFavs() : [];
+    if (!favs.length) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    var active = await pushAlertsActive();
+    if (active) {
+      panel.classList.add('active');
+      btn.textContent = 'Desactivar';
+      if (statusEl) statusEl.textContent = 'Alertas activas. Te avisamos cuando alguna favorita baje > 1.5 \u00A2.';
+    } else {
+      panel.classList.remove('active');
+      btn.textContent = 'Activar';
+      if (statusEl) statusEl.textContent = 'Recibe un aviso cuando baje una de tus favoritas (incluso con la app cerrada).';
+    }
+  }
+
+  btn.addEventListener('click', async function() {
+    btn.disabled = true;
+    var wasActive = panel.classList.contains('active');
+    try {
+      if (wasActive) {
+        var res1 = await disablePushAlerts();
+        if (res1.ok) showToast('Alertas push desactivadas', 'info');
+        else showToast('No se pudieron desactivar del todo', 'warning');
+      } else {
+        var res2 = await enablePushAlerts();
+        if (res2.ok) {
+          showToast('\u{1F514} Alertas push activadas — te avisaremos', 'success');
+        } else if (res2.error === 'permiso_denegado') {
+          showToast('Permiso denegado. Actualiza en los ajustes del navegador para activar.', 'warning');
+        } else if (res2.error === 'sin_favoritos') {
+          showToast('A\u00F1ade al menos una favorita antes de activar alertas', 'info');
+        } else if (res2.error === 'push_no_configurado') {
+          showToast('Las alertas push no estan disponibles en este servidor', 'warning');
+        } else if (res2.error === 'push_no_soportado') {
+          showToast('Tu navegador no soporta notificaciones push', 'warning');
+        } else {
+          showToast('No se pudo activar — intentalo mas tarde', 'error');
+        }
+      }
+    } finally {
+      btn.disabled = false;
+      refreshPanel();
+    }
+  });
+
+  // Refrescar cuando el modal se abre (asi reflejamos si favs cambio o el
+  // usuario (des)activo por otra via).
+  var modal = document.getElementById('modal-favs');
+  if (modal) {
+    // MutationObserver por si cambia la clase show externamente.
+    var obs = new MutationObserver(function() {
+      if (modal.classList.contains('show')) refreshPanel();
+    });
+    obs.observe(modal, { attributes: true, attributeFilter: ['class'] });
+  }
+  // Render inicial — puede ejecutarse antes de que las favs esten hidratadas;
+  // refreshPanel comprueba getFavs() vivo.
+  refreshPanel();
+})();
+
 // ---- SERVICE WORKER (PWA) ----
 // Ship 14: registro + deteccion de updates. Cuando Cloudflare promueve un
 // nuevo deploy, el usuario ve un toast "Nueva version disponible -> Actualizar".

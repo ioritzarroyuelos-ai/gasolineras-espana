@@ -89,6 +89,13 @@ type Env = {
   // `Authorization: Bearer <CRON_TOKEN>` en los POST a /api/cron/*. Si no
   // esta definido, los endpoints de cron responden 503 (modo dev sin cron).
   CRON_TOKEN?: string
+  // Ship 23: claves VAPID para Web Push. Publica se expone via API (el browser
+  // la necesita para pushManager.subscribe). Privada SOLO en secrets — firma
+  // el JWT VAPID al enviar pushes desde /api/cron/push-check. Si alguna falta,
+  // los endpoints de push responden 503 (modo dev).
+  VAPID_PUBLIC_KEY?:  string
+  VAPID_PRIVATE_KEY?: string
+  VAPID_SUBJECT?:     string  // "mailto:admin@tudominio.com"
 }
 
 const app = new Hono<{ Bindings: Env }>()
@@ -2104,6 +2111,213 @@ app.post('/api/cron/purge', async c => {
   if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
   const result = await runWeeklyPurge(c.env)
   return c.json(result, result.ok ? 200 : 500, { 'Cache-Control': 'no-store' })
+})
+
+// ============================================================
+// Ship 23: WEB PUSH — alertas de precio activas (aunque la app este cerrada).
+// ============================================================
+// Flow:
+//   1. Cliente pide permiso Notification y registra una PushSubscription con
+//      pushManager.subscribe({applicationServerKey: VAPID_PUBLIC_KEY}).
+//   2. Envia la suscripcion (endpoint + keys.p256dh + keys.auth) a
+//      POST /api/push/subscribe junto con station_id + fuel_code.
+//   3. El worker guarda en D1 con baseline_cents = precio actual.
+//   4. Cron GHA (cron-push-check.yml) invoca POST /api/cron/push-check cada
+//      N horas. El worker itera subscriptions, compara precio actual vs
+//      baseline, y si la caida supera threshold_cents envia un push via VAPID.
+//   5. El Service Worker (public/sw.js) recibe el `push` event y muestra una
+//      notif generica "Tu gasolinera ha bajado — abre la app". Al clickar,
+//      focus a la tab abierta o abre la app.
+//
+// Importante: si VAPID_PUBLIC_KEY o _PRIVATE_KEY no estan configurados,
+// todos los endpoints de push devuelven 503 — no rompemos la app, solo la
+// feature queda apagada en dev/preview sin secrets.
+
+function isPushConfigured(env: Env): boolean {
+  return !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT)
+}
+
+// GET /api/push/vapid-key — devuelve la clave publica VAPID para que el
+// cliente la pase a pushManager.subscribe(). Publica por diseno (el punto
+// publico EC no compromete nada). Si no hay clave configurada, 503.
+app.get('/api/push/vapid-key', c => {
+  const key = c.env.VAPID_PUBLIC_KEY
+  if (!key) return c.json({ ok: false, error: 'push_not_configured' }, 503, { 'Cache-Control': 'no-store' })
+  return c.json({ ok: true, publicKey: key }, 200, {
+    // La clave es estable; cache moderado para ahorrar requests.
+    'Cache-Control': 'public, max-age=3600',
+  })
+})
+
+// POST /api/push/subscribe — guarda la suscripcion en D1.
+// Body esperado: { endpoint, keys: { p256dh, auth }, station_id, fuel_code, threshold_cents?, baseline_cents? }
+app.post('/api/push/subscribe', async c => {
+  if (!isPushConfigured(c.env)) return c.json({ ok: false, error: 'push_not_configured' }, 503)
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  let body: Record<string, unknown>
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint : ''
+  const keys = (body.keys && typeof body.keys === 'object') ? body.keys as Record<string, unknown> : null
+  const p256dh = keys && typeof keys.p256dh === 'string' ? keys.p256dh : ''
+  const auth   = keys && typeof keys.auth   === 'string' ? keys.auth   : ''
+  const stationId = typeof body.station_id === 'string' ? body.station_id : ''
+  const fuelCode  = typeof body.fuel_code  === 'string' ? body.fuel_code  : ''
+  const thresholdCents = typeof body.threshold_cents === 'number' && Number.isFinite(body.threshold_cents)
+    ? Math.max(1, Math.min(200, Math.round(body.threshold_cents)))
+    : 15  // default: 1.5 centimos
+  const baselineCents = typeof body.baseline_cents === 'number' && Number.isFinite(body.baseline_cents)
+    ? Math.round(body.baseline_cents)
+    : null
+  // Validacion defensiva — evita INSERT de basura.
+  if (!endpoint || !endpoint.startsWith('https://') || endpoint.length > 500) {
+    return c.json({ ok: false, error: 'invalid_endpoint' }, 400)
+  }
+  if (!p256dh || !auth || !stationId || !fuelCode) {
+    return c.json({ ok: false, error: 'missing_fields' }, 400)
+  }
+  const userAgent = (c.req.header('user-agent') || '').slice(0, 200)
+  const now = Date.now()
+  try {
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO push_subscriptions
+       (endpoint, keys_p256dh, keys_auth, station_id, fuel_code, threshold_cents, baseline_cents, created_at, user_agent)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(endpoint, p256dh, auth, stationId, fuelCode, thresholdCents, baselineCents, now, userAgent).run()
+    slog('info', 'push_subscribe', { station_id: stationId, fuel_code: fuelCode })
+    return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
+  } catch (e) {
+    slog('error', 'push_subscribe_error', { message: (e as Error).message })
+    return c.json({ ok: false, error: 'db_error' }, 500)
+  }
+})
+
+// POST /api/push/unsubscribe — remove por endpoint.
+app.post('/api/push/unsubscribe', async c => {
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  let body: Record<string, unknown>
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
+  const endpoint = typeof body.endpoint === 'string' ? body.endpoint : ''
+  if (!endpoint) return c.json({ ok: false, error: 'missing_endpoint' }, 400)
+  try {
+    await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(endpoint).run()
+    return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
+  } catch (e) {
+    slog('error', 'push_unsubscribe_error', { message: (e as Error).message })
+    return c.json({ ok: false, error: 'db_error' }, 500)
+  }
+})
+
+// POST /api/cron/push-check — iterador server-side. Lee suscripciones,
+// consulta precios actuales del snapshot, y envia pushes para las que han
+// bajado mas que threshold_cents. Requiere CRON_TOKEN (Authorization Bearer).
+// Se invoca desde GHA (.github/workflows/cron-push-check.yml, cada 2h).
+app.post('/api/cron/push-check', async c => {
+  const authz = await authorizeCron(c)
+  if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!isPushConfigured(c.env)) return c.json({ ok: false, error: 'push_not_configured' }, 503)
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
+  // Snapshot actual — lo leemos una vez desde /data/stations.json (servido
+  // por el worker con la misma URL que el cliente).
+  let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
+  try {
+    const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
+    if (r.ok) snap = await r.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
+  } catch {}
+  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
+    return c.json({ ok: false, error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+  // Indexamos el snapshot por station_id para O(1) lookup.
+  const byStation = new Map<string, Record<string, string>>()
+  for (const st of snap.ListaEESSPrecio) {
+    const id = st['IDEESS'] || st['IDEESS_'] || ''
+    if (id) byStation.set(String(id), st)
+  }
+  // Mapeo fuel_code -> columna del snapshot (igual que el cliente).
+  const fuelCol: Record<string, string> = {
+    '95':          'Precio Gasolina 95 E5',
+    '98':          'Precio Gasolina 98 E5',
+    'diesel':      'Precio Gasoleo A',
+    'diesel_plus': 'Precio Gasoleo Premium',
+  }
+  function parsePrice(s: string | undefined): number | null {
+    if (!s) return null
+    const n = parseFloat(String(s).replace(',', '.'))
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  // Cooldown: no re-notificamos el mismo endpoint mas de una vez cada 12h.
+  const COOLDOWN_MS = 12 * 60 * 60 * 1000
+  const now = Date.now()
+  // Lee todas las suscripciones activas
+  const all = await c.env.DB.prepare(
+    'SELECT endpoint, station_id, fuel_code, threshold_cents, baseline_cents, last_notified_at FROM push_subscriptions'
+  ).all<{
+    endpoint: string; station_id: string; fuel_code: string;
+    threshold_cents: number; baseline_cents: number | null; last_notified_at: number | null
+  }>()
+  const subs = all.results || []
+  let sent = 0, purged = 0, skipped = 0, errors = 0
+  for (const sub of subs) {
+    const st = byStation.get(sub.station_id)
+    if (!st) { skipped++; continue }
+    const col = fuelCol[sub.fuel_code]
+    if (!col) { skipped++; continue }
+    const p = parsePrice(st[col])
+    if (!p) { skipped++; continue }
+    const pCents = Math.round(p * 1000)
+    // Sin baseline previa, la establecemos ahora y no notificamos.
+    if (sub.baseline_cents == null) {
+      await c.env.DB.prepare(
+        'UPDATE push_subscriptions SET baseline_cents = ? WHERE endpoint = ?'
+      ).bind(pCents, sub.endpoint).run()
+      skipped++; continue
+    }
+    const dropCents = sub.baseline_cents - pCents
+    // No bajo suficiente, o subio. Actualizamos baseline DESPACIO (al final)
+    // para no perder oportunidades de alerta — solo movemos baseline cuando
+    // enviamos push, o cuando el precio subio (nueva referencia mas alta).
+    if (dropCents < sub.threshold_cents) {
+      if (pCents > sub.baseline_cents) {
+        await c.env.DB.prepare(
+          'UPDATE push_subscriptions SET baseline_cents = ? WHERE endpoint = ?'
+        ).bind(pCents, sub.endpoint).run()
+      }
+      skipped++; continue
+    }
+    // Cooldown check
+    if (sub.last_notified_at && (now - sub.last_notified_at) < COOLDOWN_MS) {
+      skipped++; continue
+    }
+    // Enviar push
+    try {
+      const { sendWebPush } = await import('./lib/webpush')
+      const result = await sendWebPush(sub.endpoint, {
+        publicKey:  c.env.VAPID_PUBLIC_KEY!,
+        privateKey: c.env.VAPID_PRIVATE_KEY!,
+        subject:    c.env.VAPID_SUBJECT!,
+      })
+      if (result.ok) {
+        sent++
+        // Actualizamos baseline y last_notified
+        await c.env.DB.prepare(
+          'UPDATE push_subscriptions SET baseline_cents = ?, last_notified_at = ? WHERE endpoint = ?'
+        ).bind(pCents, now, sub.endpoint).run()
+      } else if (result.gone) {
+        // Suscripcion revocada — purgar.
+        await c.env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').bind(sub.endpoint).run()
+        purged++
+      } else {
+        errors++
+        slog('warn', 'push_send_failed', { status: result.status, body: result.bodyText })
+      }
+    } catch (e) {
+      errors++
+      slog('error', 'push_send_exception', { message: (e as Error).message })
+    }
+  }
+  slog('info', 'push_check_done', { total: subs.length, sent, purged, skipped, errors })
+  return c.json({ ok: true, total: subs.length, sent, purged, skipped, errors },
+    200, { 'Cache-Control': 'no-store' })
 })
 
 // ---- CSP violation report endpoint ----

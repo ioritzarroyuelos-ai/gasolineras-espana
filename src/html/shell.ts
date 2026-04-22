@@ -904,6 +904,18 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <button id="btn-favs-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
     </div>
     <div class="modal-body">
+      <!-- Ship 23: panel de alertas push. Se oculta si el navegador no
+           soporta Web Push (solo click bloquea hasta la activacion). -->
+      <div id="push-alerts-panel" class="push-alerts-panel" hidden>
+        <div class="push-alerts-info">
+          <span class="push-alerts-icon" aria-hidden="true">&#x1F514;</span>
+          <div class="push-alerts-text">
+            <strong>Alertas de precio</strong>
+            <small id="push-alerts-status">Recibe un aviso cuando baje una de tus favoritas (incluso con la app cerrada).</small>
+          </div>
+        </div>
+        <button id="btn-push-toggle" class="btn-primary push-alerts-btn">Activar</button>
+      </div>
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">
         <div id="favs-empty" class="favs-empty">

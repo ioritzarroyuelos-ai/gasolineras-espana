@@ -2,7 +2,7 @@
 // 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
 // cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
 // usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v14';
+const CACHE_NAME = 'gasolineras-v15';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia / bbox). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
@@ -266,4 +266,87 @@ self.addEventListener('fetch', event => {
       }).catch(() => caches.match('/'));
     })
   );
+});
+
+// ============================================================
+// Ship 23: PUSH NOTIFICATIONS (Web Push)
+// ============================================================
+// El servidor envia pushes SIN payload (ver src/lib/webpush.ts). El SW muestra
+// una notif generica. Al clicar, intentamos focus a una tab ya abierta; si
+// no hay, abrimos la app. Al abrir, el usuario ve los precios bajados
+// resaltados en su lista de favoritos (la UI ya los pinta).
+self.addEventListener('push', event => {
+  // event.data puede ser null (sin payload) o texto cifrado (no manejamos).
+  let title = '\u26FD Bajada de precio detectada';
+  let body  = 'Tu gasolinera favorita ha bajado. Abre la app para verla.';
+  if (event.data) {
+    // Si algun dia enviamos payload, aceptamos texto plano como fallback.
+    try {
+      const parsed = event.data.json();
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.title === 'string') title = parsed.title;
+        if (typeof parsed.body  === 'string') body  = parsed.body;
+      }
+    } catch (_) {
+      try { body = event.data.text() || body; } catch (_) {}
+    }
+  }
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: body,
+      icon: '/static/icon-192.png',
+      badge: '/static/favicon-32.png',
+      tag: 'gs-price-drop',
+      renotify: true,
+      // Acciones: "ver" (open app) y "silenciar" (no-op, solo cierra). iOS/Safari
+      // ignora actions pero se muestra en Android/desktop.
+      actions: [
+        { action: 'open',   title: 'Ver en la app' },
+        { action: 'dismiss', title: 'Ignorar' }
+      ],
+      data: { url: '/' }
+    })
+  );
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  if (event.action === 'dismiss') return;
+  const targetUrl = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(wins => {
+      // Reusar una tab ya abierta — mas suave que abrir otra.
+      for (const c of wins) {
+        if (c.url && new URL(c.url).origin === self.location.origin) {
+          return c.focus();
+        }
+      }
+      return clients.openWindow(targetUrl);
+    })
+  );
+});
+
+// Pushsubscriptionchange: el browser puede rotar las claves de una suscripcion
+// (ej. al expirar). Si no lo manejamos, los pushes empiezan a fallar con 410.
+// Intentamos re-suscribirnos con el mismo applicationServerKey y mandarla al
+// backend. Si falla, simplemente dejamos que el proximo subscribe manual lo
+// arregle — no queremos quedar en estado inconsistente.
+self.addEventListener('pushsubscriptionchange', event => {
+  event.waitUntil((async () => {
+    try {
+      const key = event.oldSubscription && event.oldSubscription.options && event.oldSubscription.options.applicationServerKey;
+      if (!key) return;
+      const newSub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key,
+      });
+      // Nota: no sabemos aqui a que station/fuel estaba suscrito. El cliente
+      // al abrir la app detectara la discrepancia y re-subscribira.
+      await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(newSub.toJSON()),
+      });
+    } catch (_) { /* silencioso — el cliente se arreglara */ }
+  })());
 });

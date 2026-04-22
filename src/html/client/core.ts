@@ -716,6 +716,150 @@ function checkPriceDropsAndUpdateBaselines(stations, fuel) {
   setAlertLast(lastNotif);
 }
 
+// ============================================================
+// Ship 23: WEB PUSH — alertas que funcionan con la app cerrada
+// ============================================================
+// Complementa las alertas locales (que solo funcionan con tab abierta)
+// registrando una PushSubscription en el servidor. El servidor ejecuta un
+// cron que compara precios y dispara pushes via VAPID. El Service Worker
+// los recibe y muestra notificacion nativa — funciona con el browser en
+// background e incluso si la app esta instalada como PWA.
+//
+// Flujo:
+//   1. user clic "Activar alertas push" -> pedir Notification.permission
+//   2. obtener VAPID public key del servidor -> pushManager.subscribe()
+//   3. POST la suscripcion + station_id + fuel_code por cada favorita
+//   4. al unsubscribe, DELETE en el servidor
+var PUSH_SUBS_KEY = 'gs_push_subs_v1';  // flag local: "tengo subs registradas"
+
+function pushSupported() {
+  return ('serviceWorker' in navigator)
+      && ('PushManager' in window)
+      && ('Notification' in window);
+}
+
+// Convierte una clave VAPID base64url a Uint8Array (formato que
+// pushManager.subscribe espera como applicationServerKey).
+function vapidKeyToUint8(b64url) {
+  var padding = '='.repeat((4 - b64url.length % 4) % 4);
+  var b64 = (b64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(b64);
+  var out = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+// Suscribe a todas las favoritas del usuario actual. Si ya hay una
+// PushSubscription valida, la reutiliza — un device = un endpoint.
+// Devuelve { ok: boolean, error?: string, count?: number }.
+async function enablePushAlerts() {
+  if (!pushSupported()) {
+    return { ok: false, error: 'push_no_soportado' };
+  }
+  var favs = (typeof getFavs === 'function') ? getFavs() : [];
+  if (!favs.length) {
+    return { ok: false, error: 'sin_favoritos' };
+  }
+  try {
+    var perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      return { ok: false, error: 'permiso_denegado' };
+    }
+    // Pedir la clave publica VAPID al servidor.
+    var keyRes = await fetch('/api/push/vapid-key');
+    if (!keyRes.ok) {
+      return { ok: false, error: 'push_no_configurado' };
+    }
+    var keyJson = await keyRes.json();
+    if (!keyJson || !keyJson.publicKey) {
+      return { ok: false, error: 'push_no_configurado' };
+    }
+    var appServerKey = vapidKeyToUint8(keyJson.publicKey);
+    var reg = await navigator.serviceWorker.ready;
+    // Si ya hay una suscripcion, comprobamos que usa la misma VAPID key.
+    // Si no, la desuscribimos y creamos una nueva (el backend la reemplazara).
+    var existing = await reg.pushManager.getSubscription();
+    var sub = existing;
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: appServerKey,
+      });
+    }
+    var subJSON = sub.toJSON();
+    // Combustible actual (el dropdown) — lo usamos para todas las favs.
+    // Nota: cada fav guarda su propio fuel preferido en el futuro, pero para
+    // el MVP todas comparten el combustible actualmente seleccionado.
+    var sel = document.getElementById('sel-combustible');
+    var fuelCode = sel ? sel.value : '95';
+    var count = 0;
+    for (var i = 0; i < favs.length; i++) {
+      var fav = favs[i];
+      // Combustible -> fuel_code para el backend (95/98/diesel/diesel_plus).
+      var map = {
+        'Precio Gasolina 95 E5':    '95',
+        'Precio Gasolina 98 E5':    '98',
+        'Precio Gasoleo A':         'diesel',
+        'Precio Gasoleo Premium':   'diesel_plus',
+      };
+      var fc = map[fuelCode] || '95';
+      var body = {
+        endpoint: subJSON.endpoint,
+        keys: subJSON.keys,
+        station_id: fav.id,
+        fuel_code: fc,
+        threshold_cents: 15,   // default 1.5 cents
+      };
+      try {
+        var res = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (res.ok) count++;
+      } catch(_) {}
+    }
+    try { localStorage.setItem(PUSH_SUBS_KEY, String(Date.now())); } catch(_) {}
+    return { ok: true, count: count };
+  } catch (e) {
+    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
+  }
+}
+
+// Desuscribe — borra la PushSubscription local y notifica al backend.
+async function disablePushAlerts() {
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      var endpoint = sub.endpoint;
+      try {
+        await fetch('/api/push/unsubscribe', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ endpoint: endpoint }),
+        });
+      } catch(_) {}
+      try { await sub.unsubscribe(); } catch(_) {}
+    }
+    try { localStorage.removeItem(PUSH_SUBS_KEY); } catch(_) {}
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'excepcion:' + (e && e.message ? e.message : '') };
+  }
+}
+
+// Comprueba si el usuario YA tiene pushes activos (hay PushSubscription
+// registrada en el SW). Devuelve Promise<boolean>.
+async function pushAlertsActive() {
+  if (!pushSupported()) return false;
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    return !!sub;
+  } catch (_) { return false; }
+}
+
 // ---- HISTORICO DE PRECIOS (14 dias, por estacion+combustible) ----
 // Estructura: { "idStation|fuel": [ {d:"2026-04-17", p:1.459}, ... ] }
 //

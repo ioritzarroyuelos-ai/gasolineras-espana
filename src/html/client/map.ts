@@ -34,7 +34,13 @@ function initMap() {
     maxBounds: SPAIN_BOUNDS,
     maxBoundsViscosity: 1.0,
     worldCopyJump: false
-  }).setView([40.4, -3.7], 6);
+  });
+  // Vista inicial: encajamos SPAIN_BOUNDS (Peninsula + Baleares + Ceuta/Melilla
+  // + Canarias) en vez de un setView a Madrid zoom 6 — asi el usuario ve TODA
+  // Espana desde el primer frame, con Canarias visible en la esquina SO, sin
+  // necesidad de hacer zoom-out. fitBounds respeta minZoom si los bounds son
+  // mas amplios que el viewport. animate:false evita una animacion al cargar.
+  map.fitBounds(SPAIN_BOUNDS, { padding: [20, 20], animate: false });
 
   // Capa base clara: arrancamos en raster "voyager_nolabels" — basemap sin
   // toponimia. Las etiquetas las pintamos nosotros (SPAIN_LABELS) en castellano

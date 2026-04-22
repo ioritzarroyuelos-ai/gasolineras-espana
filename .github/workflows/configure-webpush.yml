@@ -90,52 +90,29 @@ jobs:
           echo "private=$PRIV" >> $GITHUB_OUTPUT
           echo "publicKey generada (long=${#PUB}), privateKey enmascarada (long=${#PRIV})"
 
-      - name: Set env vars VAPID en Cloudflare Pages (production)
-        env:
-          TOKEN:      ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          PUB:        ${{ steps.vapid.outputs.public }}
-          PRIV:       ${{ steps.vapid.outputs.private }}
-          SUBJECT:    ${{ inputs.subject }}
-        run: |
-          set -e
-          # Primero leer la config actual para hacer merge (asi no pisamos
-          # CRON_TOKEN u otras env vars ya configuradas).
-          CURRENT=$(curl -sS -H "Authorization: Bearer $TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/pages/projects/${PROJECT}")
-          if [ "$(echo "$CURRENT" | jq -r '.success')" != "true" ]; then
-            echo "::error::GET project fallo"
-            echo "$CURRENT" | jq '.errors'
-            exit 1
-          fi
-          # Mergeamos nuestras 3 env vars encima de las existentes.
-          DATA=$(echo "$CURRENT" | jq --arg pub "$PUB" --arg priv "$PRIV" --arg subj "$SUBJECT" '{
-            deployment_configs: {
-              production: (
-                .result.deployment_configs.production
-                | .env_vars = ((.env_vars // {}) + {
-                    VAPID_PUBLIC_KEY:  { value: $pub,  type: "plain_text" },
-                    VAPID_PRIVATE_KEY: { value: $priv, type: "secret_text" },
-                    VAPID_SUBJECT:     { value: $subj, type: "plain_text" }
-                  })
-              )
-            }
-          }')
-          RES=$(curl -sS -X PATCH \
-            "https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/pages/projects/${PROJECT}" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/json" \
-            --data "$DATA")
-          if [ "$(echo "$RES" | jq -r '.success')" != "true" ]; then
-            echo "::error::PATCH env_vars fallo"
-            echo "$RES" | jq '.errors'
-            exit 1
-          fi
-          echo "env_vars actualizadas OK"
-          echo "$RES" | jq '.result.deployment_configs.production.env_vars | keys'
-
       - name: Install deps para wrangler
         run: npm ci --no-audit --no-fund
+
+      - name: Set env vars VAPID en Cloudflare Pages (production)
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PUB:                   ${{ steps.vapid.outputs.public }}
+          PRIV:                  ${{ steps.vapid.outputs.private }}
+          SUBJECT:               ${{ inputs.subject }}
+        run: |
+          # Usamos wrangler pages secret put: mas robusto que el PATCH global
+          # al proyecto (ese endpoint valida fail_open entre production y
+          # preview, rompiendo si estan desalineados). `secret put` toca solo
+          # el env var indicado y deja lo demas intacto. Los 3 se guardan como
+          # secret_text; el Worker los lee igual via `env.VAPID_*`. Que
+          # VAPID_PUBLIC_KEY sea "secret" no importa: el endpoint
+          # /api/push/vapid-key lo devuelve al cliente de todos modos.
+          set -e
+          echo -n "$PUB"     | npx wrangler@4 pages secret put VAPID_PUBLIC_KEY  --project-name="$PROJECT"
+          echo -n "$PRIV"    | npx wrangler@4 pages secret put VAPID_PRIVATE_KEY --project-name="$PROJECT"
+          echo -n "$SUBJECT" | npx wrangler@4 pages secret put VAPID_SUBJECT     --project-name="$PROJECT"
+          echo "3 env vars VAPID puestas OK"
 
       - name: Aplicar migracion D1 0005 (push_subscriptions)
         env:

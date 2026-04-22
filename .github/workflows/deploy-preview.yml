@@ -1,0 +1,212 @@
+name: Deploy preview (PR)
+
+# Ship 24: cada pull_request del mismo repo (no forks) despliega una version
+# aislada a Cloudflare Pages con branch=<slug>, obteniendo una URL preview
+# estilo https://<slug>.webapp-3ft.pages.dev. Automaticamente publica un
+# comment en el PR con la URL — y lo edita en cada push subsiguiente en vez
+# de spamear comentarios.
+#
+# Guardrails:
+#   - Solo same-repo PRs (fork PRs no tienen acceso a secrets — seguridad).
+#   - NO aplica migraciones D1 ni modifica prod: CF Pages branch-previews usan
+#     el mismo D1 binding si esta configurado a nivel de proyecto. Si este
+#     binding es production-only, los endpoints que tocan D1 responderan 503
+#     en el preview (esperado en branches que no han aplicado migraciones).
+#   - La URL pragmatica comparte DB con prod: tenlo presente al probar.
+#   - concurrency por PR cancela builds antiguos del MISMO PR si se empuja
+#     rapido — solo el ultimo commit se deploya. No cancela PRs distintos.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  deployments: write
+
+concurrency:
+  group: deploy-preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-preview:
+    name: Cloudflare Pages · preview
+    runs-on: ubuntu-latest
+    # Fork PRs no tienen acceso a secrets → preview fallaria silencioso y
+    # molestaria al revisor. Mejor saltarse el job con un log claro. Solo
+    # same-repo (Ioritz -> Ioritz) obtienen preview. Forks siguen recibiendo
+    # CI completo (ci.yml corre sin secrets).
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    environment:
+      name: preview-pr-${{ github.event.pull_request.number }}
+      url: ${{ steps.deploy.outputs.preview_url }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # Re-validamos en el preview path para evitar desplegar codigo roto a una
+      # URL publica que el revisor va a abrir. Si CI ya paso, esto es ~2min de
+      # duplicacion; aceptable por el aislamiento que da (el job de deploy a
+      # prod tiene el mismo patron).
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests (Vitest)
+        run: npm test
+
+      - name: Generate PNG icons
+        run: npm run icons
+
+      - name: Build (Cloudflare Pages)
+        run: npm run build
+
+      - name: Sanity check del artefacto
+        run: |
+          test -f dist/_worker.js || { echo "::error::dist/_worker.js no existe"; exit 1; }
+          test -f dist/manifest.json || { echo "::error::dist/manifest.json no existe"; exit 1; }
+          echo "artefacto OK ($(du -sh dist | cut -f1))"
+
+      - name: Deploy a Cloudflare Pages (preview)
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          # CF Pages slugifica el branch (lowercase, non-alnum -> "-", max 28
+          # chars). Hacemos el mismo slugify localmente para construir la URL
+          # del comment del PR. `tr` + `sed` son suficientes — no necesitamos
+          # unicode transliteration, el branch vendra en ASCII.
+          RAW_BRANCH="${{ github.event.pull_request.head.ref }}"
+          SAFE_BRANCH=$(echo "$RAW_BRANCH" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9]/-/g' \
+            | sed 's/--*/-/g' \
+            | sed 's/^-//' \
+            | cut -c1-28 \
+            | sed 's/-*$//')
+          if [ -z "$SAFE_BRANCH" ]; then
+            echo "::error::No se pudo slugificar la rama '${RAW_BRANCH}'"
+            exit 1
+          fi
+          echo "safe_branch=$SAFE_BRANCH" >> "$GITHUB_OUTPUT"
+
+          echo "Deploying branch '${RAW_BRANCH}' -> slug '${SAFE_BRANCH}'"
+          set +e
+          DEPLOY_OUT=$(npx --yes wrangler@4 pages deploy dist \
+            --project-name=webapp \
+            --branch="$SAFE_BRANCH" \
+            --commit-dirty=true \
+            --commit-hash="${{ github.event.pull_request.head.sha }}" 2>&1)
+          RC=$?
+          echo "$DEPLOY_OUT"
+          if [ $RC -ne 0 ]; then
+            echo "::error::wrangler pages deploy fallo con exit $RC"
+            exit $RC
+          fi
+          # Parse de la URL — wrangler imprime algo como:
+          #   "✨ Deployment complete! Take a peek over at https://<hash>.webapp-3ft.pages.dev"
+          # y ademas el alias de branch:
+          #   "🌍 Deploying to <slug>.webapp-3ft.pages.dev"
+          # Preferimos el alias de branch (estable) — el hash URL cambia en cada deploy.
+          PREVIEW_URL=$(echo "$DEPLOY_OUT" \
+            | grep -oE 'https://[a-z0-9-]+\.webapp-3ft\.pages\.dev' \
+            | grep -v "^https://[a-f0-9]\{8\}\." \
+            | head -1)
+          if [ -z "$PREVIEW_URL" ]; then
+            # Fallback: construir URL del slug (debe coincidir con el alias CF).
+            PREVIEW_URL="https://${SAFE_BRANCH}.webapp-3ft.pages.dev"
+          fi
+          echo "preview_url=$PREVIEW_URL" >> "$GITHUB_OUTPUT"
+          echo "Preview URL: $PREVIEW_URL"
+
+      - name: Smoke test del preview
+        id: smoke
+        if: success()
+        run: |
+          URL="${{ steps.deploy.outputs.preview_url }}"
+          echo "Smoke @ $URL/api/health"
+          # CF Pages necesita ~15-30s para propagar el alias de branch.
+          sleep 20
+          STATUS=$(curl -fsS --max-time 15 \
+            -o /tmp/preview-health.json \
+            -w "%{http_code}" \
+            "$URL/api/health" || echo "000")
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::/api/health en preview devolvio HTTP $STATUS (puede que necesite mas tiempo)"
+            echo "smoke_status=unknown" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Preview healthy: $(cat /tmp/preview-health.json)"
+          echo "smoke_status=healthy" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar/actualizar comment en el PR con la URL preview
+        if: success()
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const previewUrl = '${{ steps.deploy.outputs.preview_url }}';
+            const branch = '${{ steps.deploy.outputs.safe_branch }}';
+            const sha = '${{ github.event.pull_request.head.sha }}'.slice(0, 7);
+            const smoke = '${{ steps.smoke.outputs.smoke_status }}';
+            const smokeEmoji = smoke === 'healthy' ? '✅' : '⏳';
+            const marker = '<!-- preview-deploy-comment -->';
+            const body = [
+              marker,
+              '### 🚀 Preview deploy ready',
+              '',
+              `| | |`,
+              `|---|---|`,
+              `| **URL** | ${previewUrl} |`,
+              `| **Branch slug** | \`${branch}\` |`,
+              `| **Commit** | \`${sha}\` |`,
+              `| **Health** | ${smokeEmoji} ${smoke} |`,
+              '',
+              '<sub>Auto-updated on every push to this PR.</sub>',
+            ].join('\n');
+            // Reusar comment previo (idempotente por PR) — evita spam en cada push.
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+              core.info('Preview comment actualizado (id=' + existing.id + ')');
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+              core.info('Preview comment creado');
+            }
+
+      - name: Resumen
+        if: always()
+        run: |
+          echo "### Preview deploy" >> $GITHUB_STEP_SUMMARY
+          echo "- PR: #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Rama: \`${{ github.event.pull_request.head.ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Slug: \`${{ steps.deploy.outputs.safe_branch }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: ${{ steps.deploy.outputs.preview_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Smoke: ${{ steps.smoke.outputs.smoke_status || 'n/a' }}" >> $GITHUB_STEP_SUMMARY

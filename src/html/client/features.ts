@@ -1802,8 +1802,8 @@ function toggleRouteCorridor() {
   var current = { ideess: '', fuel: '', officialPrice: null, rotulo: '' };
 
   // Mapeo de codigos internos a etiquetas usuario-friendly. Usamos los mismos
-  // codigos que FUEL_CODES_BY_LABEL en el cliente (95, 98, diesel, ...) y el
-  // servidor valida la lista cerrada.
+  // codigos cortos que emite map.ts (REPORT_FUEL_CODES) y que el servidor
+  // valida contra REPORT_FUELS en src/index.tsx.
   var FUEL_LABELS = {
     '95': 'Gasolina 95',
     '98': 'Gasolina 98',
@@ -1811,8 +1811,9 @@ function toggleRouteCorridor() {
     'diesel_plus': 'Di\u00E9sel Plus',
     'glp': 'GLP (autogas)',
     'gnc': 'GNC',
-    'gna': 'GNA',
-    'hidrogeno': 'Hidr\u00F3geno'
+    'gnl': 'GNL',
+    'hidrogeno': 'Hidr\u00F3geno',
+    'diesel_renov': 'Di\u00E9sel Renovable'
   };
 
   function setStatus(msg, isError) {

@@ -2884,11 +2884,11 @@ app.post('/api/admin/reports/ack', async c => {
 //     inflije metricas haciendo click varias veces.
 //  5. INSERT y devuelve ok + id del reporte.
 //
-// Fuentes de combustibles validos: los mismos codigos que expone la UI
-// (95, 98, diesel, diesel_plus, glp, gnc, gna, hidrogeno). Lista cerrada
-// para evitar basura en la tabla.
+// Fuentes de combustibles validos: los mismos codigos cortos que emite el
+// cliente (REPORT_FUEL_CODES en map.ts) tras traducir la clave larga del
+// Ministerio. Lista cerrada para evitar basura en la tabla.
 const REPORT_REASONS = ['outdated', 'closed', 'wrong_fuel', 'other'] as const
-const REPORT_FUELS = ['95', '98', 'diesel', 'diesel_plus', 'glp', 'gnc', 'gna', 'hidrogeno'] as const
+const REPORT_FUELS = ['95', '98', 'diesel', 'diesel_plus', 'glp', 'gnc', 'gnl', 'hidrogeno', 'diesel_renov'] as const
 
 app.post('/api/reports/price', async c => {
   const key = clientKey(c)

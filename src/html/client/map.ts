@@ -450,6 +450,24 @@ var FUELS_POPUP = [
   ['Precio Diesel Renovable', 'Diesel Renov.'],
 ];
 
+// Mapeo claves Ministerio → codigos cortos aceptados por POST /api/reports/price
+// (whitelist REPORT_FUELS en src/index.tsx). Sin este map, el cliente empaquetaba
+// la clave larga ("Precio Gasolina 95 E5") en data-pop-report y el server
+// respondia 400 "bad fuel" porque la whitelist son codigos ('95', 'diesel', ...).
+// Si la clave no esta aqui, no pintamos el boton de reportar — asi el usuario
+// no se come un 400 opaco.
+var REPORT_FUEL_CODES = {
+  'Precio Gasolina 95 E5':              '95',
+  'Precio Gasolina 98 E5':              '98',
+  'Precio Gasoleo A':                   'diesel',
+  'Precio Gasoleo Premium':             'diesel_plus',
+  'Precio Gases licuados del petroleo': 'glp',
+  'Precio Gas Natural Comprimido':      'gnc',
+  'Precio Gas Natural Licuado':         'gnl',
+  'Precio Hidrogeno':                   'hidrogeno',
+  'Precio Diesel Renovable':            'diesel_renov'
+};
+
 // Dibuja un sparkline SVG alineado por fecha. Acepta:
 //   points          : array principal [{d:"YYYY-MM-DD", p:euros}]
 //   medianPoints    : array opcional de mediana provincial para pintar linea
@@ -916,11 +934,15 @@ function buildPopup(s) {
 
   // Ship 8: link de reporte. Solo lo mostramos si hay precio publicado — si
   // no hay, no tiene sentido reportar "precio incorrecto". data-pop-report
-  // lleva el contexto minimo (id|fuel|precio|rotulo) para que el handler en
-  // ui.ts abra el modal con los datos prefijados sin pasar por lookup adicional.
+  // lleva el contexto minimo (id|fuelCode|precio|rotulo) para que el handler en
+  // features.ts abra el modal con los datos prefijados sin pasar por lookup.
+  // fuelCode = codigo corto ('95','diesel',...) — el server valida contra la
+  // misma whitelist (REPORT_FUELS). Si el combustible seleccionado no tiene
+  // traduccion conocida, no pintamos el boton.
   var reportLink = '';
-  if (mainPrice) {
-    var repPayload = id + '|' + fuel + '|' + mainPrice.toFixed(3) + '|' + (s['Rotulo'] || 'Gasolinera');
+  var reportFuelCode = REPORT_FUEL_CODES[fuel];
+  if (mainPrice && reportFuelCode) {
+    var repPayload = id + '|' + reportFuelCode + '|' + mainPrice.toFixed(3) + '|' + (s['Rotulo'] || 'Gasolinera');
     reportLink = '<button class="popup-report-link" data-pop-report="' + esc(repPayload) + '" type="button">'
                + '\u{1F6A9} Reportar precio incorrecto'
                + '</button>';

@@ -11,17 +11,27 @@ var lastFitBounds = null;
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
-  // SPAIN_BOUNDS: solo para tiles (atributo bounds de L.tileLayer, que evita
-  // descargar tiles fuera de Espana ampliada). NO lo usamos como maxBounds del
-  // mapa. Probamos varios maxBounds (ajustado, holgado, muy holgado) y en
-  // cualquier caso que le ponemos acaba clampeando el CENTRO del viewport
-  // — asi que Canarias (lng -16 lat 28) no queda nunca centrada en pantalla
-  // porque la mitad del viewport SE excederia el limite SW. Sin maxBounds el
-  // usuario puede centrar lo que quiera, y el unico efecto colateral (pan a
-  // Francia/Marruecos) no es grave — no hay estaciones alli de todas formas.
-  var SPAIN_BOUNDS = L.latLngBounds(
-    [26.5, -19.0],  // SW — al sur de El Hierro y al oeste del mismo
-    [44.5,   5.5]   // NE — al norte del Cantabrico y al este de Menorca
+  // TILE_BOUNDS: extensien geografica para la que cargamos tiles del basemap.
+  // Es el area que el usuario PUEDE ver — fuera de esto sale gris.
+  // Ajustado a Espana (peninsula + Baleares + Canarias + Ceuta/Melilla) con
+  // un margen minimo para que el pan no deje ver medio mundo.
+  var TILE_BOUNDS = L.latLngBounds(
+    [26.5, -19.0],  // SW — al sur de El Hierro, al oeste del mismo
+    [44.5,   5.5]   // NE — al norte del Cantabrico, al este de Menorca
+  );
+  // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Muy holgado a
+  // proposito para que el usuario pueda centrar cualquier zona de Espana
+  // (Canarias, El Hierro, Menorca, Galicia, Ceuta...) sin que Leaflet
+  // clampee. maxBounds restringe el CENTRO, no los bordes del viewport —
+  // asi que estos numeros determinan que puntos pueden quedar en medio
+  // de la pantalla. Con [10, -35] → [58, 16] cubrimos todas las zonas
+  // extremas a zoom >= 5 en mobile y desktop (Mercator ensancha el
+  // viewport en las latitudes bajas de Canarias, de ahi el S=10). El
+  // usuario solo ve Espana + un margen de oceano/Africa/Francia — no el
+  // mundo entero, como pasaba sin maxBounds.
+  var PAN_BOUNDS = L.latLngBounds(
+    [10.0, -35.0],  // SW — permite centrar Canarias/El Hierro en mobile zoom 5
+    [58.0,  16.0]   // NE — permite centrar Menorca/Galicia/France border
   );
   // PENINSULA_BOUNDS: solo para el fitBounds inicial — peninsula centrada
   // sobre Madrid. Canarias queda fuera del viewport y el usuario la alcanza
@@ -37,21 +47,20 @@ function initMap() {
     zoomAnimation: true,
     fadeAnimation: true,
     markerZoomAnimation: true,
-    minZoom: 4,   // 4 (no 5) para que Peninsula + Canarias quepan en moviles
-                  // si el usuario alguna vez reduce zoom al minimo.
+    minZoom: 5,   // 5 (no 4) — a zoom 4 el viewport cubre medio globo y
+                  // PAN_BOUNDS no alcanza a envolverlo: quedaria pinned.
+                  // A zoom 5 mobile peninsula todavia encaja en fitBounds.
     maxZoom: 20,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
                   // lanza "Map has no maxZoom specified" y la promesa del
                   // layer queda sin manejar, rompiendo otros flujos UI.
-    // NO ponemos maxBounds: clampea el centro del viewport y hace imposible
-    // que Canarias quede en la mitad de la pantalla (la mitad baja del
-    // viewport caeria fuera del maxBounds W/S). Preferimos permitir pan a
-    // Francia/Marruecos (no hay estaciones alli) y asi el usuario puede
-    // centrar Canarias cuando quiera.
+    maxBounds: PAN_BOUNDS,
+    maxBoundsViscosity: 1.0,  // 1.0 = rigido. Sin esto el usuario puede
+                              // arrastrar fuera de PAN_BOUNDS con inercia y
+                              // ve zonas de Europa central / Atlantico N.
     worldCopyJump: false
   });
   // Vista inicial: peninsula + Baleares centrada. Canarias queda fuera del
-  // viewport y el usuario la alcanza arrastrando hacia el SO sin topar con
-  // ningun freno.
+  // viewport y el usuario la alcanza arrastrando hacia el SO.
   map.fitBounds(PENINSULA_BOUNDS, { padding: [20, 20], animate: false });
 
   // Capa base clara: arrancamos en raster "voyager_nolabels" — basemap sin
@@ -62,7 +71,7 @@ function initMap() {
   // municipios/calles/POIs de OSM, en castellano cuando existe el tag.
   mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 4, noWrap: true, bounds: SPAIN_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
   });
   // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
   // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
@@ -70,7 +79,7 @@ function initMap() {
   // mantenemos coherencia con "todo en castellano".
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 4, noWrap: true, bounds: SPAIN_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
   });
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);

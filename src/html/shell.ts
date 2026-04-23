@@ -429,7 +429,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           referrerpolicy="no-referrer"></script>
 
   <!-- Leaflet.heat: capa de heatmap como vista alternativa al cluster. El
-       peso de cada punto se calcula inverso al precio (mas barato = mas
+       peso de cada punto es proporcional al precio (mas caro = mas
        caliente) en renderMarkers. Defer + SRI para integridad. -->
   <script defer
           src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"
@@ -769,16 +769,16 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
          orden DOM o de un flex wrapper que complicaría el layout mobile). -->
 
     <!-- Ship 6: toggle heatmap. Cambia la vista de cluster a mapa de calor
-         donde el color indica densidad de precios bajos (mas rojo = mas
-         barato). Util para decidir zonas en viajes largos sin tener que
-         revisar 400 pins. El boton va flotante sobre el mapa, junto al
-         control de zoom de Leaflet, con aria-pressed. -->
+         donde el color indica donde estan las gasolineras mas caras (rojo)
+         o mas baratas (azul). Util para decidir zonas en viajes largos sin
+         tener que revisar 400 pins. El boton va flotante sobre el mapa,
+         junto al control de zoom de Leaflet, con aria-pressed. -->
     <button id="btn-heatmap"
             class="map-floating-btn"
             type="button"
             aria-pressed="false"
             aria-label="Activar mapa de calor de precios"
-            title="Vista de mapa de calor (más rojo = más barato)">
+            title="Mapa por colores: rojo = caro, azul = barato">
       <i class="fa-solid fa-fire" aria-hidden="true"></i>
     </button>
 

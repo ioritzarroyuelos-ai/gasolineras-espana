@@ -1024,8 +1024,9 @@ function renderMarkers(stations) {
 
   // Ship 6: modo heatmap. Si el usuario tiene activa la vista de calor y
   // leaflet.heat esta cargado, renderizamos la capa de calor en lugar del
-  // cluster. Cada punto lleva peso = (maxP - price) / (maxP - minP) — asi
-  // el precio MINIMO tiene peso 1 (mas caliente) y el MAXIMO peso 0 (frio).
+  // cluster. Cada punto lleva peso = (price - minP) / (maxP - minP) — asi
+  // el precio MAXIMO tiene peso 1 (mas caliente, rojo) y el MINIMO peso 0
+  // (frio, azul). Coherente con la leyenda del cluster (rojo = caro).
   // Fallback: si leaflet.heat no esta (red offline durante primera carga),
   // caemos al cluster normal. Nunca rompemos la pagina.
   if (heatMode && typeof L.heatLayer === 'function' && stations.length > 0) {
@@ -1037,13 +1038,13 @@ function renderMarkers(stations) {
       if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
       var p = parsePrice(s[fuel]);
       if (p === null) return;
-      var w = Math.max(0.05, (maxP - p) / range);
+      var w = Math.max(0.05, (p - minP) / range);
       heatPoints.push([lat, lng, w]);
     });
     if (heatPoints.length > 0) {
       heatLayer = L.heatLayer(heatPoints, {
         radius: 25, blur: 18, maxZoom: 13, minOpacity: 0.35,
-        // Gradient inverso: valor alto (barato) = rojo; valor bajo (caro) = azul.
+        // Gradient: valor alto (caro) = rojo; valor bajo (barato) = azul.
         gradient: { 0.1: '#1e40af', 0.3: '#06b6d4', 0.5: '#84cc16', 0.7: '#facc15', 0.9: '#f97316', 1.0: '#dc2626' },
       });
       heatLayer.addTo(map);
@@ -1248,7 +1249,7 @@ function highlightCard(idx) {
     try {
       if (typeof showToast === 'function') {
         showToast(heatMode
-          ? 'Mapa de calor: rojo = mas barato, azul = mas caro'
+          ? 'Mapa de calor: rojo = mas caro, azul = mas barato'
           : 'Volviendo a vista de agrupaciones', 'info');
       }
     } catch (_) {}

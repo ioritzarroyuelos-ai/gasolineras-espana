@@ -1023,12 +1023,14 @@ function renderMarkers(stations) {
   maxP = prices.length ? Math.max.apply(null, prices) : 0;
 
   // Ship 6: modo heatmap. Si el usuario tiene activa la vista de calor y
-  // leaflet.heat esta cargado, renderizamos la capa de calor en lugar del
-  // cluster. Cada punto lleva peso = (price - minP) / (maxP - minP) — asi
-  // el precio MAXIMO tiene peso 1 (mas caliente, rojo) y el MINIMO peso 0
-  // (frio, azul). Coherente con la leyenda del cluster (rojo = caro).
+  // leaflet.heat esta cargado, pintamos la capa de calor POR DEBAJO del
+  // cluster — asi el usuario ve las zonas caras/baratas y ademas puede
+  // clicar en gasolineras individuales. Cada punto lleva peso =
+  // (price - minP) / (maxP - minP): precio MAXIMO tiene peso 1 (mas
+  // caliente, rojo), MINIMO peso 0 (frio, azul). Coherente con la
+  // leyenda del cluster (rojo = caro).
   // Fallback: si leaflet.heat no esta (red offline durante primera carga),
-  // caemos al cluster normal. Nunca rompemos la pagina.
+  // simplemente no pintamos el heatmap y seguimos con el cluster.
   if (heatMode && typeof L.heatLayer === 'function' && stations.length > 0) {
     var heatPoints = [];
     var range = maxP - minP || 1;
@@ -1048,15 +1050,6 @@ function renderMarkers(stations) {
         gradient: { 0.1: '#1e40af', 0.3: '#06b6d4', 0.5: '#84cc16', 0.7: '#facc15', 0.9: '#f97316', 1.0: '#dc2626' },
       });
       heatLayer.addTo(map);
-      // Mantenemos fitBounds para centrar igual que en modo cluster.
-      try {
-        var bnds = heatPoints.map(function(pt) { return [pt[0], pt[1]]; });
-        if (bnds.length) {
-          lastFitBounds = bnds;
-          map.fitBounds(bnds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 13 }));
-        }
-      } catch(e) {}
-      return;
     }
   }
 

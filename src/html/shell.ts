@@ -845,7 +845,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <div class="legend-item"><span class="legend-dot dot-green" aria-hidden="true"></span> Más barato</div>
       <div class="legend-item"><span class="legend-dot dot-orange" aria-hidden="true"></span> Intermedio</div>
       <div class="legend-item"><span class="legend-dot dot-red" aria-hidden="true"></span> Más caro</div>
-      <div class="legend-item u-mb-0"><span class="legend-dot dot-gray" aria-hidden="true"></span> Sin precio</div>
+      <div class="legend-item u-mb-0"><span class="legend-dot dot-gray" aria-hidden="true"></span> No vende este combustible</div>
     </div>
   </div>
 

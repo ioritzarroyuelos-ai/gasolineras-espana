@@ -202,9 +202,12 @@ function renderCompareModal() {
         var pct = ((p - low) / low) * 100;
         deltaHtml = '<span class="cp-delta">+' + pct.toFixed(1).replace('.', ',') + '%</span>';
       }
+      // Si p == null, la estacion no distribuye ese combustible (""  en el
+      // feed del Ministerio). "No se vende aqu\u00ed" deja claro que no es
+      // un fallo de datos sino una ausencia real de producto en el surtidor.
       var valueHtml = (p != null)
         ? '<span class="cp-value">' + p.toFixed(3) + ' \u20AC/L</span>' + deltaHtml
-        : '<span class="cp-value cp-value--none">Sin precio</span>';
+        : '<span class="cp-value cp-value--none">No se vende aqu\u00ed</span>';
       return '<div class="' + cls + '"><span class="cp-label">' + esc(label) + '</span>' + valueHtml + '</div>';
     }).join('');
     var horario = s['Horario'] || '';
@@ -368,15 +371,20 @@ function cardHTML(s, i, fuel, fuelLabel) {
     var tankTotal = (price * tankLitersCard).toFixed(2);
     tankCostHtml = '<div class="row-tank-cost" title="Coste de llenar el deposito de ' + tankLitersCard + ' L">\u00d7' + tankLitersCard + 'L = ' + tankTotal + ' \u20AC</div>';
   }
+  // Cuando la estacion no distribuye este combustible (Ministerio publica ""),
+  // priceEl muestra "No se vende" en vez de N/D. Asi el usuario distingue de un
+  // vistazo "esta gasolinera no tiene este producto" de "falta el dato".
   var priceEl = price
     ? '<span class="' + badgeCls + '">' + priceText + '</span>'
-    : '<span class="row-row-noprice">N/D</span>';
+    : '<span class="row-row-noprice">No se vende</span>';
 
   // Ship 20: boton historico en cada card. data-hist-open lleva el indice
   // para que el listener delegado lo resuelva y llame a openHistoryModal.
   // No disparamos fetch al renderizar — solo al click. Boton pequeno para no
   // robar espacio al precio.
-  var histBtn = '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">\u{1F4C8}</button>';
+  // Si la estacion no vende este combustible, no hay historico que mostrar
+  // (el modal saldria vacio y confundiria: mejor no ofrecerlo).
+  var histBtn = price ? '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">\u{1F4C8}</button>' : '';
 
   return '<div class="station-card" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
     + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '" aria-pressed="' + fav + '">'

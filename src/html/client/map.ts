@@ -889,8 +889,11 @@ function buildPopup(s) {
   // popup; el fetch (y la pintura del sparkline) ocurren en popupopen cuando
   // Leaflet inserta el DOM. Esto evita bloquear la apertura del popup y nos
   // deja variar el rango (7/30/90/1a) sin rebuild completo.
+  // Si la estacion no vende este combustible (mainPrice null), no pintamos
+  // el panel de historico — "Sin datos suficientes" sonaria a dato roto cuando
+  // en realidad la estacion simplemente no distribuye ese producto.
   var provinciaId = s['IDProvincia'] || '';
-  var sparkHtml = buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, mainPrice);
+  var sparkHtml = mainPrice ? buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, mainPrice) : '';
 
   // Deep links a apps de navegacion. Los 3 siguen sus URL schemes oficiales:
   //   Google Maps: https://developers.google.com/maps/documentation/urls/get-started
@@ -948,9 +951,13 @@ function buildPopup(s) {
   // sufijo de clase (.popup-price-main--green, .popup-header--green, etc.).
   // Asi evitamos style inline con color calculado en tiempo real sin tener
   // que mantener una tabla de casos especiales en JS.
+  // El Ministerio publica "" (cadena vacia) cuando la estacion NO distribuye
+  // ese combustible — p.ej. una cooperativa agricola que solo vende Gasoleo B.
+  // Mensaje explicito en vez de "Sin precio" para que el usuario no piense
+  // que es un fallo de carga de datos.
   var priceDisplay = mainPrice
     ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
-    : '<span class="popup-price-none">Sin precio</span>';
+    : '<span class="popup-price-none">No se vende aqu\u00ed</span>';
 
   // Ship 8: link de reporte. Solo lo mostramos si hay precio publicado — si
   // no hay, no tiene sentido reportar "precio incorrecto". data-pop-report

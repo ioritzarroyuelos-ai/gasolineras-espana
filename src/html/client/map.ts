@@ -16,18 +16,22 @@ function initMap() {
   //  - maxBounds: impide arrastrar el mapa fuera del bounding box.
   //  - maxBoundsViscosity: 1.0 = el borde es "rigido" (no se puede salir ni con inercia).
   //  - minZoom: por debajo de este nivel se ve media Europa / medio mundo → sin sentido.
-  // SPAIN_BOUNDS: amplio — incluye Canarias (hasta -19 long) y la
-  // peninsula+Baleares. Se usa solo como maxBounds (limite de arrastre)
-  // para que el usuario pueda deslizar hasta Canarias si lo desea, pero
-  // no dejarlo navegar a Portugal o Marruecos. NE esta holgado (47, 9) en
-  // vez de pegado a la peninsula (44.5, 5.5) a proposito: si los bounds NE
-  // son demasiado ajustados, setMaxBounds clampea la vista inicial de
-  // fitBounds(PENINSULA_BOUNDS) hacia el NE y la peninsula deja de estar
-  // centrada (queda pegada al borde superior-derecho). Con holgura, el fit
-  // mantiene la peninsula centrada sobre Madrid y el arrastre queda limitado
-  // solo cuando el usuario empuja mas alla de ~France/Pirineos.
+  // SPAIN_BOUNDS: MUY amplio a proposito — maxBounds clampea el CENTRO del
+  // viewport, no sus bordes. Para que el usuario pueda centrar tanto la
+  // peninsula (centro ~[40, -3]) como Canarias (centro ~[28, -16]) en el
+  // medio de la pantalla, los bounds deben contener ambos centros con al
+  // menos medio viewport de holgura en cada direccion. A zoom 6 en desktop
+  // 1280x800 el viewport cubre ~21deg lng x 12.7deg lat, asi que el centro
+  // solo puede estar en [S+6.35, N-6.35] x [W+10.5, E-10.5]. Por eso:
+  //   - S=20 (centro min lat 26.35 < Canarias lat 28)
+  //   - W=-28 (centro min lng -17.5 < Canarias lng -16)
+  //   - N=47 (centro max lat 40.65 > peninsula lat 40)
+  //   - E=9  (centro max lng -1.5  > peninsula lng -3)
+  // Asi ambos extremos quedan centrables y el unico efecto colateral es que
+  // el usuario puede arrastrar un poco al Atlantico / norte de Africa /
+  // sur de Francia. Prefrimos eso a que Canarias quede pegada al borde.
   var SPAIN_BOUNDS = L.latLngBounds(
-    [26.5, -19.0],  // SW — al sur de El Hierro y al oeste del mismo
+    [20.0, -28.0],  // SW — holgado: permite centrar Canarias sin clampear
     [47.0,   9.0]   // NE — holgado: permite centrar peninsula sin clampear
   );
   // PENINSULA_BOUNDS: mas estrecho — solo peninsula + Baleares. Se usa

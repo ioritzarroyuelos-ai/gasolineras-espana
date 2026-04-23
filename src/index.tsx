@@ -2518,10 +2518,11 @@ app.post('/api/telegram/webhook', async c => {
     }
     const thresholdEur = (thresholdCents / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
     const reply = inserted > 0
-      ? `✅ <b>Alertas activadas</b>\n\n` +
-        `Te avisare cuando bajen:\n${favsListHtml}\n\n` +
-        `Umbral: <b>${thresholdEur} €/L</b> de bajada respecto a la ultima referencia.\n\n` +
-        `Manda /stop para cancelar.`
+      ? `🔔 <b>¡Listo! Alertas activadas</b>\n\n` +
+        `${inserted === 1 ? 'Vigilo esta gasolinera' : `Vigilo estas <b>${inserted}</b> gasolineras`} para ti:\n${favsListHtml}\n\n` +
+        `💰 Te avisare en cuanto el precio baje <b>${thresholdEur} €/L</b> o mas.\n` +
+        `😎 Tu a lo tuyo — yo me ocupo de mirar los precios.\n\n` +
+        `<i>Para pararlas en cualquier momento: /stop</i>`
       : `✅ <b>Vinculado</b>, pero no habia gasolineras marcadas como favoritas.\n\n` +
         `Vuelve a la web, marca alguna con la estrella, y pulsa "Activar alertas" de nuevo.`
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)

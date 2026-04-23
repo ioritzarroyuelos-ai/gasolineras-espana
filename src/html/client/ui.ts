@@ -1388,13 +1388,11 @@ function updateMonthlyWidget() {
     if (tmpProfile.fuel) document.getElementById('sel-combustible').value = tmpProfile.fuel;
     var tankInp = document.getElementById('in-tank');
     if (tankInp) { tankInp.value = tmpProfile.tank; document.getElementById('lbl-tank').textContent = tmpProfile.tank + ' L'; }
-    document.getElementById('btn-profile-label').textContent = 'Mi perfil \u{1F464}';
     closeModal();
     if (allStations.length) applyFilters();
     showToast('Perfil guardado \u2713', 'success');
   });
   document.getElementById('btn-profile-skip').addEventListener('click', closeModal);
-  document.getElementById('btn-profile').addEventListener('click', openModal);
   // Expuesto para que el dropdown de usuario pueda abrir el mismo modal.
   window.__openProfileModal = openModal;
 
@@ -1411,7 +1409,6 @@ function updateMonthlyWidget() {
       try { localStorage.setItem('gs_onboarded', '1'); } catch(e) {}
     }, 900);
   } else if (getProfile()) {
-    document.getElementById('btn-profile-label').textContent = 'Mi perfil \u{1F464}';
     var p = getProfile();
     if (p.fuel) {
       // Espera a que el select este listo

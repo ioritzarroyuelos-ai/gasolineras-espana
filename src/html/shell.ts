@@ -720,12 +720,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <div class="mw-sub" id="mw-sub">--</div>
       </div>
 
-      <!-- Edit perfil -->
-      <button id="btn-profile" class="btn-ghost btn-profile-util">
-        <i class="fas fa-user-cog u-mr-6" aria-hidden="true"></i>
-        <span id="btn-profile-label">Configurar mi vehículo</span>
-      </button>
-
       <!-- Ship 25.2: boton "Invitame a un cafe" renderizado condicionalmente
            desde env.SUPPORT_URL. Si no hay SUPPORT_URL, este slot queda vacio
            (no hay DOM ni espacio reservado — sin layout shift). -->

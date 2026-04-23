@@ -1961,7 +1961,6 @@ export function getStyles(nonce: string = ''): string {
     .search-heading         { font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; gap: 6px; }
     .search-actions         { display: flex; gap: 6px; }
     .tank-sub               { font-weight: 400; text-transform: none; color: #64748b; }
-    .btn-profile-util       { width: 100%; margin-top: 4px; font-size: 12px; }
     .stats-flex             { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
     .loading-line-1         { font-size: 14px; font-weight: 600; color: #374151; }
     .loading-line-2         { font-size: 12px; color: #64748b; }

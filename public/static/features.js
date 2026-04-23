@@ -613,8 +613,8 @@ function toggleRouteCorridor() {
         if (lnk) lnk.addEventListener('click', function(e) {
           e.preventDefault();
           closeRoute();
-          var btn = document.getElementById('btn-profile');
-          if (btn) btn.click();
+          var open = window.__openProfileModal;
+          if (typeof open === 'function') open();
         });
       }
       return false;

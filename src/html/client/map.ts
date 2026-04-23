@@ -46,7 +46,11 @@ function initMap() {
   // Espana desde el primer frame, con Canarias visible en la esquina SO, sin
   // necesidad de hacer zoom-out. fitBounds respeta minZoom si los bounds son
   // mas amplios que el viewport. animate:false evita una animacion al cargar.
-  map.fitBounds(SPAIN_BOUNDS, { padding: [20, 20], animate: false });
+  // padding [30,30]: antes era [20,20] pero Canarias (esquina SO del bounds)
+  // quedaba casi pegada al borde izquierdo/inferior del viewport y costaba
+  // verla. 30px deja el archipielago mas separado sin achicar demasiado
+  // la peninsula.
+  map.fitBounds(SPAIN_BOUNDS, { padding: [30, 30], animate: false });
 
   // Capa base clara: arrancamos en raster "voyager_nolabels" — basemap sin
   // toponimia. Las etiquetas las pintamos nosotros (SPAIN_LABELS) en castellano
@@ -1060,9 +1064,19 @@ function renderMarkers(stations) {
     }
   }
 
-  // Cluster personalizado: muestra precio minimo del grupo
+  // Cluster personalizado: muestra precio minimo del grupo.
+  // maxClusterRadius como funcion del zoom: a zoom 4-5 (pais entero) un radio
+  // alto fusiona todas las estaciones en 4-5 grumos en el centro-sur y el
+  // resto del pais (Galicia, Cantabrico, Cataluna, Andalucia occidental)
+  // aparenta estar vacio. Bajamos el radio a 30 cuando vemos Espana completa
+  // para obtener ~15-20 clusters repartidos por CCAA. A zoom medio/alto
+  // mantenemos 55 para no spammear la vista con clusters de 2-3 estaciones.
   clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: 55,
+    maxClusterRadius: function(zoom) {
+      if (zoom <= 5) return 30;
+      if (zoom <= 7) return 45;
+      return 55;
+    },
     iconCreateFunction: function(cluster) {
       var children = cluster.getAllChildMarkers();
       var cPrices  = children.map(function(m) { return m.options._price; }).filter(function(p) { return p > 0; });

@@ -2372,7 +2372,7 @@ app.post('/api/telegram/start-link', async c => {
   const favsRaw = Array.isArray(body?.favs) ? body.favs : []
   const thresholdCents = typeof body?.threshold_cents === 'number' && Number.isFinite(body.threshold_cents)
     ? Math.max(1, Math.min(200, Math.round(body.threshold_cents)))
-    : 15
+    : 10
   if (favsRaw.length > 100) return c.json({ ok: false, error: 'too_many_favs' }, 400)
   // Sanitiza el array de favs antes de serializar (evita meter basura en D1).
   const favsClean: Array<{ station_id: string; fuel_code: string; baseline_cents: number | null }> = []
@@ -2458,9 +2458,9 @@ app.post('/api/telegram/webhook', async c => {
     ).bind(token).all<{ favs_json: string; threshold_cents: number }>()
     const pendRow = pend.results[0]
     let favs: Array<{ station_id: string; fuel_code: string; baseline_cents: number | null }> = []
-    let thresholdCents = 15
+    let thresholdCents = 10
     if (pendRow) {
-      thresholdCents = pendRow.threshold_cents ?? 15
+      thresholdCents = pendRow.threshold_cents ?? 10
       try {
         const parsed = JSON.parse(pendRow.favs_json || '[]')
         if (Array.isArray(parsed)) favs = parsed
@@ -2516,11 +2516,10 @@ app.post('/api/telegram/webhook', async c => {
       }
       favsListHtml = lines.join('\n')
     }
-    const thresholdEur = (thresholdCents / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
     const reply = inserted > 0
       ? `🔔 <b>¡Listo! Alertas activadas</b>\n\n` +
         `${inserted === 1 ? 'Vigilo esta gasolinera' : `Vigilo estas <b>${inserted}</b> gasolineras`} para ti:\n${favsListHtml}\n\n` +
-        `💰 Te avisare en cuanto el precio baje <b>${thresholdEur} €/L</b> o mas.\n` +
+        `💰 Te avisare en cuanto el precio baje <b>1 centimo por litro</b> o mas.\n` +
         `😎 Tu a lo tuyo — yo me ocupo de mirar los precios.\n\n` +
         `<i>Para pararlas en cualquier momento: /stop</i>`
       : `✅ <b>Vinculado</b>, pero no habia gasolineras marcadas como favoritas.\n\n` +
@@ -2717,21 +2716,20 @@ app.post('/api/telegram/toggle-fav', async c => {
     const lbl = fuelLabel[fuelCode] || fuelCode
 
     if (enabled) {
-      // 3a) Copia threshold del primer sub del chat; default 15.
+      // 3a) Copia threshold del primer sub del chat; default 10 (1 centimo/L).
       const chatSub = await c.env.DB.prepare(
         'SELECT threshold_cents FROM telegram_subscriptions WHERE chat_id = ? LIMIT 1'
       ).bind(chatId).all<{ threshold_cents: number }>()
-      const threshold = chatSub.results?.[0]?.threshold_cents ?? 15
+      const threshold = chatSub.results?.[0]?.threshold_cents ?? 10
       await c.env.DB.prepare(
         `INSERT INTO telegram_subscriptions
          (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
          VALUES (?, ?, ?, ?, NULL, ?)`
       ).bind(chatId, stationId, fuelCode, threshold, Date.now()).run()
-      const thresholdEur = (threshold / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
       const reply =
         `🔔 <b>Alerta añadida</b>\n\n` +
         `Vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
-        `💰 Te avisare en cuanto el precio baje <b>${thresholdEur} €/L</b> o mas.`
+        `💰 Te avisare en cuanto el precio baje <b>1 centimo por litro</b> o mas.`
       await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
       slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: true, station_id: stationId })
       return c.json({ ok: true, status: 'enabled' }, 200, { 'Cache-Control': 'no-store' })

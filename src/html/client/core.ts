@@ -837,7 +837,7 @@ function fuelSelectorToCode() {
 async function startTelegramLink(favs) {
   var fc = fuelSelectorToCode();
   var payload = {
-    threshold_cents: 15,
+    threshold_cents: 10,
     favs: (favs || []).map(function(f) {
       return { station_id: f.id, fuel_code: fc };
     }),

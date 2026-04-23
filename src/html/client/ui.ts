@@ -1673,7 +1673,7 @@ function hideTelegramLinkPromptDialog() {
     if (active) {
       panel.classList.add('active');
       btn.textContent = 'Desactivar';
-      if (statusEl) statusEl.textContent = 'Alertas activas en Telegram. Te avisamos cuando alguna favorita baje > 1.5 \u00A2.';
+      if (statusEl) statusEl.textContent = 'Alertas activas en Telegram. Te avisamos cuando alguna favorita baje 1 centimo por litro o mas.';
     } else {
       panel.classList.remove('active');
       btn.textContent = 'Activar alertas en Telegram';

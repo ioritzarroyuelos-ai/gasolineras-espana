@@ -69,12 +69,14 @@ function initMap() {
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
 
-  // Controles: zoom y escala ambos en abajo-derecha, apilados. Orden de addTo
-  // determina el apilado (Leaflet stack-ea el primero arriba, el siguiente
-  // debajo) — por eso zoom primero y escala despues: la escala queda debajo
-  // de los botones +/- como pidio el usuario.
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  // Controles: zoom y escala ambos en abajo-derecha, apilados. Leaflet inserta
+  // controles bottom-* ANTES del primer hijo (insertBefore), asi que el orden
+  // se invierte: el ultimo addTo queda visualmente arriba. Para que la escala
+  // quede DEBAJO del zoom (como pidio el usuario), anadimos scale PRIMERO y
+  // zoom DESPUES — asi DOM queda [zoom, scale] y visualmente zoom arriba,
+  // escala pegada al borde inferior.
   L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 120 }).addTo(map);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
 
   // Capa de etiquetas propias — CCAA + ciudades principales en castellano.
   // Funciona como FALLBACK garantizado: mientras MapLibre GL carga (async) y

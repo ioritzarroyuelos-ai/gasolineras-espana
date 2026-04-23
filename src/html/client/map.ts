@@ -11,14 +11,20 @@ var lastFitBounds = null;
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
-  // TILE_BOUNDS: extensien geografica para la que cargamos tiles del basemap.
-  // Es el area que el usuario PUEDE ver — fuera de esto sale gris.
-  // Ajustado a Espana (peninsula + Baleares + Canarias + Ceuta/Melilla) con
-  // un margen minimo para que el pan no deje ver medio mundo.
-  var TILE_BOUNDS = L.latLngBounds(
-    [26.5, -19.0],  // SW — al sur de El Hierro, al oeste del mismo
-    [44.5,   5.5]   // NE — al norte del Cantabrico, al este de Menorca
-  );
+  // TILE_BOUNDS_PEN y TILE_BOUNDS_CAN: dos rectangulos DISJUNTOS para que
+  // Africa (Marruecos, Sahara, Mauritania) no aparezca con tiles — queda
+  // gris entre la peninsula y Canarias. Fuera de estos rect no se pide
+  // ningun tile al CDN. El rectangulo unico anterior (que iba de 26.5N a
+  // 44.5N) tambien mostraba Marruecos entero; con dos rectangulos solo
+  // se ven Espana peninsular/Baleares + Canarias.
+  var TILE_BOUNDS_PEN = L.latLngBounds(
+    [35.2, -10.0],  // SW — incluye Ceuta (35.9) y Melilla (35.3); una franja
+    [44.5,   5.5]   //      minima de costa norte de Marruecos es inevitable
+  );                //      porque Ceuta/Melilla son enclaves en esa costa.
+  var TILE_BOUNDS_CAN = L.latLngBounds(
+    [27.0, -19.0],  // SW — El Hierro (27.7, -18.3) y La Palma al O
+    [30.0, -13.0]   // NE — Alegranza (29.4) al N, Fuerteventura al E.
+  );                //      E=-13 corta antes de Cap Juby (costa Africana).
   // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Ajustado
   // especificamente para NO mostrar Reino Unido (Lizard Point ~50N) ni el
   // mundo entero. maxBounds restringe el CENTRO, no los bordes del
@@ -77,20 +83,70 @@ function initMap() {
   // bien (applyLibertyLanguage), reemplazamos esta capa por un vector tile
   // layer con text-field parcheado a name:es — entonces obtenemos todos los
   // municipios/calles/POIs de OSM, en castellano cuando existe el tag.
-  mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
-  });
+  // Usamos L.layerGroup con DOS tileLayers (uno por cada rect de TILE_BOUNDS)
+  // para que la zona entre peninsula y Canarias (Africa/Atlantico) quede gris.
+  var lightAttrib = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>';
+  var lightUrl = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png';
+  mapLayers.light = L.layerGroup([
+    L.tileLayer(lightUrl, { attribution: lightAttrib, subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS_PEN }),
+    L.tileLayer(lightUrl, { attribution: lightAttrib, subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS_CAN })
+  ]);
   // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
   // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
   // principales) en castellano: suficiente para orientarse en modo nocturno y
   // mantenemos coherencia con "todo en castellano".
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
-  });
+  var darkUrl = 'https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png';
+  mapLayers.dark = L.layerGroup([
+    L.tileLayer(darkUrl, { attribution: lightAttrib, subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS_PEN }),
+    L.tileLayer(darkUrl, { attribution: lightAttrib, subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS_CAN })
+  ]);
+  // Flag: mapLayers.light es raster mientras no se aplique el upgrade a
+  // MapLibre GL (Liberty). ui.ts la usa para decidir si pintar SPAIN_LABELS
+  // en modo claro. Con el upgrade a tile group no podemos usar
+  // "instanceof L.TileLayer" (el group no lo es), asi que explicitamos.
+  mapLayers.lightIsRaster = true;
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
+
+  // MASCARA AFRICA: tile bounds filtra tiles pero no los recorta. Los tiles
+  // que tocan el sur de la peninsula o el norte de Canarias muestran tambien
+  // el norte de Africa y Sahara Occidental entero. Ademas, Liberty renderiza
+  // un canvas WebGL sobre TODO el viewport que — aunque filtrado a Espana —
+  // queda por encima de overlayPane (donde van los poligonos SVG) y taparia
+  // cualquier mascara normal. Creamos un pane propio con z-index por encima
+  // del canvas MapLibre para garantizar que la mascara tape Africa en ambas
+  // capas (raster y Liberty).
+  var africaMaskPane = map.createPane('africaMaskPane');
+  africaMaskPane.style.zIndex = '450';  // overlayPane=400, markerPane=600
+  africaMaskPane.style.pointerEvents = 'none';  // no intercepta interaccion
+  // Outer ring: rectangulo que cubre Africa norte + Sahara + Mauritania
+  // limitado al norte por lat 35.8 (Ceuta en 35.9 queda por encima; Melilla
+  // en 35.3 queda tapada — compromiso para ocultar la costa marroqui).
+  // Hole: rectangulo que aloja las Islas Canarias (el poligono no pinta ahi).
+  var africaMaskOuter = [
+    [ 0.0,  -40.0],
+    [35.8,  -40.0],
+    [35.8,   20.0],
+    [ 0.0,   20.0]
+  ];
+  // Hueco CANARIAS apretado: S=27.5 deja El Hierro (27.66) con margen
+  // pero excluye Laayoune (27.2) en Sahara Occidental. E=-13 corta antes
+  // de Cap Juby (-12.9) en costa africana; N=30 deja Alegranza (29.4)
+  // dentro; W=-19 deja El Hierro (-18) con margen.
+  var canariasHole = [
+    [27.5,  -19.0],
+    [30.0,  -19.0],
+    [30.0,  -13.0],
+    [27.5,  -13.0]
+  ];
+  mapLayers.africaMask = L.polygon([africaMaskOuter, canariasHole], {
+    pane: 'africaMaskPane',
+    stroke: false,
+    fillColor: '#ddd',
+    fillOpacity: 1.0,
+    interactive: false,
+    className: 'map-africa-mask'
+  }).addTo(map);
 
   // Controles: zoom y escala ambos en abajo-derecha, apilados. Leaflet inserta
   // controles bottom-* ANTES del primer hijo (insertBefore), asi que el orden
@@ -261,6 +317,7 @@ async function applyLibertyLanguage() {
     var wasLight = map.hasLayer(mapLayers.light);
     if (wasLight) map.removeLayer(mapLayers.light);
     mapLayers.light = libertyLayer;
+    mapLayers.lightIsRaster = false;  // Liberty trae la toponimia vectorial.
     if (wasLight) libertyLayer.addTo(map);
 
     // Liberty ya trae toda la toponimia en castellano y limitada a Espana:

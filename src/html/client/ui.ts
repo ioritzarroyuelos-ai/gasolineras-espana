@@ -273,10 +273,12 @@ window.addEventListener('resize', function() {
       // Dark usa raster sin etiquetas — necesita SPAIN_LABELS encima. Light
       // puede ser MapLibre Liberty (trae toponimia filtrada a Espana) o raster
       // voyager_nolabels; en el segundo caso tambien hacen falta labels custom.
-      // Criterio: si mapLayers.light sigue siendo un TileLayer (raster, el
-      // upgrade MapLibre no llego a aplicarse), mostramos labels en ambos
-      // modos; si es MapLibre (vector), solo en modo dark.
-      var lightIsRaster = mapLayers.light instanceof L.TileLayer;
+      // Criterio: si mapLayers.lightIsRaster es true, es raster (upgrade
+      // MapLibre no aplicado) y pintamos labels en ambos modos; si false
+      // (Liberty activo), solo en dark. Usamos flag explicita porque light
+      // ahora es un L.layerGroup (peninsula + Canarias disjuntos), no un
+      // L.TileLayer — el instanceof de antes daria false erroneamente.
+      var lightIsRaster = mapLayers.lightIsRaster === true;
       var needLabels = isDark || lightIsRaster;
       if (needLabels) {
         if (!labelLayer) {

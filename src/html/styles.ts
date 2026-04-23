@@ -345,6 +345,12 @@ export function getStyles(nonce: string = ''): string {
        estilo separados por 8px. */
     .leaflet-control-scale { margin: 0 10px 24px 0 !important; }
     .leaflet-control-scale-line {
+      /* width:auto + display:inline-block -> el pill se ajusta al texto
+         ("100 km", "50 km"...) en vez de usar el width:Npx que Leaflet
+         mete inline para representar la distancia como barra. Aqui no
+         queremos la barra, solo el chip del label. */
+      width: auto !important;
+      display: inline-block !important;
       border: 1px solid #e2e8f0 !important;
       border-radius: 10px !important;
       background: rgba(255,255,255,0.95) !important;

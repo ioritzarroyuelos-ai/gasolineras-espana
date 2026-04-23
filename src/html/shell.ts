@@ -533,6 +533,9 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <button id="btn-user-diary" class="user-dropdown-item" role="menuitem" type="button">
           <i class="fas fa-book" aria-hidden="true"></i> Repostajes
         </button>
+        <button id="btn-user-profile" class="user-dropdown-item" role="menuitem" type="button">
+          <i class="fas fa-user-cog" aria-hidden="true"></i> Mi vehículo
+        </button>
         <div class="user-dropdown-sep"></div>
         <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sincronizado</div>
         <button id="btn-logout" class="user-dropdown-item" role="menuitem" type="button">

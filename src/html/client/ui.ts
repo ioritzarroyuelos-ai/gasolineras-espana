@@ -1395,6 +1395,8 @@ function updateMonthlyWidget() {
   });
   document.getElementById('btn-profile-skip').addEventListener('click', closeModal);
   document.getElementById('btn-profile').addEventListener('click', openModal);
+  // Expuesto para que el dropdown de usuario pueda abrir el mismo modal.
+  window.__openProfileModal = openModal;
 
   // Cerrar con Escape o click en backdrop
   modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
@@ -1735,9 +1737,10 @@ function showUpdateToast(newSW) {
   var userNameEl    = document.getElementById('user-name');
   var ddName        = document.getElementById('user-dropdown-name');
   var ddEmail       = document.getElementById('user-dropdown-email');
-  var btnUserFavs   = document.getElementById('btn-user-favs');
-  var btnUserRoute  = document.getElementById('btn-user-route');
-  var btnUserDiary  = document.getElementById('btn-user-diary');
+  var btnUserFavs    = document.getElementById('btn-user-favs');
+  var btnUserRoute   = document.getElementById('btn-user-route');
+  var btnUserDiary   = document.getElementById('btn-user-diary');
+  var btnUserProfile = document.getElementById('btn-user-profile');
   var btnLogout     = document.getElementById('btn-logout');
   var loginModal    = document.getElementById('login-modal');
   var loginClose    = document.getElementById('login-modal-close');
@@ -1810,9 +1813,10 @@ function showUpdateToast(newSW) {
     closeDropdown();
     if (typeof openFn === 'function') openFn();
   }
-  if (btnUserFavs)  btnUserFavs.addEventListener('click',  function() { openModalByName(typeof openFavsModal === 'function' ? openFavsModal : null); });
-  if (btnUserRoute) btnUserRoute.addEventListener('click', function() { openModalByName(window.__openRouteModal); });
-  if (btnUserDiary) btnUserDiary.addEventListener('click', function() { openModalByName(window.__openDiaryModal); });
+  if (btnUserFavs)    btnUserFavs.addEventListener('click',    function() { openModalByName(typeof openFavsModal === 'function' ? openFavsModal : null); });
+  if (btnUserRoute)   btnUserRoute.addEventListener('click',   function() { openModalByName(window.__openRouteModal); });
+  if (btnUserDiary)   btnUserDiary.addEventListener('click',   function() { openModalByName(window.__openDiaryModal); });
+  if (btnUserProfile) btnUserProfile.addEventListener('click', function() { openModalByName(window.__openProfileModal); });
 
   // ---- Login modal ----
   var gsiInitialized = false;

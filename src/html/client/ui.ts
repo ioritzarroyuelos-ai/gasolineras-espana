@@ -423,6 +423,10 @@ async function applyQueryState(state) {
 async function bootApp() {
   initMap();
   loadProvincias();
+  // Fire-and-forget: hidrata el cache de telegram_subscriptions para que al
+  // abrir el modal de favoritas las campanas esten ya sincronizadas con el
+  // server. Si el bot no esta vinculado la funcion retorna inmediatamente.
+  try { loadTelegramSubscriptions(); } catch(_) {}
   var st = readQueryState();
   __urlSyncActive = true;
   if (st.prov) {
@@ -533,6 +537,13 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
       favBtn.setAttribute('aria-pressed', String(added));
       favBtn.setAttribute('aria-label', added ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas');
       showToast(added ? 'Guardada en favoritas \u2605' : 'Eliminada de favoritas', added ? 'success' : 'info');
+      // Ship 26: si el bot ya esta vinculado, auto-activa (o desactiva) la
+      // alerta para la favorita que acaba de cambiar. El server manda el
+      // mensaje bonito al bot; aqui no hace falta feedback adicional mas
+      // alla del toast de "guardada/eliminada".
+      if (telegramAlertsActive()) {
+        toggleTelegramFav(stationId(station), fuelSelectorToCode(), added);
+      }
       renderFavsPanel();
       return true;
     }
@@ -599,6 +610,10 @@ document.addEventListener('click', function(e) {
     favBtn.textContent = added ? '\u2605 Favorita' : '\u2606 Guardar';
     favBtn.setAttribute('aria-pressed', String(added));
     showToast(added ? 'Guardada en favoritas \u2605' : 'Eliminada de favoritas', added ? 'success' : 'info');
+    // Ship 26: auto-sync con Telegram si el bot esta vinculado.
+    if (telegramAlertsActive()) {
+      toggleTelegramFav(stationId(station), fuelSelectorToCode(), added);
+    }
     // Refrescar lista para actualizar icono tambien alli
     applyFilters();
     return;
@@ -849,6 +864,19 @@ function renderFavsModalList() {
     // entienda de un vistazo donde vive cada favorita.
     var loc = esc(f.municipio || '');
     if (f.provincia && f.provincia !== f.municipio) loc += (loc ? ', ' : '') + esc(f.provincia);
+    // Ship 26: campana por favorita. Tres estados visuales:
+    //   - activa (bot vinculado + sub en server)   -> amarilla
+    //   - inactiva (bot vinculado + sin sub)       -> gris clickable
+    //   - sin bot (no vinculado)                   -> gris con candado,
+    //     al clicar abre el dialog "Activa el bot primero"
+    var fuelCode = fuelSelectorToCode();
+    var botLinked = telegramAlertsActive();
+    var bellOn = botLinked && isTelegramFavActive(f.id, fuelCode);
+    var bellCls = 'fav-row-bell' + (bellOn ? ' is-on' : '') + (botLinked ? '' : ' is-locked');
+    var bellIcon = bellOn ? '\u{1F514}' : (botLinked ? '\u{1F515}' : '\u{1F515}');
+    var bellLabel = bellOn
+      ? 'Pausar alerta de Telegram'
+      : (botLinked ? 'Activar alerta de Telegram' : 'Activa el bot de Telegram primero');
     var row = document.createElement('div');
     row.className = 'fav-row';
     row.innerHTML =
@@ -857,6 +885,7 @@ function renderFavsModalList() {
       + '  <div class="fav-row-sub">\u{1F4CD} ' + loc + '</div>'
       + '</div>'
       + '<div>' + priceHtml + '</div>'
+      + '<button class="' + bellCls + '" data-bell-id="' + esc(f.id) + '" data-bell-fuel="' + esc(fuelCode) + '" aria-label="' + bellLabel + '" aria-pressed="' + (bellOn ? 'true' : 'false') + '" title="' + bellLabel + '">' + bellIcon + '</button>'
       + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><i class="fas fa-trash" aria-hidden="true"></i></button>';
     // Click en info -> navegar a la favorita (setea provincia, municipio,
     // busqueda por rotulo y zoom). Funciona aunque actualmente estes viendo
@@ -884,6 +913,13 @@ function renderFavsModalList() {
         'Longitud (WGS84)': String(f.lng)
       });
       showToast('Eliminada de favoritas', 'info');
+      // Si el bot esta vinculado y habia alerta activa, la borramos en el
+      // server tambien (silencioso: la gasolinera deja de ser favorita, no
+      // tiene sentido mantener la alerta y gastar un sendMessage). El usuario
+      // ya recibe el toast de "eliminada de favoritas".
+      if (telegramAlertsActive() && isTelegramFavActive(f.id, fuelCode)) {
+        toggleTelegramFav(f.id, fuelCode, false);
+      }
       renderFavs();
       // El boton de favorito dentro de la station-card (si esta en el DOM)
       // tambien tiene que sincronizarse.
@@ -895,6 +931,33 @@ function renderFavsModalList() {
         cardBtn.setAttribute('aria-label', 'A\u00f1adir a favoritas');
       }
     });
+    // Click en campana -> toggle alerta individual (o dialog si no hay bot).
+    var bellBtn = row.querySelector('.fav-row-bell');
+    if (bellBtn) {
+      bellBtn.addEventListener('click', async function() {
+        if (!telegramAlertsActive()) {
+          // Sin bot vinculado: dialog invitando a activar.
+          showTelegramLinkPromptDialog(f.rotulo);
+          return;
+        }
+        // Evita doble-click mientras procesamos.
+        bellBtn.disabled = true;
+        var currentlyOn = isTelegramFavActive(f.id, fuelCode);
+        var res = await toggleTelegramFav(f.id, fuelCode, !currentlyOn);
+        bellBtn.disabled = false;
+        if (!res.ok) {
+          showToast('No se pudo actualizar la alerta', 'warning');
+          return;
+        }
+        if (!currentlyOn) {
+          showToast('\u{1F514} Alerta activada para ' + f.rotulo, 'success');
+        } else {
+          showToast('\u{1F515} Alerta pausada para ' + f.rotulo, 'info');
+        }
+        // Re-render para refrescar el estado visual.
+        renderFavs();
+      });
+    }
     list.appendChild(row);
   });
 }
@@ -1516,6 +1579,57 @@ document.addEventListener('keydown', function(e) {
 })();
 
 // ============================================================
+// Ship 26: Dialog "Activa el bot primero"
+// ============================================================
+// Se muestra cuando el usuario pulsa una campana de favorita sin tener el
+// bot vinculado. Dos acciones: activar bot (scrollea al panel y dispara el
+// click del boton global) o cancelar. El dialog esta en shell.ts dentro
+// de #tg-link-prompt.
+function showTelegramLinkPromptDialog(stationName) {
+  var dlg = document.getElementById('tg-link-prompt');
+  if (!dlg) return;
+  var nameEl = document.getElementById('tg-link-prompt-station');
+  if (nameEl) nameEl.textContent = stationName || 'esta gasolinera';
+  dlg.hidden = false;
+  dlg.classList.add('show');
+}
+function hideTelegramLinkPromptDialog() {
+  var dlg = document.getElementById('tg-link-prompt');
+  if (!dlg) return;
+  dlg.classList.remove('show');
+  dlg.hidden = true;
+}
+(function() {
+  var dlg = document.getElementById('tg-link-prompt');
+  if (!dlg) return;
+  var btnCancel = document.getElementById('tg-link-prompt-cancel');
+  var btnActivate = document.getElementById('tg-link-prompt-activate');
+  if (btnCancel) btnCancel.addEventListener('click', hideTelegramLinkPromptDialog);
+  if (btnActivate) {
+    btnActivate.addEventListener('click', function() {
+      hideTelegramLinkPromptDialog();
+      // Scroll al panel + click sintetico en el boton "Activar alertas".
+      // El panel ya esta visible (mismo modal de favoritas), solo hace falta
+      // ejecutar el handler que ya gestiona todo el flow del bot.
+      var tgBtn = document.getElementById('btn-tg-toggle');
+      var tgPanel = document.getElementById('tg-alerts-panel');
+      if (tgPanel) {
+        try { tgPanel.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(_) {}
+      }
+      if (tgBtn) {
+        // Pequeno delay para que se vea el scroll antes de abrir el deepLink.
+        setTimeout(function() { tgBtn.click(); }, 150);
+      }
+    });
+  }
+  // Cerrar con click en backdrop o Escape.
+  dlg.addEventListener('click', function(e) { if (e.target === dlg) hideTelegramLinkPromptDialog(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && dlg.classList.contains('show')) hideTelegramLinkPromptDialog();
+  });
+})();
+
+// ============================================================
 // Ship 25: WIRING del panel de alertas TELEGRAM en el modal de favoritas.
 // ============================================================
 // Sustituye al panel de Web Push. Se muestra si:
@@ -1601,6 +1715,9 @@ document.addEventListener('keydown', function(e) {
     } finally {
       btn.disabled = false;
       refreshPanel();
+      // Ship 26: tras activar/desactivar el bot, re-render de las favoritas
+      // para que las campanas reflejen el nuevo estado (activa/bloqueada).
+      try { renderFavs(); } catch(_) {}
     }
   });
 

@@ -1997,6 +1997,66 @@ export function getStyles(nonce: string = ''): string {
     body.dark .fav-row-remove { color: #64748b; }
     body.dark .fav-row-remove:hover { color: #f87171; background: #450a0a; }
 
+    /* Ship 26: campana por favorita. Tres estados (inactiva/activa/bloqueada). */
+    .fav-row-bell {
+      background: none;
+      border: 0;
+      padding: 6px 8px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      border-radius: 6px;
+      opacity: 0.45;
+      filter: grayscale(100%);
+      transition: opacity 0.15s ease, background 0.15s ease, filter 0.15s ease, transform 0.1s ease;
+    }
+    .fav-row-bell:hover { background: #fef3c7; opacity: 0.85; filter: grayscale(0); }
+    .fav-row-bell:active { transform: scale(0.92); }
+    .fav-row-bell:disabled { cursor: progress; opacity: 0.3; }
+    .fav-row-bell.is-on {
+      opacity: 1;
+      filter: none;
+      background: #fef9c3;
+      box-shadow: 0 0 0 1px #facc15 inset;
+    }
+    .fav-row-bell.is-on:hover { background: #fef08a; }
+    .fav-row-bell.is-locked { cursor: help; }
+    body.dark .fav-row-bell:hover { background: #422006; }
+    body.dark .fav-row-bell.is-on { background: #422006; box-shadow: 0 0 0 1px #ca8a04 inset; }
+
+    /* Dialog "Activa el bot primero" — overlay por encima del modal de favs (z-index>2000). */
+    .tg-link-prompt {
+      position: fixed; inset: 0; z-index: 2500;
+      background: rgba(15,23,42,0.7); backdrop-filter: blur(3px);
+      display: none; align-items: center; justify-content: center; padding: 16px;
+    }
+    .tg-link-prompt.show { display: flex; }
+    .tg-link-prompt-card {
+      background: #fff; border-radius: 14px;
+      max-width: 380px; width: 100%; padding: 22px 22px 18px;
+      box-shadow: 0 20px 50px -12px rgba(0,0,0,0.35);
+      text-align: center;
+    }
+    body.dark .tg-link-prompt-card { background: #1e293b; color: #e2e8f0; }
+    .tg-link-prompt-icon { font-size: 36px; line-height: 1; margin-bottom: 10px; }
+    .tg-link-prompt-title { font-size: 16px; font-weight: 700; color: #0f172a; margin: 0 0 6px; }
+    body.dark .tg-link-prompt-title { color: #f1f5f9; }
+    .tg-link-prompt-text { font-size: 13px; color: #475569; line-height: 1.45; margin: 0 0 16px; }
+    body.dark .tg-link-prompt-text { color: #cbd5e1; }
+    .tg-link-prompt-text strong { color: #0f172a; }
+    body.dark .tg-link-prompt-text strong { color: #f1f5f9; }
+    .tg-link-prompt-actions { display: flex; gap: 8px; justify-content: center; }
+    .tg-link-prompt-actions button {
+      flex: 1; padding: 10px 14px; font-size: 13px; font-weight: 600;
+      border-radius: 8px; border: 0; cursor: pointer;
+    }
+    .tg-link-prompt-primary { background: #0284c7; color: #fff; }
+    .tg-link-prompt-primary:hover { background: #0369a1; }
+    .tg-link-prompt-secondary { background: #e2e8f0; color: #334155; }
+    .tg-link-prompt-secondary:hover { background: #cbd5e1; }
+    body.dark .tg-link-prompt-secondary { background: #334155; color: #e2e8f0; }
+    body.dark .tg-link-prompt-secondary:hover { background: #475569; }
+
     /* ---- Logo del header (imagen SVG) ---- */
     .header-logo-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); flex-shrink: 0; }
     #brand { outline: none; }

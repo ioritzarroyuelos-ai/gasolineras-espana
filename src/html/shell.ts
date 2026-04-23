@@ -1005,6 +1005,22 @@ ${gClientId ? `
   </div>
 </div>
 
+<!-- ============ DIALOG "ACTIVA EL BOT PRIMERO" (Ship 26) ============ -->
+<!-- Se muestra cuando el usuario pulsa una campana de favorita pero aun no
+     ha vinculado el bot. Dos acciones: "Activar ahora" (scrollea al panel
+     de Telegram y dispara el boton) o "Cancelar" (cierra el dialog). -->
+<div id="tg-link-prompt" class="tg-link-prompt" role="dialog" aria-modal="true" aria-labelledby="tg-link-prompt-title" hidden>
+  <div class="tg-link-prompt-card">
+    <div class="tg-link-prompt-icon" aria-hidden="true">&#x1F514;</div>
+    <h3 id="tg-link-prompt-title" class="tg-link-prompt-title">Activa el bot primero</h3>
+    <p class="tg-link-prompt-text">Para recibir alertas de <strong id="tg-link-prompt-station">esta gasolinera</strong> en Telegram, primero tienes que vincular el bot.</p>
+    <div class="tg-link-prompt-actions">
+      <button type="button" class="tg-link-prompt-secondary" id="tg-link-prompt-cancel">Ahora no</button>
+      <button type="button" class="tg-link-prompt-primary" id="tg-link-prompt-activate">Activar bot</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MODAL RUTA A->B ============ -->
 <!-- Busca la TOP-N de gasolineras mas baratas dentro de un corredor a lo
      largo del trayecto entre dos puntos (origen + destino). Reutiliza

@@ -2628,6 +2628,132 @@ app.post('/api/telegram/unsubscribe', async c => {
   }
 })
 
+// GET /api/telegram/subscriptions?chat_id=X — lista las alertas activas de
+// un chat. La UI lo consulta al abrir el modal de favoritas para renderizar
+// el estado ON/OFF de la campana de cada favorita. Sin auth: igual que el
+// resto de endpoints /api/telegram/*, el chat_id del localStorage es la
+// unica "credencial" (modelo establecido desde Ship 25).
+app.get('/api/telegram/subscriptions', async c => {
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  const chatIdStr = c.req.query('chat_id') || ''
+  const chatId = Number(chatIdStr)
+  if (!Number.isFinite(chatId) || chatId <= 0) {
+    return c.json({ ok: false, error: 'invalid_chat_id' }, 400, { 'Cache-Control': 'no-store' })
+  }
+  try {
+    const r = await c.env.DB.prepare(
+      'SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ?'
+    ).bind(chatId).all<{ station_id: string; fuel_code: string }>()
+    return c.json({ ok: true, subscriptions: r.results || [] }, 200, { 'Cache-Control': 'no-store' })
+  } catch (e) {
+    slog('error', 'telegram_list_subs_error', { message: (e as Error).message })
+    return c.json({ ok: false, error: 'db_error' }, 500)
+  }
+})
+
+// POST /api/telegram/toggle-fav — activa o pausa la alerta de UNA favorita.
+// Body: { chat_id, station_id, fuel_code, enabled }
+// - enabled=true:  inserta en telegram_subscriptions (threshold copiado del
+//                  primer sub del mismo chat; default 15 si el chat no tiene
+//                  subs) y manda al bot "🔔 Alerta añadida". Idempotente:
+//                  si ya existia, devolvemos status=already_enabled sin
+//                  duplicar mensaje.
+// - enabled=false: borra la sub y manda "🔕 Alerta pausada". Idempotente
+//                  igual (status=already_disabled si no existia).
+// El rotulo + municipio se resuelven contra /data/stations.json (cacheado
+// 60s en CF) para que el mensaje del bot sea descriptivo sin que el cliente
+// tenga que enviarlo.
+app.post('/api/telegram/toggle-fav', async c => {
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
+  const chatId = typeof body?.chat_id === 'number' && Number.isFinite(body.chat_id) ? body.chat_id : NaN
+  const stationId = typeof body?.station_id === 'string' ? body.station_id.trim() : ''
+  const fuelCode = typeof body?.fuel_code === 'string' ? body.fuel_code.trim() : ''
+  const enabled = !!body?.enabled
+  if (!Number.isFinite(chatId) || chatId <= 0) return c.json({ ok: false, error: 'invalid_chat_id' }, 400)
+  if (!stationId) return c.json({ ok: false, error: 'missing_station_id' }, 400)
+  if (!['95', '98', 'diesel', 'diesel_plus'].includes(fuelCode)) {
+    return c.json({ ok: false, error: 'invalid_fuel_code' }, 400)
+  }
+  const { tgSendMessage, tgEscapeHtml } = await import('./lib/telegram')
+  const fuelLabel: Record<string, string> = {
+    '95': 'Gasolina 95', '98': 'Gasolina 98',
+    'diesel': 'Diesel', 'diesel_plus': 'Diesel Premium',
+  }
+  try {
+    // 1) Existe ya la sub?
+    const existing = await c.env.DB.prepare(
+      'SELECT 1 FROM telegram_subscriptions WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+    ).bind(chatId, stationId, fuelCode).all()
+    const alreadyExists = (existing.results?.length ?? 0) > 0
+
+    // Idempotencia: no duplicamos mensajes ni insert/delete.
+    if (enabled && alreadyExists) {
+      return c.json({ ok: true, status: 'already_enabled' }, 200, { 'Cache-Control': 'no-store' })
+    }
+    if (!enabled && !alreadyExists) {
+      return c.json({ ok: true, status: 'already_disabled' }, 200, { 'Cache-Control': 'no-store' })
+    }
+
+    // 2) Resuelve rotulo/municipio (para el mensaje del bot). Cacheado en CF.
+    let rotulo = 'gasolinera'
+    let municipio = ''
+    try {
+      const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
+      const rs = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
+      if (rs.ok) {
+        const snap = await rs.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
+        const st = snap.ListaEESSPrecio?.find(s => String(s['IDEESS'] || '') === stationId)
+        if (st) {
+          rotulo = String(st['Rotulo'] || 'Gasolinera')
+          municipio = String(st['Municipio'] || '')
+        }
+      }
+    } catch {/* degradamos a nombre generico */}
+    const rotuloEsc = tgEscapeHtml(rotulo)
+    const munEsc = municipio ? tgEscapeHtml(municipio) : ''
+    const lbl = fuelLabel[fuelCode] || fuelCode
+
+    if (enabled) {
+      // 3a) Copia threshold del primer sub del chat; default 15.
+      const chatSub = await c.env.DB.prepare(
+        'SELECT threshold_cents FROM telegram_subscriptions WHERE chat_id = ? LIMIT 1'
+      ).bind(chatId).all<{ threshold_cents: number }>()
+      const threshold = chatSub.results?.[0]?.threshold_cents ?? 15
+      await c.env.DB.prepare(
+        `INSERT INTO telegram_subscriptions
+         (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
+         VALUES (?, ?, ?, ?, NULL, ?)`
+      ).bind(chatId, stationId, fuelCode, threshold, Date.now()).run()
+      const thresholdEur = (threshold / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+      const reply =
+        `🔔 <b>Alerta añadida</b>\n\n` +
+        `Vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
+        `💰 Te avisare en cuanto el precio baje <b>${thresholdEur} €/L</b> o mas.`
+      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
+      slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: true, station_id: stationId })
+      return c.json({ ok: true, status: 'enabled' }, 200, { 'Cache-Control': 'no-store' })
+    } else {
+      // 3b) Desactivar: borrar + notificar.
+      await c.env.DB.prepare(
+        'DELETE FROM telegram_subscriptions WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
+      ).bind(chatId, stationId, fuelCode).run()
+      const reply =
+        `🔕 <b>Alerta pausada</b>\n\n` +
+        `Ya no vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
+        `<i>Puedes reactivarla desde la web cuando quieras.</i>`
+      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
+      slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: false, station_id: stationId })
+      return c.json({ ok: true, status: 'disabled' }, 200, { 'Cache-Control': 'no-store' })
+    }
+  } catch (e) {
+    slog('error', 'telegram_toggle_fav_error', { message: (e as Error).message })
+    return c.json({ ok: false, error: 'db_error' }, 500)
+  }
+})
+
 // POST /api/cron/telegram-check — iterador server-side.
 // Mismo patron que el antiguo /api/cron/push-check: lee snapshot, compara
 // precio actual vs baseline, envia sendMessage si la caida supera threshold.

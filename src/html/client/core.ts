@@ -903,6 +903,10 @@ async function enableTelegramAlerts(onDeepLink) {
   var confirmed = await waitTelegramConfirm(link.token);
   if (!confirmed.ok) return confirmed;
   try { localStorage.setItem(TG_CHAT_KEY, String(confirmed.chat_id)); } catch(_) {}
+  // Hidrata el cache de subs con lo que el webhook acaba de insertar (favs
+  // del pending_token). La UI lo necesita para pintar las campanas como
+  // activas en cuanto vuelva a abrir el modal de favoritas.
+  try { await loadTelegramSubscriptions(); } catch(_) {}
   return { ok: true, chat_id: confirmed.chat_id, subscribed: favs.length, deepLink: link.deepLink };
 }
 
@@ -924,6 +928,9 @@ async function disableTelegramAlerts() {
     });
   } catch(_) {}
   try { localStorage.removeItem(TG_CHAT_KEY); } catch(_) {}
+  // Limpia cache local — las campanas deben volver a estado OFF al instante.
+  _tgSubs = {};
+  _tgSubsHydrated = true;
   return { ok: true };
 }
 
@@ -932,8 +939,87 @@ async function disableTelegramAlerts() {
 function telegramAlertsActive() {
   try {
     var raw = localStorage.getItem(TG_CHAT_KEY);
-    return !!(raw && /^\d+$/.test(raw));
+    // El archivo entero es un template literal: \d dentro de un template
+    // pierde la barra invertida al serializar. Hay que doblar el escape
+    // (\\d) para que el regex compilado en el cliente sea /^\d+$/.
+    return !!(raw && /^\\d+$/.test(raw));
   } catch (_) { return false; }
+}
+
+// ---- ALERTAS POR GASOLINERA (Ship 26) ----
+// Cache en memoria de las (station_id, fuel_code) con alerta activa para
+// este chat. La UI lo consulta en cada render del modal de favoritas (sync).
+// Se hidrata con loadTelegramSubscriptions() una sola vez al cargar la web
+// y despues al modificar (toggleTelegramFav) mantiene el cache localmente.
+var _tgSubs = {}; // { "stationId|fuelCode": true }
+var _tgSubsHydrated = false;
+
+function _tgSubsKey(stationId, fuelCode) { return stationId + '|' + fuelCode; }
+
+// Descarga del server las subs activas y rellena el cache. Llamar al
+// arrancar y despues de confirmar un enableTelegramAlerts (el webhook
+// inserta las favs del pending_token, que desde la UI no pasan por el
+// cache local).
+async function loadTelegramSubscriptions() {
+  _tgSubs = {};
+  _tgSubsHydrated = false;
+  var raw = null;
+  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
+  var chatId = raw ? parseInt(raw, 10) : NaN;
+  if (!isFinite(chatId)) { _tgSubsHydrated = true; return; }
+  try {
+    var res = await fetch('/api/telegram/subscriptions?chat_id=' + chatId);
+    if (!res.ok) { _tgSubsHydrated = true; return; }
+    var j = await res.json();
+    if (j && j.ok && Array.isArray(j.subscriptions)) {
+      for (var i = 0; i < j.subscriptions.length; i++) {
+        var s = j.subscriptions[i];
+        _tgSubs[_tgSubsKey(s.station_id, s.fuel_code)] = true;
+      }
+    }
+  } catch(_) {}
+  _tgSubsHydrated = true;
+}
+
+// Consulta rapida (sync) — para render del boton campana.
+function isTelegramFavActive(stationId, fuelCode) {
+  return !!_tgSubs[_tgSubsKey(stationId, fuelCode)];
+}
+
+// Activa o pausa la alerta de UNA favorita. Si el bot no esta vinculado,
+// devuelve { ok: false, error: 'not_linked' } y la UI muestra el dialog
+// de "activa el bot primero". El server es idempotente — si el estado ya
+// era el pedido, no duplica mensajes.
+async function toggleTelegramFav(stationId, fuelCode, enabled) {
+  var raw = null;
+  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
+  var chatId = raw ? parseInt(raw, 10) : NaN;
+  if (!isFinite(chatId)) return { ok: false, error: 'not_linked' };
+  try {
+    var res = await fetch('/api/telegram/toggle-fav', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        station_id: stationId,
+        fuel_code: fuelCode,
+        enabled: !!enabled,
+      }),
+    });
+    if (!res.ok) {
+      // 503 telegram_not_configured -> mismo trato que not_linked
+      if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
+      return { ok: false, error: 'toggle_fallo' };
+    }
+    var j = await res.json();
+    if (!j || !j.ok) return { ok: false, error: 'toggle_fallo' };
+    // Mantenemos cache local para que el render sea coherente sin round-trip.
+    var k = _tgSubsKey(stationId, fuelCode);
+    if (enabled) _tgSubs[k] = true; else delete _tgSubs[k];
+    return { ok: true, status: j.status };
+  } catch (e) {
+    return { ok: false, error: 'network' };
+  }
 }
 
 // Consulta la config del servidor (solo para saber si el bot esta configurado).

@@ -254,14 +254,11 @@ function showToast(msg, type) {
     // donde no hay contenido critico. El CSS responsive en styles.ts
     // ajusta posicion y tamano en mobile. La clase marker-hook permite
     // overrides desde styles.ts (media queries) sin pelear con el inline.
-    // Ship 25.3: bottom:120px para quedar por encima de los controles de
-    // zoom Leaflet (bottomright, ocupan bottom 24-104px con su margen). A
-    // 120px dejamos ~16px de aire sobre los botones +/-. En mobile la
-    // media query en styles.ts lo mueve a bottom:150px para no tapar
-    // tampoco la "Media nacional" si se pintase abajo (ahora va arriba
-    // derecha, pero preservamos el margen por si cambia).
+    // bottom:170px. El stack de Leaflet (bottomright) ahora tiene zoom +
+    // escala apilados: ocupa desde bottom:24 (escala) hasta bottom:150 (top
+    // del zoom). A 170px dejamos ~20px de aire sobre el zoom.
     b.className = 'pwa-install-btn';
-    b.style.cssText = 'position:fixed;bottom:120px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
+    b.style.cssText = 'position:fixed;bottom:170px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
     b.addEventListener('click', function() {
       if (!deferred) { b.remove(); return; }
       try {

@@ -487,18 +487,14 @@ function showToast(msg, type) {
        // +/- del mapa. Ahora top:74px para quedar justo debajo del header
        // (60px alto + 14px de aire). En mobile (<640px) el header es 50px,
        // ajustamos con media query via CSS class en styles.ts.
+      // Todos los estilos viven en styles.ts (.stats-nacional-widget,
+      // .stats-nacional-title, .stats-nacional-footer). Antes estaban inline
+      // via style.cssText pero el CSP los bloqueaba (style-src sin
+      // 'unsafe-inline'), generando violation-reports en consola.
       w.className = 'stats-nacional-widget';
-      // z-index:1005 por encima de controles Leaflet (1000). El desplegable
-      // de usuario vive dentro del stacking context del header (z:1000), asi
-      // que su z:2500 nominal se capa a 1000 — el widget lo tapa. Lo
-      // gestiona la logica del dropdown (ui.ts) ocultando el widget mientras
-      // esta abierto.
-      w.style.cssText = 'position:fixed;top:74px;right:16px;background:#ffffff;border:1px solid #e5e7eb;color:#111827;padding:8px 12px;border-radius:12px;font-size:12px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.10);z-index:1005;max-width:320px;line-height:1.5';
       var parts = [];
-      // textContent del titulo via nodo DOM para que fmtDDMM no inyecte nada
-      // raro si lastDate viniera malformado del server.
       var titleDiv = document.createElement('div');
-      titleDiv.style.cssText = 'font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;margin-bottom:2px';
+      titleDiv.className = 'stats-nacional-title';
       titleDiv.textContent = title;
       parts.push(titleDiv.outerHTML);
       if (g95 && g95.today != null) {
@@ -508,7 +504,7 @@ function showToast(msg, type) {
         parts.push('<div>Di\u00E9sel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
       }
       if (daysN > 0) {
-        parts.push('<div style="font-size:10px;color:#9ca3af;margin-top:2px">comparado con media de los \u00FAltimos ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
+        parts.push('<div class="stats-nacional-footer">comparado con media de los \u00FAltimos ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
       }
       // innerHTML seguro: los valores numericos vienen de /api/stats/national
       // (servidor) con rangos validados; no hay texto libre del usuario.

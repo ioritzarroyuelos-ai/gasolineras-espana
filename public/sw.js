@@ -2,7 +2,7 @@
 // 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
 // cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
 // usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v16';
+const CACHE_NAME = 'gasolineras-v17';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia / bbox). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC

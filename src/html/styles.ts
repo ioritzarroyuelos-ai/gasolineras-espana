@@ -539,6 +539,40 @@ export function getStyles(nonce: string = ''): string {
       .header-sub { display: none; }
     }
 
+    /* Widget de media nacional (esquina top-right del mapa). Antes los
+       estilos vivian en el JS como w.style.cssText = '...' — los bloqueaba el
+       CSP (style-src sin 'unsafe-inline'), provocando violation-reports y el
+       widget quedaba sin pintar correctamente. Movidos aqui como clase para
+       que respeten el CSP. */
+    .stats-nacional-widget {
+      position: fixed;
+      top: 74px;
+      right: 16px;
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      color: #111827;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+      z-index: 1005;
+      max-width: 320px;
+      line-height: 1.5;
+    }
+    .stats-nacional-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+    .stats-nacional-footer {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+
     /* ---- Overlays del mapa < 768px ---- */
     @media (max-width: 767px) {
       #map-info { display: none; }

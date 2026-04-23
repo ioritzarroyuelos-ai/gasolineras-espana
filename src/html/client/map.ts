@@ -11,34 +11,21 @@ var lastFitBounds = null;
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
-  // Limites geograficos de Espana: peninsula + Baleares + Canarias + Ceuta/Melilla.
-  // Leaflet los usa para:
-  //  - maxBounds: impide arrastrar el mapa fuera del bounding box.
-  //  - maxBoundsViscosity: 1.0 = el borde es "rigido" (no se puede salir ni con inercia).
-  //  - minZoom: por debajo de este nivel se ve media Europa / medio mundo → sin sentido.
-  // SPAIN_BOUNDS: MUY amplio a proposito — maxBounds clampea el CENTRO del
-  // viewport, no sus bordes. Para que el usuario pueda centrar tanto la
-  // peninsula (centro ~[40, -3]) como Canarias (centro ~[28, -16]) en el
-  // medio de la pantalla, los bounds deben contener ambos centros con al
-  // menos medio viewport de holgura en cada direccion. A zoom 6 en desktop
-  // 1280x800 el viewport cubre ~21deg lng x 12.7deg lat, asi que el centro
-  // solo puede estar en [S+6.35, N-6.35] x [W+10.5, E-10.5]. Por eso:
-  //   - S=20 (centro min lat 26.35 < Canarias lat 28)
-  //   - W=-28 (centro min lng -17.5 < Canarias lng -16)
-  //   - N=47 (centro max lat 40.65 > peninsula lat 40)
-  //   - E=9  (centro max lng -1.5  > peninsula lng -3)
-  // Asi ambos extremos quedan centrables y el unico efecto colateral es que
-  // el usuario puede arrastrar un poco al Atlantico / norte de Africa /
-  // sur de Francia. Prefrimos eso a que Canarias quede pegada al borde.
+  // SPAIN_BOUNDS: solo para tiles (atributo bounds de L.tileLayer, que evita
+  // descargar tiles fuera de Espana ampliada). NO lo usamos como maxBounds del
+  // mapa. Probamos varios maxBounds (ajustado, holgado, muy holgado) y en
+  // cualquier caso que le ponemos acaba clampeando el CENTRO del viewport
+  // — asi que Canarias (lng -16 lat 28) no queda nunca centrada en pantalla
+  // porque la mitad del viewport SE excederia el limite SW. Sin maxBounds el
+  // usuario puede centrar lo que quiera, y el unico efecto colateral (pan a
+  // Francia/Marruecos) no es grave — no hay estaciones alli de todas formas.
   var SPAIN_BOUNDS = L.latLngBounds(
-    [20.0, -28.0],  // SW — holgado: permite centrar Canarias sin clampear
-    [47.0,   9.0]   // NE — holgado: permite centrar peninsula sin clampear
+    [26.5, -19.0],  // SW — al sur de El Hierro y al oeste del mismo
+    [44.5,   5.5]   // NE — al norte del Cantabrico y al este de Menorca
   );
-  // PENINSULA_BOUNDS: mas estrecho — solo peninsula + Baleares. Se usa
-  // para el fitBounds inicial: asi la peninsula aparece centrada y
-  // llenando pantalla, y Canarias queda a un arrastre de distancia
-  // (en vez de compartir viewport con la peninsula desde el primer frame
-  // quedando ambas pequenas y con Canarias pegada al borde).
+  // PENINSULA_BOUNDS: solo para el fitBounds inicial — peninsula centrada
+  // sobre Madrid. Canarias queda fuera del viewport y el usuario la alcanza
+  // arrastrando hacia el SO.
   var PENINSULA_BOUNDS = L.latLngBounds(
     [35.8, -9.8],   // SW — Cabo San Vicente (PT) / Cadiz
     [44.0,  4.5]    // NE — Pirineos orientales / Menorca
@@ -50,36 +37,22 @@ function initMap() {
     zoomAnimation: true,
     fadeAnimation: true,
     markerZoomAnimation: true,
-    minZoom: 4,   // 4 (no 5) para que fitBounds(SPAIN_BOUNDS) quepa en
-                  // moviles de 375px de ancho. A zoom 5 Espana (24.5 deg lng,
-                  // de El Hierro a Menorca) no cabe y queda clipada -> el
-                  // usuario ve solo parte del pais y con viscosity:1 la
-                  // sensacion es "atascado". A zoom 4 entra entera.
+    minZoom: 4,   // 4 (no 5) para que Peninsula + Canarias quepan en moviles
+                  // si el usuario alguna vez reduce zoom al minimo.
     maxZoom: 20,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
                   // lanza "Map has no maxZoom specified" y la promesa del
                   // layer queda sin manejar, rompiendo otros flujos UI.
-    // maxBounds: lo aplicamos DESPUES del fitBounds inicial (via setMaxBounds)
-    // para que el fit no lo clampee y la peninsula quede bien centrada. Si lo
-    // ponemos aqui, Leaflet recorta la vista al encaje de PENINSULA_BOUNDS
-    // contra SPAIN_BOUNDS N=44.5 E=5.5, y el centro resultante queda pegado
-    // a la esquina NE en vez de sobre Madrid.
-    maxBoundsViscosity: 0.3,  // 0.3 (antes 0.8): el usuario arranca viendo
-                              // solo peninsula y necesita arrastrar al SO
-                              // para llegar a Canarias. Una viscosidad alta
-                              // hacia sentir que el mapa "se resistia" a ese
-                              // gesto largo. Dejamos solo un leve freno para
-                              // evitar salir fuera del bounding box.
+    // NO ponemos maxBounds: clampea el centro del viewport y hace imposible
+    // que Canarias quede en la mitad de la pantalla (la mitad baja del
+    // viewport caeria fuera del maxBounds W/S). Preferimos permitir pan a
+    // Francia/Marruecos (no hay estaciones alli) y asi el usuario puede
+    // centrar Canarias cuando quiera.
     worldCopyJump: false
   });
   // Vista inicial: peninsula + Baleares centrada. Canarias queda fuera del
-  // viewport y el usuario la alcanza arrastrando hacia el SO (permitido por
-  // maxBounds=SPAIN_BOUNDS que seteamos a continuacion). Sin maxBounds aun,
-  // fitBounds puede centrar la peninsula sin clamping.
+  // viewport y el usuario la alcanza arrastrando hacia el SO sin topar con
+  // ningun freno.
   map.fitBounds(PENINSULA_BOUNDS, { padding: [20, 20], animate: false });
-  // Ahora SI aplicamos maxBounds — restringe el drag a Espana (peninsula +
-  // Baleares + Ceuta/Melilla + Canarias) sin haber distorsionado la vista
-  // inicial.
-  map.setMaxBounds(SPAIN_BOUNDS);
 
   // Capa base clara: arrancamos en raster "voyager_nolabels" — basemap sin
   // toponimia. Las etiquetas las pintamos nosotros (SPAIN_LABELS) en castellano

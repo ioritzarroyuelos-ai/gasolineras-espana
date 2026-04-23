@@ -398,6 +398,25 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="dns-prefetch" href="https://nominatim.openstreetmap.org" />
 
+  <!-- Preload de recursos criticos del mapa para reducir LCP:
+       - Liberty style JSON (~500 KB): se fetchea desde map.ts; con preload
+         esta listo en cache antes de que initMap() lo pida.
+       - maplibre-gl.js (~800 KB): ya con defer pero el preload lo prioriza
+         frente a otros defers y lo empieza a bajar en paralelo desde el
+         parseo del HEAD. integrity debe COINCIDIR con la del <script> para
+         que el browser reuse el blob (si difiere, baja de nuevo). -->
+  <link rel="preload" as="fetch"
+        href="https://tiles.openfreemap.org/styles/liberty"
+        crossorigin="anonymous" />
+  <link rel="preload" as="script"
+        href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
+        integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
+        crossorigin="anonymous" />
+  <link rel="preload" as="script"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
+        crossorigin="anonymous" />
+
   <!-- Leaflet CSS (critico para map) -->
   <link rel="stylesheet"
         href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"

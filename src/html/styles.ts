@@ -546,10 +546,10 @@ export function getStyles(nonce: string = ''): string {
       #legend h4 { font-size: 11px; margin-bottom: 5px; }
       .legend-item { font-size: 11px; margin-bottom: 3px; }
       .legend-dot  { width: 10px; height: 10px; }
-      /* Install button: el stack bottomright (zoom + escala) ocupa hasta
-         bottom:150px en el top del zoom. A 170px dejamos 20px de aire. */
+      /* Install button: zoom top del stack esta en bottom:132. A 140
+         dejamos ~8px de aire sin solapar. */
       #btn-install-pwa {
-        bottom: 170px !important;
+        bottom: 140px !important;
         right: 8px !important;
         font-size: 11px !important;
         padding: 7px 12px !important;

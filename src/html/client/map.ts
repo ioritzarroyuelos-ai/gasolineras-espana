@@ -1171,20 +1171,78 @@ function highlightCard(idx) {
 // Ship 6: toggle del heatmap. Re-renderiza con las ultimas estaciones
 // cacheadas en renderMarkers — si el usuario tiene filtros aplicados, el
 // heatmap refleja SOLO esas estaciones (mas util que el agregado global).
+// Si al pulsar aun no hay estaciones cargadas (usuario entra a la app y
+// antes de elegir provincia toca el boton), descargamos el snapshot
+// nacional /data/stations.json una vez y pintamos el heatmap de toda
+// Espana — mismo patron lazy-load que btn-chargers. Al desactivar sin
+// provincia seleccionada, el mapa vuelve a quedar limpio (no se renderizan
+// 12k pins en cluster).
 (function() {
   var btn = document.getElementById('btn-heatmap');
   if (!btn) return;
-  btn.addEventListener('click', function() {
+  // Snapshot nacional cacheado en memoria tras el primer fetch: si el usuario
+  // desactiva y reactiva el heatmap nacional, no re-descargamos.
+  var nationalSnapshot = null;
+
+  function setLoading(on) {
+    if (on) { btn.setAttribute('data-loading', '1'); btn.style.opacity = '0.6'; btn.style.cursor = 'wait'; }
+    else { btn.removeAttribute('data-loading'); btn.style.opacity = ''; btn.style.cursor = ''; }
+  }
+
+  function loadNationalSnapshot() {
+    if (nationalSnapshot) return Promise.resolve(nationalSnapshot);
+    return fetch('/data/stations.json', { cache: 'force-cache' })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        var raw = (data && data.ListaEESSPrecio) || [];
+        nationalSnapshot = raw.map(normalizeStation);
+        return nationalSnapshot;
+      });
+  }
+
+  btn.addEventListener('click', async function() {
     // Defensive: si leaflet.heat no cargo (red caida, CSP, etc.), informa y
     // no togglea. Asi el boton nunca da una experiencia silenciosa rota.
     if (!heatMode && typeof L.heatLayer !== 'function') {
       try { if (typeof showToast === 'function') showToast('El mapa de calor aun esta cargando, prueba en un segundo', 'warn'); } catch(_) {}
       return;
     }
+    var turningOn = !heatMode;
+
+    // Al activar sin provincia cargada, usamos el snapshot nacional (lazy
+    // fetch la primera vez, cacheado en memoria despues).
+    if (turningOn && lastRenderedStations.length === 0) {
+      setLoading(true);
+      try {
+        var snap = await loadNationalSnapshot();
+        lastRenderedStations = snap;
+      } catch (e) {
+        setLoading(false);
+        try { if (typeof showToast === 'function') showToast('No se pudo cargar el mapa de calor', 'warn'); } catch(_) {}
+        return;
+      }
+      setLoading(false);
+      if (!lastRenderedStations.length) {
+        try { if (typeof showToast === 'function') showToast('No hay datos de mapa de calor disponibles', 'warn'); } catch(_) {}
+        return;
+      }
+    }
+
     heatMode = !heatMode;
     btn.setAttribute('aria-pressed', heatMode ? 'true' : 'false');
     btn.setAttribute('aria-label', heatMode ? 'Desactivar mapa de calor' : 'Activar mapa de calor de precios');
-    if (lastRenderedStations.length) {
+
+    // Al desactivar sin provincia elegida, limpia el mapa en vez de renderizar
+    // 12k pins en cluster (seria lento y no es lo que el usuario espera).
+    // El snapshot sigue cacheado para reactivar sin re-fetch.
+    if (!heatMode && (typeof allStations === 'undefined' || allStations.length === 0)) {
+      if (clusterGroup) map.removeLayer(clusterGroup);
+      if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+      lastRenderedStations = [];
+    } else if (lastRenderedStations.length) {
       renderMarkers(lastRenderedStations);
     }
     try {

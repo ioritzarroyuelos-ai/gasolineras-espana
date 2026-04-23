@@ -343,7 +343,7 @@ export function getStyles(nonce: string = ''): string {
        que chocaba visualmente con la leyenda (panel redondeado con shadow)
        justo encima — se veia desconectado. Ahora los 2 son pills del mismo
        estilo separados por 8px. */
-    .leaflet-control-scale { margin: 0 0 12px 12px !important; }
+    .leaflet-control-scale { margin: 8px 10px 24px 0 !important; }
     .leaflet-control-scale-line {
       border: 1px solid #e2e8f0 !important;
       border-radius: 10px !important;

@@ -69,11 +69,12 @@ function initMap() {
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
 
-  // Controles: solo zoom (abajo-derecha) y escala (abajo-izquierda). Sin
-  // selector Mapa/Satelite (quitado por peticion del usuario) — un unico
-  // basemap, sin opciones visibles que ocupen esquina del mapa.
+  // Controles: zoom y escala ambos en abajo-derecha, apilados. Orden de addTo
+  // determina el apilado (Leaflet stack-ea el primero arriba, el siguiente
+  // debajo) — por eso zoom primero y escala despues: la escala queda debajo
+  // de los botones +/- como pidio el usuario.
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  L.control.scale({ position: 'bottomleft', imperial: false, maxWidth: 120 }).addTo(map);
+  L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 120 }).addTo(map);
 
   // Capa de etiquetas propias — CCAA + ciudades principales en castellano.
   // Funciona como FALLBACK garantizado: mientras MapLibre GL carga (async) y

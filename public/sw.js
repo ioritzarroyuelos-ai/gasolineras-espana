@@ -246,7 +246,12 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request).then(res => {
         if (res.ok && request.method === 'GET') {
-          caches.open(CACHE_NAME).then(cache => cache.put(request, res.clone()));
+          // Clonamos sincronamente aqui, antes de `return res`, para que
+          // el body este disponible aun si el consumer agota `res` antes
+          // de que `caches.open` resuelva. Si clonasemos dentro del then
+          // async, a veces el body ya esta consumido -> TypeError.
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
       }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('/static/features.js')))
@@ -260,7 +265,9 @@ self.addEventListener('fetch', event => {
       if (cached) return cached;
       return fetch(request).then(res => {
         if (res.ok && request.method === 'GET') {
-          caches.open(CACHE_NAME).then(cache => cache.put(request, res.clone()));
+          // Mismo motivo que arriba: clonar antes del async caches.open().
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
       }).catch(() => caches.match('/'));

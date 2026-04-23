@@ -572,6 +572,12 @@ export function getStyles(nonce: string = ''): string {
       color: #9ca3af;
       margin-top: 2px;
     }
+    /* Delta % del widget (↑ rojo sube, ↓ verde baja, = gris). Clases
+       explicitas para no violar style-src (antes eran inline style=...). */
+    .stats-nacional-delta { font-weight: 700; }
+    .stats-nacional-delta--up   { color: #dc2626; }
+    .stats-nacional-delta--down { color: #15803d; }
+    .stats-nacional-delta--flat { color: #6b7280; }
 
     /* ---- Overlays del mapa < 768px ---- */
     @media (max-width: 767px) {

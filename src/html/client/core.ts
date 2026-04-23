@@ -436,9 +436,12 @@ function showToast(msg, type) {
     function fmtDelta(pct) {
       if (pct == null || !isFinite(pct)) return '';
       var sign = pct > 0 ? '\u2191' : pct < 0 ? '\u2193' : '=';
-      var color = pct > 0 ? '#dc2626' : pct < 0 ? '#15803d' : '#6b7280';
+      // Antes era style="color:...;font-weight:700" inline, pero el CSP
+      // (style-src 'self' 'nonce-...') bloquea style attributes y generaba
+      // violation reports. Ahora clases en styles.ts (.stats-nacional-delta*).
+      var cls = pct > 0 ? 'stats-nacional-delta--up' : pct < 0 ? 'stats-nacional-delta--down' : 'stats-nacional-delta--flat';
       var abs = Math.abs(pct).toFixed(2);
-      return '<span style="color:' + color + ';font-weight:700">' + sign + abs + '%</span>';
+      return '<span class="stats-nacional-delta ' + cls + '">' + sign + abs + '%</span>';
     }
 
     function paint(data) {

@@ -224,7 +224,8 @@ function renderCompareModal() {
   // Si solo hay 1, anadimos una columna placeholder para mantener la grid
   // de 2-cols y evitar que la unica columna ocupe el ancho completo.
   if (stations.length === 1) {
-    cols += '<div class="compare-col" style="display:flex;align-items:center;justify-content:center;color:#94a3b8;text-align:center;"><div>\u2795<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
+    // Estilos en styles.ts (.compare-col--empty).
+    cols += '<div class="compare-col compare-col--empty"><div>\u2795<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
   }
   body.innerHTML = summaryHtml + cols;
 }
@@ -707,7 +708,8 @@ function showCacheIndicator(ts, stale) {
     lbl.appendChild(document.createTextNode('\u26A0 ' + age + ' '));
     var btn = document.createElement('button');
     btn.textContent = 'Actualizar';
-    btn.style.cssText = 'background:rgba(255,255,255,0.25);border:none;color:#fff;border-radius:4px;padding:1px 6px;font-size:10px;cursor:pointer;margin-left:4px';
+    // Estilos en styles.ts (.cache-refresh-btn).
+    btn.className = 'cache-refresh-btn';
     btn.addEventListener('click', forceReload);
     lbl.appendChild(btn);
   } else {

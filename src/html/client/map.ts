@@ -1320,7 +1320,7 @@ function chargerPopupHTML(entry) {
             : '')
        +   '<div class="charger-popup-row">'
        +     '<span class="charger-popup-label">Fuente</span>'
-       +     '<span class="charger-popup-value" style="font-size:11px;font-weight:500;opacity:0.7">OpenStreetMap</span>'
+       +     '<span class="charger-popup-value charger-popup-source">OpenStreetMap</span>'
        +   '</div>'
        + '</div>';
 }
@@ -1332,9 +1332,12 @@ function buildChargersLayer(chargers) {
     maxClusterRadius: 60,
     iconCreateFunction: function(cluster) {
       var count = cluster.getChildCount();
-      var sz = count > 200 ? 52 : count > 50 ? 44 : 36;
+      // 3 buckets con size fijo — clases CSS en styles.ts (.charger-cluster--sm/md/lg).
+      // Antes era style="width:Xpx;height:Xpx" inline pero CSP lo bloquea.
+      var bucket = count > 200 ? 'lg' : count > 50 ? 'md' : 'sm';
+      var sz = bucket === 'lg' ? 52 : bucket === 'md' ? 44 : 36;
       return L.divIcon({
-        html: '<div class="charger-cluster" style="width:' + sz + 'px;height:' + sz + 'px">' + count + '</div>',
+        html: '<div class="charger-cluster charger-cluster--' + bucket + '">' + count + '</div>',
         className: '',
         iconSize: [sz, sz],
         iconAnchor: [sz / 2, sz / 2]

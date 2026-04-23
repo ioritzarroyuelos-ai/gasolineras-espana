@@ -353,10 +353,11 @@ function enterRouteMode(coords, stops, from, to, allCorridor) {
     // Popup informativo: rotulo, direccion, precio y km desde origen. Sin
     // botones de navegacion por gasolinera: la ruta completa se lleva a
     // Google/Apple/Waze desde el banner flotante o el plan del modal.
-    var popup = '<div style="font-weight:700;margin-bottom:4px;">Parada ' + (i + 1) + ': ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
-              + '<div style="font-size:12px;color:#475569;margin-bottom:4px;">' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
-              + '<div style="font-size:14px;font-weight:800;color:#16a34a;margin-bottom:4px;">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
-              + '<div style="font-size:11px;color:#475569;">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>';
+    // Estilos en styles.ts (.route-popup-*) para no disparar CSP con style="".
+    var popup = '<div class="route-popup-title">Parada ' + (i + 1) + ': ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+              + '<div class="route-popup-addr">' + esc((s['Direccion'] || '') + ', ' + (s['Municipio'] || '')) + '</div>'
+              + '<div class="route-popup-price">' + stop.priceEurL.toFixed(3) + ' \u20AC/L</div>'
+              + '<div class="route-popup-km">km ' + Math.round(stop.kmFromOrigin) + ' desde origen</div>';
     m.bindPopup(popup, { maxWidth: 240 });
     routeStopsLayer.addLayer(m);
   });

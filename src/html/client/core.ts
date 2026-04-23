@@ -186,18 +186,15 @@ export const clientCoreScript = `
 // Usa nodos DOM + textContent para evitar XSS si 'msg' viene de un backend comprometido.
 function showToast(msg, type) {
   type = type || 'error';
-  var cfg = {
-    error:   {bg:'#fef2f2', border:'#fca5a5', color:'#dc2626', icon:'\u2715'},
-    warning: {bg:'#fffbeb', border:'#fcd34d', color:'#d97706', icon:'\u26A0'},
-    success: {bg:'#f0fdf4', border:'#86efac', color:'#16a34a', icon:'\u2713'},
-    info:    {bg:'#eff6ff', border:'#93c5fd', color:'#2563eb', icon:'\u2139'}
-  };
-  var c = cfg[type] || cfg.error;
+  var icons = { error:'\u2715', warning:'\u26A0', success:'\u2713', info:'\u2139' };
+  var variant = icons[type] ? type : 'error';
   var t = document.createElement('div');
-  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:'+c.bg+';border:1px solid '+c.border+';color:'+c.color+';padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.14);z-index:9999;display:flex;align-items:center;gap:8px;max-width:380px;white-space:pre-wrap';
+  // Estilos en styles.ts (.app-toast + .app-toast--<variant>) para no
+  // disparar CSP con style-attribute.
+  t.className = 'app-toast app-toast--' + variant;
   var iconEl = document.createElement('span');
-  iconEl.style.fontSize = '15px';
-  iconEl.textContent = c.icon;
+  iconEl.className = 'app-toast-icon';
+  iconEl.textContent = icons[variant];
   var msgEl = document.createElement('span');
   msgEl.textContent = String(msg == null ? '' : msg);
   t.appendChild(iconEl);
@@ -248,16 +245,10 @@ function showToast(msg, type) {
     b.type = 'button';
     b.setAttribute('aria-label', 'Instalar aplicacion');
     b.textContent = '\u2B07 Instalar app';
-    // Posicion: esquina inferior-derecha del mapa. Antes estaba bottom-left
-    // encima del sidebar y tapaba la primera card del station-list (bug
-    // elementsFromPoint devolvia .card-title debajo). Lo movemos al mapa
-    // donde no hay contenido critico. El CSS responsive en styles.ts
-    // ajusta posicion y tamano en mobile. La clase marker-hook permite
-    // overrides desde styles.ts (media queries) sin pelear con el inline.
-    // bottom:140px. Zoom top del stack (bottomright: zoom+escala) esta a
-    // bottom:132. A 140 dejamos ~8px de aire sobre el zoom.
+    // Estilos en styles.ts (.pwa-install-btn). Bottom:140px queda ~8px
+    // encima del stack de zoom/escala (bottom:132). Las media queries
+    // mobile tambien viven en styles.ts.
     b.className = 'pwa-install-btn';
-    b.style.cssText = 'position:fixed;bottom:140px;right:16px;background:#16a34a;color:#fff;border:0;padding:8px 14px;border-radius:20px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(22,163,74,0.35);cursor:pointer;z-index:9998;display:flex;align-items:center;gap:6px';
     b.addEventListener('click', function() {
       if (!deferred) { b.remove(); return; }
       try {
@@ -302,7 +293,8 @@ function showToast(msg, type) {
     b.setAttribute('role', 'status');
     b.setAttribute('aria-live', 'polite');
     b.textContent = '\u26A0 Sin conexion';
-    b.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#fef2f2;border:1px solid #fca5a5;color:#b91c1c;padding:6px 12px;border-radius:999px;font-size:12px;font-weight:700;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:9997;pointer-events:none';
+    // Estilos en styles.ts (.offline-badge).
+    b.className = 'offline-badge';
     document.body.appendChild(b);
   }
   function removeOfflineBadge() {
@@ -400,10 +392,8 @@ function showToast(msg, type) {
       b.setAttribute('aria-label', 'Edad de los datos de precios');
       b.title = 'Datos del Ministerio actualizados ' + label + ' (' + raw + ')';
       b.textContent = '\u{1F55B} ' + label;
-      var bg = stale ? '#fef2f2' : '#f0fdf4';
-      var bd = stale ? '#fca5a5' : '#86efac';
-      var fg = stale ? '#b91c1c' : '#15803d';
-      b.style.cssText = 'position:fixed;top:12px;right:12px;background:' + bg + ';border:1px solid ' + bd + ';color:' + fg + ';padding:5px 10px;border-radius:999px;font-size:11px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.08);z-index:9996;pointer-events:auto;cursor:help';
+      // Estilos en styles.ts (.freshness-badge + variante).
+      b.className = 'freshness-badge ' + (stale ? 'freshness-badge--stale' : 'freshness-badge--fresh');
       document.body.appendChild(b);
     }
     if (document.readyState === 'loading') {

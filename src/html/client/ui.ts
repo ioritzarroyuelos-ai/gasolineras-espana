@@ -1678,7 +1678,9 @@ function showUpdateToast(newSW) {
   t.id = 'sw-update-toast';
   t.setAttribute('role', 'status');
   t.setAttribute('aria-live', 'polite');
-  t.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#eff6ff;border:1px solid #93c5fd;color:#1e3a8a;padding:12px 16px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.14);z-index:10000;display:flex;align-items:center;gap:12px;max-width:380px';
+  // Estilos en styles.ts (.sw-update-toast + hijos). Antes inline via
+  // style.cssText pero el CSP style-src con 'nonce-' bloqueaba el atributo.
+  t.className = 'sw-update-toast';
 
   var msg = document.createElement('span');
   msg.textContent = '\u{1F504} Nueva version disponible';
@@ -1687,7 +1689,7 @@ function showUpdateToast(newSW) {
   var btn = document.createElement('button');
   btn.type = 'button';
   btn.textContent = 'Actualizar';
-  btn.style.cssText = 'background:#2563eb;color:#fff;border:0;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer';
+  btn.className = 'sw-update-toast-btn';
   btn.addEventListener('click', function() {
     try { newSW.postMessage({ type: 'SKIP_WAITING' }); } catch(_) {}
     // Si el SW no responde en 5s, forzamos reload para no dejar al usuario
@@ -1702,7 +1704,7 @@ function showUpdateToast(newSW) {
   close.type = 'button';
   close.setAttribute('aria-label', 'Descartar');
   close.textContent = '\u00D7';
-  close.style.cssText = 'background:transparent;color:#1e3a8a;border:0;font-size:18px;cursor:pointer;padding:0 4px;line-height:1';
+  close.className = 'sw-update-toast-close';
   close.addEventListener('click', function() { t.remove(); });
   t.appendChild(close);
 

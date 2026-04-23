@@ -579,6 +579,166 @@ export function getStyles(nonce: string = ''): string {
     .stats-nacional-delta--down { color: #15803d; }
     .stats-nacional-delta--flat { color: #6b7280; }
 
+    /* ---- Toasts (showToast) ---- */
+    /* Antes los colores y layout vivian en style.cssText — CSP con
+       'nonce' no permite style-attribute sin 'unsafe-hashes'. Ahora: base
+       estructural + variantes de color. Crear los nodos con
+       className='app-toast app-toast--error' y textContent del icono. */
+    .app-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      max-width: 380px;
+      white-space: pre-wrap;
+      border: 1px solid transparent;
+    }
+    .app-toast-icon { font-size: 15px; }
+    .app-toast--error   { background: #fef2f2; border-color: #fca5a5; color: #dc2626; }
+    .app-toast--warning { background: #fffbeb; border-color: #fcd34d; color: #d97706; }
+    .app-toast--success { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
+    .app-toast--info    { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
+
+    /* ---- Boton PWA install ---- */
+    .pwa-install-btn {
+      position: fixed;
+      bottom: 140px;
+      right: 16px;
+      background: #16a34a;
+      color: #fff;
+      border: 0;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(22,163,74,0.35);
+      cursor: pointer;
+      z-index: 9998;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ---- Badge offline ---- */
+    .offline-badge {
+      position: fixed;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      color: #b91c1c;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      z-index: 9997;
+      pointer-events: none;
+    }
+
+    /* ---- Freshness badge (edad de datos) ---- */
+    .freshness-badge {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      z-index: 9996;
+      pointer-events: auto;
+      cursor: help;
+      border: 1px solid transparent;
+    }
+    .freshness-badge--fresh { background: #f0fdf4; border-color: #86efac; color: #15803d; }
+    .freshness-badge--stale { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+
+    /* ---- Toast de actualizacion del SW ---- */
+    .sw-update-toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #eff6ff;
+      border: 1px solid #93c5fd;
+      color: #1e3a8a;
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      max-width: 380px;
+    }
+    .sw-update-toast-btn {
+      background: #2563eb;
+      color: #fff;
+      border: 0;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sw-update-toast-close {
+      background: transparent;
+      color: #1e3a8a;
+      border: 0;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+
+    /* ---- Boton 'Actualizar' junto al label de cache ---- */
+    .cache-refresh-btn {
+      background: rgba(255,255,255,0.25);
+      border: none;
+      color: #fff;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      cursor: pointer;
+      margin-left: 4px;
+    }
+
+    /* ---- Popup de parada de ruta ---- */
+    .route-popup-title  { font-weight: 700; margin-bottom: 4px; }
+    .route-popup-addr   { font-size: 12px; color: #475569; margin-bottom: 4px; }
+    .route-popup-price  { font-size: 14px; font-weight: 800; color: #16a34a; margin-bottom: 4px; }
+    .route-popup-km     { font-size: 11px; color: #475569; }
+
+    /* ---- Popup de cargador: fuente de datos ---- */
+    .charger-popup-source { font-size: 11px; font-weight: 500; opacity: 0.7; }
+
+    /* ---- Clusters de cargadores (3 buckets por count) ---- */
+    .charger-cluster--sm { width: 36px; height: 36px; }
+    .charger-cluster--md { width: 44px; height: 44px; }
+    .charger-cluster--lg { width: 52px; height: 52px; }
+
+    /* ---- Placeholder del modal comparar cuando solo hay 1 estacion ---- */
+    .compare-col--empty {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #94a3b8;
+      text-align: center;
+    }
+
     /* ---- Overlays del mapa < 768px ---- */
     @media (max-width: 767px) {
       #map-info { display: none; }

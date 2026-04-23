@@ -130,14 +130,6 @@ export function getStyles(nonce: string = ''): string {
       position: absolute; inset: 0;
       width: 100% !important; height: 100% !important;
     }
-    /* Mascara opaca que oculta Africa (tiles rectangulares asoman al sur).
-       Debe coincidir con el gris claro #ddd del Leaflet default en modo
-       claro y con el azul nocturno del body en modo oscuro, para que la
-       mascara sea indistinguible del fondo fuera de los tiles.
-       fill-rule: evenodd permite que el ring del hueco de Canarias
-       funcione independientemente del winding order de los anillos. */
-    .map-africa-mask { fill: #ddd !important; fill-opacity: 1 !important; stroke: none !important; fill-rule: evenodd !important; }
-    body.dark .map-africa-mask { fill: #0f172a !important; }
 
     /* ===== FORM CONTROLS ===== */
     .form-label { display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }

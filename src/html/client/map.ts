@@ -11,15 +11,6 @@ var lastFitBounds = null;
 function initMap() {
   var isDarkStart = document.body.classList.contains('dark');
 
-  // TILE_BOUNDS: extensien geografica para la que se piden tiles al basemap.
-  // Ajustado lo mas pegado posible a Espana — incluye la peninsula, Baleares,
-  // Canarias y Ceuta/Melilla. Marruecos norte y una franja del Atlantico
-  // asoman dentro porque los tiles son rectangulares, pero el area fuera
-  // de este rect sale en gris (nunca se pide).
-  var TILE_BOUNDS = L.latLngBounds(
-    [26.5, -19.0],  // SW — al sur de El Hierro, al oeste del mismo
-    [44.5,   5.5]   // NE — al norte del Cantabrico, al este de Menorca
-  );
   // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Mismo enfoque
   // que con UK al norte: apretar el rectangulo para que el mapa NO se
   // pueda desplazar mas alla de lo justo que permite centrar cada zona.
@@ -81,9 +72,13 @@ function initMap() {
   // bien (applyLibertyLanguage), reemplazamos esta capa por un vector tile
   // layer con text-field parcheado a name:es — entonces obtenemos todos los
   // municipios/calles/POIs de OSM, en castellano cuando existe el tag.
+  // Sin opcion bounds en los tileLayers: los tiles se piden solo para lo
+  // que el viewport cubre, y PAN_BOUNDS ya limita el viewport. Con bounds
+  // aparecian manchas grises entre la peninsula y Canarias porque los
+  // tiles se cortaban antes de donde llegaba el viewport al arrastrar.
   mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
   });
   // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
   // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
@@ -91,7 +86,7 @@ function initMap() {
   // mantenemos coherencia con "todo en castellano".
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true, bounds: TILE_BOUNDS
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
   });
   // Activar capa segun tema actual
   (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);

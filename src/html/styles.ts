@@ -323,7 +323,7 @@ export function getStyles(nonce: string = ''): string {
 
     /* Zoom control — estilo Google Maps: botones mas grandes (40px), sombra
        mas pronunciada, margen desde el borde, y simbolos +/- mas legibles. */
-    .leaflet-control-zoom { margin: 0 10px 24px 0 !important; }
+    .leaflet-control-zoom { margin: 0 10px 6px 0 !important; }
     .leaflet-control-zoom a {
       font-size: 22px !important; font-weight: 400 !important;
       width: 40px !important; height: 40px !important; line-height: 40px !important;
@@ -343,7 +343,7 @@ export function getStyles(nonce: string = ''): string {
        que chocaba visualmente con la leyenda (panel redondeado con shadow)
        justo encima — se veia desconectado. Ahora los 2 son pills del mismo
        estilo separados por 8px. */
-    .leaflet-control-scale { margin: 8px 10px 24px 0 !important; }
+    .leaflet-control-scale { margin: 0 10px 24px 0 !important; }
     .leaflet-control-scale-line {
       border: 1px solid #e2e8f0 !important;
       border-radius: 10px !important;

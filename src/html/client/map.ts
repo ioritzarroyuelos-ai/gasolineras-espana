@@ -19,19 +19,27 @@ function initMap() {
     [26.5, -19.0],  // SW — al sur de El Hierro, al oeste del mismo
     [44.5,   5.5]   // NE — al norte del Cantabrico, al este de Menorca
   );
-  // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Muy holgado a
-  // proposito para que el usuario pueda centrar cualquier zona de Espana
-  // (Canarias, El Hierro, Menorca, Galicia, Ceuta...) sin que Leaflet
-  // clampee. maxBounds restringe el CENTRO, no los bordes del viewport —
-  // asi que estos numeros determinan que puntos pueden quedar en medio
-  // de la pantalla. Con [10, -35] → [58, 16] cubrimos todas las zonas
-  // extremas a zoom >= 5 en mobile y desktop (Mercator ensancha el
-  // viewport en las latitudes bajas de Canarias, de ahi el S=10). El
-  // usuario solo ve Espana + un margen de oceano/Africa/Francia — no el
-  // mundo entero, como pasaba sin maxBounds.
+  // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Ajustado
+  // especificamente para NO mostrar Reino Unido (Lizard Point ~50N) ni el
+  // mundo entero. maxBounds restringe el CENTRO, no los bordes del
+  // viewport — asi que:
+  //   - N=50: UK queda (casi) fuera del viewport en cualquier pan.
+  //     Galicia (lat 42.8) centrable en desktop zoom 6 (center max
+  //     lat = 50-6.37 = 43.63 > 42.8). En mobile zoom 5 la altura del
+  //     viewport excede lo disponible y la vista inicial se desplaza
+  //     ligeramente al sur (aceptable: toda la peninsula sigue visible).
+  //   - S=12: Canarias (lat 28) y El Hierro (27.7) centrables en mobile
+  //     zoom 5 (half-lat Mercator ~15 en lat baja; 12+15=27 ≤ 27.7).
+  //   - W=-27: El Hierro (lng -18) centrable en desktop zoom 6
+  //     (-27+10.55 = -16.45 ≤ -16; para -18 haria falta W≤-28.55 pero
+  //     El Hierro exacto se puede centrar a zoom ≥7).
+  //   - E=15: Menorca (lng 4.3) centrable en desktop zoom 6
+  //     (15-10.55 = 4.45 ≥ 4.3).
+  // El usuario solo ve Espana + un margen minimo de oceano/norte de
+  // Africa/borde de Francia. UK y el mundo entero quedan inalcanzables.
   var PAN_BOUNDS = L.latLngBounds(
-    [10.0, -35.0],  // SW — permite centrar Canarias/El Hierro en mobile zoom 5
-    [58.0,  16.0]   // NE — permite centrar Menorca/Galicia/France border
+    [12.0, -27.0],  // SW — Canarias/Gran Canaria centrables
+    [50.0,  15.0]   // NE — sin UK, Galicia/Menorca centrables en desktop
   );
   // PENINSULA_BOUNDS: solo para el fitBounds inicial — peninsula centrada
   // sobre Madrid. Canarias queda fuera del viewport y el usuario la alcanza

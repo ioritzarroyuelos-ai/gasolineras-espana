@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.13 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde los 8 COF (Colegios Oficiales de Farmaceuticos):
+# v1.14 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde los 11 COF (Colegios Oficiales de Farmaceuticos):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -10,6 +10,9 @@ name: Fetch guardias farmacias snapshot
 #   - Murcia     (guardias.cofrm.com API)   → guardias-murcia.json
 #   - Almería    (cofalmeria.com)           → guardias-almeria.json
 #   - Girona     (cofgi.org)                → guardias-girona.json
+#   - Tarragona  (coft.cat)                 → guardias-tarragona.json
+#   - Córdoba    (cofco.org)                → guardias-cordoba.json
+#   - Cantabria  (cofcantabria.org API)     → guardias-cantabria.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -105,6 +108,27 @@ jobs:
         timeout-minutes: 5
         run: node scripts/fetch-guardias-girona.mjs
 
+      - name: Guardias Tarragona (COF Tarragona)
+        id: tarragona
+        continue-on-error: true
+        # Geocodifica con Nominatim (1 req/s) ~70 farmacias. Estimado ~2-3 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-tarragona.mjs
+
+      - name: Guardias Córdoba (COF Córdoba)
+        id: cordoba
+        continue-on-error: true
+        # Geocodifica con Nominatim (1 req/s) ~45 farmacias. Estimado ~2 min.
+        timeout-minutes: 6
+        run: node scripts/fetch-guardias-cordoba.mjs
+
+      - name: Guardias Cantabria (COF Cantabria API REST)
+        id: cantabria
+        continue-on-error: true
+        # API JSON con GPS — sin geocoding. Estimado <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-cantabria.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -116,6 +140,9 @@ jobs:
           echo "Murcia:    ${{ steps.murcia.outcome }}"
           echo "Almería:   ${{ steps.almeria.outcome }}"
           echo "Girona:    ${{ steps.girona.outcome }}"
+          echo "Tarragona: ${{ steps.tarragona.outcome }}"
+          echo "Córdoba:   ${{ steps.cordoba.outcome }}"
+          echo "Cantabria: ${{ steps.cantabria.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -123,7 +150,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -144,9 +171,12 @@ jobs:
           steps.coruna.outcome == 'failure' &&
           steps.murcia.outcome == 'failure' &&
           steps.almeria.outcome == 'failure' &&
-          steps.girona.outcome == 'failure'
+          steps.girona.outcome == 'failure' &&
+          steps.tarragona.outcome == 'failure' &&
+          steps.cordoba.outcome == 'failure' &&
+          steps.cantabria.outcome == 'failure'
         run: |
-          echo "::error::Los 8 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 11 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

@@ -15,7 +15,7 @@
 // (preserva mtime).
 
 import { execSync } from 'node:child_process'
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -54,11 +54,20 @@ function readShortSha() {
   }
 }
 
-function main() {
-  if (!existsSync(TPL)) {
-    throw new Error('gen-sw: no existe ' + TPL)
+// Lee un fichero si existe; devuelve null si no. Hacemos la comprobacion de
+// existencia con try/catch en vez de existsSync+readFileSync para evitar la
+// race condition TOCTOU (el fichero puede desaparecer entre comprobar y leer).
+function tryRead(path) {
+  try { return readFileSync(path, 'utf8') }
+  catch (err) {
+    if (err && err.code === 'ENOENT') return null
+    throw err
   }
-  const tpl = readFileSync(TPL, 'utf8')
+}
+
+function main() {
+  const tpl = tryRead(TPL)
+  if (tpl === null) throw new Error('gen-sw: no existe ' + TPL)
   if (tpl.indexOf('__BUILD_ID__') === -1) {
     throw new Error('gen-sw: la plantilla no contiene __BUILD_ID__; algo se ha cambiado mal')
   }
@@ -67,7 +76,7 @@ function main() {
   const buildId = version + '-' + sha
   const out = tpl.replaceAll('__BUILD_ID__', buildId)
 
-  const existing = existsSync(DEST) ? readFileSync(DEST, 'utf8') : null
+  const existing = tryRead(DEST)
   if (existing === out) {
     // Sin cambios — preserva mtime.
     return

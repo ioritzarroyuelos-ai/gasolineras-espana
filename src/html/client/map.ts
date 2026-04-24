@@ -287,25 +287,96 @@ async function applyLibertyLanguage() {
     mapLayers.light = libertyLayer;
     if (wasLight) libertyLayer.addTo(map);
 
-    // Liberty trae toda la toponimia en castellano y filtrada a Espana: encima
-    // no queremos SPAIN_LABELS porque duplicaria texto. Quitamos labelLayer solo
-    // si el mapa esta mostrando light AHORA (en dark o satelite seguimos
-    // necesitando labelLayer como unica fuente de etiquetas).
-    if (labelLayer && wasLight) {
+    // ---- VERSION HIBRIDA PARA VISTA SATELITE ----
+    // El usuario quiere que la vista satelite tenga EXACTAMENTE la misma
+    // toponimia que la normal — mismos municipios, calles, barrios, POIs —
+    // la unica diferencia debe ser el fondo (ortofoto en lugar de mapa).
+    //
+    // Para conseguirlo construimos un style derivado del Liberty parcheado
+    // que:
+    //   1) Anade una source raster con Esri World Imagery.
+    //   2) Mete al principio de layers una raster layer que pinta el
+    //      satelite como fondo.
+    //   3) Elimina las layers background/fill/fill-extrusion/line de
+    //      Liberty (las que dibujarian tierra/agua/carreteras encima y
+    //      taparian el satelite). Dejamos SOLO las symbol — que son las
+    //      que llevan el texto (castellano + filtro Espana ya aplicados).
+    //   4) Refuerza el halo blanco de todos los symbol para que el texto
+    //      contraste bien sobre zonas oscuras de la ortofoto (bosques,
+    //      sombras, mar).
+    //
+    // Es un unico L.maplibreGL — no 2 instancias simultaneas (eso no lo
+    // soporta el bridge maplibre-gl-leaflet, lo comprobamos en 2026-04-24).
+    // El swap satelite<->normal intercambia capas pero nunca hay 2 vivas a
+    // la vez, asi que funciona.
+    var satStyle = JSON.parse(JSON.stringify(style));
+    satStyle.sources = satStyle.sources || {};
+    satStyle.sources['esri-satellite'] = {
+      type: 'raster',
+      // Proxeamos via nuestro Worker: Esri no envia CORS y MapLibre GL necesita
+      // leer el body del tile por fetch(). El Worker re-emite con
+      // Access-Control-Allow-Origin:* y Cache-Control largo.
+      tiles: [
+        (location.origin || '') + '/api/tiles/satellite/{z}/{x}/{y}'
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+    };
+    // Reconstruimos layers: raster satelite primero, luego solo las symbol
+    // originales (con halo reforzado para contraste sobre ortofoto).
+    var satLayers = [{
+      id: 'satellite-base',
+      type: 'raster',
+      source: 'esri-satellite',
+      minzoom: 0,
+      maxzoom: 22
+    }];
+    if (Array.isArray(satStyle.layers)) {
+      for (var sj = 0; sj < satStyle.layers.length; sj++) {
+        var L2 = satStyle.layers[sj];
+        if (!L2 || L2.type !== 'symbol') continue;  // solo texto/iconos
+        var patched = JSON.parse(JSON.stringify(L2));
+        patched.paint = patched.paint || {};
+        // Halo blanco grueso + texto oscuro: legible sobre cualquier
+        // terreno de la ortofoto (asfalto, bosque, mar, nieve).
+        patched.paint['text-halo-color'] = 'rgba(255,255,255,0.95)';
+        patched.paint['text-halo-width'] = 2;
+        patched.paint['text-halo-blur'] = 0.5;
+        if (!patched.paint['text-color']) {
+          patched.paint['text-color'] = '#1a1a1a';
+        }
+        satLayers.push(patched);
+      }
+    }
+    satStyle.layers = satLayers;
+    // Quitamos glyphs/sprite no-bloqueantes: no hace falta tocarlos, ya
+    // vienen en el style original y el bridge los reutiliza.
+
+    var satLayer = L.maplibreGL({
+      style: satStyle,
+      minZoom: 4,
+      maxZoom: 20,
+      attribution: 'Tiles &copy; Esri &mdash; &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://openfreemap.org/">OpenFreeMap</a>'
+    });
+    // Swap la referencia mapLayers.satellite (raster Esri original) por el
+    // nuevo vector-hibrido. Si el usuario ya tenia satelite activo, hacemos
+    // el swap en vivo (quitar raster, anadir hibrido).
+    var wasSat = map.hasLayer(mapLayers.satellite);
+    if (wasSat) map.removeLayer(mapLayers.satellite);
+    mapLayers.satellite = satLayer;
+    if (wasSat) satLayer.addTo(map);
+
+    // Liberty trae toda la toponimia en castellano y filtrada a Espana, tanto
+    // en vista normal como en la satelite-hibrida: encima NO queremos
+    // SPAIN_LABELS porque duplicaria texto. Quitamos labelLayer si el mapa
+    // esta en light o satelite ahora; en dark seguimos necesitando
+    // SPAIN_LABELS como unica fuente (dark sigue siendo raster nolabels).
+    if (labelLayer && (wasLight || wasSat)) {
       map.removeLayer(labelLayer);
       labelLayer = null;
       map.off('zoomend', renderLabels);
     }
-
-    // Intentamos crear tambien un OVERLAY solo-symbols del mismo style para
-    // usar sobre el satelite. No funciono: el bridge maplibre-gl-leaflet NO
-    // soporta 2 instancias de L.maplibreGL en el mismo mapa (el segundo
-    // canvas no se sincroniza con el zoom de Leaflet, queda vacio aunque
-    // queryRenderedFeatures devuelva features). Ver debug con preview
-    // 2026-04-24. Solucion: en satelite usamos solo labelLayer
-    // (SPAIN_LABELS, ampliado con capitales provinciales + ciudades grandes
-    // hasta ~120 entradas — no es "toda la toponimia" pero cubre el 95% de
-    // las busquedas comunes en Espana).
   } catch (e) {
     // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
   }
@@ -1609,19 +1680,35 @@ function buildChargersLayer(chargers) {
 })();
 
 // ---- TOGGLE VISTA SATELITE ----
-// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. Sobre
-// el satelite pintamos labelLayer (SPAIN_LABELS) — CCAA + ~120 municipios
-// (capitales de provincia y grandes ciudades) en castellano y filtrado a
-// Espana. Probamos con un 2o MapLibre GL layer (solo capas symbol de Liberty)
-// pero el bridge maplibre-gl-leaflet no soporta 2 instancias de L.maplibreGL
-// en el mismo Leaflet map — el segundo canvas no se sincroniza con el zoom.
+// Alterna entre basemap normal (Liberty vector con toda la toponimia de OSM,
+// en castellano y filtrada a Espana) y basemap satelite HIBRIDO (mismo
+// Liberty vector pero con ortofoto Esri como fondo — misma toponimia,
+// unico cambio el fondo). Ambos comparten el mismo conjunto de datos:
+// municipios, calles, barrios, POIs, ... en castellano.
+//
+// Fallback si Liberty no cargo: mapLayers.satellite sigue siendo un
+// L.TileLayer raster de Esri y usamos SPAIN_LABELS (labelLayer) como unica
+// fuente de etiquetas. Lo detectamos con isSatVector().
+//
+// Probamos con un 2o MapLibre GL layer (solo symbols del style) sobre el
+// raster — no funciono: el bridge maplibre-gl-leaflet no soporta 2
+// instancias de L.maplibreGL en el mismo Leaflet map. La solucion actual
+// usa UNA instancia cuyo style ya integra el raster como base.
+//
 // La preferencia se guarda en localStorage.gs_basemap.
 (function() {
   var btn = document.getElementById('btn-satellite');
   if (!btn) return;
 
-  // Asegura que labelLayer existe y esta en el mapa. Es la unica fuente de
-  // etiquetas sobre el satelite.
+  // true si el satelite activo es vector-hibrido (Liberty lo ha upgradeado);
+  // false si seguimos con el raster Esri crudo.
+  function isSatVector() {
+    return !!(mapLayers.satellite && !(mapLayers.satellite instanceof L.TileLayer));
+  }
+
+  // Asegura que labelLayer existe y esta en el mapa. Solo para fallback
+  // (Liberty no cargo). Con satelite vector-hibrido NO se llama — Liberty
+  // ya trae la toponimia completa.
   function ensureLabelLayer() {
     if (typeof map === 'undefined' || !map) return;
     if (!labelLayer) {
@@ -1634,12 +1721,14 @@ function buildChargersLayer(chargers) {
   }
 
   // Sync inicial: si el localStorage decia 'satellite', el initMap ya habra
-  // activado esa capa. Reflejamos aria-pressed y garantizamos etiquetas.
+  // activado esa capa (raster por ahora; applyLibertyLanguage la upgradea
+  // despues). Reflejamos aria-pressed y si seguimos en fallback-raster
+  // garantizamos SPAIN_LABELS.
   try {
     if (localStorage.getItem('gs_basemap') === 'satellite') {
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');
-      ensureLabelLayer();
+      if (!isSatVector()) ensureLabelLayer();
     }
   } catch (_) {}
 
@@ -1652,7 +1741,7 @@ function buildChargersLayer(chargers) {
       (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
 
       // Reglas de etiquetas al salir del satelite:
-      //   - dark o light-raster (Liberty no aplicado) -> SPAIN_LABELS visible.
+      //   - dark o light-raster (Liberty no aplicado) -> SPAIN_LABELS ON.
       //   - light con Liberty -> SPAIN_LABELS OFF (Liberty trae la toponimia).
       var lightIsRaster = mapLayers.light instanceof L.TileLayer;
       var needLabels = isDark || lightIsRaster;
@@ -1672,8 +1761,18 @@ function buildChargersLayer(chargers) {
       if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
       if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
       mapLayers.satellite.addTo(map);
-      // Pintamos SPAIN_LABELS sobre el satelite (unica fuente de etiquetas).
-      ensureLabelLayer();
+
+      // Si el satelite es vector-hibrido, Liberty ya trae la toponimia
+      // completa en el style: quitamos SPAIN_LABELS para no duplicar. Si
+      // es fallback-raster, necesitamos SPAIN_LABELS como unica fuente.
+      if (isSatVector()) {
+        if (labelLayer && map.hasLayer(labelLayer)) {
+          map.removeLayer(labelLayer);
+        }
+      } else {
+        ensureLabelLayer();
+      }
+
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');

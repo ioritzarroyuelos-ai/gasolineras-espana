@@ -77,6 +77,30 @@ async function fetchCOF(attempts = 5) {
   throw lastErr
 }
 
+// Decode entidades HTML basicas. Orden IMPORTA: `&amp;` se decodifica AL FINAL
+// para evitar double-unescape. Si empezamos por `&amp;` -> `&`, un input tipo
+// `&amp;aacute;` (representacion literal de `&aacute;`) acabaria convertido en
+// `á`, que no es lo que queremos. CodeQL marca el orden inverso como
+// vulnerabilidad, con razon.
+function decodeEntities(s) {
+  if (!s) return ''
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&aacute;/gi, 'á')
+    .replace(/&eacute;/gi, 'é')
+    .replace(/&iacute;/gi, 'í')
+    .replace(/&oacute;/gi, 'ó')
+    .replace(/&uacute;/gi, 'ú')
+    .replace(/&ntilde;/gi, 'ñ')
+    .replace(/&Ntilde;/gi, 'Ñ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+}
+
 function clean(s, max) {
   // Strip tags en bucle hasta estabilizar.
   let t = String(s || '')
@@ -85,11 +109,7 @@ function clean(s, max) {
     if (next === t) break
     t = next
   }
-  // Decode entidades HTML basicas.
-  t = t.replace(/&amp;/g, '&').replace(/&aacute;/gi, 'á').replace(/&eacute;/gi, 'é')
-       .replace(/&iacute;/gi, 'í').replace(/&oacute;/gi, 'ó').replace(/&uacute;/gi, 'ú')
-       .replace(/&ntilde;/gi, 'ñ').replace(/&Ntilde;/gi, 'Ñ').replace(/&nbsp;/g, ' ')
-  t = t.replace(/\s+/g, ' ').trim()
+  t = decodeEntities(t).replace(/\s+/g, ' ').trim()
   return max ? t.slice(0, max) : t
 }
 

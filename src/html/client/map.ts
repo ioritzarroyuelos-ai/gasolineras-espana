@@ -296,6 +296,43 @@ async function applyLibertyLanguage() {
       labelLayer = null;
       map.off('zoomend', renderLabels);
     }
+
+    // ---- Overlay de etiquetas para el SATELITE ----
+    // Usuario quiere toda la toponimia (municipios + calles) tambien en vista
+    // satelite, como en Google Maps. Reusamos el style Liberty ya parcheado
+    // (castellano + filtrado a Espana) y lo clonamos filtrando solo las capas
+    // de type=symbol → quedan solo los textos. El background desaparece y
+    // MapLibre GL renderiza el canvas transparente, dejando ver el satelite
+    // por debajo.
+    //
+    // Guardamos el layer en mapLayers.satelliteLabels; el handler de
+    // btn-satellite lo activa encima de la ortofoto Esri. Si el usuario ya
+    // estaba en satelite cuando Liberty termina, lo activamos aqui mismo
+    // (y quitamos labelLayer porque ya tenemos toponimia completa).
+    try {
+      var labelsStyle = JSON.parse(JSON.stringify(style));
+      if (Array.isArray(labelsStyle.layers)) {
+        labelsStyle.layers = labelsStyle.layers.filter(function(l) {
+          return l && l.type === 'symbol';
+        });
+      }
+      mapLayers.satelliteLabels = L.maplibreGL({
+        style: labelsStyle,
+        minZoom: 4,
+        maxZoom: 20
+        // Sin attribution — ya la lleva la capa base (Esri o Liberty).
+      });
+      if (map.hasLayer(mapLayers.satellite)) {
+        mapLayers.satelliteLabels.addTo(map);
+        if (labelLayer && map.hasLayer(labelLayer)) {
+          map.removeLayer(labelLayer);
+        }
+      }
+    } catch (_) {
+      // Si el clone o el layer fallan, el satelite seguira con labelLayer
+      // (SPAIN_LABELS) como fallback: CCAA + ciudades, menos detalle pero
+      // al menos en castellano y filtrado a Espana.
+    }
   } catch (e) {
     // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
   }
@@ -1507,18 +1544,19 @@ function buildChargersLayer(chargers) {
 })();
 
 // ---- TOGGLE VISTA SATELITE ----
-// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. Las
-// etiquetas en el satelite vienen SIEMPRE de labelLayer (SPAIN_LABELS) para
-// mantener la regla "solo nombres de Espana, en castellano". Tras
-// applyLibertyLanguage, mapLayers.light puede ser el Liberty vector layer
-// (no el raster original), por eso removemos por referencia.
+// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. En
+// el satelite superponemos mapLayers.satelliteLabels (MapLibre GL vector con
+// SOLO las capas symbol del style Liberty parcheado → toponimia completa:
+// municipios, calles, POIs, todo en castellano y filtrado a Espana). Si
+// Liberty aun no ha cargado, usamos labelLayer (SPAIN_LABELS, CCAA+ciudades)
+// como fallback para que el usuario nunca vea satelite "desnudo" sin nombres.
 // La preferencia se guarda en localStorage.gs_basemap.
 (function() {
   var btn = document.getElementById('btn-satellite');
   if (!btn) return;
 
-  // Asegura que labelLayer existe y esta en el mapa. Lo usamos al entrar en
-  // satelite (y al volver a dark/raster) para tener siempre etiquetas propias.
+  // Asegura que labelLayer existe y esta en el mapa. Es el fallback mientras
+  // satelliteLabels (Liberty vector, async) no esta listo.
   function ensureLabelLayer() {
     if (typeof map === 'undefined' || !map) return;
     if (!labelLayer) {
@@ -1530,15 +1568,37 @@ function buildChargersLayer(chargers) {
     renderLabels();
   }
 
+  // Activa el overlay de toponimia sobre el satelite. Prefiere Liberty-symbols
+  // (si ya cargo) y quita labelLayer para no duplicar; si no esta listo, usa
+  // labelLayer como fallback.
+  function showSatelliteLabels() {
+    if (mapLayers.satelliteLabels) {
+      if (!map.hasLayer(mapLayers.satelliteLabels)) {
+        mapLayers.satelliteLabels.addTo(map);
+      }
+      if (labelLayer && map.hasLayer(labelLayer)) {
+        map.removeLayer(labelLayer);
+      }
+    } else {
+      ensureLabelLayer();
+    }
+  }
+
+  // Quita los labels del satelite (al salir de satelite).
+  function hideSatelliteLabels() {
+    if (mapLayers.satelliteLabels && map.hasLayer(mapLayers.satelliteLabels)) {
+      map.removeLayer(mapLayers.satelliteLabels);
+    }
+  }
+
   // Sync inicial: si el localStorage decia 'satellite', el initMap ya habra
-  // activado esa capa. Reflejamos aria-pressed y garantizamos labelLayer
-  // visible (en light con Liberty aplicado, applyLibertyLanguage podria haber
-  // dejado labelLayer en null — lo re-creamos aqui si hace falta).
+  // activado esa capa. Reflejamos aria-pressed y garantizamos overlay de
+  // labels visible (Liberty-symbols si ya cargo, labelLayer como fallback).
   try {
     if (localStorage.getItem('gs_basemap') === 'satellite') {
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');
-      ensureLabelLayer();
+      showSatelliteLabels();
     }
   } catch (_) {}
 
@@ -1547,6 +1607,7 @@ function buildChargersLayer(chargers) {
     if (onSat) {
       // Volver al basemap normal. El tema actual decide light vs dark.
       map.removeLayer(mapLayers.satellite);
+      hideSatelliteLabels();
       var isDark = document.body.classList.contains('dark');
       (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
 
@@ -1571,9 +1632,8 @@ function buildChargersLayer(chargers) {
       if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
       if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
       mapLayers.satellite.addTo(map);
-      // En satelite labelLayer es la UNICA fuente de toponimia — si Liberty
-      // lo habia desactivado (caso light+Liberty), lo re-creamos ahora.
-      ensureLabelLayer();
+      // Superponemos toponimia completa (Liberty-symbols) o fallback.
+      showSatelliteLabels();
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');

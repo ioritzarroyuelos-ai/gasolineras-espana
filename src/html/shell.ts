@@ -700,6 +700,19 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
            desde env.SUPPORT_URL. Si no hay SUPPORT_URL, este slot queda vacio
            (no hay DOM ni espacio reservado — sin layout shift). -->
       ${supportBlockHtml}
+
+      <!-- Ship 25.5: instalar como PWA. Oculto por defecto; JS le quita
+           'hidden' cuando el navegador dispara 'beforeinstallprompt'.
+           Antes vivia como FAB flotante (bottom:140px, z-index:9998) pero
+           tapaba los modales y competia con los controles de zoom. Aqui
+           es discreto, no solapa con nada, y lo ven tanto usuarios
+           anonimos como logueados (el dropdown de usuario solo aparece
+           con sesion). Ver core.ts initPWAUX. -->
+      <div id="install-app-row" class="form-group" hidden>
+        <button type="button" id="btn-install-pwa" class="install-app-btn" aria-label="Instalar aplicacion">
+          <span aria-hidden="true">&#x2B07;</span> Instalar app
+        </button>
+      </div>
     </div>
 
     <!-- STATS -->

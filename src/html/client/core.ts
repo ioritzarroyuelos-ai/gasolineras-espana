@@ -203,22 +203,25 @@ function showToast(msg, type) {
   setTimeout(function(){ if(t.parentNode) t.remove(); }, 5000);
 }
 
-// ---- PWA UX (Ship 14) ----
-// Capta beforeinstallprompt para ofrecer un boton de "Instalar app" discreto
-// en la esquina, y pinta un badge cuando el navegador esta offline. El SW
-// lleva tiempo cacheando snapshots/tiles; esta capa sirve para que el usuario
-// SEPA que sigue funcionando sin red en lugar de creer que la app esta rota.
+// ---- PWA UX (Ship 14, rework Ship 25.5) ----
+// Capta beforeinstallprompt para ofrecer una entrada "Instalar app" discreta
+// en el sidebar (antes era un FAB flotante en la esquina, pero tapaba modales
+// y competia con los controles de zoom). Tambien pinta un badge cuando el
+// navegador esta offline para que el usuario sepa que la app sigue
+// funcionando desde cache en vez de creer que esta rota.
 //
 // No hacemos WebPush, no pedimos permisos — solo UI reactiva.
 (function initPWAUX() {
   // ---- Install prompt ----
   // Chrome/Edge emiten 'beforeinstallprompt' cuando creen que la PWA es
   // instalable (cumple criterios: manifest, icons, HTTPS, engagement). Lo
-  // capturamos, lo guardamos y mostramos un boton flotante. Si el usuario
-  // ya instalo (evento 'appinstalled') o descarto, escondemos para siempre
-  // via localStorage para no volverse pesado.
+  // capturamos, lo guardamos y enseñamos la entrada del sidebar (ya existe
+  // en shell.ts con 'hidden'). Si el usuario ya instalo (evento
+  // 'appinstalled') o descarto, escondemos para siempre via localStorage
+  // para no volverse pesado.
   var DISMISS_KEY = 'installPromptDismissedAt';
   var deferred = null;
+  var wired = false;
 
   function shouldHideInstallButton() {
     try {
@@ -237,20 +240,21 @@ function showToast(msg, type) {
     } catch(_) { return false; }
   }
 
+  function hideInstallRow() {
+    var row = document.getElementById('install-app-row');
+    if (row) row.hidden = true;
+  }
+
   function renderInstallButton() {
-    if (document.getElementById('btn-install-pwa')) return;
+    var row = document.getElementById('install-app-row');
+    var b = document.getElementById('btn-install-pwa');
+    if (!row || !b) return;
     if (shouldHideInstallButton()) return;
-    var b = document.createElement('button');
-    b.id = 'btn-install-pwa';
-    b.type = 'button';
-    b.setAttribute('aria-label', 'Instalar aplicacion');
-    b.textContent = '\u2B07 Instalar app';
-    // Estilos en styles.ts (.pwa-install-btn). Bottom:140px queda ~8px
-    // encima del stack de zoom/escala (bottom:132). Las media queries
-    // mobile tambien viven en styles.ts.
-    b.className = 'pwa-install-btn';
+    row.hidden = false;
+    if (wired) return;
+    wired = true;
     b.addEventListener('click', function() {
-      if (!deferred) { b.remove(); return; }
+      if (!deferred) { hideInstallRow(); return; }
       try {
         deferred.prompt();
         deferred.userChoice.then(function(choice) {
@@ -259,11 +263,10 @@ function showToast(msg, type) {
             try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(_) {}
           }
           deferred = null;
-          b.remove();
-        }).catch(function() { b.remove(); });
-      } catch(_) { b.remove(); }
+          hideInstallRow();
+        }).catch(function() { hideInstallRow(); });
+      } catch(_) { hideInstallRow(); }
     });
-    document.body.appendChild(b);
   }
 
   window.addEventListener('beforeinstallprompt', function(ev) {
@@ -277,8 +280,7 @@ function showToast(msg, type) {
   window.addEventListener('appinstalled', function() {
     try { localStorage.removeItem(DISMISS_KEY); } catch(_) {}
     deferred = null;
-    var b = document.getElementById('btn-install-pwa');
-    if (b) b.remove();
+    hideInstallRow();
     try { showToast('App instalada correctamente', 'success'); } catch(_) {}
   });
 

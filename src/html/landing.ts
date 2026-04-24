@@ -20,7 +20,7 @@
 //
 // Tiles:
 //   1. Gasolineras — activo, link a /gasolineras/.
-//   2. Farmacias — próximamente (Fase 1 del roadmap).
+//   2. Farmacias — activo, link a /farmacias/ (MVP nacional con OSM).
 //   3. ITV — próximamente (Fase 3 del roadmap).
 //
 // SEO:
@@ -86,6 +86,7 @@ export function buildLandingPage(
               '@type': 'Service',
               name: 'Farmacias España',
               description: 'Farmacias cercanas con horarios y farmacias de guardia por semana.',
+              url: origin + '/farmacias/',
               serviceType: 'Localización de farmacias y guardias',
               areaServed: { '@type': 'Country', name: 'España' },
             },
@@ -342,12 +343,12 @@ export function buildLandingPage(
         <span class="badge badge-active">Disponible</span>
       </a>
 
-      <div class="tile tile-coming" role="group" aria-label="Farmacias (próximamente)">
+      <a href="/farmacias/" class="tile tile-active" aria-label="Abrir Farmacias en España">
         <div class="tile-icon" aria-hidden="true">&#x1F48A;</div>
         <h2>Farmacias</h2>
-        <p>Farmacias cercanas de tu municipio con horarios, teléfono y distancia. Destacadas las farmacias de guardia de la semana.</p>
-        <span class="badge badge-coming">Próximamente</span>
-      </div>
+        <p>Farmacias cercanas con dirección, teléfono, horario y distancia GPS. Usa tu ubicación para ordenarlas por proximidad.</p>
+        <span class="badge badge-active">Disponible</span>
+      </a>
 
       <div class="tile tile-coming" role="group" aria-label="ITV (próximamente)">
         <div class="tile-icon" aria-hidden="true">&#x1F527;</div>
@@ -361,6 +362,7 @@ export function buildLandingPage(
   <footer>
     <div class="foot-links">
       <a href="/gasolineras/">Gasolineras</a>·
+      <a href="/farmacias/">Farmacias</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>
     </div>

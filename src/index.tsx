@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
+import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import {
   verifyGoogleIdToken,
   signSessionJWT,
@@ -800,6 +801,22 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
     supportUrl: c.env.SUPPORT_URL,
     googleClientId: c.env.GOOGLE_CLIENT_ID,
   }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+})
+
+// ---- Farmacias (Fase 1 MVP nacional) ----
+// `/farmacias` sin barra -> 301 a `/farmacias/` (misma canonicalizacion que
+// hacemos con /gasolineras para evitar duplicado SEO).
+app.get('/farmacias', c => {
+  const url = new URL(c.req.url)
+  return c.redirect('/farmacias/' + (url.search || ''), 301)
+})
+
+// `/farmacias/` — MVP nacional con snapshot OSM de ~18k farmacias.
+// Pagina autocontenida (HTML+CSS+JS inline con nonce). Datos via fetch a
+// /data/farmacias.json, servido por el binding ASSETS de Pages con ETag.
+app.get('/farmacias/', c => {
+  const nonce = genNonce()
+  return new Response(buildFarmaciasPage(nonce, c.req.url), { headers: farmaciasHeaders(nonce) })
 })
 
 // ---- SEO: robots.txt ----

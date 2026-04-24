@@ -1,13 +1,13 @@
 // Landing del portal CercaYa en `/`. Tests sencillos — es HTML estatico sin
-// JS. Comprobamos: renderiza los 3 tiles, solo Gasolineras es clickable, los
-// shortcuts PWA viejos (?action=) siguen redirigiendo al mapa, sin axe
-// violations y sin fetch de red raros.
+// JS. Comprobamos: renderiza los 3 tiles, Gasolineras + Farmacias son
+// clickables (ITV sigue proximamente), los shortcuts PWA viejos (?action=)
+// siguen redirigiendo al mapa, sin axe violations y sin fetch de red raros.
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 test.describe('Landing CercaYa (/)', () => {
-  test('renderiza los 3 tiles (Gasolineras activo, Farmacias e ITV próximamente)', async ({ page }) => {
+  test('renderiza los 3 tiles (Gasolineras y Farmacias activos, ITV próximamente)', async ({ page }) => {
     await page.goto('/')
     await expect(page).toHaveTitle(/CercaYa/i)
 
@@ -24,15 +24,26 @@ test.describe('Landing CercaYa (/)', () => {
     await expect(gasTile).toBeVisible()
     await expect(gasTile).toHaveAttribute('href', '/gasolineras/')
 
-    // Farmacias e ITV: marcados como "Próximamente" — no son <a> clickables.
+    // Farmacias tile tiene link a /farmacias/.
+    const farmTile = page.getByRole('link', { name: /abrir farmacias/i })
+    await expect(farmTile).toBeVisible()
+    await expect(farmTile).toHaveAttribute('href', '/farmacias/')
+
+    // Solo ITV queda "Próximamente" — 1 solo badge-coming.
     const comingBadges = page.locator('.badge-coming')
-    await expect(comingBadges).toHaveCount(2)
+    await expect(comingBadges).toHaveCount(1)
   })
 
   test('clicar el tile Gasolineras navega a /gasolineras/', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('link', { name: /abrir gasolineras/i }).click()
     await expect(page).toHaveURL(/\/gasolineras\/?$/)
+  })
+
+  test('clicar el tile Farmacias navega a /farmacias/', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('link', { name: /abrir farmacias/i }).click()
+    await expect(page).toHaveURL(/\/farmacias\/?$/)
   })
 
   test('shortcut PWA viejo (/?action=cheapest) redirige a /gasolineras/?action=cheapest', async ({ page }) => {

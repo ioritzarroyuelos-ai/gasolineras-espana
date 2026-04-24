@@ -88,8 +88,31 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
   });
-  // Activar capa segun tema actual
-  (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
+  // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key) + overlay
+  // de etiquetas transparentes de CARTO. Mismo truco que Google Maps "Satelite
+  // con etiquetas": el usuario ve la foto aerea pero con nombres de calles y
+  // municipios encima. Un LayerGroup se comporta como una sola capa en los
+  // toggles. maxZoom de Esri es 19 (no 20 como CARTO) — limite del proveedor.
+  var satBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    maxZoom: 19, minZoom: 5, noWrap: true
+  });
+  var satLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
+  });
+  mapLayers.satellite = L.layerGroup([satBase, satLabels]);
+
+  // Activar capa segun tema actual. Si el usuario tenia preferencia "satellite"
+  // guardada (desde sesion anterior), la restauramos aqui — asi no parpadea
+  // entre raster y satelite al arrancar.
+  var savedBasemap = null;
+  try { savedBasemap = localStorage.getItem('gs_basemap'); } catch(_) {}
+  if (savedBasemap === 'satellite') {
+    mapLayers.satellite.addTo(map);
+  } else {
+    (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
+  }
 
   // Controles: zoom y escala ambos en abajo-derecha, apilados. Leaflet inserta
   // controles bottom-* ANTES del primer hijo (insertBefore), asi que el orden
@@ -1475,6 +1498,46 @@ function buildChargersLayer(chargers) {
       chargersVisible = true;
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Ocultar puntos de recarga electrica');
+    }
+  });
+})();
+
+// ---- TOGGLE VISTA SATELITE ----
+// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri +
+// etiquetas CARTO. La preferencia se guarda en localStorage (gs_basemap)
+// para restaurarla en proximas sesiones. Importante: tras applyLibertyLanguage,
+// mapLayers.light puede ser el Liberty vector layer (no el raster original),
+// asi que removemos por referencia sin asumir el tipo concreto.
+(function() {
+  var btn = document.getElementById('btn-satellite');
+  if (!btn) return;
+
+  // Sync inicial: si el localStorage decia 'satellite', el initMap ya habra
+  // activado esa capa — solo nos queda reflejarlo en aria-pressed.
+  try {
+    if (localStorage.getItem('gs_basemap') === 'satellite') {
+      btn.setAttribute('aria-pressed', 'true');
+    }
+  } catch (_) {}
+
+  btn.addEventListener('click', function() {
+    var onSat = map.hasLayer(mapLayers.satellite);
+    if (onSat) {
+      // Volver al basemap normal. El tema actual decide light vs dark.
+      map.removeLayer(mapLayers.satellite);
+      var isDark = document.body.classList.contains('dark');
+      (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
+      try { localStorage.setItem('gs_basemap', 'map'); } catch (_) {}
+      btn.setAttribute('aria-pressed', 'false');
+      btn.setAttribute('aria-label', 'Ver mapa en vista satelite');
+    } else {
+      // Cambiar a satelite — quitamos ambos basemaps por si acaso.
+      if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
+      if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
+      mapLayers.satellite.addTo(map);
+      try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
+      btn.setAttribute('aria-pressed', 'true');
+      btn.setAttribute('aria-label', 'Volver al mapa normal');
     }
   });
 })();

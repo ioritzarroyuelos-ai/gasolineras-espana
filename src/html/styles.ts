@@ -1229,6 +1229,23 @@ export function getStyles(nonce: string = ''): string {
       background: #2563eb; color: #fff; border-color: #1e40af;
     }
 
+    /* Tercer boton flotante (#btn-satellite) apilado debajo de chargers.
+       132px + 42px = 174px. Color activo verde oscuro (#166534) para
+       distinguir de los otros dos (rojo heatmap, azul chargers): asi el
+       usuario ve de un vistazo cuantos overlays tiene encendidos y de
+       que tipo. */
+    .map-floating-btn--satellite {
+      top: 174px;
+    }
+    .map-floating-btn--satellite:hover { color: #166534; }
+    .map-floating-btn--satellite[aria-pressed="true"] {
+      background: #166534; color: #fff; border-color: #14532d;
+    }
+    body.dark .map-floating-btn--satellite:hover { color: #86efac; }
+    body.dark .map-floating-btn--satellite[aria-pressed="true"] {
+      background: #166534; color: #fff; border-color: #052e16;
+    }
+
     /* Ship 25.5: pin de punto de recarga electrica. Circulo azul con icono de
        rayo blanco. Tamaño compacto (26px) para que no compita visualmente con
        los pins-precio de gasolineras — mismas convenciones de sombra/borde. */

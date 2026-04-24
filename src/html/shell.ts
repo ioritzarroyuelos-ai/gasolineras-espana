@@ -776,6 +776,20 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       <i class="fa-solid fa-bolt" aria-hidden="true"></i>
     </button>
 
+    <!-- Toggle basemap satelite: alterna entre mapa (Voyager/Liberty) y
+         ortofoto (Esri World Imagery + etiquetas CARTO). Recuerda la
+         preferencia en localStorage (gs_basemap). Icono globo con puntos
+         para evocar "vista aerea/satelite" siguiendo la convencion de
+         Google Maps. -->
+    <button id="btn-satellite"
+            class="map-floating-btn map-floating-btn--satellite"
+            type="button"
+            aria-pressed="false"
+            aria-label="Ver mapa en vista satélite"
+            title="Vista satélite (ortofoto + etiquetas)">
+      <i class="fa-solid fa-satellite" aria-hidden="true"></i>
+    </button>
+
     <!-- Banner "modo ruta" flotante sobre el mapa. Se activa al planificar
          una ruta y se oculta al cerrar el modo. -->
     <div id="route-mode-bar" class="route-mode-bar" role="status" aria-live="polite">

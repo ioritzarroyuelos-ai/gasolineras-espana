@@ -1509,13 +1509,24 @@ function updateMonthlyWidget() {
     if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
   });
 
-  // Auto-abrir la primera vez
-  if (!getProfile() && !localStorage.getItem('gs_onboarded')) {
+  // Auto-apertura del onboarding: solo cuando el usuario ya ha iniciado sesion
+  // y todavia no tiene perfil guardado. Visitas anonimas NO ven este modal —
+  // era intrusivo para quien solo entra a consultar precios sin querer
+  // configurar nada. El bloque de auth (mas abajo en este archivo) llama a
+  // window.__maybeOpenOnboarding() dentro de setLogged() cuando /api/me
+  // devuelve usuario valido (boot con sesion activa o callback post-login).
+  window.__maybeOpenOnboarding = function() {
+    if (getProfile()) return;
+    if (localStorage.getItem('gs_onboarded_v2')) return;
     setTimeout(function() {
       openModal();
-      try { localStorage.setItem('gs_onboarded', '1'); } catch(e) {}
+      try { localStorage.setItem('gs_onboarded_v2', '1'); } catch(e) {}
     }, 900);
-  } else if (getProfile()) {
+  };
+
+  // Si ya hay perfil guardado, sincroniza combustible + deposito con el
+  // sidebar al cargar (independiente del estado de sesion).
+  if (getProfile()) {
     var p = getProfile();
     if (p.fuel) {
       // Espera a que el select este listo
@@ -1916,6 +1927,11 @@ function showUpdateToast(newSW) {
       if (userNameEl) userNameEl.textContent = user.name || user.email || '';
       if (ddName)     ddName.textContent     = user.name  || '';
       if (ddEmail)    ddEmail.textContent    = user.email || '';
+      // Onboarding: solo para usuarios logueados sin perfil. La funcion
+      // comprueba internamente que no se haya mostrado ya (gs_onboarded_v2).
+      if (typeof window.__maybeOpenOnboarding === 'function') {
+        window.__maybeOpenOnboarding();
+      }
     } else {
       userMenu.hidden = true;
       btnLogin.hidden = false;

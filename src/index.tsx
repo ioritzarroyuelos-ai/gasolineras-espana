@@ -319,7 +319,7 @@ const ALLOWED_ORIGINS: ReadonlySet<string> = new Set<string>()
 
 // Resuelve el hostname del request. Priorizamos el header Host (Cloudflare lo
 // inyecta siempre) y caemos a parsear c.req.url. El resultado se usa para
-// construir URLs canonicas (security.txt, robots, sitemap) sin hardcodear el
+// construir URLs canonicas (robots, sitemap) sin hardcodear el
 // dominio de produccion.
 function resolveHost(c: { req: { header: (h: string) => string | undefined; url: string } }): string {
   const h = c.req.header('host')
@@ -774,34 +774,6 @@ app.get('/gasolineras/:provinciaSlug/:municipioSlug', async c => {
     googleClientId: c.env.GOOGLE_CLIENT_ID,
   }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
 })
-
-// ---- security.txt (RFC 9116) ----
-// Canal publico estandar para que investigadores de seguridad sepan donde
-// reportar vulnerabilidades de forma privada. Se sirve en dos rutas (con y
-// sin .well-known) por compatibilidad con scanners antiguos.
-function buildSecurityTxt(host: string, scheme: string): string {
-  const base = scheme + '://' + host
-  const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-  return [
-    '# Canal privado de reporte de vulnerabilidades',
-    'Contact: https://github.com/ioritzarroyuelos-ai/gasolineras-espana/security/advisories/new',
-    'Contact: https://github.com/ioritzarroyuelos-ai/gasolineras-espana/issues',
-    'Expires: ' + expires,
-    'Preferred-Languages: es, en',
-    'Policy: ' + base + '/privacidad',
-    'Canonical: ' + base + '/.well-known/security.txt',
-    '',
-  ].join('\n')
-}
-app.get('/.well-known/security.txt', c => {
-  const host   = resolveHost(c)
-  const scheme = resolveScheme(c)
-  return c.text(buildSecurityTxt(host, scheme), 200, {
-    'Content-Type': 'text/plain; charset=utf-8',
-    'Cache-Control': 'public, max-age=86400',
-  })
-})
-app.get('/security.txt', c => c.redirect('/.well-known/security.txt', 301))
 
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {

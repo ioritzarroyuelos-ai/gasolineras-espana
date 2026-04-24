@@ -33,14 +33,6 @@ test.describe('Páginas legales', () => {
     expect(res.status()).toBe(404)
   })
 
-  test('/.well-known/security.txt sirve contenido RFC 9116', async ({ page }) => {
-    const res = await page.request.get('/.well-known/security.txt')
-    expect(res.status()).toBe(200)
-    const body = await res.text()
-    expect(body).toMatch(/^Contact:/m)
-    expect(body).toMatch(/^Expires:/m)
-  })
-
   test('/api/health devuelve 200 o 503 con JSON valido', async ({ page }) => {
     const res = await page.request.get('/api/health')
     // 200 si el snapshot esta fresco, 503 si lleva >24h. Ambos son respuestas

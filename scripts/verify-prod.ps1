@@ -245,17 +245,9 @@ $r = Get-Resp -Url "$BaseUrl/api/geocode/reverse?lat=999&lon=0" # lat fuera de r
 if ($r -and $r.StatusCode -eq 400) { Ok "lat fuera de rango rechazada con 400" }
 else { Bad "lat invalida devolvio $($r.StatusCode)" }
 
-# ---- 9. RFC 9116 security.txt ----
+# ---- 9. robots.txt y sitemap ----
 Write-Host ""
-Write-Host "[9] security.txt (RFC 9116) y robots.txt" -ForegroundColor Cyan
-$r = Get-Resp -Url "$BaseUrl/.well-known/security.txt"
-if ($r -and $r.StatusCode -eq 200 -and $r.Content -match 'Contact:') { Ok ".well-known/security.txt servido con Contact:" }
-else { Bad ".well-known/security.txt status $($r.StatusCode)" }
-
-$r = Get-Resp -Url "$BaseUrl/security.txt" -MaxRedir 0
-if ($r -and ($r.StatusCode -eq 301 -or $r.StatusCode -eq 302 -or $r.StatusCode -eq 308)) { Ok "/security.txt redirige ($($r.StatusCode)) a .well-known" }
-else { Warn "/security.txt no redirige (status $($r.StatusCode))" }
-
+Write-Host "[9] robots.txt y sitemap" -ForegroundColor Cyan
 $r = Get-Resp -Url "$BaseUrl/robots.txt"
 if ($r -and $r.StatusCode -eq 200 -and $r.Content -match 'Sitemap:') { Ok "robots.txt con Sitemap:" }
 else { Bad "robots.txt status $($r.StatusCode)" }

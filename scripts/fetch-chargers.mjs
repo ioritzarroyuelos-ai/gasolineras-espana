@@ -61,7 +61,7 @@ const OVERPASS_ENDPOINTS = [
 // rechaza requests anonimos o con UA sospechoso (curl/wget). Poner un nombre
 // claro asegura que si hicieramos algo mal, el admin nos contacta en vez de
 // bloquearnos.
-const USER_AGENT = 'gasolineras-espana/1.8 (+https://webapp-3ft.pages.dev; github.com/ioritzarroyuelos-ai/gasolineras-espana)'
+const USER_AGENT = 'gasolineras-espana/1.8 (+https://webapp-3ft.pages.dev)'
 
 async function fetchOverpass(attempts = 5) {
   let lastErr

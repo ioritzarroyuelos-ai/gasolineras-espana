@@ -1,0 +1,45 @@
+name: vendor-check — chequea versiones nuevas de libs del mapa
+
+# Corre los lunes a las 09:00 UTC (10:00 invierno / 11:00 verano peninsular).
+# Compara las versiones instaladas de las librerias del mapa (leaflet,
+# MarkerCluster, leaflet.heat, MapLibre GL, bridge) contra npm y avisa por
+# Telegram si alguna tiene release nueva. Silencioso si todo esta al dia
+# (a diferencia de error-monitor, aqui no queremos ruido semanal sin motivo).
+#
+# Secrets requeridos:
+#   TELEGRAM_BOT_TOKEN     token del bot (@BotFather)
+#   TELEGRAM_CHAT_ID       chat destino (obtener con @userinfobot)
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch: {}
+
+concurrency:
+  group: vendor-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            scripts/check-map-vendor-updates.sh
+            public/static/vendor/map/manifest.json
+          sparse-checkout-cone-mode: false
+
+      - name: Check & notify
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "::error::TELEGRAM_BOT_TOKEN o TELEGRAM_CHAT_ID no configurados"; exit 1
+          fi
+          chmod +x scripts/check-map-vendor-updates.sh
+          bash scripts/check-map-vendor-updates.sh

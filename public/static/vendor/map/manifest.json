@@ -1,0 +1,26 @@
+{
+  "packages": {
+    "leaflet": "1.9.4",
+    "leaflet.markercluster": "1.4.1",
+    "leaflet.heat": "0.2.0",
+    "maplibre-gl": "4.7.1",
+    "@maplibre/maplibre-gl-leaflet": "0.0.22"
+  },
+  "files": {
+    "leaflet.heat/leaflet-heat.js": "sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0",
+    "leaflet.markercluster/MarkerCluster.Default.css": "sha384-5kMSQJ6S4Qj5i09mtMNrWpSi8iXw230pKU76xTmrpezGnNJQzj0NzXjQLLg+jE7k",
+    "leaflet.markercluster/MarkerCluster.css": "sha384-lPzjPsFQL6te2x+VxmV6q1DpRxpRk0tmnl2cpwAO5y04ESyc752tnEWPKDfl1olr",
+    "leaflet.markercluster/leaflet.markercluster.js": "sha384-RLIyj5q1b5XJTn0tqUhucRZe40nFTocRP91R/NkRJHwAe4XxnTV77FXy/vGLiec2",
+    "leaflet/images/layers-2x.png": "sha384-+F2ZWK/HTpkV9kN2HnMGCQOTM/cnQJLs770FLOeHznwVWRfDESI8z4JwcGYmy2Au",
+    "leaflet/images/layers.png": "sha384-80x85ZS+G189o0xL8E8D7BnfhuNss6EwUPHzG7e+qByRD2xnpxikZ6UQU4Re5nNy",
+    "leaflet/images/marker-icon-2x.png": "sha384-bDEa1RhAAKIr/VQnMZ7gUhhXwmKYB4V0g8AsxOvCEPwGxfHCUEzAEMAEEzkjuxiA",
+    "leaflet/images/marker-icon.png": "sha384-wg83fCOXjBtqzFAWhTL9Sd9vmLUNhfEEzfmNUX9zwv2igKlz/YQbdapF4ObdxF+R",
+    "leaflet/images/marker-shadow.png": "sha384-dB8ivfvPGb1MSIzX8oWTakCxmq+VwqP/QL1TX4jT4INR3pM5T4FgF3Gx4mN3NTMq",
+    "leaflet/leaflet.css": "sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H",
+    "leaflet/leaflet.js": "sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH",
+    "maplibre-gl-leaflet/leaflet-maplibre-gl.js": "sha384-4CB9Vtol9LN6lGgBCvmPLbUEZwilrqIvPieSRurgAXAB7FVJaLS9n8WyAIA5wjQ+",
+    "maplibre-gl/maplibre-gl.css": "sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V",
+    "maplibre-gl/maplibre-gl.js": "sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
+  },
+  "updated_at": "2026-04-24T06:55:13.143Z"
+}

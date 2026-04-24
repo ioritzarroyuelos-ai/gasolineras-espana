@@ -6,7 +6,7 @@
 //   las farmacias de guardia de esa misma semana, que pueda seleccionar
 //   esa farmacia y le diga en un gps a cuanto esta de la farmacia."
 //
-// En esta PR (MVP Fase 1 - nacional):
+// Funcionalidad actual:
 //   - Snapshot nacional de OSM (~18k farmacias) con name/addr/phone/hours.
 //   - Geolocalizacion opcional: si el usuario acepta, ordenamos por
 //     distancia Haversine y centramos el mapa en su posicion.
@@ -17,10 +17,15 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
-// Lo que NO hay en este PR y entra en la Fase 2 (guardias):
-//   - Destacar farmacias de guardia "esta semana". Requiere scrapers
-//     dedicados por COF autonomico (Madrid + Euskadi primero) y una
-//     estructura de datos guardias-<territorio>.json aparte.
+// Guardias (Fase 2 — Madrid + Euskadi):
+//   - 4 ficheros /data/guardias-<territorio>.json cargados en paralelo
+//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava.
+//   - Si una farmacia OSM coincide (~100m) con una de guardia, aparece
+//     con badge "DE GUARDIA" + horario en card y popup.
+//   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
+//     indexa, o porque el matching de Gipuzkoa fue impreciso) se pintan
+//     en el mapa como marker dorado extra, sin entrar en la lista.
+//   - Fase 3 anyadira resto de provincias segun disponibilidad de los COF.
 //
 // Arquitectura:
 //   - HTML + CSS + JS inline con nonce (CSP strict compatible con el
@@ -357,6 +362,46 @@ export function buildFarmaciasPage(
     @media (prefers-color-scheme: dark) {
       .card-dist { color: var(--c-brand); }
     }
+    /* Badge DE GUARDIA — rojo oscuro sobre amarillo palido, contraste WCAG AA.
+       Solo aparece cuando la farmacia tiene match en los snapshots de guardia. */
+    .badge-guardia {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #fef3c7;
+      color: #78350f;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    @media (prefers-color-scheme: dark) {
+      .badge-guardia { background: #422006; color: #fcd34d; }
+    }
+    .guardia-horario {
+      color: #78350f;
+      font-size: 12px;
+    }
+    @media (prefers-color-scheme: dark) {
+      .guardia-horario { color: #fcd34d; }
+    }
+    /* Marker de guardia sin match OSM: dorado con anillo rojo. */
+    .guardia-pin-only {
+      background: #f59e0b;
+      color: #78350f;
+      font-weight: 800;
+      font-size: 14px;
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid #b45309;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    }
     .empty-state {
       padding: 40px 24px;
       text-align: center;
@@ -466,6 +511,17 @@ export function buildFarmaciasPage(
       map: null,
       cluster: null,
       userMarker: null,
+      // Guardias agregadas de los 4 COF (Madrid + Euskadi). Cada una sigue
+      // el schema [lat, lng, direccion, poblacion, telefono, cp,
+      // horarioGuardia, horarioGuardiaDesc]. Se carga en paralelo a
+      // farmacias.json — si algun fetch falla, seguimos sin ese territorio.
+      guardias: [],
+      // Mapa "bucketKey -> guardia" para lookup O(1) al matchear una
+      // farmacia OSM con una guardia. Clave = lat(4dec)_lng(4dec) que agrupa
+      // en celdas de ~11m — suficientemente fino para no falsos matches y
+      // lo bastante amplio para tolerar diferencias de coord de 1-2 decimales.
+      guardiaByBucket: null,
+      guardiaLayer: null, // L.layerGroup con markers de guardias sin match OSM
     };
 
     var el = function(id){ return document.getElementById(id); };
@@ -496,6 +552,30 @@ export function buildFarmaciasPage(
     function fmtDist(km){
       if (km < 1) return Math.round(km * 1000) + ' m';
       return km.toFixed(1).replace('.', ',') + ' km';
+    }
+
+    // Clave de bucket para matcheo guardia<->OSM. 4 decimales = ~11m,
+    // suficientemente permisivo para absorber el error de geocoding (~20m
+    // en zonas urbanas) y estricto para no matchear la farmacia de al lado.
+    // En la practica redondeamos a 3 decimales (~110m) tambien para tener
+    // un segundo nivel mas tolerante — algunas guardias de Gipuzkoa vienen
+    // de Nominatim con precision variable.
+    function bucketKeyFine(lat, lng){
+      return lat.toFixed(4) + '_' + lng.toFixed(4);
+    }
+    function bucketKeyCoarse(lat, lng){
+      return lat.toFixed(3) + '_' + lng.toFixed(3);
+    }
+
+    // Devuelve la entrada de guardia asociada a una farmacia OSM, o null.
+    // Intenta primero bucket fino (<11m) y luego grueso (<110m). La grueso
+    // es para el caso "misma farmacia pero con una coord algo desplazada".
+    function findGuardia(lat, lng){
+      if (!state.guardiaByBucket) return null;
+      var fine = state.guardiaByBucket.fine.get(bucketKeyFine(lat, lng));
+      if (fine) return fine;
+      var coarse = state.guardiaByBucket.coarse.get(bucketKeyCoarse(lat, lng));
+      return coarse || null;
     }
 
     // Sanitiza texto para innerHTML. Mejor que atar el DOM a cadenas crudas.
@@ -565,19 +645,27 @@ export function buildFarmaciasPage(
       for (var i = 0; i < state.filtered.length; i++){
         var row = state.filtered[i];
         var f = state.all[row.idx];
+        var g = findGuardia(f[0], f[1]); // guardia asociada o null
         var li = document.createElement('li');
-        li.className = 'card';
+        li.className = 'card' + (g ? ' card-guardia' : '');
         li.setAttribute('data-idx', String(row.idx));
+        if (g) li.setAttribute('data-guardia', 'true');
         // Stretched-link: el boton envuelve nombre+direccion y su ::before
         // cubre toda la tarjeta. Asi todo el card es clickable sin que el
         // <li> sea focusable-ambiguo.
         var btnHtml =
-          '<button type="button" class="card-select" data-idx="' + row.idx + '" aria-label="Ver ' + esc(f[2]) + ' en el mapa">' +
+          '<button type="button" class="card-select" data-idx="' + row.idx + '" aria-label="Ver ' + esc(f[2]) + ' en el mapa' + (g ? ' (de guardia)' : '') + '">' +
             '<p class="card-name">' + esc(f[2]) + '</p>' +
             (f[3] ? '<p class="card-addr">' + esc(f[3]) + '</p>' : '') +
           '</button>';
         var meta = [];
         meta.push('<span class="card-dist">' + esc(fmtDist(row.dist)) + '</span>');
+        if (g) {
+          // Badge + horario de guardia. El horario puede venir como "08:00 - 22:00"
+          // o como null/vacio — no lo ocultamos si hay, aunque sea corto.
+          meta.push('<span class="badge-guardia">De guardia</span>');
+          if (g[6]) meta.push('<span class="guardia-horario">&#x1F550; ' + esc(g[6]) + '</span>');
+        }
         if (f[4]) meta.push('<a href="tel:' + esc(f[4].replace(/\\s+/g,'')) + '">' + esc(f[4]) + '</a>');
         if (f[5]) meta.push('<span>' + esc(f[5].length > 40 ? f[5].slice(0,40) + '…' : f[5]) + '</span>');
         li.innerHTML = btnHtml + '<div class="card-meta">' + meta.join('') + '</div>';
@@ -683,7 +771,17 @@ export function buildFarmaciasPage(
             var phoneLink = data[4] ? '<a href="tel:' + esc(data[4].replace(/\\s+/g,'')) + '" class="secondary">&#x260E; ' + esc(data[4]) + '</a>' : '';
             var hours = data[5] ? '<p style="margin:4px 0 0;font-size:12px;">&#x1F550; ' + esc(data[5]) + '</p>' : '';
             var dirLink = '<a href="' + esc(mapsLink(data[0], data[1], data[2])) + '" target="_blank" rel="noopener">Cómo llegar</a>';
+            // Si esta farmacia esta de guardia, lo mostramos arriba del todo
+            // con el horario (si lo hay) y la zona/barrio (campo 7 de guardias).
+            var g = findGuardia(data[0], data[1]);
+            var gHtml = '';
+            if (g) {
+              var horario = g[6] ? ' &middot; &#x1F550; ' + esc(g[6]) : '';
+              var zona = g[7] ? '<p style="margin:2px 0 0;font-size:11px;color:#78350f;">' + esc(g[7]) + '</p>' : '';
+              gHtml = '<p style="margin:0 0 6px;"><span class="badge-guardia">De guardia</span>' + horario + '</p>' + zona;
+            }
             return (
+              gHtml +
               '<p class="popup-name">' + name + '</p>' + addr + hours +
               '<div class="popup-actions">' + dirLink + phoneLink + '</div>'
             );
@@ -696,19 +794,107 @@ export function buildFarmaciasPage(
       state.map.on('moveend', function(){
         if (!state.user) refilter();
       });
+
+      // Capa extra con las guardias que NO tienen match en OSM (es decir, no
+      // hay farmacia OSM cerca que les corresponda). Pintamos un marker
+      // dorado "G" para que el usuario las vea igualmente aunque no esten
+      // en la lista. Son pocas (~50-150 en total) asi que sin clustering.
+      addGuardiaLayer();
     }
 
-    // Cargar el JSON y arrancar
-    fetch('/data/farmacias.json', { cache: 'default' })
-      .then(function(r){
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(data){
-        if (!data || !Array.isArray(data.farmacias)){
+    function addGuardiaLayer(){
+      if (!state.map || state.guardias.length === 0) return;
+      // Si ya existe, la recreamos desde cero.
+      if (state.guardiaLayer) state.map.removeLayer(state.guardiaLayer);
+      var osmKeys = new Set();
+      for (var i = 0; i < state.all.length; i++){
+        var f = state.all[i];
+        osmKeys.add(bucketKeyFine(f[0], f[1]));
+        osmKeys.add(bucketKeyCoarse(f[0], f[1]));
+      }
+      var gIcon = L.divIcon({
+        className: 'guardia-pin-wrap',
+        html: '<div class="guardia-pin-only" aria-label="Farmacia de guardia">G</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+      });
+      var group = L.layerGroup();
+      var added = 0;
+      for (var j = 0; j < state.guardias.length; j++){
+        var g = state.guardias[j];
+        var matched = osmKeys.has(bucketKeyFine(g[0], g[1])) || osmKeys.has(bucketKeyCoarse(g[0], g[1]));
+        if (matched) continue; // esta guardia se muestra via la farmacia OSM
+        var gm = L.marker([g[0], g[1]], { icon: gIcon });
+        (function(mk, data){
+          mk.bindPopup(function(){
+            var horario = data[6] ? '<p style="margin:4px 0 0;font-size:12px;">&#x1F550; ' + esc(data[6]) + '</p>' : '';
+            var zona = data[7] ? '<p style="margin:2px 0 0;font-size:11px;color:#78350f;">' + esc(data[7]) + '</p>' : '';
+            var phoneLink = data[4] ? '<a href="tel:' + esc(String(data[4]).replace(/\\s+/g,'')) + '" class="secondary">&#x260E; ' + esc(data[4]) + '</a>' : '';
+            var dirLink = '<a href="' + esc(mapsLink(data[0], data[1], data[2])) + '" target="_blank" rel="noopener">Cómo llegar</a>';
+            return (
+              '<p style="margin:0 0 6px;"><span class="badge-guardia">De guardia</span></p>' +
+              '<p class="popup-name">' + esc(data[2]) + '</p>' +
+              (data[3] ? '<p class="popup-addr">' + esc(data[3]) + '</p>' : '') +
+              horario + zona +
+              '<div class="popup-actions">' + dirLink + phoneLink + '</div>'
+            );
+          }, { maxWidth: 260 });
+        })(gm, g);
+        group.addLayer(gm);
+        added++;
+      }
+      if (added > 0) {
+        group.addTo(state.map);
+        state.guardiaLayer = group;
+      }
+    }
+
+    // Cargar el JSON principal de farmacias + los 4 JSON de guardias en
+    // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
+    // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava'];
+    var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+    var pGuardias = territorios.map(function(t){
+      return fetch('/data/guardias-' + t + '.json', { cache: 'default' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .catch(function(){ return null; });
+    });
+
+    Promise.all([pFarmacias].concat(pGuardias))
+      .then(function(results){
+        var farm = results[0];
+        if (!farm || !Array.isArray(farm.farmacias)){
           throw new Error('Formato inesperado del snapshot');
         }
-        state.all = data.farmacias;
+        state.all = farm.farmacias;
+
+        // Juntar todas las guardias en un solo array. Cada una ya viene con
+        // el mismo schema [lat, lng, direccion, poblacion, telefono, cp,
+        // horarioGuardia, horarioGuardiaDesc] asi que no hay que transformar.
+        var allGuardias = [];
+        for (var i = 1; i <= territorios.length; i++){
+          var g = results[i];
+          if (g && Array.isArray(g.guardias)) {
+            for (var k = 0; k < g.guardias.length; k++) allGuardias.push(g.guardias[k]);
+          }
+        }
+        state.guardias = allGuardias;
+        // Indexar para lookup O(1). Mantenemos 2 buckets (fino y grueso).
+        var fine = new Map();
+        var coarse = new Map();
+        for (var m = 0; m < allGuardias.length; m++){
+          var gg = allGuardias[m];
+          if (typeof gg[0] !== 'number' || typeof gg[1] !== 'number') continue;
+          var kf = bucketKeyFine(gg[0], gg[1]);
+          var kc = bucketKeyCoarse(gg[0], gg[1]);
+          if (!fine.has(kf)) fine.set(kf, gg);
+          if (!coarse.has(kc)) coarse.set(kc, gg);
+        }
+        state.guardiaByBucket = { fine: fine, coarse: coarse };
+
         updateHeroCount();
         initMap();
         refilter();

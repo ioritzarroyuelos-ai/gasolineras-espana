@@ -305,8 +305,14 @@ export function buildLandingPage(
       color: var(--c-muted);
       border-top: 1px solid var(--c-border);
     }
-    footer a { color: var(--c-brand); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
+    /* WCAG AA contraste 4.5:1 → usamos el verde oscuro en light y el claro
+       en dark. Subrayado permanente: es mejor practica de accesibilidad y
+       ademas diferencia claramente los enlaces del texto circundante. */
+    footer a { color: var(--c-brand-dark); text-decoration: underline; }
+    footer a:hover { text-decoration: none; }
+    @media (prefers-color-scheme: dark) {
+      footer a { color: var(--c-brand); }
+    }
     footer .foot-links { margin-bottom: 8px; }
     footer .foot-links a { margin: 0 8px; }
     @media (max-width: 520px) {

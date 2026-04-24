@@ -74,11 +74,15 @@ async function fetchCOF(attempts = 5) {
 
 // Decodifica entidades HTML basicas sin pulir todo el set — la web usa pocas:
 // &#209;=N_tilde, &#220;=U_dieresis, &aacute;, etc. Lo justo para nombres.
+//
+// Orden IMPORTA: `&amp;` se decodifica AL FINAL para evitar double-unescape.
+// Si empezamos por `&amp;` -> `&`, un input tipo `&amp;lt;` (representacion
+// literal de `&lt;`) acabaria convertido en `<`, que no es lo que queremos.
+// CodeQL marca el orden inverso como vulnerabilidad, con razon.
 function decodeEntities(s) {
   if (!s) return ''
   return s
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
@@ -89,6 +93,7 @@ function decodeEntities(s) {
     .replace(/&oacute;/gi, 'o')
     .replace(/&uacute;/gi, 'u')
     .replace(/&ntilde;/gi, 'n')
+    .replace(/&amp;/g, '&')
     .trim()
 }
 

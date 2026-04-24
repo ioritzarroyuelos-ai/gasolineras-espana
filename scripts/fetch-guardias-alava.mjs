@@ -73,7 +73,17 @@ function parseCoord(raw) {
 }
 
 function clean(s, max) {
-  const t = String(s || '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim()
+  // Strip tags en bucle hasta estabilizar — un solo pase de /<[^>]*>/g puede
+  // dejar residuos si el input tiene tags anidados (p.ej. "<scri<script>pt>")
+  // y CodeQL lo marca como sanitization incompleta. Con 5 pases maximos
+  // cubrimos anidamientos razonables sin riesgo de bucle infinito.
+  let t = String(s || '')
+  for (let i = 0; i < 5; i++) {
+    const next = t.replace(/<[^>]*>/g, '')
+    if (next === t) break
+    t = next
+  }
+  t = t.replace(/\s+/g, ' ').trim()
   return max ? t.slice(0, max) : t
 }
 

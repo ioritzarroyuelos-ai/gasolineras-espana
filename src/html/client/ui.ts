@@ -1491,10 +1491,10 @@ function updateMonthlyWidget() {
     tmpProfile.autonomy = computeAutonomy(tmpProfile.tank, tmpProfile.consumo);
     setProfile(tmpProfile);
     try { localStorage.setItem('gs_tank', String(tmpProfile.tank)); } catch(e) {}
-    // Sincronizar combustible y slider deposito del sidebar
+    // Sincronizar combustible del sidebar. El deposito ya no tiene slider
+    // aqui: se configura solo en este modal y se lee desde localStorage.gs_tank
+    // donde corresponda (map.ts, list.ts, etc).
     if (tmpProfile.fuel) document.getElementById('sel-combustible').value = tmpProfile.fuel;
-    var tankInp = document.getElementById('in-tank');
-    if (tankInp) { tankInp.value = tmpProfile.tank; document.getElementById('lbl-tank').textContent = tmpProfile.tank + ' L'; }
     closeModal();
     if (allStations.length) applyFilters();
     showToast('Perfil guardado \u2713', 'success');
@@ -1524,8 +1524,9 @@ function updateMonthlyWidget() {
     }, 900);
   };
 
-  // Si ya hay perfil guardado, sincroniza combustible + deposito con el
-  // sidebar al cargar (independiente del estado de sesion).
+  // Si ya hay perfil guardado, sincroniza combustible con el sidebar y
+  // persiste la capacidad del deposito en localStorage al cargar (ya no hay
+  // slider en el sidebar: es solo el espejo para map.ts/list.ts).
   if (getProfile()) {
     var p = getProfile();
     if (p.fuel) {
@@ -1537,25 +1538,15 @@ function updateMonthlyWidget() {
     }
     if (p.tank) {
       try { localStorage.setItem('gs_tank', String(p.tank)); } catch(e) {}
-      var tankInp2 = document.getElementById('in-tank');
-      if (tankInp2) { tankInp2.value = p.tank; document.getElementById('lbl-tank').textContent = p.tank + ' L'; }
     }
   }
 })();
 
-// ---- SLIDER DE DEPOSITO Y RADIO ----
+// ---- SLIDER DE RADIO ----
+// El slider de deposito vivia aqui pero lo retiramos: estaba duplicado con el
+// del modal "Personaliza tu experiencia" (CAPACIDAD DEL DEPOSITO). La fuente
+// de verdad es localStorage.gs_tank, escrito por el modal al guardar.
 (function() {
-  var inTank = document.getElementById('in-tank');
-  var lblTank = document.getElementById('lbl-tank');
-  var saved = parseInt(localStorage.getItem('gs_tank') || '50', 10);
-  inTank.value = saved;
-  lblTank.textContent = saved + ' L';
-  inTank.addEventListener('input', function() {
-    lblTank.textContent = inTank.value + ' L';
-    try { localStorage.setItem('gs_tank', inTank.value); } catch(e) {}
-    if (allStations.length) renderList(filteredStations);
-  });
-
   var inRad = document.getElementById('in-radius');
   var lblRad = document.getElementById('lbl-radius');
   inRad.addEventListener('input', function() {

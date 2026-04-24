@@ -846,7 +846,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div class="modal">
     <div class="modal-header">
       <h2 id="profile-title">&#x26FD; Personaliza tu experiencia</h2>
-      <p>Solo se guarda en tu navegador. Puedes cambiarlo cuando quieras.</p>
+      <p>Se guarda en tu cuenta y se sincroniza en todos tus dispositivos. Puedes cambiarlo cuando quieras.</p>
     </div>
     <div class="modal-body">
       <!-- Ship 25.4: Tipo de coche (combustion / electrico). Condiciona las

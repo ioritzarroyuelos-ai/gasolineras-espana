@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { buildPage } from './html/shell'
+import { buildLandingPage, landingHeaders } from './html/landing'
 import {
   verifyGoogleIdToken,
   signSessionJWT,
@@ -597,13 +598,22 @@ function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Rec
   }
 }
 
-// Ship 26: preparación para portal multi-servicio (CercaYa). La raíz `/`
-// pasará a ser una landing con tiles (gasolineras, farmacias, ITV, etc.).
-// De momento redirigimos al mapa de gasolineras con 301 (SEO-friendly,
-// preserva query params como ?action=cheapest para los shortcuts del PWA).
+// Ship 27: la raíz `/` ya no redirige — ahora sirve la landing del portal
+// CercaYa con tiles hacia cada servicio (gasolineras activo, farmacias e
+// ITV próximamente).
+//
+// Compatibilidad con shortcuts PWA viejos: los manifests anteriores al
+// Ship 26 tenían shortcuts como `/?action=cheapest` que esperaban entrar
+// al mapa. Para no romper esas instalaciones, seguimos detectando `?action=`
+// y redirigimos a `/gasolineras/?action=...`. Los manifests actualizados
+// ya apuntan directamente a `/gasolineras/?action=...` y no pasan por aquí.
 app.get('/', c => {
   const url = new URL(c.req.url)
-  return c.redirect('/gasolineras/' + (url.search || ''), 301)
+  if (url.searchParams.has('action')) {
+    return c.redirect('/gasolineras/' + url.search, 301)
+  }
+  const nonce = genNonce()
+  return new Response(buildLandingPage(nonce, c.req.url), { headers: landingHeaders(nonce) })
 })
 
 // Canonicalizamos `/gasolineras` (sin barra) → `/gasolineras/` para evitar

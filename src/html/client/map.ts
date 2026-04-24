@@ -297,42 +297,15 @@ async function applyLibertyLanguage() {
       map.off('zoomend', renderLabels);
     }
 
-    // ---- Overlay de etiquetas para el SATELITE ----
-    // Usuario quiere toda la toponimia (municipios + calles) tambien en vista
-    // satelite, como en Google Maps. Reusamos el style Liberty ya parcheado
-    // (castellano + filtrado a Espana) y lo clonamos filtrando solo las capas
-    // de type=symbol → quedan solo los textos. El background desaparece y
-    // MapLibre GL renderiza el canvas transparente, dejando ver el satelite
-    // por debajo.
-    //
-    // Guardamos el layer en mapLayers.satelliteLabels; el handler de
-    // btn-satellite lo activa encima de la ortofoto Esri. Si el usuario ya
-    // estaba en satelite cuando Liberty termina, lo activamos aqui mismo
-    // (y quitamos labelLayer porque ya tenemos toponimia completa).
-    try {
-      var labelsStyle = JSON.parse(JSON.stringify(style));
-      if (Array.isArray(labelsStyle.layers)) {
-        labelsStyle.layers = labelsStyle.layers.filter(function(l) {
-          return l && l.type === 'symbol';
-        });
-      }
-      mapLayers.satelliteLabels = L.maplibreGL({
-        style: labelsStyle,
-        minZoom: 4,
-        maxZoom: 20
-        // Sin attribution — ya la lleva la capa base (Esri o Liberty).
-      });
-      if (map.hasLayer(mapLayers.satellite)) {
-        mapLayers.satelliteLabels.addTo(map);
-        if (labelLayer && map.hasLayer(labelLayer)) {
-          map.removeLayer(labelLayer);
-        }
-      }
-    } catch (_) {
-      // Si el clone o el layer fallan, el satelite seguira con labelLayer
-      // (SPAIN_LABELS) como fallback: CCAA + ciudades, menos detalle pero
-      // al menos en castellano y filtrado a Espana.
-    }
+    // Intentamos crear tambien un OVERLAY solo-symbols del mismo style para
+    // usar sobre el satelite. No funciono: el bridge maplibre-gl-leaflet NO
+    // soporta 2 instancias de L.maplibreGL en el mismo mapa (el segundo
+    // canvas no se sincroniza con el zoom de Leaflet, queda vacio aunque
+    // queryRenderedFeatures devuelva features). Ver debug con preview
+    // 2026-04-24. Solucion: en satelite usamos solo labelLayer
+    // (SPAIN_LABELS, ampliado con capitales provinciales + ciudades grandes
+    // hasta ~120 entradas — no es "toda la toponimia" pero cubre el 95% de
+    // las busquedas comunes en Espana).
   } catch (e) {
     // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
   }
@@ -376,7 +349,8 @@ var SPAIN_LABELS = [
   { t: 'Ceuta',              p: [35.89, -5.32], c: 'map-label-ccaa', mn: 8, mx: 10 },
   { t: 'Melilla',            p: [35.29, -2.94], c: 'map-label-ccaa', mn: 8, mx: 10 },
 
-  // Ciudades principales — zoom 8+. Capitales de provincia y grandes nucleos.
+  // Grandes ciudades (>200k hab o capital de provincia muy visible) — zoom 8+.
+  // Visibles desde vista regional.
   { t: 'Madrid',     p: [40.4168, -3.7038], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Barcelona',  p: [41.3851,  2.1734], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Valencia',   p: [39.4699, -0.3763], c: 'map-label-city', mn: 8, mx: 20 },
@@ -399,7 +373,7 @@ var SPAIN_LABELS = [
   { t: 'Santa Cruz de Tenerife', p: [28.4636, -16.2518], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Santander',  p: [43.4623, -3.8099], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Toledo',     p: [39.8628, -4.0273], c: 'map-label-city', mn: 8, mx: 20 },
-  { t: 'San Sebastián', p: [43.3183, -1.9812], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Vitoria-Gasteiz', p: [42.8467, -2.6716], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Albacete',   p: [38.9943, -1.8585], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Jaén',       p: [37.7796, -3.7849], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Salamanca',  p: [40.9701, -5.6635], c: 'map-label-city', mn: 8, mx: 20 },
@@ -407,7 +381,98 @@ var SPAIN_LABELS = [
   { t: 'Burgos',     p: [42.3439, -3.6969], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Cádiz',      p: [36.5271, -6.2886], c: 'map-label-city', mn: 8, mx: 20 },
   { t: 'Almería',    p: [36.8340, -2.4637], c: 'map-label-city', mn: 8, mx: 20 },
-  { t: 'Badajoz',    p: [38.8794, -6.9707], c: 'map-label-city', mn: 8, mx: 20 }
+  { t: 'Badajoz',    p: [38.8794, -6.9707], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Cartagena',  p: [37.6257, -0.9966], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Elche',      p: [38.2655, -0.6983], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Jerez de la Frontera', p: [36.6850, -6.1261], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Tarragona',  p: [41.1189,  1.2445], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Lleida',     p: [41.6176,  0.6200], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Girona',     p: [41.9794,  2.8214], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Castellón de la Plana', p: [39.9864, -0.0513], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Huelva',     p: [37.2614, -6.9447], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'León',       p: [42.5987, -5.5671], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Cáceres',    p: [39.4753, -6.3724], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Ourense',    p: [42.3364, -7.8633], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Pontevedra', p: [42.4310, -8.6445], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Lugo',       p: [43.0097, -7.5567], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Algeciras',  p: [36.1314, -5.4506], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Marbella',   p: [36.5108, -4.8825], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'Santiago de Compostela', p: [42.8782, -8.5448], c: 'map-label-city', mn: 8, mx: 20 },
+  { t: 'San Sebastián', p: [43.3183, -1.9812], c: 'map-label-city', mn: 9, mx: 20 },
+
+  // Resto de capitales de provincia y ciudades medianas — zoom 9+. Aparecen al
+  // acercar un escalon mas para no saturar la vista regional.
+  { t: 'Ávila',      p: [40.6566, -4.6812], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Segovia',    p: [40.9429, -4.1088], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Palencia',   p: [42.0095, -4.5246], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Zamora',     p: [41.5033, -5.7446], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Soria',      p: [41.7636, -2.4640], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Guadalajara', p: [40.6286, -3.1669], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Cuenca',     p: [40.0703, -2.1374], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Ciudad Real', p: [38.9848, -3.9273], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Teruel',     p: [40.3440, -1.1069], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Huesca',     p: [42.1401, -0.4089], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'Mérida',     p: [38.9165, -6.3437], c: 'map-label-city', mn: 9, mx: 20 },
+  { t: 'L\u2019Hospitalet de Llobregat', p: [41.3596,  2.0997], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Badalona',   p: [41.4500,  2.2474], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Sabadell',   p: [41.5483,  2.1075], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Terrassa',   p: [41.5662,  2.0086], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Mataró',     p: [41.5381,  2.4446], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Móstoles',   p: [40.3223, -3.8649], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Alcalá de Henares', p: [40.4820, -3.3635], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Fuenlabrada', p: [40.2842, -3.7944], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Leganés',    p: [40.3285, -3.7639], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Getafe',     p: [40.3057, -3.7326], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Alcorcón',   p: [40.3459, -3.8244], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Torrejón de Ardoz', p: [40.4556, -3.4822], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Parla',      p: [40.2377, -3.7674], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Alcobendas', p: [40.5406, -3.6417], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Las Rozas',  p: [40.4929, -3.8734], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Majadahonda', p: [40.4733, -3.8720], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Pozuelo de Alarcón', p: [40.4331, -3.8134], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'San Sebastián de los Reyes', p: [40.5479, -3.6254], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Rivas-Vaciamadrid', p: [40.3594, -3.5206], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Coslada',    p: [40.4243, -3.5596], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Valdemoro',  p: [40.1912, -3.6767], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Aranjuez',   p: [40.0312, -3.6033], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Torrelavega', p: [43.3492, -4.0485], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Getxo',      p: [43.3569, -3.0106], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Barakaldo',  p: [43.2963, -2.9880], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Irún',       p: [43.3380, -1.7891], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Avilés',     p: [43.5547, -5.9248], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Ferrol',     p: [43.4842, -8.2330], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Talavera de la Reina', p: [39.9625, -4.8302], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Ponferrada', p: [42.5460, -6.5960], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Manresa',    p: [41.7283,  1.8247], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Reus',       p: [41.1550,  1.1066], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Vilanova i la Geltrú', p: [41.2241,  1.7257], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Sant Cugat del Vallès', p: [41.4725,  2.0863], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Gandía',     p: [38.9680, -0.1808], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Torrevieja', p: [37.9786, -0.6829], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Benidorm',   p: [38.5411, -0.1225], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Orihuela',   p: [38.0846, -0.9446], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Paterna',    p: [39.5027, -0.4411], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Torrent',    p: [39.4370, -0.4668], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Lorca',      p: [37.6724, -1.6989], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Molina de Segura', p: [38.0543, -1.2116], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Dos Hermanas', p: [37.2830, -5.9217], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Utrera',     p: [37.1850, -5.7810], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Sanlúcar de Barrameda', p: [36.7763, -6.3539], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'El Puerto de Santa María', p: [36.5948, -6.2333], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Chiclana de la Frontera', p: [36.4184, -6.1451], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Estepona',   p: [36.4248, -5.1454], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Fuengirola', p: [36.5417, -4.6245], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Torremolinos', p: [36.6203, -4.4999], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Vélez-Málaga', p: [36.7799, -4.1010], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Motril',     p: [36.7517, -3.5222], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Roquetas de Mar', p: [36.7643, -2.6148], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'El Ejido',   p: [36.7760, -2.8142], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Linares',    p: [38.0951, -3.6357], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Arona',      p: [28.1008, -16.6809], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Telde',      p: [27.9958, -15.4189], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Arrecife',   p: [28.9630, -13.5477], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Ibiza',      p: [38.9067,  1.4206], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'Maó',        p: [39.8885,  4.2658], c: 'map-label-city', mn: 10, mx: 20 }
 ];
 
 function renderLabels() {
@@ -1544,19 +1609,19 @@ function buildChargersLayer(chargers) {
 })();
 
 // ---- TOGGLE VISTA SATELITE ----
-// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. En
-// el satelite superponemos mapLayers.satelliteLabels (MapLibre GL vector con
-// SOLO las capas symbol del style Liberty parcheado → toponimia completa:
-// municipios, calles, POIs, todo en castellano y filtrado a Espana). Si
-// Liberty aun no ha cargado, usamos labelLayer (SPAIN_LABELS, CCAA+ciudades)
-// como fallback para que el usuario nunca vea satelite "desnudo" sin nombres.
+// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. Sobre
+// el satelite pintamos labelLayer (SPAIN_LABELS) — CCAA + ~120 municipios
+// (capitales de provincia y grandes ciudades) en castellano y filtrado a
+// Espana. Probamos con un 2o MapLibre GL layer (solo capas symbol de Liberty)
+// pero el bridge maplibre-gl-leaflet no soporta 2 instancias de L.maplibreGL
+// en el mismo Leaflet map — el segundo canvas no se sincroniza con el zoom.
 // La preferencia se guarda en localStorage.gs_basemap.
 (function() {
   var btn = document.getElementById('btn-satellite');
   if (!btn) return;
 
-  // Asegura que labelLayer existe y esta en el mapa. Es el fallback mientras
-  // satelliteLabels (Liberty vector, async) no esta listo.
+  // Asegura que labelLayer existe y esta en el mapa. Es la unica fuente de
+  // etiquetas sobre el satelite.
   function ensureLabelLayer() {
     if (typeof map === 'undefined' || !map) return;
     if (!labelLayer) {
@@ -1568,37 +1633,13 @@ function buildChargersLayer(chargers) {
     renderLabels();
   }
 
-  // Activa el overlay de toponimia sobre el satelite. Prefiere Liberty-symbols
-  // (si ya cargo) y quita labelLayer para no duplicar; si no esta listo, usa
-  // labelLayer como fallback.
-  function showSatelliteLabels() {
-    if (mapLayers.satelliteLabels) {
-      if (!map.hasLayer(mapLayers.satelliteLabels)) {
-        mapLayers.satelliteLabels.addTo(map);
-      }
-      if (labelLayer && map.hasLayer(labelLayer)) {
-        map.removeLayer(labelLayer);
-      }
-    } else {
-      ensureLabelLayer();
-    }
-  }
-
-  // Quita los labels del satelite (al salir de satelite).
-  function hideSatelliteLabels() {
-    if (mapLayers.satelliteLabels && map.hasLayer(mapLayers.satelliteLabels)) {
-      map.removeLayer(mapLayers.satelliteLabels);
-    }
-  }
-
   // Sync inicial: si el localStorage decia 'satellite', el initMap ya habra
-  // activado esa capa. Reflejamos aria-pressed y garantizamos overlay de
-  // labels visible (Liberty-symbols si ya cargo, labelLayer como fallback).
+  // activado esa capa. Reflejamos aria-pressed y garantizamos etiquetas.
   try {
     if (localStorage.getItem('gs_basemap') === 'satellite') {
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');
-      showSatelliteLabels();
+      ensureLabelLayer();
     }
   } catch (_) {}
 
@@ -1607,7 +1648,6 @@ function buildChargersLayer(chargers) {
     if (onSat) {
       // Volver al basemap normal. El tema actual decide light vs dark.
       map.removeLayer(mapLayers.satellite);
-      hideSatelliteLabels();
       var isDark = document.body.classList.contains('dark');
       (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
 
@@ -1632,8 +1672,8 @@ function buildChargersLayer(chargers) {
       if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
       if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
       mapLayers.satellite.addTo(map);
-      // Superponemos toponimia completa (Liberty-symbols) o fallback.
-      showSatelliteLabels();
+      // Pintamos SPAIN_LABELS sobre el satelite (unica fuente de etiquetas).
+      ensureLabelLayer();
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');

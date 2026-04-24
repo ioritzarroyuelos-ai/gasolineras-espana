@@ -11,9 +11,9 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-test.describe('Home (/)', () => {
+test.describe('Home (/gasolineras/)', () => {
   test('carga el shell y muestra la barra superior', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/gasolineras/')
     await expect(page).toHaveTitle(/Gasolineras España/i)
 
     // Cabecera principal presente
@@ -31,7 +31,7 @@ test.describe('Home (/)', () => {
   })
 
   test('seleccionar provincia activa el municipio', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/gasolineras/')
     // Esperamos a que cargue el listado de provincias.
     await expect
       .poll(async () => (await page.locator('#sel-provincia option').count()), { timeout: 15_000 })
@@ -48,7 +48,7 @@ test.describe('Home (/)', () => {
   })
 
   test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {
-    await page.goto('/')
+    await page.goto('/gasolineras/')
     // Esperamos al bootstrap para auditar el DOM "real", no el esqueleto inicial.
     await expect(page.locator('#app-header')).toBeVisible()
 

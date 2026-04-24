@@ -597,7 +597,24 @@ function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Rec
   }
 }
 
-app.get('/', async c => {
+// Ship 26: preparación para portal multi-servicio (CercaYa). La raíz `/`
+// pasará a ser una landing con tiles (gasolineras, farmacias, ITV, etc.).
+// De momento redirigimos al mapa de gasolineras con 301 (SEO-friendly,
+// preserva query params como ?action=cheapest para los shortcuts del PWA).
+app.get('/', c => {
+  const url = new URL(c.req.url)
+  return c.redirect('/gasolineras/' + (url.search || ''), 301)
+})
+
+// Canonicalizamos `/gasolineras` (sin barra) → `/gasolineras/` para evitar
+// duplicado SEO. Usamos 301 porque es permanente.
+app.get('/gasolineras', c => {
+  const url = new URL(c.req.url)
+  return c.redirect('/gasolineras/' + (url.search || ''), 301)
+})
+
+// `/gasolineras/` — home del mapa nacional (antes vivía en `/`).
+app.get('/gasolineras/', async c => {
   const nonce = genNonce()
   const turnstile = !!c.env.TURNSTILE_SITE_KEY
   const googleAuth = !!c.env.GOOGLE_CLIENT_ID
@@ -825,7 +842,11 @@ app.get('/sitemap.xml', async c => {
     const m = snap.Fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
     if (m) snapLastmod = `${m[3]}-${m[2]}-${m[1]}`
   }
+  // Home del portal CercaYa. Hoy redirige 301 a /gasolineras/, pero la
+  // dejamos en el sitemap para que Google entienda la jerarquía. Priority
+  // 1.0 porque sigue siendo la puerta de entrada principal.
   entries.push(`  <url><loc>${base}/</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
+  entries.push(`  <url><loc>${base}/gasolineras/</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
   for (const p of PROVINCIAS) {
     entries.push(`  <url><loc>${base}/gasolineras/${p.slug}</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.8</priority></url>`)
     if (snap) {
@@ -868,7 +889,7 @@ function legalPage(title: string, bodyHtml: string, nonce: string): string {
   footer{margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:13px;color:#64748b}
 </style>
 </head><body>
-<a class="back" href="/">← Volver</a>
+<a class="back" href="/gasolineras/">← Volver</a>
 ${bodyHtml}
 <footer>Gasolineras España · v${APP_VERSION} · Datos: Ministerio para la Transición Ecológica y el Reto Demográfico.</footer>
 </body></html>`
@@ -935,7 +956,7 @@ app.get('/status', async c => {
   .foot{margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#64748b}
   .muted{color:#64748b;font-size:13px}
 </style>
-<a class="back" href="/">← Volver</a>
+<a class="back" href="/gasolineras/">← Volver</a>
 <h1>Estado del servicio</h1>
 <p class="muted">Esta pagina se actualiza automaticamente cada 60 segundos.</p>
 

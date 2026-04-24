@@ -81,9 +81,11 @@ export function buildPage(
   let origin = 'https://gasolineras.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
   const seo = opts.seo
-  // Pathname progresivo: / → /gasolineras/<prov> → /gasolineras/<prov>/<mun>.
+  // Pathname progresivo: /gasolineras/ → /gasolineras/<prov> → /gasolineras/<prov>/<mun>.
   // La URL canonica siempre refleja el nivel mas fino disponible.
-  let pathname = '/'
+  // Ship 26: la raíz del mapa pasó de `/` a `/gasolineras/` — `/` redirige 301
+  // al portal CercaYa (aún futuro), así que la canónica apunta al nuevo root.
+  let pathname = '/gasolineras/'
   if (seo?.provinciaSlug) pathname = '/gasolineras/' + seo.provinciaSlug
   if (seo?.provinciaSlug && seo?.municipioSlug) pathname = '/gasolineras/' + seo.provinciaSlug + '/' + seo.municipioSlug
   const canonical = origin + pathname
@@ -468,7 +470,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     <i class="fas fa-bars u-c-white u-fs-16" aria-hidden="true"></i>
   </button>
 
-  <a href="/" id="brand" class="brand-link" aria-label="Gasolineras España · inicio">
+  <a href="/gasolineras/" id="brand" class="brand-link" aria-label="Gasolineras España · inicio">
     <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
     <div class="u-mw-0">
       <div class="header-title">Gasolineras España</div>
@@ -1267,7 +1269,7 @@ ${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || 
   <!-- Breadcrumb visible — complementa al BreadcrumbList del JSON-LD dandole
        al usuario navegacion ascendente (Inicio / Provincia). -->
   <nav class="page-breadcrumb" aria-label="Migas de pan" style="font-size:13px;color:#64748b;margin:0 0 16px">
-    <a href="/" style="color:#15803d;text-decoration:none">Inicio</a>
+    <a href="/gasolineras/" style="color:#15803d;text-decoration:none">Inicio</a>
     ${seo?.provinciaName && seo?.provinciaSlug ? ' &rsaquo; ' + (seo?.municipioName
       ? '<a href="/gasolineras/' + seo.provinciaSlug + '" style="color:#15803d;text-decoration:none">' + seo.provinciaName + '</a>'
       : '<span aria-current="page">' + seo.provinciaName + '</span>') : ''}

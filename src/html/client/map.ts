@@ -88,20 +88,16 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
   });
-  // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key) + overlay
-  // de etiquetas transparentes de CARTO. Mismo truco que Google Maps "Satelite
-  // con etiquetas": el usuario ve la foto aerea pero con nombres de calles y
-  // municipios encima. Un LayerGroup se comporta como una sola capa en los
-  // toggles. maxZoom de Esri es 19 (no 20 como CARTO) — limite del proveedor.
-  var satBase = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key). SIN
+  // overlay de etiquetas ajeno: el intento inicial con CARTO voyager_only_labels
+  // trajo nombres en ingles ("SPAIN", "Seville", "Lisbon", "Morocco"...) y
+  // ademas cubrian paises que no son Espana. La toponimia la ponemos con
+  // labelLayer (SPAIN_LABELS, ya esta en castellano y filtrada a Espana).
+  // maxZoom de Esri es 19 — limite del proveedor.
+  mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     maxZoom: 19, minZoom: 5, noWrap: true
   });
-  var satLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
-  });
-  mapLayers.satellite = L.layerGroup([satBase, satLabels]);
 
   // Activar capa segun tema actual. Si el usuario tenia preferencia "satellite"
   // guardada (desde sesion anterior), la restauramos aqui — asi no parpadea
@@ -280,13 +276,21 @@ async function applyLibertyLanguage() {
       maxZoom: 20,
       attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
+    // Swap SIEMPRE la referencia mapLayers.light por el Liberty vector, aunque
+    // el usuario tenga satelite activo en este momento. Si solo lo swap-eabamos
+    // cuando wasLight=true, al arrancar en satelite Liberty nunca reemplazaba
+    // mapLayers.light y al volver a mapa normal el usuario veia el raster
+    // voyager_nolabels + SPAIN_LABELS duplicandose con la toponimia de Liberty
+    // cuando alternaba temas.
     var wasLight = map.hasLayer(mapLayers.light);
     if (wasLight) map.removeLayer(mapLayers.light);
     mapLayers.light = libertyLayer;
     if (wasLight) libertyLayer.addTo(map);
 
-    // Liberty ya trae toda la toponimia en castellano y limitada a Espana:
-    // la capa SPAIN_LABELS solo duplicaria texto. La desactivamos en modo claro.
+    // Liberty trae toda la toponimia en castellano y filtrada a Espana: encima
+    // no queremos SPAIN_LABELS porque duplicaria texto. Quitamos labelLayer solo
+    // si el mapa esta mostrando light AHORA (en dark o satelite seguimos
+    // necesitando labelLayer como unica fuente de etiquetas).
     if (labelLayer && wasLight) {
       map.removeLayer(labelLayer);
       labelLayer = null;
@@ -1503,20 +1507,38 @@ function buildChargersLayer(chargers) {
 })();
 
 // ---- TOGGLE VISTA SATELITE ----
-// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri +
-// etiquetas CARTO. La preferencia se guarda en localStorage (gs_basemap)
-// para restaurarla en proximas sesiones. Importante: tras applyLibertyLanguage,
-// mapLayers.light puede ser el Liberty vector layer (no el raster original),
-// asi que removemos por referencia sin asumir el tipo concreto.
+// Cambia entre basemap normal (light/dark segun tema) y ortofoto Esri. Las
+// etiquetas en el satelite vienen SIEMPRE de labelLayer (SPAIN_LABELS) para
+// mantener la regla "solo nombres de Espana, en castellano". Tras
+// applyLibertyLanguage, mapLayers.light puede ser el Liberty vector layer
+// (no el raster original), por eso removemos por referencia.
+// La preferencia se guarda en localStorage.gs_basemap.
 (function() {
   var btn = document.getElementById('btn-satellite');
   if (!btn) return;
 
+  // Asegura que labelLayer existe y esta en el mapa. Lo usamos al entrar en
+  // satelite (y al volver a dark/raster) para tener siempre etiquetas propias.
+  function ensureLabelLayer() {
+    if (typeof map === 'undefined' || !map) return;
+    if (!labelLayer) {
+      labelLayer = L.layerGroup().addTo(map);
+      map.on('zoomend', renderLabels);
+    } else if (!map.hasLayer(labelLayer)) {
+      labelLayer.addTo(map);
+    }
+    renderLabels();
+  }
+
   // Sync inicial: si el localStorage decia 'satellite', el initMap ya habra
-  // activado esa capa — solo nos queda reflejarlo en aria-pressed.
+  // activado esa capa. Reflejamos aria-pressed y garantizamos labelLayer
+  // visible (en light con Liberty aplicado, applyLibertyLanguage podria haber
+  // dejado labelLayer en null — lo re-creamos aqui si hace falta).
   try {
     if (localStorage.getItem('gs_basemap') === 'satellite') {
       btn.setAttribute('aria-pressed', 'true');
+      btn.setAttribute('aria-label', 'Volver al mapa normal');
+      ensureLabelLayer();
     }
   } catch (_) {}
 
@@ -1527,14 +1549,31 @@ function buildChargersLayer(chargers) {
       map.removeLayer(mapLayers.satellite);
       var isDark = document.body.classList.contains('dark');
       (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
+
+      // Reglas de etiquetas al salir del satelite:
+      //   - dark o light-raster (Liberty no aplicado) -> SPAIN_LABELS visible.
+      //   - light con Liberty -> SPAIN_LABELS OFF (Liberty trae la toponimia).
+      var lightIsRaster = mapLayers.light instanceof L.TileLayer;
+      var needLabels = isDark || lightIsRaster;
+      if (needLabels) {
+        ensureLabelLayer();
+      } else {
+        if (labelLayer && map.hasLayer(labelLayer)) {
+          map.removeLayer(labelLayer);
+        }
+      }
+
       try { localStorage.setItem('gs_basemap', 'map'); } catch (_) {}
       btn.setAttribute('aria-pressed', 'false');
       btn.setAttribute('aria-label', 'Ver mapa en vista satelite');
     } else {
-      // Cambiar a satelite — quitamos ambos basemaps por si acaso.
+      // Cambiar a satelite — quitamos cualquier basemap previo.
       if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
       if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
       mapLayers.satellite.addTo(map);
+      // En satelite labelLayer es la UNICA fuente de toponimia — si Liberty
+      // lo habia desactivado (caso light+Liberty), lo re-creamos ahora.
+      ensureLabelLayer();
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');

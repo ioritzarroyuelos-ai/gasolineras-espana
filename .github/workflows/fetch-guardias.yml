@@ -1,13 +1,15 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.12 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde los 6 COF (Colegios Oficiales de Farmaceuticos):
+# v1.13 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde los 8 COF (Colegios Oficiales de Farmaceuticos):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
 #   - Araba      (cofalava.org)             → guardias-alava.json
 #   - A Coruña   (cofc.es)                  → guardias-coruna.json
 #   - Murcia     (guardias.cofrm.com API)   → guardias-murcia.json
+#   - Almería    (cofalmeria.com)           → guardias-almeria.json
+#   - Girona     (cofgi.org)                → guardias-girona.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -89,6 +91,20 @@ jobs:
         continue-on-error: true
         run: node scripts/fetch-guardias-murcia.mjs
 
+      - name: Guardias Almeria (COF Almeria)
+        id: almeria
+        continue-on-error: true
+        # Geocodifica con Nominatim (1 req/s) ~70 farmacias. Estimado ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-almeria.mjs
+
+      - name: Guardias Girona (COF Girona)
+        id: girona
+        continue-on-error: true
+        # Geocodifica con Nominatim (1 req/s) ~20 farmacias. Estimado ~1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-girona.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -98,6 +114,8 @@ jobs:
           echo "Araba:     ${{ steps.alava.outcome }}"
           echo "A Coruña:  ${{ steps.coruna.outcome }}"
           echo "Murcia:    ${{ steps.murcia.outcome }}"
+          echo "Almería:   ${{ steps.almeria.outcome }}"
+          echo "Girona:    ${{ steps.girona.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -105,7 +123,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -124,9 +142,11 @@ jobs:
           steps.gipuzkoa.outcome == 'failure' &&
           steps.alava.outcome == 'failure' &&
           steps.coruna.outcome == 'failure' &&
-          steps.murcia.outcome == 'failure'
+          steps.murcia.outcome == 'failure' &&
+          steps.almeria.outcome == 'failure' &&
+          steps.girona.outcome == 'failure'
         run: |
-          echo "::error::Los 6 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 8 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

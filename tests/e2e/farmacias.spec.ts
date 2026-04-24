@@ -1,5 +1,6 @@
 // E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM +
-// guardias (Madrid, Bizkaia, Gipuzkoa, Araba, A Coruña, Murcia).
+// guardias (Madrid, Bizkaia, Gipuzkoa, Araba, A Coruña, Murcia, Almería,
+// Girona).
 //
 // Comprobamos:
 //   - shell renderiza (header, toolbar, layout principal)
@@ -8,7 +9,7 @@
 //   - canonical + meta description presentes
 //   - canonicalizacion /farmacias -> /farmacias/
 //   - sin violaciones graves de axe (excluyendo tiles de Leaflet)
-//   - los 6 snapshots de guardias estan servidos y con count > 0
+//   - los 8 snapshots de guardias estan servidos y con count > 0
 //   - al menos una card aparece con data-guardia=true y badge visible
 //     cuando geolocalizamos al usuario en Madrid
 //
@@ -72,8 +73,8 @@ test.describe('Farmacias (/farmacias/)', () => {
     await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  test('los 6 snapshots de guardias se sirven con count > 0', async ({ request }) => {
-    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia']
+  test('los 8 snapshots de guardias se sirven con count > 0', async ({ request }) => {
+    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona']
     for (const t of territorios) {
       const res = await request.get(`/data/guardias-${t}.json`)
       expect(res.status(), `guardias-${t}.json debe existir`).toBe(200)

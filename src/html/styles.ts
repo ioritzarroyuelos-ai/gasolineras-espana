@@ -1792,10 +1792,11 @@ export function getStyles(nonce: string = ''): string {
       transition:all 0.12s;
     }
     .chip:hover { border-color:#16a34a; color:#16a34a; }
-    .chip.selected { background:#16a34a; color:#fff; border-color:#16a34a; }
+    /* WCAG AA: #16a34a/#fff da 3.29:1 (12px) — bajamos a #15803d (~4.82:1) */
+    .chip.selected { background:#15803d; color:#fff; border-color:#15803d; }
     body.dark .chip { background:#0f172a; border-color:#334155; color:#cbd5e1; }
     body.dark .chip:hover { border-color:#4ade80; color:#4ade80; }
-    body.dark .chip.selected { background:#16a34a; color:#fff; border-color:#16a34a; }
+    body.dark .chip.selected { background:#15803d; color:#fff; border-color:#15803d; }
 
     /* ---- Widget de gasto mensual ---- */
     #monthly-widget {

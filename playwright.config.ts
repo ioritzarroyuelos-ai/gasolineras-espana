@@ -31,6 +31,14 @@ export default defineConfig({
     video: 'retain-on-failure',
     // Mas tolerante en CI runner (CPU compartido)
     actionTimeout: IS_CI ? 10_000 : 5_000,
+    // Bloqueamos service workers en E2E. Motivo: el SW registrado en
+    // ui.ts hace auto-skipWaiting y al detectar un update dispara
+    // controllerchange -> location.reload(), lo que rompe aleatoriamente
+    // el test de axe-core con "Execution context was destroyed, most
+    // likely because of a navigation". En tests no queremos testar
+    // update-toast ni offline (eso se valida a mano), asi que lo mas
+    // limpio es arrancar sin SW y eliminar esa fuente de flakiness.
+    serviceWorkers: 'block',
   },
 
   projects: [

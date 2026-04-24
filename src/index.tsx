@@ -1667,6 +1667,48 @@ app.get('/api/health', async c => {
   return c.json(body, 200, { 'Cache-Control': 'no-store' })
 })
 
+// ---- PROXY DE TILES SATELITE (CORS) ----
+// Esri World Imagery NO envia cabeceras Access-Control-Allow-Origin, asi que
+// L.TileLayer (etiquetas <img>) los puede mostrar pero MapLibre GL los intenta
+// via fetch() y falla con CORS error. Para que la vista satelite use el MISMO
+// L.maplibreGL que la vista normal (con toda la toponimia Liberty integrada y
+// el satelite como raster-source dentro del style), necesitamos que los tiles
+// se sirvan con CORS OK. Los reempaquetamos desde nuestro Worker:
+//   - Validamos {z,x,y} como enteros razonables (evita proxear urls raras).
+//   - Fetch a Esri sin credenciales.
+//   - Re-emitimos con Access-Control-Allow-Origin: * y Cache-Control largo
+//     (los tiles raster son inmutables — la ortofoto no cambia por semana).
+// El runtime de Cloudflare cachea el upstream automaticamente via el cache
+// interno del fetch (si el upstream no pone ETag usamos nuestro Cache-Control).
+app.get('/api/tiles/satellite/:z/:x/:y', async c => {
+  const z = Number(c.req.param('z'))
+  const x = Number(c.req.param('x'))
+  const y = Number(c.req.param('y'))
+  if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) ||
+      z < 0 || z > 20 || x < 0 || y < 0) {
+    return c.text('bad tile', 400, { 'Access-Control-Allow-Origin': '*' })
+  }
+  const upstream = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+  try {
+    // El cacheado lo maneja Cloudflare en el edge via el Cache-Control que
+    // devolvemos abajo (max-age=86400 immutable) — no necesitamos pasar cf:{}
+    // en el fetch (ademas tipa conflictivamente con RequestInit).
+    const up = await fetch(upstream)
+    if (!up.ok) return c.text('upstream ' + up.status, 502, { 'Access-Control-Allow-Origin': '*' })
+    const body = await up.arrayBuffer()
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': up.headers.get('content-type') || 'image/jpeg',
+        'Cache-Control': 'public, max-age=86400, immutable',
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
+  } catch (_e) {
+    return c.text('proxy error', 502, { 'Access-Control-Allow-Origin': '*' })
+  }
+})
+
 // ---- HISTORICO DE PRECIOS (D1) ----
 // Devuelve la serie temporal de una estacion para N dias. Lee de D1 (tabla
 // price_history, poblada por scheduled() diario). Si el binding DB no existe

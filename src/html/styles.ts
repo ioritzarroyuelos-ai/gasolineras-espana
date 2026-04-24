@@ -568,10 +568,14 @@ export function getStyles(nonce: string = ''): string {
        estilos vivian en el JS como w.style.cssText = '...' — los bloqueaba el
        CSP (style-src sin 'unsafe-inline'), provocando violation-reports y el
        widget quedaba sin pintar correctamente. Movidos aqui como clase para
-       que respeten el CSP. */
+       que respeten el CSP.
+       top:96px: el header mide 60px + sombra ~12px hacia abajo. A 74px el widget
+       casi tocaba la sombra del header y visualmente se amontonaba con el
+       user-chip ("Entrar" / nombre usuario) — el usuario reporto solapamiento.
+       Con 96px queda 36px por debajo del header y hay aire evidente. */
     .stats-nacional-widget {
       position: fixed;
-      top: 74px;
+      top: 96px;
       right: 16px;
       background: #ffffff;
       border: 1px solid #e5e7eb;

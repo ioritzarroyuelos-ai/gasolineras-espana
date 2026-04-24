@@ -220,18 +220,22 @@ function navCoord(ll) {
 // LAT,LNG, Maps reverse-geocodea al nombre de calle mas cercano y pierde la
 // referencia de la gasolinera concreta (el pin puede acabar en la carretera
 // en vez de en la estacion). Con direccion textual el buscador resuelve al
-// POI exacto. Formato: "Rotulo, Direccion, CP Municipio, Provincia, Espana".
+// POI exacto. Formato: "Direccion, CP Municipio, Provincia, Espana".
+// NO incluimos el rotulo (EURONOR, REPSOL, etc): Google Maps lo trata como
+// nombre de negocio y si no esta indexado como POI devuelve "no encuentra"
+// aunque la direccion sea valida (caso observado con "EURONOR ENERGY, CALLE
+// VERTICAL V, 20, Salamanca" — Google no encuentra el negocio, pero la calle
+// y numero existen perfectamente). Mejor quedarnos en la direccion postal
+// limpia y dejar que Google resuelva por codigo postal + municipio.
 // Si faltan piezas, las saltamos y devolvemos null si no queda nada util
 // (el caller cae a LAT,LNG).
 function stationAddress(s) {
   if (!s) return null;
   var parts = [];
-  var rot = (s['Rotulo'] || '').trim();
   var dir = (s['Direccion'] || '').trim();
   var cp  = (s['C.P.'] || s['CP'] || '').trim();
   var mun = (s['Municipio'] || '').trim();
   var prov = (s['Provincia'] || '').trim();
-  if (rot) parts.push(rot);
   if (dir) parts.push(dir);
   var cpMun = [cp, mun].filter(Boolean).join(' ').trim();
   if (cpMun) parts.push(cpMun);

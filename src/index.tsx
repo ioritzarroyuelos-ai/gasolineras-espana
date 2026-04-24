@@ -437,18 +437,25 @@ function genNonce(): string {
 }
 
 function buildCsp(nonce: string, turnstile = false, googleAuth = false): string {
-  const scriptSrc  = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com']
+  // script-src: ya no necesitamos 'https://unpkg.com' — Leaflet, MarkerCluster,
+  // leaflet.heat, MapLibre GL y el bridge leaflet-maplibre-gl se sirven desde
+  // /static/vendor/map/* (mismo origen, cae bajo 'self'). Adblockers que
+  // bloquean unpkg.com y redes corporativas que lo filtran ya no pueden
+  // tumbar el mapa. Version instalada en public/static/vendor/map/manifest.json.
+  const scriptSrc  = ["'self'", "'nonce-" + nonce + "'"]
   // style-src con nonce + allowlist de CDNs. Ya NO llevamos 'unsafe-inline':
   //   - Los <style> inline (shell.ts / legalPage) emiten nonce="${nonce}" que
   //     coincide con este valor — el navegador ejecuta solo los que llevan el
   //     nonce valido.
-  //   - Los stylesheets externos siguen permitidos por URL (unpkg, jsdelivr).
+  //   - Los stylesheets externos siguen permitidos por URL (jsdelivr para
+  //     FontAwesome). Los CSS del mapa (Leaflet/MarkerCluster/MapLibre) ya
+  //     salen de /static/vendor/map y caen bajo 'self'.
   //   - Mutaciones programaticas element.style.x = valor son CSSOM y no
   //     dependen de style-src, asi que no se rompe nada del cliente.
   //   - No hay bloque style-src-attr — si en el futuro se necesitase permitir
   //     style="..." inline en algun componente third-party se documentaria y
   //     evaluaria usar 'unsafe-hashes' antes que reintroducir 'unsafe-inline'.
-  const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://unpkg.com', 'https://cdn.jsdelivr.net']
+  const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://cdn.jsdelivr.net']
   const frameSrc   = ["'self'"]
   // connect-src: sin nominatim. Todo el geocoding pasa por /api/geocode/* (mismo
   // origen) → no expone la IP del usuario a OSM y reduce superficie de CSP.
@@ -477,14 +484,11 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   // worker-src necesita blob: porque MapLibre crea Web Workers a partir de
   // blob URLs (optimizacion de cold start del motor vectorial).
   connectSrc.push('https://tiles.openfreemap.org')
-  // unpkg / jsdelivr: Chrome DevTools intenta fetchear los source maps .js.map
-  // de los scripts que cargamos desde esos CDN (Leaflet, MarkerCluster, MapLibre,
-  // bridge). Son fetch del navegador, caen bajo connect-src — bloquearlos
-  // produce errores "Refused to connect" en consola. Permitirlos NO amplia la
-  // superficie de ataque: script-src sigue exigiendo SRI en cada JS, asi que
-  // aunque unpkg sirviera un .map malicioso Chrome lo parsea como JSON y no
-  // lo ejecuta. Solo quita ruido de la consola del usuario.
-  connectSrc.push('https://unpkg.com', 'https://cdn.jsdelivr.net')
+  // jsdelivr: Chrome DevTools intenta fetchear los source maps .css.map
+  // del CSS de FontAwesome (unico recurso tercero que queda). Permitirlo
+  // solo quita ruido de la consola, no amplia superficie (style-src ya
+  // limita las hojas de estilo ejecutables a este CDN).
+  connectSrc.push('https://cdn.jsdelivr.net')
   return [
     "default-src 'self'",
     "script-src " + scriptSrc.join(' '),

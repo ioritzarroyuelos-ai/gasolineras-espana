@@ -394,7 +394,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
-  <link rel="preconnect" href="https://unpkg.com" crossorigin />
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="dns-prefetch" href="https://nominatim.openstreetmap.org" />
 
@@ -403,58 +402,32 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
          esta listo en cache antes de que initMap() lo pida.
        - maplibre-gl.js (~800 KB): ya con defer pero el preload lo prioriza
          frente a otros defers y lo empieza a bajar en paralelo desde el
-         parseo del HEAD. integrity debe COINCIDIR con la del <script> para
-         que el browser reuse el blob (si difiere, baja de nuevo). -->
+         parseo del HEAD.
+       Los scripts del mapa se sirven desde /static/vendor/map/* (misma origen)
+       en vez de unpkg. Asi ni adblockers ni redes corporativas que filtran
+       CDNs publicos pueden romper el mapa. Version instalada: ver
+       public/static/vendor/map/manifest.json; un cron semanal revisa npm y
+       avisa por Telegram si hay actualizacion disponible. -->
   <link rel="preload" as="fetch"
         href="https://tiles.openfreemap.org/styles/liberty"
         crossorigin="anonymous" />
-  <link rel="preload" as="script"
-        href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
-        integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
-        crossorigin="anonymous" />
-  <link rel="preload" as="script"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
-        crossorigin="anonymous" />
+  <link rel="preload" as="script" href="/static/vendor/map/maplibre-gl/maplibre-gl.js" />
+  <link rel="preload" as="script" href="/static/vendor/map/leaflet/leaflet.js" />
 
   <!-- Leaflet CSS (critico para map) -->
-  <link rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="/static/vendor/map/leaflet/leaflet.css" />
   <!-- Leaflet JS (defer: parse HTML sin bloquear, ejecutar antes de DOMContentLoaded) -->
-  <script defer
-          src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
+  <script defer src="/static/vendor/map/leaflet/leaflet.js"></script>
 
   <!-- Marker Cluster -->
-  <link rel="stylesheet"
-        href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css"
-        integrity="sha384-lPzjPsFQL6te2x+VxmV6q1DpRxpRk0tmnl2cpwAO5y04ESyc752tnEWPKDfl1olr"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
-  <link rel="stylesheet"
-        href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css"
-        integrity="sha384-5kMSQJ6S4Qj5i09mtMNrWpSi8iXw230pKU76xTmrpezGnNJQzj0NzXjQLLg+jE7k"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
-  <script defer
-          src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"
-          integrity="sha384-RLIyj5q1b5XJTn0tqUhucRZe40nFTocRP91R/NkRJHwAe4XxnTV77FXy/vGLiec2"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/static/vendor/map/leaflet.markercluster/MarkerCluster.css" />
+  <link rel="stylesheet" href="/static/vendor/map/leaflet.markercluster/MarkerCluster.Default.css" />
+  <script defer src="/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js"></script>
 
   <!-- Leaflet.heat: capa de heatmap como vista alternativa al cluster. El
        peso de cada punto es proporcional al precio (mas caro = mas
-       caliente) en renderMarkers. Defer + SRI para integridad. -->
-  <script defer
-          src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"
-          integrity="sha384-mFKkGiGvT5vo1fEyGCD3hshDdKmW3wzXW/x+fWriYJArD0R3gawT6lMvLboM22c0"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
+       caliente) en renderMarkers. -->
+  <script defer src="/static/vendor/map/leaflet.heat/leaflet-heat.js"></script>
 
   <!-- MapLibre GL + bridge leaflet — render vectorial con estilo Liberty de
        OpenFreeMap parcheado en runtime para priorizar name:es (toponimia en
@@ -462,21 +435,9 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
        Fallback defensivo: si cualquiera de estos scripts falla o el navegador
        no soporta WebGL, client.ts cae a raster voyager_nolabels + SPAIN_LABELS
        custom, asi el usuario nunca ve pantalla en blanco. -->
-  <link rel="stylesheet"
-        href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
-        integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
-  <script defer
-          src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"
-          integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
-  <script defer
-          src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.0.22/leaflet-maplibre-gl.js"
-          integrity="sha384-4CB9Vtol9LN6lGgBCvmPLbUEZwilrqIvPieSRurgAXAB7FVJaLS9n8WyAIA5wjQ+"
-          crossorigin="anonymous"
-          referrerpolicy="no-referrer"></script>
+  <link rel="stylesheet" href="/static/vendor/map/maplibre-gl/maplibre-gl.css" />
+  <script defer src="/static/vendor/map/maplibre-gl/maplibre-gl.js"></script>
+  <script defer src="/static/vendor/map/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
 
   <!-- FontAwesome -->
   <link rel="stylesheet"

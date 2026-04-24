@@ -285,20 +285,49 @@ export function buildFarmaciasPage(
       margin: 0;
       padding: 0;
     }
+    /* Stretched-link pattern: el <li> es un contenedor pasivo (sin role ni
+       tabindex) y dentro hay un <button class="card-select"> cuyo ::before
+       se estira sobre toda la tarjeta. Asi la zona de click es el card
+       entero pero el unico focusable "del card" es ese boton. Los <a tel:>
+       del .card-meta quedan en z-index superior y son focusables propios.
+       De esta forma no violamos la regla axe no-focusable-content (ningun
+       focusable envuelve a otro focusable). */
     .card {
+      position: relative;
       padding: 14px 18px;
       border-bottom: 1px solid var(--c-border);
-      cursor: pointer;
       transition: background 0.15s ease;
     }
-    .card:hover, .card:focus-visible {
+    .card:hover,
+    .card:focus-within {
       background: var(--c-brand-soft);
-      outline: none;
     }
     .card[aria-current="true"] {
       background: var(--c-brand-soft);
       border-left: 3px solid var(--c-brand);
       padding-left: 15px;
+    }
+    .card-select {
+      background: transparent;
+      border: 0;
+      padding: 0;
+      margin: 0;
+      font: inherit;
+      color: inherit;
+      text-align: left;
+      cursor: pointer;
+      display: block;
+      width: 100%;
+    }
+    .card-select::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+    }
+    .card-select:focus-visible {
+      outline: 2px solid var(--c-brand-dark);
+      outline-offset: -4px;
     }
     .card-name {
       font-size: 15px;
@@ -312,6 +341,9 @@ export function buildFarmaciasPage(
       margin: 0 0 6px;
     }
     .card-meta {
+      position: relative;
+      z-index: 1; /* por encima del ::before del card-select para que los
+                     <a tel:> del meta sigan siendo clicables e independientes. */
       display: flex;
       gap: 12px;
       font-size: 12px;
@@ -535,21 +567,22 @@ export function buildFarmaciasPage(
         var f = state.all[row.idx];
         var li = document.createElement('li');
         li.className = 'card';
-        li.tabIndex = 0;
-        li.setAttribute('role', 'button');
         li.setAttribute('data-idx', String(row.idx));
+        // Stretched-link: el boton envuelve nombre+direccion y su ::before
+        // cubre toda la tarjeta. Asi todo el card es clickable sin que el
+        // <li> sea focusable-ambiguo.
+        var btnHtml =
+          '<button type="button" class="card-select" data-idx="' + row.idx + '" aria-label="Ver ' + esc(f[2]) + ' en el mapa">' +
+            '<p class="card-name">' + esc(f[2]) + '</p>' +
+            (f[3] ? '<p class="card-addr">' + esc(f[3]) + '</p>' : '') +
+          '</button>';
         var meta = [];
         meta.push('<span class="card-dist">' + esc(fmtDist(row.dist)) + '</span>');
         if (f[4]) meta.push('<a href="tel:' + esc(f[4].replace(/\\s+/g,'')) + '">' + esc(f[4]) + '</a>');
         if (f[5]) meta.push('<span>' + esc(f[5].length > 40 ? f[5].slice(0,40) + '…' : f[5]) + '</span>');
-        li.innerHTML =
-          '<p class="card-name">' + esc(f[2]) + '</p>' +
-          (f[3] ? '<p class="card-addr">' + esc(f[3]) + '</p>' : '') +
-          '<div class="card-meta">' + meta.join('') + '</div>';
-        li.addEventListener('click', onCardClick);
-        li.addEventListener('keydown', function(ev){
-          if (ev.key === 'Enter' || ev.key === ' '){ ev.preventDefault(); onCardClick.call(this, ev); }
-        });
+        li.innerHTML = btnHtml + '<div class="card-meta">' + meta.join('') + '</div>';
+        var btn = li.querySelector('.card-select');
+        btn.addEventListener('click', onCardClick);
         frag.appendChild(li);
       }
       list.appendChild(frag);

@@ -1,0 +1,17 @@
+# Cabeceras HTTP servidas por Cloudflare Pages. Formato y semantica:
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# Regla principal: /sw.js NO debe cachearse en navegador ni en CDN. Asi, cada
+# vez que navigator.serviceWorker.register('/sw.js') o registration.update()
+# se dispara (al cargar /, o cada 60 min desde ui.ts), el navegador hace
+# una revalidacion real contra origen y detecta el byte-diff que gatilla
+# el evento 'updatefound'. Sin esta cabecera Cloudflare cachea /sw.js con
+# un TTL por defecto y el usuario puede quedarse con el SW viejo horas o
+# dias — justo el problema que obligaba a "borrar cookies" para actualizar.
+#
+# no-cache (no "no-store") = cachealo pero revalida siempre. Es lo
+# recomendado por Google para service workers.
+
+/sw.js
+  Cache-Control: no-cache
+  Service-Worker-Allowed: /

@@ -1,8 +1,15 @@
-// Bumping este nombre invalida automaticamente la cache anterior (el listener
-// 'activate' borra todo lo que no coincide con CACHE_NAME). Subir version en
-// cada release de UX que cambie el shell HTML/CSS/JS inlineado — asi los
-// usuarios con una vieja pagina cacheada reciben la nueva al siguiente navigate.
-const CACHE_NAME = 'gasolineras-v18';
+// ATENCION: este fichero es una PLANTILLA. scripts/gen-sw.mjs lo lee y genera
+// public/sw.js substituyendo el placeholder (ver const CACHE_NAME abajo) por
+// APP_VERSION + short SHA de git. No edites public/sw.js directamente —
+// esta gitignoreado y se regenera en cada prebuild.
+//
+// Motivo: antes CACHE_NAME era un literal 'gasolineras-vXX' que habia que
+// subir a mano en cada release. Si se olvidaba, el listener 'activate' no
+// purgaba nada (mismo nombre de cache) y los usuarios seguian sirviendo
+// HTML/JS viejos desde la cache hasta que borraban cookies. Ahora el build
+// id es unico por commit -> toda release nueva invalida la cache vieja y
+// el usuario recibe la pagina fresca en el proximo navigate sin tocar nada.
+const CACHE_NAME = 'gasolineras-__BUILD_ID__';
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia / bbox). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
@@ -17,7 +24,10 @@ const TILE_CACHE_MAX = 400;
 // app siga funcionando offline. Mas seria acumular ruido.
 const API_CACHE_MAX = 24;
 
-// Recursos estáticos a cachear en instalación
+// Recursos estáticos a cachear en instalación.
+// Las librerias del mapa se sirven desde /static/vendor/map/* (ver shell.ts
+// y scripts/fetch-map-vendor.mjs). FontAwesome sigue viniendo de jsdelivr
+// porque pesa y no justifica autohost por ahora.
 const STATIC_ASSETS = [
   '/',
   '/manifest.json',
@@ -31,11 +41,11 @@ const STATIC_ASSETS = [
   // este mismo blob aunque llegue con query distinta porque ignoraremos la
   // query al hacer match (ver cache-first handler con {ignoreSearch:true}).
   '/static/features.js',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
-  'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-  'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css',
-  'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css',
-  'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js',
+  '/static/vendor/map/leaflet/leaflet.css',
+  '/static/vendor/map/leaflet/leaflet.js',
+  '/static/vendor/map/leaflet.markercluster/MarkerCluster.css',
+  '/static/vendor/map/leaflet.markercluster/MarkerCluster.Default.css',
+  '/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js',
   'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css',
 ];
 
@@ -282,4 +292,4 @@ self.addEventListener('fetch', event => {
 //   - Funciona en iOS Safari y otros navegadores sin soporte Push.
 //   - No requiere permisos del navegador ni SW activo para recibirlas.
 //   - El usuario puede silenciar/reanudar desde la propia app de Telegram.
-// Bumping CACHE_NAME (v16) purga estos listeners de los clientes ya instalados.
+// Bumping CACHE_NAME (ahora via __BUILD_ID__) purga estos listeners de los clientes ya instalados.

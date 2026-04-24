@@ -250,7 +250,11 @@ export function buildLandingPage(
       border-color: var(--c-brand);
       outline: none;
     }
-    .tile-coming { opacity: 0.72; cursor: default; }
+    /* Los tiles "proximamente" no llevan opacity — bajaba el contraste
+       por debajo de WCAG AA (4.5:1) tanto en el parrafo muted como en
+       el badge. La combinacion cursor:default + badge amarillo ya
+       comunica el estado sin necesidad de difuminado. */
+    .tile-coming { cursor: default; }
     .tile-icon {
       font-size: 40px;
       line-height: 1;

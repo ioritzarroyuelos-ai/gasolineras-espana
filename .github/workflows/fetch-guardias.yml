@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.14 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde los 11 COF (Colegios Oficiales de Farmaceuticos):
+# v1.15 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde los 14 COF (Colegios Oficiales de Farmaceuticos):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -13,6 +13,9 @@ name: Fetch guardias farmacias snapshot
 #   - Tarragona  (coft.cat)                 → guardias-tarragona.json
 #   - Córdoba    (cofco.org)                → guardias-cordoba.json
 #   - Cantabria  (cofcantabria.org API)     → guardias-cantabria.json
+#   - Pontevedra (cofpo.org API)            → guardias-pontevedra.json
+#   - Las Palmas (coflaspalmas.es API)      → guardias-laspalmas.json
+#   - Alicante   (cofalicante.com REST API) → guardias-alicante.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -129,20 +132,45 @@ jobs:
         timeout-minutes: 3
         run: node scripts/fetch-guardias-cantabria.mjs
 
+      - name: Guardias Pontevedra (COF Pontevedra API)
+        id: pontevedra
+        continue-on-error: true
+        # API JSON con GPS nativo — sin geocoding. Estimado <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-pontevedra.mjs
+
+      - name: Guardias Las Palmas (COF Las Palmas API WordPress)
+        id: laspalmas
+        continue-on-error: true
+        # API WP con GPS nativo — sin geocoding. Nonce + cookies. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-laspalmas.mjs
+
+      - name: Guardias Alicante (COF Alicante REST API)
+        id: alicante
+        continue-on-error: true
+        # REST publico, sin auth. Geocodifica con Nominatim ~70 farmacias
+        # (1 req/s) → ~80s + 51 zonas a 150ms cada una.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-alicante.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
-          echo "Madrid:    ${{ steps.madrid.outcome }}"
-          echo "Bizkaia:   ${{ steps.bizkaia.outcome }}"
-          echo "Gipuzkoa:  ${{ steps.gipuzkoa.outcome }}"
-          echo "Araba:     ${{ steps.alava.outcome }}"
-          echo "A Coruña:  ${{ steps.coruna.outcome }}"
-          echo "Murcia:    ${{ steps.murcia.outcome }}"
-          echo "Almería:   ${{ steps.almeria.outcome }}"
-          echo "Girona:    ${{ steps.girona.outcome }}"
-          echo "Tarragona: ${{ steps.tarragona.outcome }}"
-          echo "Córdoba:   ${{ steps.cordoba.outcome }}"
-          echo "Cantabria: ${{ steps.cantabria.outcome }}"
+          echo "Madrid:     ${{ steps.madrid.outcome }}"
+          echo "Bizkaia:    ${{ steps.bizkaia.outcome }}"
+          echo "Gipuzkoa:   ${{ steps.gipuzkoa.outcome }}"
+          echo "Araba:      ${{ steps.alava.outcome }}"
+          echo "A Coruña:   ${{ steps.coruna.outcome }}"
+          echo "Murcia:     ${{ steps.murcia.outcome }}"
+          echo "Almería:    ${{ steps.almeria.outcome }}"
+          echo "Girona:     ${{ steps.girona.outcome }}"
+          echo "Tarragona:  ${{ steps.tarragona.outcome }}"
+          echo "Córdoba:    ${{ steps.cordoba.outcome }}"
+          echo "Cantabria:  ${{ steps.cantabria.outcome }}"
+          echo "Pontevedra: ${{ steps.pontevedra.outcome }}"
+          echo "Las Palmas: ${{ steps.laspalmas.outcome }}"
+          echo "Alicante:   ${{ steps.alicante.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -150,7 +178,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -174,9 +202,12 @@ jobs:
           steps.girona.outcome == 'failure' &&
           steps.tarragona.outcome == 'failure' &&
           steps.cordoba.outcome == 'failure' &&
-          steps.cantabria.outcome == 'failure'
+          steps.cantabria.outcome == 'failure' &&
+          steps.pontevedra.outcome == 'failure' &&
+          steps.laspalmas.outcome == 'failure' &&
+          steps.alicante.outcome == 'failure'
         run: |
-          echo "::error::Los 11 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 14 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

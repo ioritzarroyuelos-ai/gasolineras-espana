@@ -29,6 +29,11 @@ const API_CACHE_MAX = 24;
 // y scripts/fetch-map-vendor.mjs). FontAwesome sigue viniendo de jsdelivr
 // porque pesa y no justifica autohost por ahora.
 const STATIC_ASSETS = [
+  // Ship 26: la home del mapa pasó de `/` a `/gasolineras/` en preparación
+  // para el portal CercaYa. Precacheamos ambas: `/gasolineras/` es el shell
+  // real, `/` es el redirect 301 (Response opaca al Cache API pero la
+  // guardamos igualmente como offline-safety-net).
+  '/gasolineras/',
   '/',
   '/manifest.json',
   '/static/favicon.svg',
@@ -213,7 +218,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match(request).then(r => r || caches.match('/')))
+      }).catch(() => caches.match(request).then(r => r || caches.match('/gasolineras/') || caches.match('/')))
     );
     return;
   }
@@ -277,7 +282,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match('/'));
+      }).catch(() => caches.match('/gasolineras/') || caches.match('/'));
     })
   );
 });

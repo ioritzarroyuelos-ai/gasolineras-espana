@@ -157,9 +157,24 @@ if ($r -and $r.StatusCode -eq 200) {
 } else { Bad "no pude testear (status $($r.StatusCode))" }
 
 # ---- 4. Headers de seguridad en la home ----
+# Ship 26: la home del mapa vive en /gasolineras/ (antes en /). La raiz
+# redirige 301 al portal; los headers de seguridad se sirven en la pagina
+# real. Verificamos ambas cosas: (a) redirect funcional, (b) headers en /gasolineras/.
 Write-Host ""
-Write-Host "[4] Headers de seguridad en GET /" -ForegroundColor Cyan
-$r = Get-Resp -Url "$BaseUrl/"
+Write-Host "[4a] Redirect 301 de raiz (/ -> /gasolineras/)" -ForegroundColor Cyan
+$r = Get-Resp -Url "$BaseUrl/" -MaxRedir 0
+if ($r -and $r.StatusCode -eq 301) {
+  $loc = $r.Headers['Location']
+  if ($loc -is [array]) { $loc = $loc[0] }
+  if ($loc -match '/gasolineras/') { Ok "/ responde 301 a $loc" }
+  else { Bad "/ responde 301 pero Location='$loc' (esperado /gasolineras/)" }
+}
+elseif ($r) { Bad "esperado 301, recibido $($r.StatusCode)" }
+else { Bad "sin respuesta" }
+
+Write-Host ""
+Write-Host "[4] Headers de seguridad en GET /gasolineras/" -ForegroundColor Cyan
+$r = Get-Resp -Url "$BaseUrl/gasolineras/"
 if (-not $r) { Bad "sin respuesta"; }
 else {
   $h = $r.Headers

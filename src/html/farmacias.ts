@@ -17,9 +17,10 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
-// Guardias (Fases 2/3/4 — Madrid + Euskadi + A Coruña + Murcia):
-//   - 6 ficheros /data/guardias-<territorio>.json cargados en paralelo
-//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia.
+// Guardias (Fases 2-5 — Madrid + Euskadi + A Coruña + Murcia + Almería + Girona):
+//   - 8 ficheros /data/guardias-<territorio>.json cargados en paralelo
+//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
+//     almeria, girona.
 //   - Si una farmacia OSM coincide (~100m) con una de guardia, aparece
 //     con badge "DE GUARDIA" + horario en card y popup.
 //   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
@@ -852,7 +853,7 @@ export function buildFarmaciasPage(
     // Cargar el JSON principal de farmacias + los 6 JSON de guardias en
     // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia'];
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

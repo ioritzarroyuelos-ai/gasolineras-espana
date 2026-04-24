@@ -17,15 +17,15 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
-// Guardias (Fase 2 — Madrid + Euskadi):
-//   - 4 ficheros /data/guardias-<territorio>.json cargados en paralelo
-//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava.
+// Guardias (Fases 2 y 3 — Madrid + Euskadi + A Coruña):
+//   - 5 ficheros /data/guardias-<territorio>.json cargados en paralelo
+//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna.
 //   - Si una farmacia OSM coincide (~100m) con una de guardia, aparece
 //     con badge "DE GUARDIA" + horario en card y popup.
 //   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
-//     indexa, o porque el matching de Gipuzkoa fue impreciso) se pintan
-//     en el mapa como marker dorado extra, sin entrar en la lista.
-//   - Fase 3 anyadira resto de provincias segun disponibilidad de los COF.
+//     indexa, o porque el matching fue impreciso) se pintan en el mapa
+//     como marker dorado extra, sin entrar en la lista.
+//   - Fases siguientes ampliaran a mas provincias segun disponibilidad.
 //
 // Arquitectura:
 //   - HTML + CSS + JS inline con nonce (CSP strict compatible con el
@@ -511,7 +511,7 @@ export function buildFarmaciasPage(
       map: null,
       cluster: null,
       userMarker: null,
-      // Guardias agregadas de los 4 COF (Madrid + Euskadi). Cada una sigue
+      // Guardias agregadas de los 5 COF (Madrid + Euskadi + A Coruña). Cada una sigue
       // el schema [lat, lng, direccion, poblacion, telefono, cp,
       // horarioGuardia, horarioGuardiaDesc]. Se carga en paralelo a
       // farmacias.json — si algun fetch falla, seguimos sin ese territorio.
@@ -849,10 +849,10 @@ export function buildFarmaciasPage(
       }
     }
 
-    // Cargar el JSON principal de farmacias + los 4 JSON de guardias en
+    // Cargar el JSON principal de farmacias + los 5 JSON de guardias en
     // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava'];
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

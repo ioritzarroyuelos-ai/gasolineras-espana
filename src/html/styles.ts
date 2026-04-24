@@ -130,6 +130,31 @@ export function getStyles(nonce: string = ''): string {
       position: absolute; inset: 0;
       width: 100% !important; height: 100% !important;
     }
+    /* Fallback visible cuando Leaflet no cargo (adblocker agresivo / red
+       corporativa). bootApp() pinta este banner, la lista sigue funcionando. */
+    #map.map-load-failed {
+      background: #f8fafc;
+      display: flex; align-items: center; justify-content: center;
+    }
+    body.dark #map.map-load-failed { background: #1e293b; }
+    .map-load-failed-box {
+      max-width: 380px; padding: 20px 24px; text-align: center;
+      background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+      color: #1e293b;
+    }
+    body.dark .map-load-failed-box {
+      background: #0f172a; border-color: #334155; color: #e2e8f0;
+    }
+    .map-load-failed-title { font-weight: 700; font-size: 15px; margin-bottom: 8px; }
+    .map-load-failed-hint   { font-size: 13px; color: #64748b; margin-bottom: 14px; line-height: 1.45; }
+    body.dark .map-load-failed-hint { color: #94a3b8; }
+    .map-load-failed-btn {
+      padding: 8px 16px; font-size: 13px; font-weight: 600;
+      background: #16a34a; color: #fff; border: 0; border-radius: 8px;
+      cursor: pointer;
+    }
+    .map-load-failed-btn:hover { background: #15803d; }
 
     /* ===== FORM CONTROLS ===== */
     .form-label { display:block; font-size:11px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:4px; }

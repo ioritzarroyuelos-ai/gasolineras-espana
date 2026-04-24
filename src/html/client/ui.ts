@@ -419,9 +419,53 @@ async function applyQueryState(state) {
   try { if (typeof updateAdvCountBadge === 'function') updateAdvCountBadge(); } catch(_) {}
 }
 
+// Si el <script> de Leaflet no carga (adblocker agresivo, red corporativa que
+// bloquea unpkg, SRI mismatch por CDN transitorio), typeof L === 'undefined' y
+// initMap() lanza ReferenceError que tumba TODO bootApp — el usuario veria
+// sidebar vacio, sin provincias, sin lista, sin favoritas. Aislamos el fallo
+// del mapa para que el resto de la app (lista + filtros + Telegram) siga
+// funcionando y pintamos un aviso claro encima del contenedor del mapa.
+function showMapLoadFailure() {
+  var host = document.getElementById('map');
+  if (!host || host.dataset.loadFailed === '1') return;
+  host.dataset.loadFailed = '1';
+  host.classList.add('map-load-failed');
+  var box = document.createElement('div');
+  box.className = 'map-load-failed-box';
+  var title = document.createElement('div');
+  title.className = 'map-load-failed-title';
+  title.textContent = 'No pudimos cargar el mapa';
+  var hint = document.createElement('div');
+  hint.className = 'map-load-failed-hint';
+  hint.textContent = 'Puede que tu bloqueador o tu red esten bloqueando el script del mapa. La lista de gasolineras sigue funcionando.';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'map-load-failed-btn';
+  btn.textContent = 'Recargar pagina';
+  btn.addEventListener('click', function() { location.reload(); });
+  box.appendChild(title);
+  box.appendChild(hint);
+  box.appendChild(btn);
+  host.appendChild(box);
+}
+
 // Inicializar mapa + provincias + (opcional) aplicar query state y buscar.
 async function bootApp() {
-  initMap();
+  try {
+    if (typeof L === 'undefined') throw new ReferenceError('L is not defined');
+    initMap();
+  } catch (e) {
+    // El error reporter (window.error) ya captura el ReferenceError original si
+    // viene de dentro de initMap. Si el throw es el nuestro (L undefined antes
+    // de llamar initMap) el reporter no lo ve — lo reportamos a mano aqui.
+    try {
+      if (e && typeof e === 'object' && e.message === 'L is not defined' && !e.__reported) {
+        e.__reported = true;
+        window.dispatchEvent(new ErrorEvent('error', { error: e, message: e.message }));
+      }
+    } catch(_) {}
+    showMapLoadFailure();
+  }
   loadProvincias();
   // Fire-and-forget: hidrata el cache de telegram_subscriptions para que al
   // abrir el modal de favoritas las campanas esten ya sincronizadas con el

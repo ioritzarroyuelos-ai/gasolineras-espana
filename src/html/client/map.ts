@@ -1043,6 +1043,11 @@ function buildPopup(s) {
 var lastRenderedStations = [];
 function renderMarkers(stations) {
   lastRenderedStations = stations || [];
+  // Si initMap fallo (typeof L === 'undefined' por adblocker/red), 'map'
+  // es undefined y llamar map.removeLayer tumbaria el render de la lista.
+  // Bailamos silenciosamente: el banner de fallo del mapa ya esta visible,
+  // la lista y los filtros siguen funcionando sin pins.
+  if (typeof map === 'undefined' || !map) return;
   if (clusterGroup) map.removeLayer(clusterGroup);
   if (typeof heatLayer !== 'undefined' && heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
 

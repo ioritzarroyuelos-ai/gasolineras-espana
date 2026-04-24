@@ -637,25 +637,30 @@ export function getStyles(nonce: string = ''): string {
     .app-toast--success { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
     .app-toast--info    { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
 
-    /* ---- Boton PWA install ---- */
-    .pwa-install-btn {
-      position: fixed;
-      bottom: 140px;
-      right: 16px;
+    /* ---- Boton PWA install (Ship 25.5) ----
+       Vive dentro del sidebar (#install-app-row), no flotante. El row
+       empieza con [hidden] y core.ts se lo quita cuando el navegador
+       dispara beforeinstallprompt. */
+    .install-app-btn {
+      width: 100%;
       background: #16a34a;
       color: #fff;
       border: 0;
-      padding: 8px 14px;
-      border-radius: 20px;
-      font-size: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
       font-weight: 700;
-      box-shadow: 0 4px 12px rgba(22,163,74,0.35);
+      box-shadow: 0 2px 8px rgba(22,163,74,0.25);
       cursor: pointer;
-      z-index: 9998;
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
+      transition: background 0.15s ease;
     }
+    .install-app-btn:hover  { background: #15803d; }
+    .install-app-btn:active { background: #166534; }
+    body.dark .install-app-btn { box-shadow: 0 2px 8px rgba(22,163,74,0.45); }
 
     /* ---- Badge offline ---- */
     .offline-badge {
@@ -775,14 +780,8 @@ export function getStyles(nonce: string = ''): string {
       #legend h4 { font-size: 11px; margin-bottom: 5px; }
       .legend-item { font-size: 11px; margin-bottom: 3px; }
       .legend-dot  { width: 10px; height: 10px; }
-      /* Install button: zoom top del stack esta en bottom:132. A 140
-         dejamos ~8px de aire sin solapar. */
-      #btn-install-pwa {
-        bottom: 140px !important;
-        right: 8px !important;
-        font-size: 11px !important;
-        padding: 7px 12px !important;
-      }
+      /* El boton de instalar vive en el sidebar (#install-app-row), ya no
+         es un FAB flotante — no necesita override de posicion en mobile. */
       /* Ship 25.3: Media nacional tambien se reposiciona en mobile. El header
          aqui es 50px (no 60px), asi que pegamos el widget justo debajo con
          10px de aire. Tambien apretamos el padding y max-width para que no

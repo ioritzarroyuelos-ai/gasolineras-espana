@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.15 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde los 14 COF (Colegios Oficiales de Farmaceuticos):
+# v1.16 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde los 17 COF (Colegios Oficiales de Farmaceuticos):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -16,6 +16,9 @@ name: Fetch guardias farmacias snapshot
 #   - Pontevedra (cofpo.org API)            → guardias-pontevedra.json
 #   - Las Palmas (coflaspalmas.es API)      → guardias-laspalmas.json
 #   - Alicante   (cofalicante.com REST API) → guardias-alicante.json
+#   - Cádiz      (cofcadiz.es vcomm API)    → guardias-cadiz.json
+#   - Ceuta      (cofceuta.com vcomm API)   → guardias-ceuta.json
+#   - Valencia   (micof.es portal MICOF)    → guardias-valencia.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -154,6 +157,28 @@ jobs:
         timeout-minutes: 8
         run: node scripts/fetch-guardias-alicante.mjs
 
+      - name: Guardias Cádiz (COF Cádiz vcomm API)
+        id: cadiz
+        continue-on-error: true
+        # API JSON con coords nativas (string "[lat,lng]"). <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-cadiz.mjs
+
+      - name: Guardias Ceuta (COF Ceuta vcomm API)
+        id: ceuta
+        continue-on-error: true
+        # API JSON identico a Cadiz, ~3 farmacias/dia. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-ceuta.mjs
+
+      - name: Guardias Valencia (MICOF portal HTML)
+        id: valencia
+        continue-on-error: true
+        # GET inicial para captcha + cookie, luego itera 27 localidades
+        # cabecera. Coords nativas en HTML. ~10-15s.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-valencia.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -171,6 +196,9 @@ jobs:
           echo "Pontevedra: ${{ steps.pontevedra.outcome }}"
           echo "Las Palmas: ${{ steps.laspalmas.outcome }}"
           echo "Alicante:   ${{ steps.alicante.outcome }}"
+          echo "Cádiz:      ${{ steps.cadiz.outcome }}"
+          echo "Ceuta:      ${{ steps.ceuta.outcome }}"
+          echo "Valencia:   ${{ steps.valencia.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -178,7 +206,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -205,9 +233,12 @@ jobs:
           steps.cantabria.outcome == 'failure' &&
           steps.pontevedra.outcome == 'failure' &&
           steps.laspalmas.outcome == 'failure' &&
-          steps.alicante.outcome == 'failure'
+          steps.alicante.outcome == 'failure' &&
+          steps.cadiz.outcome == 'failure' &&
+          steps.ceuta.outcome == 'failure' &&
+          steps.valencia.outcome == 'failure'
         run: |
-          echo "::error::Los 14 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 17 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

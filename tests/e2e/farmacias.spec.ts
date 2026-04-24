@@ -1,4 +1,5 @@
-// E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM.
+// E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM +
+// guardias (Madrid, Bizkaia, Gipuzkoa, Araba).
 //
 // Comprobamos:
 //   - shell renderiza (header, toolbar, layout principal)
@@ -7,6 +8,9 @@
 //   - canonical + meta description presentes
 //   - canonicalizacion /farmacias -> /farmacias/
 //   - sin violaciones graves de axe (excluyendo tiles de Leaflet)
+//   - los 4 snapshots de guardias estan servidos y con count > 0
+//   - al menos una card aparece con data-guardia=true y badge visible
+//     cuando geolocalizamos al usuario en Madrid
 //
 // No comprobamos geolocalizacion real — Playwright permite mockearla pero
 // complicaria el test mas de lo que aporta para un MVP. El boton y el flujo
@@ -66,6 +70,39 @@ test.describe('Farmacias (/farmacias/)', () => {
     await page.locator('.radius-group button[data-r="2"]').click()
     await expect(page.locator('.radius-group button[data-r="2"]')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('los 4 snapshots de guardias se sirven con count > 0', async ({ request }) => {
+    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava']
+    for (const t of territorios) {
+      const res = await request.get(`/data/guardias-${t}.json`)
+      expect(res.status(), `guardias-${t}.json debe existir`).toBe(200)
+      const body = await res.json()
+      expect(body.territorio, `territorio field del json ${t}`).toBe(t)
+      expect(Array.isArray(body.guardias), `${t} guardias array`).toBe(true)
+      expect(body.count, `${t} count > 0`).toBeGreaterThan(0)
+      // Schema fijo — sirve de defensa contra cambios accidentales en los scrapers.
+      expect(body.schema).toEqual([
+        'lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc',
+      ])
+    }
+  })
+
+  test('aparece al menos una card con badge DE GUARDIA geolocalizando en Madrid', async ({ page, context }) => {
+    // Mockear geolocation en Puerta del Sol (40.4168, -3.7038). Madrid tiene
+    // ~158 farmacias de guardia hoy y el radio de 5km cubre el centro.
+    await context.grantPermissions(['geolocation'])
+    await context.setGeolocation({ latitude: 40.4168, longitude: -3.7038 })
+
+    await page.goto('/farmacias/')
+    await page.getByRole('button', { name: /usar mi ubicación/i }).click()
+
+    // Esperar a que se pinte al menos una tarjeta con data-guardia.
+    // Timeout generoso por el fetch del JSON principal (~1.5MB) + los 4
+    // JSON de guardias.
+    const guardiaCard = page.locator('li.card[data-guardia="true"]').first()
+    await expect(guardiaCard, 'al menos una tarjeta marcada como guardia').toBeVisible({ timeout: 20_000 })
+    await expect(guardiaCard.locator('.badge-guardia')).toHaveText(/de guardia/i)
   })
 
   test('sin violaciones graves de axe (excluyendo Leaflet tiles)', async ({ page }) => {

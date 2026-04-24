@@ -1,0 +1,164 @@
+name: Fetch guardias farmacias snapshot
+
+# v1.10 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde los 4 COF (Colegios Oficiales de Farmaceuticos):
+#   - Madrid     (cofm.es)                  → guardias-madrid.json
+#   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
+#   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
+#   - Araba      (cofalava.org)             → guardias-alava.json
+#
+# Por que semanal y no diario:
+#   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
+#   distinto), pero el caso de uso tipico del usuario es "las de esta semana".
+#   Un usuario espanol hace mapa mental de guardias SEMANAL, no diario. Con un
+#   refresh semanal vemos las de lunes cuando el cron corre, y sirve toda la
+#   semana. Si en el futuro queremos frecuencia diaria cambiamos el cron sin
+#   tocar los scrapers.
+#
+# Tolerancia a fallos:
+#   Los 4 scrapers corren en paralelo pero son independientes — si uno falla
+#   los otros pueden haber commiteado con exito. Cada scraper tiene umbrales
+#   defensivos propios: si la API cambia o devuelve algo raro, exit 1 sin
+#   sobrescribir el JSON existente.
+
+on:
+  schedule:
+    # Lunes a las 05:45 UTC = 06:45/07:45 Madrid. Justo despues de los otros
+    # crons diarios (prices 05:00, guardias algo mas tarde para no solapar).
+    - cron: '45 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Forzar deploy a Pages aunque no haya cambios'
+        type: boolean
+        default: false
+
+concurrency:
+  group: fetch-guardias
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      # Los 4 scrapers se ejecutan en serie para que un fallo de uno no
+      # bloquee a los otros. `continue-on-error` + `if: always()` en el step
+      # de commit hace que commiteemos lo que tengamos aunque alguno falle.
+      - name: Guardias Madrid (COFM)
+        id: madrid
+        continue-on-error: true
+        run: node scripts/fetch-guardias-madrid.mjs
+
+      - name: Guardias Bizkaia (COF Bizkaia)
+        id: bizkaia
+        continue-on-error: true
+        run: node scripts/fetch-guardias-bizkaia.mjs
+
+      - name: Guardias Gipuzkoa (COF Gipuzkoa)
+        id: gipuzkoa
+        continue-on-error: true
+        # Este scraper geocodifica con Nominatim (1 req/s) para ~90 farmacias.
+        # Estimado ~2 minutos. Timeout amplio por si Nominatim responde lento.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-gipuzkoa.mjs
+
+      - name: Guardias Araba (COF Alava)
+        id: alava
+        continue-on-error: true
+        run: node scripts/fetch-guardias-alava.mjs
+
+      - name: Resumen de resultados
+        if: always()
+        run: |
+          echo "Madrid:   ${{ steps.madrid.outcome }}"
+          echo "Bizkaia:  ${{ steps.bizkaia.outcome }}"
+          echo "Gipuzkoa: ${{ steps.gipuzkoa.outcome }}"
+          echo "Araba:    ${{ steps.alava.outcome }}"
+
+      - name: Commit snapshots si hay cambios
+        id: commit
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "Sin cambios en ningun guardias-*.json"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "chore(data): actualizar guardias farmacias $(date -u +%Y-%m-%dT%H:%MZ)"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Si TODOS fallan, que el job se marque como failed para que el monitor
+      # de GHA lo detecte. Si al menos uno hizo commit, job OK.
+      - name: Fallar si todos los scrapers fallaron
+        if: |
+          steps.madrid.outcome == 'failure' &&
+          steps.bizkaia.outcome == 'failure' &&
+          steps.gipuzkoa.outcome == 'failure' &&
+          steps.alava.outcome == 'failure'
+        run: |
+          echo "::error::Los 4 scrapers de guardias fallaron. Revisar los logs."
+          exit 1
+
+  # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).
+  deploy:
+    needs: fetch
+    if: needs.fetch.outputs.changed == 'true' || github.event.inputs.force_deploy == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Verificar que los secrets existen
+        id: secrets
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CF_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN no configurado — snapshots en repo pero no llegan a prod hasta deploy manual."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v5
+        if: steps.secrets.outputs.present == 'true'
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps
+        if: steps.secrets.outputs.present == 'true'
+        run: npm ci
+
+      - name: Build bundle
+        if: steps.secrets.outputs.present == 'true'
+        run: npm run build
+
+      - name: Deploy a Cloudflare Pages
+        if: steps.secrets.outputs.present == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler pages deploy dist \
+            --project-name=webapp \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-message="auto-deploy: guardias refresh $(date -u +%Y-%m-%dT%H:%MZ)"

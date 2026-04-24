@@ -215,9 +215,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       name: 'Gasolineras España',
       url: origin,
       logo: logoUrl,
-      sameAs: [
-        'https://github.com/ioritzarroyuelos-ai/gasolineras-espana',
-      ],
     },
     {
       '@context': 'https://schema.org',

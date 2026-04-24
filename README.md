@@ -272,7 +272,6 @@ Hardening aplicado:
 - Validación estricta de IDs de entrada (regex `^\d{1,5}$`) — previene SSRF.
 - Rate limiting por IP: 120 req/min en `/api/*`, 20 req/min en `/api/ingest` (local por Worker) + reglas de Cloudflare Rate Limiting (ver [`wrangler.jsonc`](./wrangler.jsonc)).
 - Validación zod en la frontera: el servidor rechaza payloads del Ministerio que no casan con el esquema y emite `ministry.schema_drift` a los logs.
-- `/.well-known/security.txt` conforme a RFC 9116.
 
 ## Contribuir
 

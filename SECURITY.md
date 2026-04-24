@@ -130,11 +130,6 @@ expone en `GET /api/health`.
 - Cron diario de seguridad aunque no haya commits — detecta CVEs nuevas contra
   deps ya deployadas.
 
-## security.txt (RFC 9116)
-
-Servimos [`/.well-known/security.txt`](https://gasolineras.pages.dev/.well-known/security.txt)
-con los canales oficiales de contacto, firmado con expiración anual.
-
 ## Hall of Fame
 
 Reporta una vulnerabilidad válida y apareces aquí (si lo deseas).

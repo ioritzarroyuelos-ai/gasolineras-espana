@@ -20,6 +20,11 @@ node_modules/
 # autogenerado. La migracion canonica 0001_*.sql SI se commitea (es fuente).
 migrations/9999_backfill.sql
 
+# sw.js se regenera en prebuild desde scripts/sw.js.tpl (ver scripts/gen-sw.mjs).
+# El CACHE_NAME incluye el short SHA del commit para que cada release invalide
+# la cache vieja automaticamente sin tocar el template a mano.
+public/sw.js
+
 # env
 .env
 .env.production

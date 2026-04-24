@@ -683,15 +683,11 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <span class="range-val" id="lbl-radius">10 km</span>
         </div>
       </div>
+      <!-- Slider de deposito eliminado: la capacidad se configura una sola
+           vez en el modal "Personaliza tu experiencia" y se lee desde
+           localStorage.gs_tank para calcular el ahorro. Tenerlo duplicado
+           aqui confundia al usuario. -->
 
-      <!-- Deposito del vehiculo (para calculo de ahorro) -->
-      <div class="form-group">
-        <label class="form-label" for="in-tank">Depósito <span class="tank-sub">(para calcular ahorro)</span></label>
-        <div class="range-group">
-          <input id="in-tank" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
-          <span class="range-val" id="lbl-tank">50 L</span>
-        </div>
-      </div>
 
       <!-- Widget de gasto mensual (se activa tras onboarding) -->
       <div id="monthly-widget" role="region" aria-label="Gasto estimado mensual">

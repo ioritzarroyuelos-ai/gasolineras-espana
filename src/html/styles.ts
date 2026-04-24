@@ -817,8 +817,8 @@ export function getStyles(nonce: string = ''): string {
         border-bottom: 1px solid #e2e8f0;
       }
       body.dark #sidebar-filters > div:first-child { border-bottom-color: #334155; }
-      /* El slider de deposito no se puede quedar pegado al boton */
-      #in-tank, #in-radius { height: 6px; }
+      /* El slider de radio no se puede quedar pegado al boton */
+      #in-radius { height: 6px; }
       .range-group { gap: 12px; padding: 4px 0; }
     }
 
@@ -2267,7 +2267,6 @@ export function getStyles(nonce: string = ''): string {
     .search-heading-row     { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .search-heading         { font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; gap: 6px; }
     .search-actions         { display: flex; gap: 6px; }
-    .tank-sub               { font-weight: 400; text-transform: none; color: #64748b; }
     .stats-flex             { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
     .loading-line-1         { font-size: 14px; font-weight: 600; color: #374151; }
     .loading-line-2         { font-size: 12px; color: #64748b; }

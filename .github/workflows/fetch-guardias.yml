@@ -50,7 +50,8 @@ name: Fetch guardias farmacias snapshot
 #   - Huelva     (cofhuelva.org PDF + localizador) → guardias-huelva.json
 #   - Jaén       (farmaceuticosdejaen.es PDF mensual) → guardias-jaen.json
 #   - Sevilla    (farmaceuticosdesevilla.es PDFs trimestrales) → guardias-sevilla.json
-#                (cobertura provincia, NO capital)
+#                (cobertura: Aljarafe + Alcalá Guadaira + Morón-Osuna-Estepa
+#                + Sierra Norte. NO capital, NO 5 zonas escaneadas)
 #
 # Provincias bloqueadas (sin alternativa viable sin headless browser):
 #   - León (cofleon.es): backend SOAP permanentemente caido. CGCOF redirige
@@ -61,6 +62,14 @@ name: Fetch guardias farmacias snapshot
 #     token server-side: POST sin token → resultado vacio. CGCOF redirige
 #     al mismo dominio. SERGAS y paxinasgalegas no exponen guardias en
 #     vivo. Sin alternativa publica.
+#
+# Zonas Sevilla parcialmente bloqueadas (PDF escaneado, requiere OCR):
+#   - 5 zonas (alcaladelrio, brenes, burguillos, cantillana, carmona):
+#     PDFs publicados como imagenes escaneadas (texto solo "-- N of 13 --"),
+#     no hay capa de texto. Necesita tesseract+poppler instalados o
+#     tesseract.js puro JS (lento+baja precision). Iframe localizador del
+#     COF requiere sesion Joomla con token rotatorio. Documentado para
+#     futura iteracion con OCR.
 #   Cobertura efectiva: 48 de 50 provincias + Ceuta + Melilla = 50 de 52
 #   territorios (96%). Los 2 huecos requieren bypass de reCAPTCHA o
 #   restauracion del SOAP backend ajeno — fuera del scope MVP.

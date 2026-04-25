@@ -50,6 +50,7 @@ const BBOX = { minLat: 36.8, maxLat: 38.1, minLng: -6.6, maxLng: -4.5 }
 // mayuscula, el resto minusculas.
 const ZONAS = [
   'Aljarafe',
+  'Sevilla', // capital — formato distinto, parser dedicado
   'alcaladeguadaira',
   'alcaladelrio',
   'brenes',
@@ -66,6 +67,10 @@ const ZONAS = [
 const ZONA_MUNICIPIO_UNICO = {
   alcaladeguadaira: 'Alcalá de Guadaira',
 }
+
+// Zona Sevilla capital — PDF semanal organizado por SEMANA + URGENCIA
+// DE DÍA / NOCHE + zonas (CENTRO, NERVIÓN, MACARENA, SUR, etc.).
+const ZONA_CAPITAL = 'Sevilla'
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
@@ -120,15 +125,22 @@ async function geocode(direccion, municipio) {
     .replace(/\s+/g, ' ')
     .trim()
   if (!clean) return null
-  const v1 = `${clean}, ${municipio}, Sevilla, España`
-  let coord = await geocodeOne(v1)
-  if (coord) return coord
-  await new Promise(r => setTimeout(r, 1100))
+  const variants = [clean]
+  // Cortar al primer " - <texto>" si <texto> no es un número (descriptor de
+  // barrio/zona). Ejemplo: "Trajano, 40 - Centro" → "Trajano, 40".
+  const cortado = clean.replace(/\s+-\s+[^,\d][^,]*$/i, '').trim()
+  if (cortado && cortado !== clean) variants.push(cortado)
+  // Sin numero al final (e.g. "Pza. Encarnación, 22" → "Pza. Encarnación").
+  const sinN = clean.replace(/,\s*\d+.*$/, '').trim()
+  if (sinN && sinN !== clean && !variants.includes(sinN)) variants.push(sinN)
+  for (const v of variants) {
+    const coord = await geocodeOne(`${v}, ${municipio}, Sevilla, España`)
+    if (coord) return coord
+    await new Promise(r => setTimeout(r, 1100))
+  }
   // Fallback: solo municipio (centro del pueblo) si la direccion no se
   // encuentra. Mejor algo que nada.
-  const v2 = `${municipio}, Sevilla, España`
-  coord = await geocodeOne(v2)
-  return coord
+  return await geocodeOne(`${municipio}, Sevilla, España`)
 }
 
 // Parsea el PDF buscando el bloque del dia actual.
@@ -224,6 +236,100 @@ function parseDiaSimple(text, target, year, municipio) {
   return { diurnas, nocturnas }
 }
 
+// Parser CAPITAL — PDF semanal organizado por bloques:
+//   "LUNES A SÁBADO - SEMANA DEL X AL Y URGENCIA DE DÍA (de 9:30 a 22:00 h.)"
+//     -> Lista de farmacias por zona (CENTRO, NERVIÓN, MACARENA, SUR,
+//        SEVILLA ESTE - ROCHELAMBERT, TRIANA - LOS REMEDIOS).
+//     -> Cada farmacia: "» <direccion> - T: <tel>" — algunas con anotaciones
+//        "Sólo Miércoles", "Excepto Sábado", "Sólo Sábado" para filtrar dia.
+//   "URGENCIA DE NOCHE (de 22:00 a 9:30) LUNES A DOMINGO"
+//     -> Lista similar, con anotaciones "Sólo Lunes", "Sólo Martes", etc.
+//
+// Devuelve farmacias de la semana actual sin filtrar por restriccion de dia
+// (ROI: las anotaciones varian mucho — mejor mostrar la lista semanal y que
+// el usuario verifique en el local). Esto da una cobertura amplia de la
+// capital.
+function parseDiaCapital(text, today) {
+  // Localizar la semana actual. Formato:
+  //   "SEMANA DEL 20 DE ABRIL DE 2026 AL 26 ABRIL DE 2026"
+  //   "SEMANA DEL 4 DE MAYO DE 2026 AL 10 DE MAYO DE 2026"
+  const reSemana = /SEMANA DEL\s+(\d{1,2})\s+(?:DE\s+)?([A-ZÁÉÍÓÚÑ]+)(?:\s+DE\s+(\d{4}))?\s+AL\s+(\d{1,2})\s+(?:DE\s+)?([A-ZÁÉÍÓÚÑ]+)\s+DE\s+(\d{4})/gi
+  const semanas = [...text.matchAll(reSemana)]
+  if (semanas.length === 0) return { diurnas: [], nocturnas: [] }
+  const target = today.getTime()
+  let mejor = null
+  for (const s of semanas) {
+    const diaIni = parseInt(s[1], 10)
+    const mesIniName = s[2].toLowerCase()
+    const yearIni = s[3] ? parseInt(s[3], 10) : parseInt(s[6], 10)
+    const diaFin = parseInt(s[4], 10)
+    const mesFinName = s[5].toLowerCase()
+    const yearFin = parseInt(s[6], 10)
+    const mesIni = MESES.findIndex(m => m === mesIniName.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    const mesFin = MESES.findIndex(m => m === mesFinName.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))
+    if (mesIni < 0 || mesFin < 0) continue
+    const ini = new Date(yearIni, mesIni, diaIni).getTime()
+    const fin = new Date(yearFin, mesFin, diaFin, 23, 59).getTime()
+    if (target >= ini && target <= fin) {
+      mejor = { idx: s.index, end: fin, ini }
+      break
+    }
+  }
+  // Fallback: la primera semana del PDF (es la mas reciente publicada).
+  if (!mejor) {
+    mejor = { idx: semanas[0].index }
+  }
+  // Bloque = desde inicio semana hasta proxima "SEMANA DEL" o fin texto.
+  const start = mejor.idx
+  let end = text.length
+  for (const s of semanas) {
+    if (s.index > start) { end = s.index; break }
+  }
+  const block = text.slice(start, end)
+  // Separar URGENCIA DE DÍA / URGENCIA DE NOCHE.
+  const idxNoche = block.search(/URGENCIA\s+DE\s+NOCHE/i)
+  const blockDia = idxNoche >= 0 ? block.slice(0, idxNoche) : block
+  const blockNoche = idxNoche >= 0 ? block.slice(idxNoche) : ''
+  const extract = (b, dest) => {
+    // Cada farmacia inicia con »; capturar hasta el siguiente » o fin.
+    const items = b.split(/(?=^»|\n»)/m).slice(1)
+    for (const item of items) {
+      // Limpiar saltos de linea internos.
+      const linea = item.replace(/^»\s*/, '').replace(/\s+/g, ' ').trim()
+      if (!linea) continue
+      // Quitar anotaciones de restriccion de dia al inicio (Solo X, Excepto X).
+      // Estas anotaciones son informativas — las dejamos en la direccion para
+      // que el usuario las vea.
+      // Cortar la direccion: hasta " - T:" o " T:" o "T:" o telefono al final.
+      let dir = linea
+      // Orden importante: PRIMERO restricciones (que van al final), DESPUES tel.
+      // Quitar restricciones del final ("Sólo Miércoles.", "Excepto Sábado.")
+      dir = dir.replace(/\s*(?:S[oó]lo|Excepto)\s+[A-Za-záéíóúñ]+(?:\s+y\s+[A-Za-záéíóúñ]+)?\.?\s*$/i, '').trim()
+      // Quitar tel: " - T: 954..." o "T: 954..." o " 954-..." o variantes.
+      dir = dir.replace(/[\s\-,\.]+T[\.:]?\s*\d[\d\s\-]*\s*\.?\s*$/i, '')
+      dir = dir.replace(/[\s\-,]+\d{9}\s*\.?\s*$/, '')
+      dir = dir.replace(/[\s\-,]+\d{3}[\s\-]\d{3}[\s\-]\d{3}\s*\.?\s*$/, '')
+      // Quitar punto final si quedo
+      dir = dir.replace(/[\s\-,\.]+$/, '').trim()
+      if (dir.length < 5) continue
+      // Detectar telefono en la linea original.
+      let tel = ''
+      const mTel = linea.match(/T[\.:]?\s*(\d{3}[\s-]*\d{3}[\s-]*\d{3})/i)
+      if (mTel) tel = mTel[1].replace(/[\s-]/g, '')
+      else {
+        const mTel2 = linea.match(/(\d{3}[\s-]\d{3}[\s-]\d{3})/)
+        if (mTel2) tel = mTel2[1].replace(/[\s-]/g, '')
+      }
+      dest.push({ municipio: 'Sevilla', direccion: dir, telefono: tel })
+    }
+  }
+  const diurnas = []
+  const nocturnas = []
+  extract(blockDia, diurnas)
+  extract(blockNoche, nocturnas)
+  return { diurnas, nocturnas }
+}
+
 function extraerTelefono(direccion) {
   // (954770068), (95-4184228), (954775151-666123456), etc.
   const m = direccion.match(/\(([\d\-\s]+)\)/)
@@ -258,7 +364,12 @@ async function main() {
     const muniUnico = ZONA_MUNICIPIO_UNICO[zona]
     let diurnas = []
     let nocturnas = []
-    if (muniUnico) {
+    if (zona === ZONA_CAPITAL) {
+      // Sevilla capital — formato semanal por zonas (CENTRO, NERVIÓN...).
+      const parser = new PDFParse({ data: result.value })
+      const r = await parser.getText()
+      ;({ diurnas, nocturnas } = parseDiaCapital(r.text, d))
+    } else if (muniUnico) {
       // Formato simple — un solo municipio con bullets Ŀ.
       const parser = new PDFParse({ data: result.value })
       const r = await parser.getText()
@@ -301,7 +412,7 @@ async function main() {
   for (const f of farmacias) {
     if (!f.coord) continue
     const dirLimpia = limpiarDireccion(f.direccion)
-    const tel = extraerTelefono(f.direccion)
+    const tel = f.telefono || extraerTelefono(f.direccion)
     const k = `${dirLimpia.toLowerCase()} | ${f.municipio.toLowerCase()}`
     if (seen.has(k)) {
       const idx = seen.get(k)

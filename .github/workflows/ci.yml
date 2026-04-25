@@ -79,7 +79,7 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Download dist
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dist-${{ github.sha }}
           path: dist
@@ -136,7 +136,7 @@ jobs:
         run: npx playwright install-deps chromium
 
       - name: Download dist
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dist-${{ github.sha }}
           path: dist

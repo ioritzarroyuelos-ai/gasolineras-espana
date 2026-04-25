@@ -100,22 +100,44 @@ async function listarZonas() {
   return Array.from(ids).sort((a, b) => a - b)
 }
 
+// Decodificacion atomica para evitar el patron "decodifica &amp; primero,
+// luego otras entidades" — un input como "&amp;aacute;" pasaria a "á" en
+// dos pases (CodeQL: double escaping or unescaping). Procesamos cada
+// entidad en una sola pasada con un callback.
+const HTML_ENTITIES = {
+  '&amp;': '&', '&nbsp;': ' ', '&lt;': '<', '&gt;': '>',
+  '&agrave;': 'à', '&egrave;': 'è', '&ograve;': 'ò',
+  '&iacute;': 'í', '&aacute;': 'á', '&eacute;': 'é',
+  '&oacute;': 'ó', '&uacute;': 'ú', '&ntilde;': 'ñ',
+  '&Agrave;': 'À', '&Egrave;': 'È', '&Ograve;': 'Ò',
+  '&Iacute;': 'Í', '&Aacute;': 'Á', '&Eacute;': 'É',
+  '&Oacute;': 'Ó', '&Uacute;': 'Ú', '&Ntilde;': 'Ñ',
+  '&iexcl;': '¡', '&iquest;': '¿', '&middot;': '·',
+}
+const HTML_NUM_ENTITIES = {
+  224: 'à', 232: 'è', 233: 'é', 243: 'ó',
+  225: 'á', 237: 'í', 250: 'ú', 231: 'ç',
+}
+
 function clean(s, max) {
   let t = String(s || '').replace(/\s+/g, ' ').trim()
-  // Decodificar entidades HTML basicas que aparecen en el HTML servidor.
-  t = t.replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')
-       .replace(/&agrave;/g, 'à').replace(/&egrave;/g, 'è').replace(/&ograve;/g, 'ò')
-       .replace(/&iacute;/g, 'í').replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é')
-       .replace(/&oacute;/g, 'ó').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ')
-       .replace(/&Agrave;/g, 'À').replace(/&Egrave;/g, 'È').replace(/&Ograve;/g, 'Ò')
-       .replace(/&Iacute;/g, 'Í').replace(/&Aacute;/g, 'Á').replace(/&Eacute;/g, 'É')
-       .replace(/&Oacute;/g, 'Ó').replace(/&Uacute;/g, 'Ú').replace(/&Ntilde;/g, 'Ñ')
-       .replace(/&iexcl;/g, '¡').replace(/&iquest;/g, '¿')
-       .replace(/&middot;/g, '·').replace(/&#224;/g, 'à').replace(/&#232;/g, 'è')
-       .replace(/&#233;/g, 'é').replace(/&#243;/g, 'ó').replace(/&#225;/g, 'á')
-       .replace(/&#237;/g, 'í').replace(/&#250;/g, 'ú').replace(/&#231;/g, 'ç')
-       .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/<[^>]+>/g, ' ')
-       .replace(/\s+/g, ' ').trim()
+  // Una sola pasada: cada entidad se reemplaza atomicamente por su valor
+  // final, evitando que un reemplazo pueda producir una nueva entidad que
+  // un reemplazo posterior tambien decodifique (double-unescape).
+  t = t.replace(/&(?:[a-zA-Z]+|#\d+);/g, m => {
+    if (HTML_ENTITIES[m]) return HTML_ENTITIES[m]
+    const num = m.match(/^&#(\d+);$/)
+    if (num) {
+      const n = parseInt(num[1], 10)
+      return HTML_NUM_ENTITIES[n] || m
+    }
+    return m
+  })
+  // Strip de tags en bucle hasta estabilizar — defiende ante patrones tipo
+  // `<scr<script>ipt>` (CodeQL: incomplete multi-character sanitization).
+  let prev
+  do { prev = t; t = t.replace(/<[^>]+>/g, ' ') } while (t !== prev)
+  t = t.replace(/\s+/g, ' ').trim()
   return max ? t.slice(0, max) : t
 }
 
@@ -223,7 +245,6 @@ async function main() {
   }
 
   const dedupe = new Map()
-  let descartadasCoord = 0
   let zonasConGuardia = 0
   for (const id of zonas) {
     try {
@@ -243,9 +264,6 @@ async function main() {
   }
   console.log(`  ${zonasConGuardia} zonas con guardia hoy, ${dedupe.size} farmacias unicas`)
 
-  if (descartadasCoord > 0) {
-    console.log(`  ${descartadasCoord} descartadas por coords fuera del bbox`)
-  }
   if (dedupe.size < 5) {
     throw new Error(`Solo ${dedupe.size} farmacias detectadas. Abortamos.`)
   }

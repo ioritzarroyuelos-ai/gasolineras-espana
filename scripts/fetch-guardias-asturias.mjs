@@ -127,7 +127,6 @@ function parseListado(html) {
       // Extraer cada farmacia del bloque.
       const reFarmacia = /VerMapa\('([^']*)','([^']*)','([^']*)','([^']*)','([^']*)','([^']*)','([^']*)'\)/g
       let f
-      let lastEndIndex = 0
       while ((f = reFarmacia.exec(bloqueFarmacias)) !== null) {
         const [, dir, far, dom, cp, mun, num, id] = f
         // El telefono esta en el siguiente span ico-telefono. Buscamos
@@ -147,7 +146,6 @@ function parseListado(html) {
           horarioRange,
           horarioDesc,
         })
-        lastEndIndex = f.index
       }
     }
   }

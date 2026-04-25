@@ -101,7 +101,14 @@ export async function fetchDatosFarmacia(provinciaId, farmaciaId, cookies, refer
     // Usamos `(?:&nbsp;|\s)*` para tolerar nbsp repetidos o espacios.
     const re = new RegExp(`(?:&nbsp;|\\s)*${label}(?:&nbsp;|\\s)*<\\/font>[\\s\\S]*?#a352ae[^>]*>([\\s\\S]*?)<\\/font>`, 'i')
     const mm = html.match(re)
-    return mm ? mm[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim() : ''
+    if (!mm) return ''
+    // Aplicar el strip de tags en bucle hasta estabilizar — defiende ante
+    // patrones malformados tipo `<scr<script>ipt>` que un solo pase dejaria
+    // como `<script>` (CodeQL: incomplete multi-character sanitization).
+    let s = mm[1]
+    let prev
+    do { prev = s; s = s.replace(/<[^>]+>/g, '') } while (s !== prev)
+    return s.replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
   }
   // El servidor envia "Direcci�n" / "Tel�fono" en Windows-1252 — al decodear
   // como windows-1252 deberia salir "Dirección" / "Teléfono".

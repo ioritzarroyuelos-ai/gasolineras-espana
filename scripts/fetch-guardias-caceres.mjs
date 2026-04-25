@@ -46,8 +46,6 @@ const USER_AGENT = 'cercaya-guardias/1.30 (+https://webapp-3ft.pages.dev)'
 // Valle del Jerte). Defensa contra coords en otra provincia.
 const BBOX = { minLat: 39.05, maxLat: 40.55, minLng: -7.55, maxLng: -5.0 }
 
-const ID_MIN = 1
-const ID_MAX = 197
 const PAUSE_MS = 80
 
 function loadCacheMun() {

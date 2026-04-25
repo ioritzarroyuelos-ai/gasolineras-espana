@@ -52,15 +52,22 @@ async function fetchHtml(url, attempts = 3) {
   throw lastErr
 }
 
+// Decodificacion atomica para evitar el patron "decodifica &amp; primero,
+// luego otras entidades" — un input como "&amp;aacute;" pasaria a "á" en
+// dos pases (CodeQL: double escaping or unescaping). Procesamos cada
+// entidad en una sola pasada con un callback.
+const HTML_ENTITIES = {
+  '&amp;': '&', '&nbsp;': ' ',
+  '&aacute;': 'á', '&eacute;': 'é', '&iacute;': 'í',
+  '&oacute;': 'ó', '&uacute;': 'ú', '&ntilde;': 'ñ',
+  '&Aacute;': 'Á', '&Eacute;': 'É', '&Iacute;': 'Í',
+  '&Oacute;': 'Ó', '&Uacute;': 'Ú', '&Ntilde;': 'Ñ',
+}
+
 function clean(s, max) {
-  let t = String(s || '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&nbsp;/g, ' ')
-    .replace(/&aacute;/g, 'á').replace(/&eacute;/g, 'é').replace(/&iacute;/g, 'í')
-    .replace(/&oacute;/g, 'ó').replace(/&uacute;/g, 'ú').replace(/&ntilde;/g, 'ñ')
-    .replace(/&Aacute;/g, 'Á').replace(/&Eacute;/g, 'É').replace(/&Iacute;/g, 'Í')
-    .replace(/&Oacute;/g, 'Ó').replace(/&Uacute;/g, 'Ú').replace(/&Ntilde;/g, 'Ñ')
-    .replace(/\s+/g, ' ').trim()
+  let t = String(s || '').replace(/<[^>]+>/g, ' ')
+  t = t.replace(/&[a-zA-Z]+;/g, m => HTML_ENTITIES[m] || m)
+  t = t.replace(/\s+/g, ' ').trim()
   return max ? t.slice(0, max) : t
 }
 

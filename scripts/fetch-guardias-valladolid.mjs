@@ -44,17 +44,32 @@ function titleCase(s) {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase())
 }
 
-/** Decodifica entidades HTML basicas (&aacute;, &amp;, &nbsp;, etc.). */
+// Decodificacion atomica para evitar el patron "decodifica &amp; primero,
+// luego otras entidades" — un input como "&amp;aacute;" pasaria a "á" en
+// dos pases (CodeQL: double escaping or unescaping). Procesamos cada
+// entidad en una sola pasada con un callback unico.
+const HTML_ENTITIES = {
+  '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>',
+  '&quot;': '"', '&apos;': "'",
+  '&aacute;': 'á', '&eacute;': 'é', '&iacute;': 'í',
+  '&oacute;': 'ó', '&uacute;': 'ú', '&ntilde;': 'ñ',
+  '&Aacute;': 'Á', '&Eacute;': 'É', '&Iacute;': 'Í',
+  '&Oacute;': 'Ó', '&Uacute;': 'Ú', '&Ntilde;': 'Ñ',
+}
+
+/** Decodifica entidades HTML basicas (&aacute;, &amp;, &nbsp;, &#NN;, etc.). */
 function decodeHtmlEntities(s) {
-  return String(s)
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n, 10)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+  return String(s).replace(/&(?:#x[0-9a-f]+|#\d+|[a-zA-Z]+);/gi, m => {
+    if (m.startsWith('&#x') || m.startsWith('&#X')) {
+      const code = parseInt(m.slice(3, -1), 16)
+      return isFinite(code) ? String.fromCharCode(code) : m
+    }
+    if (m.startsWith('&#')) {
+      const code = parseInt(m.slice(2, -1), 10)
+      return isFinite(code) ? String.fromCharCode(code) : m
+    }
+    return HTML_ENTITIES[m] || m
+  })
 }
 
 /** Parsea un marker del array JS y devuelve { lat, lng, titular, calle, municipio, telefono }. */

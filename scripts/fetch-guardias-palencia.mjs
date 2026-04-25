@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v1.40 — Descarga las farmacias de guardia de Palencia capital desde el PDF
+// v1.41 — Descarga las farmacias de guardia de Palencia capital desde el PDF
 // semanal publicado por COF Palencia (cofpalencia.org).
 //
 // El COF Palencia publica un PDF semanal por zona. Para Palencia capital cada
@@ -39,7 +39,7 @@ const OUT_FILE = resolve(DATA_DIR, 'guardias-palencia.json')
 
 const BASE = 'https://www.cofpalencia.org/PUBLICO/CALENDARIOS%20DE%20GUARDIA'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'cercaya-guardias/1.40 (+https://webapp-3ft.pages.dev)'
+const USER_AGENT = 'cercaya-guardias/1.41 (+https://webapp-3ft.pages.dev)'
 
 // Bbox provincia Palencia (margen generoso).
 const BBOX = { minLat: 41.6, maxLat: 43.1, minLng: -5.2, maxLng: -3.6 }
@@ -141,47 +141,6 @@ async function geocode(direccion) {
   return null
 }
 
-// Parsea el PDF semanal de Palencia capital. Encuentra el bloque del dia
-// actual y extrae las 3 farmacias.
-function parsePdfSemanal(text, target) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const idx = lines.findIndex(l => l.toUpperCase().includes(target))
-  if (idx === -1) return []
-  // El bloque del dia consume ~10 lineas hasta el siguiente dia.
-  const stop = lines.findIndex((l, i) => i > idx && DIAS_SEM.some(d => l.toUpperCase().startsWith(d)))
-  const block = lines.slice(idx, stop > -1 ? stop : Math.min(lines.length, idx + 30))
-  // Extraer "Farmacia <nombre>" / "C/ ..." / "(info)" patrones.
-  const farmacias = []
-  let actual = null
-  for (let i = 0; i < block.length; i++) {
-    const l = block[i]
-    // Una linea con nombre + posible apellido. Heuristica: empieza con
-    // mayuscula y NO contiene digitos ni "/" (calle).
-    if (/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s+[A-ZÁÉÍÓÚÑa-záéíóúñ.\-]+)+$/.test(l) ||
-        /^Farmacia\s+/i.test(l)) {
-      if (actual && actual.direccion) farmacias.push(actual)
-      actual = { nombre: l.replace(/^Farmacia\s+/i, ''), direccion: '', info: '' }
-      continue
-    }
-    if (!actual) continue
-    // Linea con direccion: contiene digito o C/ o Avda o Mayor o Pº.
-    if (!actual.direccion && /\d|C\/|Avda|Mayor|Plaza|Pº|Paseo|Calle|nº/i.test(l)) {
-      actual.direccion = l
-      continue
-    }
-    if (actual.direccion && /^\(/.test(l)) {
-      actual.info = (actual.info ? actual.info + ' ' : '') + l
-    }
-  }
-  if (actual && actual.direccion) farmacias.push(actual)
-  return farmacias
-}
-
-function targetDia(d = new Date()) {
-  // Formato del PDF: "LUNES 20 de ABRIL"
-  return `${DIAS_SEM[d.getDay()]} ${d.getDate()} DE ${MESES[d.getMonth()].toUpperCase()}`
-}
-
 async function main() {
   console.log(`Descargando guardias Palencia capital — cofpalencia.org...`)
   const href = await buscarPdfCapital()
@@ -226,7 +185,6 @@ async function main() {
   // no es DIA ni MES, y termina cuando aparece una linea con numero/dir.
   const farmacias = []
   let cur = { nombre: '', direccion: '', info: '' }
-  let phase = 'nombre' // nombre → dir → info → siguiente
   for (let i = 3; i < block.length; i++) {
     const l = block[i]
     const tieneNumero = /\d/.test(l)
@@ -242,7 +200,6 @@ async function main() {
         cur = { nombre: '', direccion: '', info: '' }
       }
       cur.nombre = (cur.nombre ? cur.nombre + ' ' : '') + l
-      phase = 'nombre'
       continue
     }
     // Linea con numero → es direccion (o continuacion de direccion).
@@ -251,7 +208,6 @@ async function main() {
     } else {
       cur.direccion += ' ' + l
     }
-    phase = 'dir'
   }
   if (cur.direccion) farmacias.push(cur)
 

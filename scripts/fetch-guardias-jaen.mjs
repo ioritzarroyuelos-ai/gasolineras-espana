@@ -24,6 +24,7 @@ import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PDFParse } from 'pdf-parse'
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -44,14 +45,21 @@ const DIAS_SEM = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES
 // Municipios principales con su idPoblacion. Los pequeños se ignoran porque
 // comparten PDF zonal o no tienen PDF.
 //
-// Martos y Alcalá la Real publican PDF en formato matriz calendario
-// (rotación semanal con tabla de 7 columnas) que no es parseable con
-// regex línea-a-línea. Se omiten hasta tener parser de calendario.
+// Martos publica PDF matriz: 12 paginas (1 por mes), 8 farmacias en filas
+// izquierda, dias de guardia distribuidos en columnas LUN..DOM por Y de cada
+// farmacia. Parser MARTOS lee items con coordenadas via pdfjs-dist.
+//
+// Alcala la Real publica PDF calendario: 12 mini-calendarios (uno por mes),
+// donde cada semana tiene una farmacia asignada. Parser ALCALA busca el dia
+// dentro del bloque del mes, lee el Y, y asocia con la farmacia mas cercana
+// (mismo Y o fila inmediata por encima).
 const MUNICIPIOS = [
-  { id: 46, nombre: 'Jaén',          formato: 'CAPITAL'  },
-  { id: 6,  nombre: 'Andújar',       formato: 'ANDUJAR'  },
-  { id: 10, nombre: 'Baeza',         formato: 'BAEZA'    },
-  { id: 82, nombre: 'Úbeda',         formato: 'BAEZA'    },
+  { id: 46, nombre: 'Jaén',           formato: 'CAPITAL' },
+  { id: 6,  nombre: 'Andújar',        formato: 'ANDUJAR' },
+  { id: 10, nombre: 'Baeza',          formato: 'BAEZA'   },
+  { id: 82, nombre: 'Úbeda',          formato: 'BAEZA'   },
+  { id: 56, nombre: 'Martos',         formato: 'MARTOS'  },
+  { id: 3,  nombre: 'Alcalá la Real', formato: 'ALCALA'  },
 ]
 
 function loadCache() {
@@ -138,22 +146,35 @@ async function geocodeOne(q) {
 
 async function geocode(direccion, municipio) {
   const variants = []
+  // Quitar "(Carretera de Fuensanta)" y "(...)".
   const sinParens = direccion.replace(/\s*\([^)]*\)/g, '').trim()
-  const sinTel = sinParens.replace(/[-\s]+\d{9}\s*$/, '').replace(/\s+/g, ' ').trim()
+  // Quitar tel "- Teléfono: 953 ..." o "T:" o "Telf:" del final.
+  let sinTel = sinParens.replace(/\s*[-–]\s*(?:Tel[ée]fono|Telf?\.?|Tel\.?|T\.)\s*:?\s*[\d\s]+$/i, '').replace(/[-\s]+\d{9}\s*$/, '').replace(/\s+/g, ' ').trim()
   if (sinTel) variants.push(sinTel)
   if (sinParens && !variants.includes(sinParens)) variants.push(sinParens)
   // Quitar "nº" y números para mejor match de Nominatim.
   const sinN = sinTel.replace(/\bnº\s*/gi, '').trim()
   if (sinN && !variants.includes(sinN)) variants.push(sinN)
-  // Quitar S/N y todo lo que sigue (e.g., "S/N – Edf. Virgen de la Capilla").
+  // Quitar S/N y todo lo que sigue.
   const sinSN = sinTel.replace(/,?\s*S\/N.*$/i, '').trim()
   if (sinSN && !variants.includes(sinSN)) variants.push(sinSN)
-  // Sin numero al final (e.g., "C/JULIO BUREL Nº35" → "C/JULIO BUREL").
+  // Sin numero al final.
   const sinNum = sinTel.replace(/[,]?\s*nº?\s*\d+.*$/i, '').trim()
   if (sinNum && !variants.includes(sinNum)) variants.push(sinNum)
-  // Apellido con doble L (BUREL → BURELL en Baeza es real).
+  // Apellido con doble L (BUREL → BURELL).
   const dobleL = sinNum.replace(/L\b/g, 'LL')
   if (dobleL && dobleL !== sinNum && !variants.includes(dobleL)) variants.push(dobleL)
+  // Variante "Calle X" → "Calle de X" (Nominatim a veces requiere de).
+  if (sinNum) {
+    const conDe = sinNum.replace(/^(Calle|C\/|Avda?\.?|Av\.?|Plaza|Pza?\.?)\s+([^,]+)$/i, '$1 de $2')
+    if (conDe !== sinNum) variants.push(conDe)
+  }
+  // Solo el nombre (e.g., "Calle Alamos" → "Alamos") por si la calle no
+  // es Calle sino Paseo o Avenida con otro nombre.
+  if (sinNum) {
+    const soloNombre = sinNum.replace(/^(Calle|C\/|Avda?\.?|Av\.?|Plaza|Pza?\.?|Paseo|Pº|Ctra\.?|Carretera|Carrera|Pol\.|Pol[íi]gono)\s+/i, '').trim()
+    if (soloNombre && !variants.includes(soloNombre) && soloNombre.length > 3) variants.push(soloNombre)
+  }
   for (const v of variants) {
     const coord = await geocodeOne(`${v}, ${municipio}, Jaén, España`)
     if (coord) return coord
@@ -259,6 +280,121 @@ function parsePdfBaeza(text, today) {
   return []
 }
 
+// Lee los items del PDF de la pagina indicada con coordenadas (x, y, str).
+// Clona el buffer porque pdfjs-dist transfiere el subyacente.
+async function leerItemsPagina(data, pageNum) {
+  const buf = new Uint8Array(data)
+  const pdf = await pdfjs.getDocument({ data: buf, useSystemFonts: true, disableFontFace: true }).promise
+  const page = await pdf.getPage(pageNum)
+  const content = await page.getTextContent()
+  return content.items
+    .filter(it => (it.str || '').trim())
+    .map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }))
+}
+
+// Parser MARTOS — matriz rotacion 8 farmacias.
+// Pagina = mes (1 = enero, ..., 12 = diciembre).
+// Las 8 farmacias estan listadas en x≈56 a Y descendente (cada una con
+// nombre + direccion en 2 lineas proximas). Los dias asignados a cada
+// farmacia tienen el mismo Y aproximado.
+async function parsePdfMartos(data, today) {
+  const items = await leerItemsPagina(data, today.getMonth() + 1)
+  // Lado izquierdo: nombres+direcciones (x < 300)
+  const izq = items.filter(it => it.x < 300).sort((a, b) => b.y - a.y)
+  // Filtrar headers ("FARMACIAS EN SERVICIO...") por Y altos.
+  const yHeader = items.find(it => /FARMACIAS EN SERVICIO|DURANTE 24 HORAS/.test(it.s))?.y || 999
+  const datos = izq.filter(it => it.y < yHeader - 5)
+  // Las farmacias suelen tener nombre que empieza con "D." o "D.ª".
+  const farmacias = []
+  for (const it of datos) {
+    if (/^D\.(ª|\s)/.test(it.s)) {
+      farmacias.push({ nombre: it.s, yNombre: it.y, direccion: '', yDir: 0 })
+    } else if (farmacias.length > 0) {
+      const last = farmacias[farmacias.length - 1]
+      // direccion = primera linea bajo el nombre que aun no tiene dir
+      if (!last.direccion && it.y < last.yNombre - 1) {
+        last.direccion = it.s
+        last.yDir = it.y
+      }
+    }
+  }
+  if (farmacias.length === 0) return []
+  // Encontrar el item con texto = String(dia) en zona derecha (x > 340)
+  const targetStr = String(today.getDate())
+  const dayItems = items.filter(it => it.x > 340 && it.s === targetStr)
+  if (dayItems.length === 0) return []
+  const dayY = dayItems[0].y
+  // Asociar a la farmacia cuyo rango [yDir, yNombre] contiene dayY.
+  let elegida = null
+  let mejorDist = Infinity
+  for (const f of farmacias) {
+    const yMid = (f.yNombre + f.yDir) / 2
+    const dist = Math.abs(dayY - yMid)
+    // El dia debe estar entre dir (Y bajo) y nombre (Y alto). Damos margen.
+    if (dayY >= f.yDir - 3 && dayY <= f.yNombre + 3 && dist < mejorDist) {
+      elegida = f
+      mejorDist = dist
+    }
+  }
+  if (!elegida) return []
+  // Limpiar nombre quitando "D." / "D.ª" / "C. B."
+  const nombreLimpio = elegida.nombre.replace(/^D\.(ª|\s+)/, '').replace(/,?\s*C\.\s*B\.\s*$/i, '').trim()
+  return [{ nombre: nombreLimpio, direccion: elegida.direccion, horario: 'Diurna+Nocturna 9:00-9:00' }]
+}
+
+// Parser ALCALA — calendario semanal con farmacia por semana.
+// 2 paginas con 6 mini-calendarios cada una. Buscamos el bloque del mes,
+// el dia dentro de el, y la farmacia asociada al mismo Y (o el Y mas cercano
+// hacia abajo si la semana del dia no tiene farmacia explicita).
+async function parsePdfAlcala(data, today) {
+  const mesActual = MESES[today.getMonth()].toUpperCase()
+  // Probar las 2 paginas.
+  const buf = new Uint8Array(data)
+  const pdf = await pdfjs.getDocument({ data: buf, useSystemFonts: true, disableFontFace: true }).promise
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    const items = content.items
+      .filter(it => (it.str || '').trim())
+      .map(it => ({ x: it.transform[4], y: it.transform[5], s: it.str.trim() }))
+    // Encontrar el header del mes
+    const meses = items.filter(it => /^(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)$/i.test(it.s))
+    const mes = meses.find(m => normalize(m.s) === normalize(mesActual))
+    if (!mes) continue
+    // Encontrar mes inferior (Y menor) para delimitar el bloque
+    const mesesAbajo = meses.filter(m => m.y < mes.y).sort((a, b) => b.y - a.y)
+    const yMin = mesesAbajo[0]?.y ?? 0
+    const bloque = items.filter(it => it.y > yMin && it.y <= mes.y)
+    // Encontrar item con texto = dia en zona izquierda (x < 270)
+    const targetStr = String(today.getDate())
+    const dayItems = bloque.filter(it => it.x < 270 && it.s === targetStr)
+    if (dayItems.length === 0) continue
+    const dayY = dayItems[0].y
+    // Buscar dir + nombre en zona derecha (x > 290) con Y igual o el mas cercano
+    // hacia abajo (Y menor). Si el dia esta en una fila sin farmacia, baja a la
+    // siguiente fila que la tenga.
+    const derecha = bloque.filter(it => it.x > 290)
+    const candidatos = derecha
+      .filter(it => Math.abs(it.y - dayY) < 30)
+      .sort((a, b) => Math.abs(a.y - dayY) - Math.abs(b.y - dayY))
+    let dir = '', nombre = ''
+    if (candidatos.length > 0) {
+      const yElegido = candidatos[0].y
+      const enFila = derecha.filter(it => Math.abs(it.y - yElegido) < 2).sort((a, b) => a.x - b.x)
+      // En el header del mes hay tambien "Lu Ma Mi..." en x<300 — descartado por filtro.
+      // direccion suele estar en x≈309 y nombre en x≈453.
+      const dirItem = enFila.find(it => it.x < 440)
+      const nomItem = enFila.find(it => it.x >= 440)
+      if (dirItem) dir = dirItem.s
+      if (nomItem) nombre = nomItem.s
+    }
+    if (!dir && !nombre) continue
+    const nombreLimpio = nombre.replace(/^Farmacia\s+/i, '').replace(/,?\s*C\.\s*B\.\s*$/i, '').trim()
+    return [{ nombre: nombreLimpio, direccion: dir, horario: 'De guardia' }]
+  }
+  return []
+}
+
 function extraerTelefono(direccion) {
   const m = direccion.match(/[-\s](\d{9})\s*$/)
   if (m) return m[1]
@@ -266,10 +402,12 @@ function extraerTelefono(direccion) {
 }
 
 function limpiarDireccion(direccion) {
-  return direccion
-    .replace(/[-\s]+\d{9}\s*$/, '')   // tel al final
+  let d = direccion
+    .replace(/\s*[-–]\s*(?:Tel[ée]fono|Telf?\.?|Tel\.?|T\.)\s*:?\s*[\d\s]+$/i, '') // "- Teléfono: 953 ..."
+    .replace(/[-\s]+\d{9}\s*$/, '')    // tel al final
     .replace(/\s+/g, ' ')
     .trim()
+  return d
 }
 
 async function procesarMunicipio(mun, today) {
@@ -284,13 +422,19 @@ async function procesarMunicipio(mun, today) {
     : elegirPdfAnual(docs, today)
   console.log(`    PDF: ${filename}`)
   const data = await fetchPdf(filename)
-  const parser = new PDFParse({ data })
-  const opts = mun.formato === 'CAPITAL' ? { itemJoiner: '@@@' } : {}
-  const r = await parser.getText(opts)
   let farms = []
-  if (mun.formato === 'CAPITAL') farms = parsePdfCapital(r.text, today.getDate())
-  else if (mun.formato === 'ANDUJAR') farms = parsePdfAndujar(r.text, today.getDate())
-  else farms = parsePdfBaeza(r.text, today)
+  if (mun.formato === 'MARTOS') {
+    farms = await parsePdfMartos(data, today)
+  } else if (mun.formato === 'ALCALA') {
+    farms = await parsePdfAlcala(data, today)
+  } else {
+    const parser = new PDFParse({ data })
+    const opts = mun.formato === 'CAPITAL' ? { itemJoiner: '@@@' } : {}
+    const r = await parser.getText(opts)
+    if (mun.formato === 'CAPITAL') farms = parsePdfCapital(r.text, today.getDate())
+    else if (mun.formato === 'ANDUJAR') farms = parsePdfAndujar(r.text, today.getDate())
+    else farms = parsePdfBaeza(r.text, today)
+  }
   console.log(`    ${farms.length} farmacias dia ${today.getDate()}`)
   return farms.map(f => ({ ...f, municipio: mun.nombre }))
 }

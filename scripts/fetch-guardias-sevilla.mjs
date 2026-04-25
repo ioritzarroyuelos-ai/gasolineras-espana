@@ -60,6 +60,13 @@ const ZONAS = [
   'sierranorte',
 ]
 
+// Zonas que cubren un unico municipio. En estas no hay columna "Municipio"
+// en el PDF (ya viene implicito) y el formato es:
+//   "Ŀ<direccion> (<tel>) - <nombre>"
+const ZONA_MUNICIPIO_UNICO = {
+  alcaladeguadaira: 'Alcalá de Guadaira',
+}
+
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
 
@@ -172,6 +179,51 @@ function parseDia(text, target, mes, year) {
   return { diurnas, nocturnas }
 }
 
+// Parser para zonas mono-municipio (Alcalá de Guadaira). El formato no usa
+// columnas con @@@ — cada farmacia es una linea con bullet "Ŀ" inicial.
+//   "Ŀ<direccion> (<tel>) - <nombre>"
+function parseDiaSimple(text, target, year, municipio) {
+  // Header: "SÁBADO 25" — sin mes ni año en la cabecera, pero año esta al final.
+  const reHeader = new RegExp(`(${DIAS.join('|')})\\s+${target}\\b`, 'i')
+  const match = text.match(reHeader)
+  if (!match) return { diurnas: [], nocturnas: [] }
+  const start = match.index + match[0].length
+  // Próximo header del calendario marca el final.
+  const reEnd = new RegExp(`(${DIAS.join('|')})\\s+\\d{1,2}\\b`, 'gi')
+  reEnd.lastIndex = start
+  let endMatch
+  let end = text.length
+  while ((endMatch = reEnd.exec(text)) !== null) {
+    if (endMatch.index > start) {
+      end = endMatch.index
+      break
+    }
+  }
+  const block = text.slice(start, end)
+  // Separar Día / Noche.
+  const idxNoche = block.search(/Noche\s*\(/i)
+  const blockDia = idxNoche >= 0 ? block.slice(0, idxNoche) : block
+  const blockNoche = idxNoche >= 0 ? block.slice(idxNoche) : ''
+  // Cada farmacia: "Ŀ<dir> (<tel>) - <nombre>" — bullet seguido de texto, hasta
+  // siguiente Ŀ o fin. Soportar también lineas multilínea.
+  const reFila = /Ŀ([^Ŀ]+?)(?=Ŀ|Noche\s*\(|$)/gs
+  const extract = (b, dest) => {
+    for (const m of b.matchAll(reFila)) {
+      const linea = m[1].replace(/\s+/g, ' ').trim()
+      if (!linea || /^día\s*\(/i.test(linea) || /^noche\s*\(/i.test(linea)) continue
+      // Direccion = todo hasta el ultimo " - " (que separa nombre).
+      const idx = linea.lastIndexOf(' - ')
+      const direccion = idx >= 0 ? linea.slice(0, idx).trim() : linea
+      dest.push({ municipio, direccion })
+    }
+  }
+  const diurnas = []
+  const nocturnas = []
+  extract(blockDia, diurnas)
+  extract(blockNoche, nocturnas)
+  return { diurnas, nocturnas }
+}
+
 function extraerTelefono(direccion) {
   // (954770068), (95-4184228), (954775151-666123456), etc.
   const m = direccion.match(/\(([\d\-\s]+)\)/)
@@ -203,9 +255,19 @@ async function main() {
       console.log(`  ${zona}: FAIL ${result.reason.message}`)
       continue
     }
-    const parser = new PDFParse({ data: result.value })
-    const r = await parser.getText({ itemJoiner: '@@@' })
-    const { diurnas, nocturnas } = parseDia(r.text, target, mes, year)
+    const muniUnico = ZONA_MUNICIPIO_UNICO[zona]
+    let diurnas = []
+    let nocturnas = []
+    if (muniUnico) {
+      // Formato simple — un solo municipio con bullets Ŀ.
+      const parser = new PDFParse({ data: result.value })
+      const r = await parser.getText()
+      ;({ diurnas, nocturnas } = parseDiaSimple(r.text, target, year, muniUnico))
+    } else {
+      const parser = new PDFParse({ data: result.value })
+      const r = await parser.getText({ itemJoiner: '@@@' })
+      ;({ diurnas, nocturnas } = parseDia(r.text, target, mes, year))
+    }
     console.log(`  ${zona}: ${diurnas.length} diurnas, ${nocturnas.length} nocturnas`)
     for (const f of diurnas) farmacias.push({ ...f, zona, horario: 'Diurna 9:30-22:00' })
     for (const f of nocturnas) farmacias.push({ ...f, zona, horario: 'Nocturna 22:00-9:30' })

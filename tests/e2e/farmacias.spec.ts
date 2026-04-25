@@ -1,5 +1,5 @@
 // E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM +
-// guardias (cobertura nacional, 45 territorios).
+// guardias (cobertura nacional, 46 territorios).
 //
 // Comprobamos:
 //   - shell renderiza (header, toolbar, layout principal)
@@ -8,7 +8,7 @@
 //   - canonical + meta description presentes
 //   - canonicalizacion /farmacias -> /farmacias/
 //   - sin violaciones graves de axe (excluyendo tiles de Leaflet)
-//   - los 45 snapshots de guardias estan servidos y con count > 0
+//   - los 46 snapshots de guardias estan servidos y con count > 0
 //   - al menos una card aparece con data-guardia=true y badge visible
 //     cuando geolocalizamos al usuario en Madrid
 //
@@ -72,8 +72,8 @@ test.describe('Farmacias (/farmacias/)', () => {
     await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  test('los 45 snapshots de guardias se sirven con count > 0', async ({ request }) => {
-    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen']
+  test('los 46 snapshots de guardias se sirven con count > 0', async ({ request }) => {
+    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla']
     for (const t of territorios) {
       const res = await request.get(`/data/guardias-${t}.json`)
       expect(res.status(), `guardias-${t}.json debe existir`).toBe(200)

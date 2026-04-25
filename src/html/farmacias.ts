@@ -17,14 +17,15 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
-// Guardias (Fases 2-12 — cobertura nacional):
-//   - 38 ficheros /data/guardias-<territorio>.json cargados en paralelo
+// Guardias (Fases 2-14 — cobertura nacional):
+//   - 44 ficheros /data/guardias-<territorio>.json cargados en paralelo
 //     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
 //     almeria, girona, tarragona, cordoba, cantabria, pontevedra,
 //     laspalmas, alicante, cadiz, ceuta, valencia, clm, ourense, huesca,
 //     barcelona, baleares, navarra, castellon, asturias, rioja, caceres,
 //     lleida, soria, zamora, malaga, zaragoza, badajoz, valladolid, melilla,
-//     avila, burgos, salamanca.
+//     avila, burgos, salamanca, tenerife, teruel, segovia, granada, palencia,
+//     huelva.
 //   - clm agrupa las 5 provincias de Castilla-La Mancha (Albacete, Ciudad
 //     Real, Cuenca, Guadalajara, Toledo) en un unico fichero porque el
 //     SESCAM las sirve juntas desde el mismo endpoint backend.
@@ -519,7 +520,7 @@ export function buildFarmaciasPage(
       map: null,
       cluster: null,
       userMarker: null,
-      // Guardias agregadas de los 38 territorios (cobertura nacional). Cada
+      // Guardias agregadas de los 44 territorios (cobertura nacional). Cada
       // entrada sigue el schema [lat, lng, direccion, poblacion, telefono,
       // cp, horarioGuardia, horarioGuardiaDesc]. Se carga en paralelo a
       // farmacias.json — si algun fetch falla, seguimos sin ese territorio.
@@ -862,7 +863,7 @@ export function buildFarmaciasPage(
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
     // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
     // porque el SESCAM las sirve juntas desde un unico endpoint backend.
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca'];
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

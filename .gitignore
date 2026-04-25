@@ -50,3 +50,10 @@ tests/e2e/.auth/
 
 # claude code metadata (worktrees, sessions, local-only)
 .claude/
+
+# scratch / dev (HTML/PDF descargados manualmente para investigar parsers)
+.tmp/
+
+# cache local de geocoding Nominatim — los CI workers llenan su propia cache
+# desde cero; solo es util en dev local para evitar ratelimit de Nominatim.
+scripts/cache/

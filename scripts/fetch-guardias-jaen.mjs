@@ -1,29 +1,21 @@
 #!/usr/bin/env node
-// v1.40 — Descarga las farmacias de guardia de Jaén capital desde el PDF
-// mensual publicado por COF Jaén (farmaceuticosdejaen.es).
+// v1.50 — Descarga las farmacias de guardia de la PROVINCIA de Jaén desde
+// los PDFs publicados por COF Jaén (farmaceuticosdejaen.es).
 //
-// Por que solo capital:
-//   El COF Jaén tiene PDF mensual SOLO para Jaén capital (118 poblaciones,
-//   id=46 capital). Los pueblos de la provincia tienen calendarios separados
-//   por zona — fuera de scope MVP.
+// El COF tiene un buscador donde se selecciona idPoblacion (118 valores) y
+// devuelve los PDFs disponibles. Los municipios grandes tienen PDF dedicado;
+// los pequeños comparten PDF zonal.
 //
-// Fuente:
-//   1) POST https://www.farmaceuticosdejaen.es/paginas/Farmacias_Guardia.asp
-//      data: formBuscar=si, idPoblacion=46
-//      → HTML con anchors MostrarDocumento.asp?Documento=NN-GUARDIAS%20JAEN%20MES%20YYYY.pdf
-//   2) GET .../MostrarDocumento.asp?Documento=<filename>&Tipo=Guardias
-//      → PDF mensual con bloques diarios. Cada dia = numero + diaSemana +
-//        5 farmacias (3 diurnas extended-hours + 2 nocturnas).
+// Por ahora cubrimos los municipios grandes (capital + Linares, Úbeda, Baeza,
+// Andújar, Martos, Alcalá la Real). Con esto cubrimos > 50% de la población
+// de la provincia.
 //
-// CAVEAT — 5 farmacias/dia y mapping a horarios:
-//   Las 3 primeras posiciones suelen ser DIURNAS (9:30-22h, algunas 24h).
-//   Las 2 ultimas son NOCTURNAS (22-9:30). Esta heuristica puede fallar si
-//   el COF cambia el formato — los horarios reales se pueden ver en pagina 3
-//   del PDF (LISTADO INFORMATIVO con horarios ampliados).
-//
-// CAVEAT — dominio doble:
-//   cofjaen.es redirige 308 a farmaceuticosdejaen.es. Usamos el destino
-//   directamente para evitar el redirect.
+// Formatos de PDF detectados:
+//   1) Jaén capital — bloques "@@@<num>@@@<dia>@@@@@@" + 5 farmacias por dia.
+//   2) Andújar — "<num> <dia> <nombre>\t<direccion>".
+//   3) Baeza/Úbeda — "<DD/MM/YYYY> <dia> <nombre>\t<direccion>[-tel]".
+//   4) Linares — formato complejo con horarios (8:30/9:00/9:30) — fuera de
+//      scope.
 //
 // Schema output (compatible con el resto de guardias-*.json):
 //   [lat, lng, direccion, poblacion, telefono, cp, horarioGuardia, horarioGuardiaDesc]
@@ -42,11 +34,25 @@ const OUT_FILE = resolve(DATA_DIR, 'guardias-jaen.json')
 
 const BASE = 'https://www.farmaceuticosdejaen.es'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'cercaya-guardias/1.40 (+https://webapp-3ft.pages.dev)'
+const USER_AGENT = 'cercaya-guardias/1.50 (+https://webapp-3ft.pages.dev)'
 
 const BBOX = { minLat: 37.3, maxLat: 38.7, minLng: -4.3, maxLng: -2.1 }
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const DIAS_SEM = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO']
+
+// Municipios principales con su idPoblacion. Los pequeños se ignoran porque
+// comparten PDF zonal o no tienen PDF.
+//
+// Martos y Alcalá la Real publican PDF en formato matriz calendario
+// (rotación semanal con tabla de 7 columnas) que no es parseable con
+// regex línea-a-línea. Se omiten hasta tener parser de calendario.
+const MUNICIPIOS = [
+  { id: 46, nombre: 'Jaén',          formato: 'CAPITAL'  },
+  { id: 6,  nombre: 'Andújar',       formato: 'ANDUJAR'  },
+  { id: 10, nombre: 'Baeza',         formato: 'BAEZA'    },
+  { id: 82, nombre: 'Úbeda',         formato: 'BAEZA'    },
+]
 
 function loadCache() {
   if (!existsSync(CACHE_FILE)) return {}
@@ -62,8 +68,13 @@ function titleCase(s) {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase())
 }
 
-async function buscarPdfMes(d = new Date()) {
-  const body = new URLSearchParams({ formBuscar: 'si', idPoblacion: '46', Buscar: 'Buscar' }).toString()
+function normalize(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+// Buscador: POST con idPoblacion → HTML con anchors a PDFs.
+async function buscarPdfs(idPoblacion) {
+  const body = new URLSearchParams({ formBuscar: 'si', idPoblacion: String(idPoblacion), Buscar: 'Buscar' }).toString()
   const res = await fetch(`${BASE}/paginas/Farmacias_Guardia.asp`, {
     method: 'POST',
     headers: {
@@ -75,26 +86,35 @@ async function buscarPdfMes(d = new Date()) {
   })
   if (!res.ok) throw new Error(`Buscador HTTP ${res.status}`)
   const html = await res.text()
-  // Anchors: MostrarDocumento.asp?Documento=04-GUARDIAS JAEN ABRIL 2026.pdf&Tipo=Guardias
   const re = /MostrarDocumento\.asp\?Documento=([^&"]+)&Tipo=Guardias/g
-  const docs = [...html.matchAll(re)].map(m => m[1])
-  if (docs.length === 0) throw new Error('Sin documentos en COF Jaén')
-  // Buscar el del mes actual.
+  return [...html.matchAll(re)].map(m => m[1])
+}
+
+// Para municipios capital/Andújar: PDF mensual → buscar el del mes actual.
+function elegirPdfMensual(docs, d) {
   const mes = MESES[d.getMonth()].toUpperCase()
   const year = d.getFullYear()
   const target = docs.find(doc => doc.toUpperCase().includes(mes) && doc.includes(String(year)))
-  if (!target) {
-    // Fallback: el mas reciente del año.
-    const conYear = docs.filter(doc => doc.includes(String(year)) && /^\d/.test(doc))
-    if (conYear.length === 0) throw new Error(`Sin PDF para ${mes} ${year}`)
-    return conYear[conYear.length - 1]
-  }
-  return target
+  if (target) return target
+  // Fallback: el mas reciente del año (excluyendo BORRADOR).
+  const conYear = docs.filter(doc => doc.includes(String(year)) && !/BORRADOR/i.test(doc))
+  return conYear[conYear.length - 1] || docs[0]
+}
+
+// Para Baeza/Úbeda/Martos/Alcalá: PDF anual unico — el primero que no sea BORRADOR.
+function elegirPdfAnual(docs, d) {
+  const year = d.getFullYear()
+  const conYear = docs.filter(doc => doc.includes(String(year)) && !/BORRADOR/i.test(doc))
+  if (conYear.length > 0) return conYear[0]
+  return docs.find(d => !/BORRADOR/i.test(d)) || docs[0]
 }
 
 async function fetchPdf(filename) {
   const url = `${BASE}/paginas/MostrarDocumento.asp?Documento=${encodeURIComponent(filename)}&Tipo=Guardias`
-  const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT, 'Referer': `${BASE}/paginas/farmacias_guardia.asp` } })
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT, 'Referer': `${BASE}/paginas/farmacias_guardia.asp` },
+    redirect: 'follow',
+  })
   if (!res.ok) throw new Error(`PDF HTTP ${res.status}`)
   const buf = await res.arrayBuffer()
   return new Uint8Array(buf)
@@ -116,40 +136,45 @@ async function geocodeOne(q) {
   } catch { return null }
 }
 
-async function geocode(direccion) {
-  const variants = [direccion]
+async function geocode(direccion, municipio) {
+  const variants = []
   const sinParens = direccion.replace(/\s*\([^)]*\)/g, '').trim()
-  if (sinParens && sinParens !== direccion) variants.push(sinParens)
-  // Normalizar nº → # para que Nominatim lo entienda mejor.
-  const sinN = sinParens.replace(/\bnº\s*/gi, '').trim()
+  const sinTel = sinParens.replace(/[-\s]+\d{9}\s*$/, '').replace(/\s+/g, ' ').trim()
+  if (sinTel) variants.push(sinTel)
+  if (sinParens && !variants.includes(sinParens)) variants.push(sinParens)
+  // Quitar "nº" y números para mejor match de Nominatim.
+  const sinN = sinTel.replace(/\bnº\s*/gi, '').trim()
   if (sinN && !variants.includes(sinN)) variants.push(sinN)
+  // Quitar S/N y todo lo que sigue (e.g., "S/N – Edf. Virgen de la Capilla").
+  const sinSN = sinTel.replace(/,?\s*S\/N.*$/i, '').trim()
+  if (sinSN && !variants.includes(sinSN)) variants.push(sinSN)
+  // Sin numero al final (e.g., "C/JULIO BUREL Nº35" → "C/JULIO BUREL").
+  const sinNum = sinTel.replace(/[,]?\s*nº?\s*\d+.*$/i, '').trim()
+  if (sinNum && !variants.includes(sinNum)) variants.push(sinNum)
+  // Apellido con doble L (BUREL → BURELL en Baeza es real).
+  const dobleL = sinNum.replace(/L\b/g, 'LL')
+  if (dobleL && dobleL !== sinNum && !variants.includes(dobleL)) variants.push(dobleL)
   for (const v of variants) {
-    const coord = await geocodeOne(`${v}, Jaén, España`)
+    const coord = await geocodeOne(`${v}, ${municipio}, Jaén, España`)
     if (coord) return coord
     await new Promise(r => setTimeout(r, 1100))
   }
   return null
 }
 
-// Parsea el PDF buscando el bloque del dia actual.
-// Estructura por dia: @@@<numDia>@@@ @@@<diaSemana>@@@@@@ + 5 lineas de direccion.
-function parseDia(text, target) {
+// Parser CAPITAL — bloques "@@@<num>@@@<dia>@@@" + 5 farmacias por dia.
+function parsePdfCapital(text, target) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  // Buscar la linea que tras separar por '@@@' tiene un numero como primer item
-  // (puede llevar @@@ inicial o no segun pdf-parse).
   for (let i = 0; i < lines.length; i++) {
     const items = lines[i].split('@@@').map(s => s.trim()).filter(Boolean)
     if (items.length < 2) continue
     const num = parseInt(items[0], 10)
     if (!Number.isFinite(num) || String(num) !== items[0]) continue
     if (num !== target) continue
-    // El items[1] deberia ser el diaSemana (Lunes/Martes/...).
     if (!/^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)$/i.test(items[1])) continue
-    // Recoger las siguientes lineas hasta el proximo dia o EOF.
     const dirs = []
     for (let j = i + 1; j < Math.min(lines.length, i + 10); j++) {
       const next = lines[j].split('@@@').map(s => s.trim()).filter(Boolean)
-      // Si la siguiente linea empieza con un numero seguido de dia, parar.
       if (next.length >= 2 && /^\d{1,2}$/.test(next[0]) &&
           /^(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)$/i.test(next[1])) {
         break
@@ -159,43 +184,149 @@ function parseDia(text, target) {
       }
       if (dirs.length >= 5) break
     }
-    return dirs.slice(0, 5)
+    return dirs.slice(0, 5).map((direccion, k) => ({
+      nombre: '',
+      direccion,
+      horario: k < 3 ? 'Diurna 9:30-22:00' : 'Nocturna 22:00-9:30',
+    }))
   }
   return []
 }
 
-async function main() {
-  const d = new Date()
-  console.log(`Descargando guardias Jaén — farmaceuticosdejaen.es PDF mensual...`)
-  const pdfName = await buscarPdfMes(d)
-  console.log(`  PDF: ${pdfName}`)
-  const data = await fetchPdf(pdfName)
+// Parser ANDUJAR — "<num> <dia> <nombre>\t<direccion>".
+function parsePdfAndujar(text, target) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  // Ej: "25 Sábado D. Fernando Romero \tPlaza Vieja"
+  // pdf-parse a veces convierte tab en espacios — buscar primer numero seguido
+  // de dia.
+  const re = /^(\d{1,2})\s+(Lunes|Martes|Mi[eé]rcoles|Jueves|Viernes|S[aá]bado|Domingo)\s+(.+)$/i
+  for (const l of lines) {
+    const m = l.match(re)
+    if (!m) continue
+    const num = parseInt(m[1], 10)
+    if (num !== target) continue
+    const resto = m[3]
+    // Resto: "<nombre>\t<direccion>" o "<nombre> | <direccion>".
+    // Heuristica: el nombre suele ser corto (1-4 palabras) y la direccion
+    // contiene calle/avenida/plaza/numero. Separar por dos o mas espacios
+    // (que tipicamente representan una tabulacion en PDF).
+    const partes = resto.split(/\s{2,}|\t/).map(s => s.trim()).filter(Boolean)
+    if (partes.length >= 2) {
+      return [{ nombre: partes[0], direccion: partes.slice(1).join(' ').trim(), horario: 'De guardia' }]
+    }
+    // Fallback: parsear "<NOMBRE> <CALLE/AVDA/PZ ...>"
+    const mD = resto.match(/^(.+?)\s+(C\/|Calle|Avda?\.?|Av\.?|Pza?\.?|Plaza|Pº|Paseo|P\.?\s*Mayor|Pol\.|Carretera|Ctra\.?)\s*(.+)$/i)
+    if (mD) {
+      return [{ nombre: mD[1].trim(), direccion: (mD[2] + ' ' + mD[3]).trim(), horario: 'De guardia' }]
+    }
+    return [{ nombre: '', direccion: resto.trim(), horario: 'De guardia' }]
+  }
+  return []
+}
+
+// Parser BAEZA/UBEDA/MARTOS — "<DD/MM/YYYY> <dia> <nombre>\t<direccion>[-tel]".
+function parsePdfBaeza(text, today) {
+  const targetStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  // Tambien: "JUEVES 01/01/2026 NOMBRE DIR-tel" (el dia primero, luego fecha) — Ubeda.
+  const reFechaPrim = /^(\d{2}\/\d{2}\/\d{4})\s+([A-ZÁÉÍÓÚÑ\u00C0-\u017F]+)\s+(.+)$/i
+  const reDiaPrim   = /^([A-ZÁÉÍÓÚÑ\u00C0-\u017F]+)\s+(\d{2}\/\d{2}\/\d{4})\s+(.+)$/i
+  for (const l of lines) {
+    const m1 = l.match(reFechaPrim)
+    const m2 = l.match(reDiaPrim)
+    let fecha, resto
+    if (m1 && m1[1] === targetStr) {
+      fecha = m1[1]
+      resto = m1[3]
+    } else if (m2 && m2[2] === targetStr) {
+      fecha = m2[2]
+      resto = m2[3]
+    } else {
+      continue
+    }
+    // resto: "<NOMBRE> <DIRECCION>[-TELEFONO]". Separar por tabs o 2+ espacios.
+    const partes = resto.split(/\s{2,}|\t/).map(s => s.trim()).filter(Boolean)
+    if (partes.length >= 2) {
+      return [{ nombre: partes[0], direccion: partes.slice(1).join(' ').trim(), horario: 'De guardia' }]
+    }
+    // Fallback: heuristica calle/avenida.
+    const mD = resto.match(/^(.+?)\s+(C\/|Calle|Avda?\.?|Av\.?|Pza?\.?|Plaza|Pº|Paseo|Pol\.|Carretera|Ctra\.?)\s*(.+)$/i)
+    if (mD) {
+      return [{ nombre: mD[1].trim(), direccion: (mD[2] + ' ' + mD[3]).trim(), horario: 'De guardia' }]
+    }
+    return [{ nombre: '', direccion: resto.trim(), horario: 'De guardia' }]
+  }
+  return []
+}
+
+function extraerTelefono(direccion) {
+  const m = direccion.match(/[-\s](\d{9})\s*$/)
+  if (m) return m[1]
+  return ''
+}
+
+function limpiarDireccion(direccion) {
+  return direccion
+    .replace(/[-\s]+\d{9}\s*$/, '')   // tel al final
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+async function procesarMunicipio(mun, today) {
+  console.log(`  ${mun.nombre} (id=${mun.id})`)
+  const docs = await buscarPdfs(mun.id)
+  if (docs.length === 0) {
+    console.log(`    sin documentos`)
+    return []
+  }
+  const filename = mun.formato === 'ANDUJAR' || mun.formato === 'CAPITAL'
+    ? elegirPdfMensual(docs, today)
+    : elegirPdfAnual(docs, today)
+  console.log(`    PDF: ${filename}`)
+  const data = await fetchPdf(filename)
   const parser = new PDFParse({ data })
-  const r = await parser.getText({ itemJoiner: '@@@' })
-  console.log(`  PDF: ${r.pages?.length} paginas`)
+  const opts = mun.formato === 'CAPITAL' ? { itemJoiner: '@@@' } : {}
+  const r = await parser.getText(opts)
+  let farms = []
+  if (mun.formato === 'CAPITAL') farms = parsePdfCapital(r.text, today.getDate())
+  else if (mun.formato === 'ANDUJAR') farms = parsePdfAndujar(r.text, today.getDate())
+  else farms = parsePdfBaeza(r.text, today)
+  console.log(`    ${farms.length} farmacias dia ${today.getDate()}`)
+  return farms.map(f => ({ ...f, municipio: mun.nombre }))
+}
 
-  const target = d.getDate()
-  const dirs = parseDia(r.text, target)
-  console.log(`  Dia ${target}: ${dirs.length} farmacias detectadas`)
-  dirs.forEach((dir, i) => console.log(`    ${i + 1}. ${dir}`))
-  if (dirs.length < 3) throw new Error(`Solo ${dirs.length} farmacias en el dia ${target}. Parser fallido?`)
+async function main() {
+  const today = new Date()
+  console.log(`Descargando guardias provincia Jaén — farmaceuticosdejaen.es...`)
 
-  // Asignar horarios: posiciones 0-2 = diurna, 3-4 = nocturna.
-  const horarios = ['Diurna 9:30-22:00', 'Diurna 9:30-22:00', 'Diurna 9:30-22:00', 'Nocturna 22:00-9:30', 'Nocturna 22:00-9:30']
-  const farmacias = dirs.map((direccion, i) => ({ direccion, horario: horarios[i] || 'De guardia' }))
+  const farmaciasAll = []
+  for (const mun of MUNICIPIOS) {
+    try {
+      const farms = await procesarMunicipio(mun, today)
+      farmaciasAll.push(...farms)
+    } catch (e) {
+      console.log(`    FAIL: ${e.message}`)
+    }
+    await new Promise(r => setTimeout(r, 300))
+  }
+
+  console.log(`Total farmacias detectadas: ${farmaciasAll.length}`)
+  if (farmaciasAll.length < 3) throw new Error(`Solo ${farmaciasAll.length} farmacias. Parser fallido?`)
 
   // Geocodificar.
   const cache = loadCache()
   let nuevas = 0
-  for (const f of farmacias) {
-    if (cache[f.direccion]) {
-      f.coord = cache[f.direccion]
+  for (const f of farmaciasAll) {
+    const dirLimpia = limpiarDireccion(f.direccion)
+    const key = `${dirLimpia} | ${f.municipio}`
+    if (cache[key]) {
+      f.coord = cache[key]
       continue
     }
-    process.stdout.write(`    geocoding "${f.direccion.slice(0, 40)}"... `)
-    const coord = await geocode(f.direccion)
+    process.stdout.write(`    geocoding "${dirLimpia.slice(0, 35)}" en ${f.municipio}... `)
+    const coord = await geocode(dirLimpia, f.municipio)
     if (coord) {
-      cache[f.direccion] = coord
+      cache[key] = coord
       f.coord = coord
       nuevas++
       console.log(`OK ${coord[0]},${coord[1]}`)
@@ -207,28 +338,23 @@ async function main() {
   if (nuevas > 0) saveCache(cache)
 
   const guardias = []
-  // Dedupe por direccion (varias posiciones pueden coincidir).
   const seen = new Set()
-  for (const f of farmacias) {
+  for (const f of farmaciasAll) {
     if (!f.coord) continue
-    const k = f.direccion.toLowerCase().replace(/\s+/g, ' ')
-    if (seen.has(k)) {
-      // Ya esta — pero combinar horario si es distinto turno.
-      const prev = guardias.find(g => g[2].toLowerCase().includes(k))
-      if (prev && !prev[6].toLowerCase().includes(f.horario.split(' ')[0].toLowerCase())) {
-        prev[6] += ` y ${f.horario.toLowerCase()}`
-      }
-      continue
-    }
+    const dirLimpia = limpiarDireccion(f.direccion)
+    const tel = extraerTelefono(f.direccion)
+    const k = `${normalize(dirLimpia)}|${normalize(f.municipio)}`
+    if (seen.has(k)) continue
     seen.add(k)
+    const nom = f.nombre.trim() ? `Farmacia ${titleCase(f.nombre.replace(/^FARMACIA\s+/i, ''))}` : 'Farmacia de guardia'
     guardias.push([
       f.coord[0],
       f.coord[1],
-      `Farmacia de guardia · ${titleCase(f.direccion)}`.slice(0, 140),
-      'Jaén',
+      `${nom} · ${titleCase(dirLimpia)}`.slice(0, 140),
+      f.municipio,
+      tel,
       '',
-      '',
-      f.horario,
+      f.horario || 'De guardia',
       '',
     ])
   }

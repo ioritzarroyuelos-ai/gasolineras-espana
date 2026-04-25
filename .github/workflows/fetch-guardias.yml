@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.18 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde 32 fuentes (31 COF provinciales + SESCAM regional para CLM):
+# v1.20 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 37 fuentes (36 COF provinciales + SESCAM regional para CLM):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -36,6 +36,11 @@ name: Fetch guardias farmacias snapshot
 #   - Málaga     (CGCOF id=29)              → guardias-malaga.json
 #   - Zaragoza   (CGCOF id=50)              → guardias-zaragoza.json
 #   - Badajoz    (CGCOF id=06)              → guardias-badajoz.json
+#   - Valladolid (cofvalladolid.es markers)  → guardias-valladolid.json
+#   - Melilla    (CGCOF id=52)              → guardias-melilla.json
+#   - Ávila      (CGCOF id=05)              → guardias-avila.json
+#   - Burgos     (CGCOF id=09)              → guardias-burgos.json
+#   - Salamanca  (CGCOF id=37)              → guardias-salamanca.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -291,6 +296,41 @@ jobs:
         timeout-minutes: 10
         run: node scripts/fetch-guardias-badajoz.mjs
 
+      - name: Guardias Valladolid (COF Valladolid markers JS)
+        id: valladolid
+        continue-on-error: true
+        # HTML expone markers JS con lat/lng pre-geocodificadas. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-valladolid.mjs
+
+      - name: Guardias Melilla (CGCOF id=52)
+        id: melilla
+        continue-on-error: true
+        # CGCOF — 1 zona, 2-3 farmacias guardia. <1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-melilla.mjs
+
+      - name: Guardias Ávila (CGCOF id=05)
+        id: avila
+        continue-on-error: true
+        # CGCOF — 18 zonas. ~10 farmacias guardia. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-avila.mjs
+
+      - name: Guardias Burgos (CGCOF id=09)
+        id: burgos
+        continue-on-error: true
+        # CGCOF — 25 zonas. ~16 farmacias guardia. Geocoding Nominatim. ~3 min.
+        timeout-minutes: 10
+        run: node scripts/fetch-guardias-burgos.mjs
+
+      - name: Guardias Salamanca (CGCOF id=37)
+        id: salamanca
+        continue-on-error: true
+        # CGCOF — 17 zonas. ~13 farmacias guardia. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-salamanca.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -327,6 +367,11 @@ jobs:
           echo "Málaga:     ${{ steps.malaga.outcome }}"
           echo "Zaragoza:   ${{ steps.zaragoza.outcome }}"
           echo "Badajoz:    ${{ steps.badajoz.outcome }}"
+          echo "Valladolid: ${{ steps.valladolid.outcome }}"
+          echo "Melilla:    ${{ steps.melilla.outcome }}"
+          echo "Ávila:      ${{ steps.avila.outcome }}"
+          echo "Burgos:     ${{ steps.burgos.outcome }}"
+          echo "Salamanca:  ${{ steps.salamanca.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -334,7 +379,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -380,9 +425,14 @@ jobs:
           steps.zamora.outcome == 'failure' &&
           steps.malaga.outcome == 'failure' &&
           steps.zaragoza.outcome == 'failure' &&
-          steps.badajoz.outcome == 'failure'
+          steps.badajoz.outcome == 'failure' &&
+          steps.valladolid.outcome == 'failure' &&
+          steps.melilla.outcome == 'failure' &&
+          steps.avila.outcome == 'failure' &&
+          steps.burgos.outcome == 'failure' &&
+          steps.salamanca.outcome == 'failure'
         run: |
-          echo "::error::Los 33 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 38 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

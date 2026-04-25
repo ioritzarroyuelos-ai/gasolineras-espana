@@ -34,7 +34,9 @@
 //   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
 //     indexa, o porque el matching fue impreciso) se pintan en el mapa
 //     como marker dorado extra, sin entrar en la lista.
-//   - Fases siguientes ampliaran a mas provincias segun disponibilidad.
+//   - Provincias bloqueadas sin scraper viable: Leon (SOAP roto + paginas
+//     estaticas 404) y Lugo (reCAPTCHA v3 server-side). Cobertura
+//     efectiva: 48 de 50 provincias + Ceuta + Melilla.
 //
 // Arquitectura:
 //   - HTML + CSS + JS inline con nonce (CSP strict compatible con el

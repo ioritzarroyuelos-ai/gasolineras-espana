@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.24 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde 45 fuentes (44 COF provinciales + SESCAM regional para CLM):
+# v1.25 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 46 fuentes (45 COF provinciales + SESCAM regional para CLM):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -51,6 +51,19 @@ name: Fetch guardias farmacias snapshot
 #   - Jaén       (farmaceuticosdejaen.es PDF mensual) → guardias-jaen.json
 #   - Sevilla    (farmaceuticosdesevilla.es PDFs trimestrales) → guardias-sevilla.json
 #                (cobertura provincia, NO capital)
+#
+# Provincias bloqueadas (sin alternativa viable sin headless browser):
+#   - León (cofleon.es): backend SOAP permanentemente caido. CGCOF redirige
+#     al mismo dominio. Todas las paginas estaticas devuelven 404. No hay
+#     PDF publico ni API REST alternativa.
+#   - Lugo (coflugo.org): protegido con reCAPTCHA v3 (action=farmacia_guardia,
+#     site key 6LfwyCMiAAAAAJ_gBJDwXxd-gwifxEQU45M4lQEJ). Validacion del
+#     token server-side: POST sin token → resultado vacio. CGCOF redirige
+#     al mismo dominio. SERGAS y paxinasgalegas no exponen guardias en
+#     vivo. Sin alternativa publica.
+#   Cobertura efectiva: 48 de 50 provincias + Ceuta + Melilla = 50 de 52
+#   territorios (96%). Los 2 huecos requieren bypass de reCAPTCHA o
+#   restauracion del SOAP backend ajeno — fuera del scope MVP.
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario

@@ -56,7 +56,7 @@ jobs:
           echo 'dist artifacts OK'
 
       - name: Upload dist (artefacto)
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: dist-${{ github.sha }}
           path: dist/
@@ -94,7 +94,7 @@ jobs:
         # --assert off) puede no generar `.lighthouseci/`, y queremos evitar
         # el warning de "no files were found" sin perder el artefacto cuando si existe.
         if: always() && hashFiles('.lighthouseci/**') != ''
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: lighthouse-${{ github.sha }}
           path: .lighthouseci/
@@ -149,7 +149,7 @@ jobs:
         # fallos o retries. En runs 100% verdes esas carpetas no existen;
         # `hashFiles` vacio evita la ejecucion del upload y el warning asociado.
         if: always() && (hashFiles('playwright-report/**') != '' || hashFiles('test-results/**') != '')
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-${{ github.sha }}
           path: |

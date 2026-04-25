@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.22 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde 43 fuentes (42 COF provinciales + SESCAM regional para CLM):
+# v1.23 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 44 fuentes (43 COF provinciales + SESCAM regional para CLM):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -48,6 +48,7 @@ name: Fetch guardias farmacias snapshot
 #   - Granada    (cofgranada.com PDF AJAX)  → guardias-granada.json
 #   - Palencia   (cofpalencia.org PDF semanal) → guardias-palencia.json
 #   - Huelva     (cofhuelva.org PDF + localizador) → guardias-huelva.json
+#   - Jaén       (farmaceuticosdejaen.es PDF mensual) → guardias-jaen.json
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -380,6 +381,13 @@ jobs:
         timeout-minutes: 5
         run: node scripts/fetch-guardias-huelva.mjs
 
+      - name: Guardias Jaén (COF Jaén PDF mensual capital)
+        id: jaen
+        continue-on-error: true
+        # PDF mensual capital + parser por dia + Nominatim. 5 farmacias/dia (3 diurnas + 2 nocturnas).
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-jaen.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -427,6 +435,7 @@ jobs:
           echo "Granada:    ${{ steps.granada.outcome }}"
           echo "Palencia:   ${{ steps.palencia.outcome }}"
           echo "Huelva:     ${{ steps.huelva.outcome }}"
+          echo "Jaén:       ${{ steps.jaen.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -434,7 +443,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json public/data/guardias-tenerife.json public/data/guardias-teruel.json public/data/guardias-segovia.json public/data/guardias-granada.json public/data/guardias-palencia.json public/data/guardias-huelva.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json public/data/guardias-tenerife.json public/data/guardias-teruel.json public/data/guardias-segovia.json public/data/guardias-granada.json public/data/guardias-palencia.json public/data/guardias-huelva.json public/data/guardias-jaen.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -491,9 +500,10 @@ jobs:
           steps.segovia.outcome == 'failure' &&
           steps.granada.outcome == 'failure' &&
           steps.palencia.outcome == 'failure' &&
-          steps.huelva.outcome == 'failure'
+          steps.huelva.outcome == 'failure' &&
+          steps.jaen.outcome == 'failure'
         run: |
-          echo "::error::Los 44 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 45 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

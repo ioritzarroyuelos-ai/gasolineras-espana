@@ -1,7 +1,7 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.16 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde los 17 COF (Colegios Oficiales de Farmaceuticos):
+# v1.17 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 17 fuentes (16 COF provinciales + SESCAM regional para CLM):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -19,6 +19,8 @@ name: Fetch guardias farmacias snapshot
 #   - Cádiz      (cofcadiz.es vcomm API)    → guardias-cadiz.json
 #   - Ceuta      (cofceuta.com vcomm API)   → guardias-ceuta.json
 #   - Valencia   (micof.es portal MICOF)    → guardias-valencia.json
+#   - CLM        (sescam.jccm.es backend)   → guardias-clm.json
+#                (Albacete + Ciudad Real + Cuenca + Guadalajara + Toledo)
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -179,6 +181,15 @@ jobs:
         timeout-minutes: 5
         run: node scripts/fetch-guardias-valencia.mjs
 
+      - name: Guardias Castilla-La Mancha (SESCAM backend)
+        id: clm
+        continue-on-error: true
+        # Itera ~1500 ids de localidad contra el endpoint backend del SESCAM
+        # con pausa 100ms. ~2.5min total. Cubre las 5 provincias CLM en un
+        # unico JSON porque el endpoint es regional, no provincial.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-clm.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -199,6 +210,7 @@ jobs:
           echo "Cádiz:      ${{ steps.cadiz.outcome }}"
           echo "Ceuta:      ${{ steps.ceuta.outcome }}"
           echo "Valencia:   ${{ steps.valencia.outcome }}"
+          echo "CLM:        ${{ steps.clm.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -206,7 +218,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -236,9 +248,10 @@ jobs:
           steps.alicante.outcome == 'failure' &&
           steps.cadiz.outcome == 'failure' &&
           steps.ceuta.outcome == 'failure' &&
-          steps.valencia.outcome == 'failure'
+          steps.valencia.outcome == 'failure' &&
+          steps.clm.outcome == 'failure'
         run: |
-          echo "::error::Los 17 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 18 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

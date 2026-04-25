@@ -17,13 +17,16 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
-// Guardias (Fases 2-8 — Madrid + Euskadi + A Coruña + Murcia + Almería +
+// Guardias (Fases 2-9 — Madrid + Euskadi + A Coruña + Murcia + Almería +
 // Girona + Tarragona + Córdoba + Cantabria + Pontevedra + Las Palmas +
-// Alicante + Cádiz + Ceuta + Valencia):
-//   - 17 ficheros /data/guardias-<territorio>.json cargados en paralelo
+// Alicante + Cádiz + Ceuta + Valencia + Castilla-La Mancha):
+//   - 18 ficheros /data/guardias-<territorio>.json cargados en paralelo
 //     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
 //     almeria, girona, tarragona, cordoba, cantabria, pontevedra,
-//     laspalmas, alicante, cadiz, ceuta, valencia.
+//     laspalmas, alicante, cadiz, ceuta, valencia, clm.
+//   - clm agrupa las 5 provincias de Castilla-La Mancha (Albacete, Ciudad
+//     Real, Cuenca, Guadalajara, Toledo) en un unico fichero porque el
+//     SESCAM las sirve juntas desde el mismo endpoint backend.
 //   - Si una farmacia OSM coincide (~100m) con una de guardia, aparece
 //     con badge "DE GUARDIA" + horario en card y popup.
 //   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
@@ -853,10 +856,12 @@ export function buildFarmaciasPage(
       }
     }
 
-    // Cargar el JSON principal de farmacias + los 11 JSON de guardias en
+    // Cargar el JSON principal de farmacias + los 18 JSON de guardias en
     // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia'];
+    // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
+    // porque el SESCAM las sirve juntas desde un unico endpoint backend.
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

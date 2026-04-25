@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// v1.40 — Descarga las farmacias de guardia de la provincia de Sevilla
+// v1.41 — Descarga las farmacias de guardia de la provincia de Sevilla
 // desde los PDFs trimestrales del COF Sevilla (farmaceuticosdesevilla.es).
 //
-// Por que solo provincia (sin capital):
-//   El COF Sevilla publica 9 PDFs trimestrales — uno por zona farmaceutica
-//   de la PROVINCIA (Aljarafe, Alcala de Guadaira, Alcala del Rio, brenes,
-//   burguillos, cantillana, carmona, moron-osuna-estepa, sierranorte). La
-//   capital de Sevilla no esta en estos PDFs (tiene otra organizacion no
-//   publica). Asumimos que la capital se cubre via gasolineras.json (OSM)
-//   y el resto de la provincia con guardias.
+// 9 zonas farmaceuticas:
+//   - 4 zonas con texto (Aljarafe, Sevilla capital, alcaladeguadaira,
+//     moron-osuna-estepa, sierranorte): parser de texto via pdf-parse.
+//   - 5 zonas con PDFs ESCANEADOS (alcaladelrio, brenes, burguillos,
+//     cantillana, carmona): parser OCR via tesseract.js + @napi-rs/canvas
+//     + pdfjs-dist. Cada PDF cubre el trimestre con un par Dia+Noche por
+//     dia. Indice del par = dias desde el inicio del trimestre. El texto
+//     OCR se cachea por hash de PDF para no re-OCR el mismo trimestre.
 //
 // Fuente:
 //   https://servicios.farmaceuticosdesevilla.es/images/farmaciasguardia/T<N>/<zona>.pdf
@@ -29,6 +30,7 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createHash } from 'node:crypto'
 import { PDFParse } from 'pdf-parse'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -36,11 +38,12 @@ const ROOT = resolve(__dirname, '..')
 const DATA_DIR = resolve(ROOT, 'public', 'data')
 const CACHE_DIR = resolve(__dirname, 'cache')
 const CACHE_FILE = resolve(CACHE_DIR, 'sevilla-geo.json')
+const OCR_CACHE_DIR = resolve(CACHE_DIR, 'sevilla-ocr')
 const OUT_FILE = resolve(DATA_DIR, 'guardias-sevilla.json')
 
 const BASE = 'https://servicios.farmaceuticosdesevilla.es'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'cercaya-guardias/1.40 (+https://webapp-3ft.pages.dev)'
+const USER_AGENT = 'cercaya-guardias/1.41 (+https://webapp-3ft.pages.dev)'
 
 // BBOX provincia Sevilla. Provincia tiene 105 municipios — bbox holgado.
 const BBOX = { minLat: 36.8, maxLat: 38.1, minLng: -6.6, maxLng: -4.5 }
@@ -66,6 +69,17 @@ const ZONAS = [
 //   "Ŀ<direccion> (<tel>) - <nombre>"
 const ZONA_MUNICIPIO_UNICO = {
   alcaladeguadaira: 'Alcalá de Guadaira',
+}
+
+// Zonas con PDFs ESCANEADOS (sin texto). Pipeline OCR. Cada zona = 1
+// municipio. El PDF cubre el trimestre completo con un par Dia+Noche por
+// dia, en orden cronologico desde el dia 1 del primer mes del trimestre.
+const ZONAS_ESCANEADAS = {
+  alcaladelrio: 'Alcalá del Río',
+  brenes: 'Brenes',
+  burguillos: 'Burguillos',
+  cantillana: 'Cantillana',
+  carmona: 'Carmona',
 }
 
 // Zona Sevilla capital — PDF semanal organizado por SEMANA + URGENCIA
@@ -338,6 +352,97 @@ function extraerTelefono(direccion) {
   return tel.length === 9 ? tel : ''
 }
 
+// OCR de un PDF escaneado con cache por hash. Devuelve el texto plano
+// concatenado de todas las paginas. Lazy-load de las deps OCR para no
+// pagar el coste de import si no hay zonas escaneadas en el run.
+async function ocrPdf(buf, zona) {
+  const hash = createHash('sha256').update(buf).digest('hex').slice(0, 16)
+  const cacheFile = resolve(OCR_CACHE_DIR, `${zona}-${hash}.txt`)
+  if (existsSync(cacheFile)) {
+    return readFileSync(cacheFile, 'utf8')
+  }
+  const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const { createCanvas } = await import('@napi-rs/canvas')
+  const { createWorker } = await import('tesseract.js')
+
+  // pdfjs transfiere el ArrayBuffer subyacente — clonar para no invalidar.
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(buf), useSystemFonts: true }).promise
+  const worker = await createWorker('spa')
+  let allText = ''
+  try {
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p)
+      const viewport = page.getViewport({ scale: 2.0 })
+      const canvas = createCanvas(viewport.width, viewport.height)
+      const ctx = canvas.getContext('2d')
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise
+      const png = canvas.toBuffer('image/png')
+      const { data } = await worker.recognize(png)
+      allText += data.text + '\n'
+    }
+  } finally {
+    await worker.terminate()
+  }
+  mkdirSync(OCR_CACHE_DIR, { recursive: true })
+  writeFileSync(cacheFile, allText)
+  return allText
+}
+
+// Tesseract pierde habitualmente la primera letra de palabras frecuentes en
+// direcciones (Carretera, Camino, Santa, Paseo, Avda, Juan, ...). Corregir
+// prefijos cuando el patron es inequivoco (mejora geocoding y legibilidad).
+function corregirOcrPrefijos(dir) {
+  const fixes = [
+    [/^Anta\b/i, 'Santa'],
+    [/^Aseo\b/i, 'Paseo'],
+    [/^Arretera\b/i, 'Carretera'],
+    [/^Vda(\.?)\b/i, 'Avda$1'],
+    [/^Uan\b/i, 'Juan'],
+    [/^Amino\b/i, 'Camino'],
+    [/^Arrera\b/i, 'Carrera'],
+    [/^Alle\b/i, 'Calle'],
+    [/^Laza\b/i, 'Plaza'],
+    [/^Tra(\.?)\b/i, 'Ctra$1'],
+    [/^Ntro\b/i, 'Nuestro'],
+  ]
+  for (const [re, rep] of fixes) {
+    if (re.test(dir)) return dir.replace(re, rep)
+  }
+  return dir
+}
+
+// Parser para PDFs escaneados (5 zonas). El PDF cubre el trimestre con
+// pares Dia+Noche por dia, en orden cronologico. Indice del par = dia
+// transcurrido desde el 1 del primer mes del trimestre (0-indexed).
+//
+// Formato OCR de cada par (despues de tesseract):
+//   "Dia(de9:30a22:00)\n a <direccion>, N (TELEFONO9DIG) - <nombre>\n"
+//   "Noche(de22:00a09:30)\n o <direccion>, N (TELEFONO9DIG) - <nombre>\n"
+function parseDiaScanned(text, today, municipio) {
+  // Capturar (Dia|Noche), direccion (hasta el "(tel)"), telefono y nombre.
+  // Permitimos ruido al inicio de la linea de farmacia (bullet OCR raro
+  // como "o", "a", "1", "$", etc.) y caracteres acentuados en la dir.
+  const re = /(Dia|Noche)\s*\([^)]*\)[\s\S]*?(?:^|\n)\s*[^\n(]{0,3}([A-ZÁÉÍÓÚÑa-záéíóúñ][^()\n]+?)\s*\((\d{9})\)\s*-\s*([^\n]+)/gim
+  const dias = []
+  const noches = []
+  for (const m of text.matchAll(re)) {
+    const tipo = m[1].toLowerCase()
+    const dirCruda = m[2].trim().replace(/\s+/g, ' ')
+    const direccion = corregirOcrPrefijos(dirCruda)
+    const telefono = m[3]
+    const target = tipo === 'dia' ? dias : noches
+    target.push({ municipio, direccion, telefono })
+  }
+  // Calcular indice = dias desde el 1 del primer mes del trimestre.
+  const monthStart = today.getMonth() - (today.getMonth() % 3)
+  const trimestreStart = new Date(today.getFullYear(), monthStart, 1)
+  const idx = Math.floor((today - trimestreStart) / 86400000)
+  const out = { diurnas: [], nocturnas: [] }
+  if (dias[idx]) out.diurnas.push(dias[idx])
+  if (noches[idx]) out.nocturnas.push(noches[idx])
+  return out
+}
+
 function limpiarDireccion(direccion) {
   // Quitar (telefono) del final.
   return direccion.replace(/\s*\([^)]*\)\s*$/, '').trim()
@@ -362,6 +467,7 @@ async function main() {
       continue
     }
     const muniUnico = ZONA_MUNICIPIO_UNICO[zona]
+    const muniEscaneado = ZONAS_ESCANEADAS[zona]
     let diurnas = []
     let nocturnas = []
     if (zona === ZONA_CAPITAL) {
@@ -369,6 +475,10 @@ async function main() {
       const parser = new PDFParse({ data: result.value })
       const r = await parser.getText()
       ;({ diurnas, nocturnas } = parseDiaCapital(r.text, d))
+    } else if (muniEscaneado) {
+      // PDF escaneado — pipeline OCR + parser secuencial por dia.
+      const text = await ocrPdf(result.value, zona)
+      ;({ diurnas, nocturnas } = parseDiaScanned(text, d, muniEscaneado))
     } else if (muniUnico) {
       // Formato simple — un solo municipio con bullets Ŀ.
       const parser = new PDFParse({ data: result.value })

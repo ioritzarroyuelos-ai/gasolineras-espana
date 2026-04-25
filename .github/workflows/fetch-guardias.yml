@@ -1,6 +1,6 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.26 — Refresca los snapshots de farmacias de guardia una vez por semana
+# v1.27 — Refresca los snapshots de farmacias de guardia una vez por semana
 # desde 47 fuentes (45 COF provinciales + SESCAM regional para CLM + Ayto
 # La Bañeza para León):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
@@ -51,8 +51,9 @@ name: Fetch guardias farmacias snapshot
 #   - Huelva     (cofhuelva.org PDF + localizador) → guardias-huelva.json
 #   - Jaén       (farmaceuticosdejaen.es PDF mensual) → guardias-jaen.json
 #   - Sevilla    (farmaceuticosdesevilla.es PDFs trimestrales) → guardias-sevilla.json
-#                (cobertura: Aljarafe + Alcalá Guadaira + Morón-Osuna-Estepa
-#                + Sierra Norte. NO capital, NO 5 zonas escaneadas)
+#                (cobertura: Aljarafe + Sevilla capital + Alcalá Guadaira +
+#                Morón-Osuna-Estepa + Sierra Norte + 5 zonas via OCR
+#                (alcaladelrio, brenes, burguillos, cantillana, carmona))
 #   - León       (aytobaneza.es PDF policia local)             → guardias-leon.json
 #                (cobertura: SOLO La Bañeza ~10k hab. cofleon.es SOAP caido
 #                sin alternativa para capital ni Ponferrada — La Bañeza es
@@ -71,16 +72,18 @@ name: Fetch guardias farmacias snapshot
 #     al mismo dominio. SERGAS y paxinasgalegas no exponen guardias en
 #     vivo. Sin alternativa publica.
 #
-# Zonas Sevilla parcialmente bloqueadas (PDF escaneado, requiere OCR):
-#   - 5 zonas (alcaladelrio, brenes, burguillos, cantillana, carmona):
-#     PDFs publicados como imagenes escaneadas (texto solo "-- N of 13 --"),
-#     no hay capa de texto. Necesita tesseract+poppler instalados o
-#     tesseract.js puro JS (lento+baja precision). Iframe localizador del
-#     COF requiere sesion Joomla con token rotatorio. Documentado para
-#     futura iteracion con OCR.
-#   Cobertura efectiva: 49 de 50 provincias (con León parcial) + Ceuta + Melilla
-#   = 51 de 52 territorios (98%). El unico hueco completo es Lugo (reCAPTCHA
-#   server-side). Leon parcial cubre solo La Bañeza, sin capital ni Ponferrada.
+# Sevilla — 5 zonas via OCR:
+#   - alcaladelrio, brenes, burguillos, cantillana, carmona: PDFs escaneados
+#     (sin capa de texto). Pipeline: pdfjs-dist render -> @napi-rs/canvas
+#     PNG -> tesseract.js OCR (idioma spa) -> regex pares Dia+Noche -> indice
+#     por dia desde el 1 del trimestre. Cache por hash de PDF en
+#     scripts/cache/sevilla-ocr/ y actions/cache por trimestre. Tiempo: 9
+#     min primer run del trimestre, ~6s en runs posteriores cuando el cache
+#     hit (PDF no cambio).
+#
+# Cobertura efectiva: 49 de 50 provincias (con León parcial) + Ceuta + Melilla
+# = 51 de 52 territorios (98%). El unico hueco completo es Lugo (reCAPTCHA
+# server-side). Leon parcial cubre solo La Bañeza, sin capital ni Ponferrada.
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -420,12 +423,37 @@ jobs:
         timeout-minutes: 5
         run: node scripts/fetch-guardias-jaen.mjs
 
+      # Calcular trimestre y año actuales (UTC) para cachear el OCR Sevilla
+      # con clave estable durante el trimestre.
+      - name: Calcular trimestre actual
+        id: fecha
+        run: |
+          year=$(date -u +%Y)
+          mes=$(date -u +%m)
+          trimestre=$(( (10#$mes - 1) / 3 + 1 ))
+          echo "year=$year" >> "$GITHUB_OUTPUT"
+          echo "trimestre=$trimestre" >> "$GITHUB_OUTPUT"
+
+      # Cache del texto OCR de los 5 PDFs escaneados (alcaladelrio, brenes,
+      # burguillos, cantillana, carmona). Key = trimestre actual: cuando
+      # cambia el trimestre el cache se invalida y se re-OCR. Esto evita los
+      # ~9 min/run de OCR cuando el PDF no cambio entre semanas.
+      - name: Cache OCR Sevilla
+        uses: actions/cache@v4
+        with:
+          path: scripts/cache/sevilla-ocr
+          key: sevilla-ocr-${{ steps.fecha.outputs.year }}-T${{ steps.fecha.outputs.trimestre }}
+          restore-keys: |
+            sevilla-ocr-
+
       - name: Guardias Sevilla (COF Sevilla 9 PDFs trimestrales por zona)
         id: sevilla
         continue-on-error: true
-        # 9 PDFs trimestrales (Aljarafe + 8 zonas). 3 son texto extraible, 6 son
-        # escaneadas (sin OCR). ~85 farmacias en ~67 municipios. Geocoding ~3 min.
-        timeout-minutes: 12
+        # 9 PDFs trimestrales (Aljarafe + 8 zonas). 4 texto + Sevilla capital +
+        # alcaladeguadaira texto + 5 zonas escaneadas con pipeline OCR
+        # (tesseract.js + @napi-rs/canvas). Cache OCR por trimestre = 9 min
+        # primer run del trimestre, luego ~6s. ~190 farmacias en ~72 municipios.
+        timeout-minutes: 25
         run: node scripts/fetch-guardias-sevilla.mjs
 
       - name: Guardias León (Ayto La Bañeza PDF policia local)

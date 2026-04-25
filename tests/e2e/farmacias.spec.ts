@@ -1,5 +1,5 @@
 // E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM +
-// guardias (cobertura nacional, 46 territorios).
+// guardias (cobertura nacional, 47 territorios).
 //
 // Comprobamos:
 //   - shell renderiza (header, toolbar, layout principal)
@@ -72,8 +72,8 @@ test.describe('Farmacias (/farmacias/)', () => {
     await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'false')
   })
 
-  test('los 46 snapshots de guardias se sirven con count > 0', async ({ request }) => {
-    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla']
+  test('los 47 snapshots de guardias se sirven con count > 0', async ({ request }) => {
+    const territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla', 'leon']
     for (const t of territorios) {
       const res = await request.get(`/data/guardias-${t}.json`)
       expect(res.status(), `guardias-${t}.json debe existir`).toBe(200)

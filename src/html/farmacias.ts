@@ -18,14 +18,14 @@
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
 // Guardias (Fases 2-16 — cobertura nacional):
-//   - 46 ficheros /data/guardias-<territorio>.json cargados en paralelo
+//   - 47 ficheros /data/guardias-<territorio>.json cargados en paralelo
 //     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
 //     almeria, girona, tarragona, cordoba, cantabria, pontevedra,
 //     laspalmas, alicante, cadiz, ceuta, valencia, clm, ourense, huesca,
 //     barcelona, baleares, navarra, castellon, asturias, rioja, caceres,
 //     lleida, soria, zamora, malaga, zaragoza, badajoz, valladolid, melilla,
 //     avila, burgos, salamanca, tenerife, teruel, segovia, granada, palencia,
-//     huelva, jaen, sevilla.
+//     huelva, jaen, sevilla, leon.
 //   - clm agrupa las 5 provincias de Castilla-La Mancha (Albacete, Ciudad
 //     Real, Cuenca, Guadalajara, Toledo) en un unico fichero porque el
 //     SESCAM las sirve juntas desde el mismo endpoint backend.
@@ -34,9 +34,12 @@
 //   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
 //     indexa, o porque el matching fue impreciso) se pintan en el mapa
 //     como marker dorado extra, sin entrar en la lista.
-//   - Provincias bloqueadas sin scraper viable: Leon (SOAP roto + paginas
-//     estaticas 404) y Lugo (reCAPTCHA v3 server-side). Cobertura
-//     efectiva: 48 de 50 provincias + Ceuta + Melilla.
+//   - Leon: cobertura SOLO La Banyeza (~10k hab) via Ayto Policia Local.
+//     COF Leon (cofleon.es) tiene SOAP caido sin alternativa publica para
+//     Leon capital ni Ponferrada.
+//   - Provincias totalmente bloqueadas sin scraper viable: Lugo (reCAPTCHA
+//     v3 server-side). Cobertura efectiva: 49 de 50 provincias + Ceuta +
+//     Melilla (la 50 es Leon, parcial).
 //
 // Arquitectura:
 //   - HTML + CSS + JS inline con nonce (CSP strict compatible con el
@@ -522,7 +525,7 @@ export function buildFarmaciasPage(
       map: null,
       cluster: null,
       userMarker: null,
-      // Guardias agregadas de los 46 territorios (cobertura nacional). Cada
+      // Guardias agregadas de los 47 territorios (cobertura nacional). Cada
       // entrada sigue el schema [lat, lng, direccion, poblacion, telefono,
       // cp, horarioGuardia, horarioGuardiaDesc]. Se carga en paralelo a
       // farmacias.json — si algun fetch falla, seguimos sin ese territorio.
@@ -865,7 +868,7 @@ export function buildFarmaciasPage(
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
     // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
     // porque el SESCAM las sirve juntas desde un unico endpoint backend.
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla'];
+    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla', 'leon'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();

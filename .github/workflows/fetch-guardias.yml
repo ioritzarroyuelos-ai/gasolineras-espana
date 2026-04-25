@@ -1,7 +1,8 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.25 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde 46 fuentes (45 COF provinciales + SESCAM regional para CLM):
+# v1.26 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 47 fuentes (45 COF provinciales + SESCAM regional para CLM + Ayto
+# La Bañeza para León):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -52,11 +53,18 @@ name: Fetch guardias farmacias snapshot
 #   - Sevilla    (farmaceuticosdesevilla.es PDFs trimestrales) → guardias-sevilla.json
 #                (cobertura: Aljarafe + Alcalá Guadaira + Morón-Osuna-Estepa
 #                + Sierra Norte. NO capital, NO 5 zonas escaneadas)
+#   - León       (aytobaneza.es PDF policia local)             → guardias-leon.json
+#                (cobertura: SOLO La Bañeza ~10k hab. cofleon.es SOAP caido
+#                sin alternativa para capital ni Ponferrada — La Bañeza es
+#                la unica fuente publica verificada en la provincia)
 #
-# Provincias bloqueadas (sin alternativa viable sin headless browser):
-#   - León (cofleon.es): backend SOAP permanentemente caido. CGCOF redirige
-#     al mismo dominio. Todas las paginas estaticas devuelven 404. No hay
-#     PDF publico ni API REST alternativa.
+# Provincias parcialmente bloqueadas:
+#   - León: cofleon.es backend SOAP permanentemente caido. La Bañeza cubierta
+#     via PDF del Ayuntamiento (Policia Local). Capital y Ponferrada sin
+#     alternativa publica — todas las pistas (SACYL, JCyL, CGCOF, ayuntos)
+#     redirigen al cofleon.es caido.
+#
+# Provincias totalmente bloqueadas:
 #   - Lugo (coflugo.org): protegido con reCAPTCHA v3 (action=farmacia_guardia,
 #     site key 6LfwyCMiAAAAAJ_gBJDwXxd-gwifxEQU45M4lQEJ). Validacion del
 #     token server-side: POST sin token → resultado vacio. CGCOF redirige
@@ -70,9 +78,9 @@ name: Fetch guardias farmacias snapshot
 #     tesseract.js puro JS (lento+baja precision). Iframe localizador del
 #     COF requiere sesion Joomla con token rotatorio. Documentado para
 #     futura iteracion con OCR.
-#   Cobertura efectiva: 48 de 50 provincias + Ceuta + Melilla = 50 de 52
-#   territorios (96%). Los 2 huecos requieren bypass de reCAPTCHA o
-#   restauracion del SOAP backend ajeno — fuera del scope MVP.
+#   Cobertura efectiva: 49 de 50 provincias (con León parcial) + Ceuta + Melilla
+#   = 51 de 52 territorios (98%). El unico hueco completo es Lugo (reCAPTCHA
+#   server-side). Leon parcial cubre solo La Bañeza, sin capital ni Ponferrada.
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -420,6 +428,14 @@ jobs:
         timeout-minutes: 12
         run: node scripts/fetch-guardias-sevilla.mjs
 
+      - name: Guardias León (Ayto La Bañeza PDF policia local)
+        id: leon
+        continue-on-error: true
+        # PDF anual del Ayto de La Bañeza con calendario de guardias rotando entre
+        # 5 farmacias. Cobertura SOLO La Bañeza — capital y Ponferrada sin fuente.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-leon.mjs
+
       - name: Resumen de resultados
         if: always()
         run: |
@@ -469,6 +485,7 @@ jobs:
           echo "Huelva:     ${{ steps.huelva.outcome }}"
           echo "Jaén:       ${{ steps.jaen.outcome }}"
           echo "Sevilla:    ${{ steps.sevilla.outcome }}"
+          echo "León:       ${{ steps.leon.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -476,7 +493,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json public/data/guardias-tenerife.json public/data/guardias-teruel.json public/data/guardias-segovia.json public/data/guardias-granada.json public/data/guardias-palencia.json public/data/guardias-huelva.json public/data/guardias-jaen.json public/data/guardias-sevilla.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json public/data/guardias-tenerife.json public/data/guardias-teruel.json public/data/guardias-segovia.json public/data/guardias-granada.json public/data/guardias-palencia.json public/data/guardias-huelva.json public/data/guardias-jaen.json public/data/guardias-sevilla.json public/data/guardias-leon.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -535,9 +552,10 @@ jobs:
           steps.palencia.outcome == 'failure' &&
           steps.huelva.outcome == 'failure' &&
           steps.jaen.outcome == 'failure' &&
-          steps.sevilla.outcome == 'failure'
+          steps.sevilla.outcome == 'failure' &&
+          steps.leon.outcome == 'failure'
         run: |
-          echo "::error::Los 46 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 47 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

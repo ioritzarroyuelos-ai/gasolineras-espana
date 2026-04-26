@@ -1,7 +1,8 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.17 — Refresca los snapshots de farmacias de guardia una vez por semana
-# desde 17 fuentes (16 COF provinciales + SESCAM regional para CLM):
+# v1.27 — Refresca los snapshots de farmacias de guardia una vez por semana
+# desde 47 fuentes (45 COF provinciales + SESCAM regional para CLM + Ayto
+# La Bañeza para León):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
 #   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
@@ -21,6 +22,68 @@ name: Fetch guardias farmacias snapshot
 #   - Valencia   (micof.es portal MICOF)    → guardias-valencia.json
 #   - CLM        (sescam.jccm.es backend)   → guardias-clm.json
 #                (Albacete + Ciudad Real + Cuenca + Guadalajara + Toledo)
+#   - Ourense    (cofourense vcomm API)     → guardias-ourense.json
+#   - Huesca     (cofhuesca.com)            → guardias-huesca.json
+#   - Barcelona  (farmaguia.net)            → guardias-barcelona.json
+#   - Baleares   (cofib.es ASMX SOAP)       → guardias-baleares.json
+#   - Navarra    (datosabiertos.navarra)    → guardias-navarra.json
+#   - Castellón  (cofcastellon JSP)         → guardias-castellon.json
+#   - Asturias   (farmasturias.org)         → guardias-asturias.json
+#   - Rioja      (riojasalud.es)            → guardias-rioja.json
+#   - Cáceres    (cofcaceres Laravel)       → guardias-caceres.json
+#   - Lleida     (coflleida.cat ASP)        → guardias-lleida.json
+#   - Soria      (cofsoria.es)              → guardias-soria.json
+#   - Zamora     (cofzamora.es)             → guardias-zamora.json
+#   - Málaga     (CGCOF id=29)              → guardias-malaga.json
+#   - Zaragoza   (CGCOF id=50)              → guardias-zaragoza.json
+#   - Badajoz    (CGCOF id=06)              → guardias-badajoz.json
+#   - Valladolid (cofvalladolid.es markers)  → guardias-valladolid.json
+#   - Melilla    (CGCOF id=52)              → guardias-melilla.json
+#   - Ávila      (CGCOF id=05)              → guardias-avila.json
+#   - Burgos     (CGCOF id=09)              → guardias-burgos.json
+#   - Salamanca  (CGCOF id=37)              → guardias-salamanca.json
+#   - Tenerife   (coftenerife.es API JSON)  → guardias-tenerife.json
+#                (Tenerife + La Palma + La Gomera + El Hierro)
+#   - Teruel     (cofteruel.org listado)    → guardias-teruel.json
+#   - Segovia    (cofsegovia.com PDF anual) → guardias-segovia.json
+#   - Granada    (cofgranada.com PDF AJAX)  → guardias-granada.json
+#   - Palencia   (cofpalencia.org PDF semanal) → guardias-palencia.json
+#   - Huelva     (cofhuelva.org PDF + localizador) → guardias-huelva.json
+#   - Jaén       (farmaceuticosdejaen.es PDF mensual) → guardias-jaen.json
+#   - Sevilla    (farmaceuticosdesevilla.es PDFs trimestrales) → guardias-sevilla.json
+#                (cobertura: Aljarafe + Sevilla capital + Alcalá Guadaira +
+#                Morón-Osuna-Estepa + Sierra Norte + 5 zonas via OCR
+#                (alcaladelrio, brenes, burguillos, cantillana, carmona))
+#   - León       (aytobaneza.es PDF policia local)             → guardias-leon.json
+#                (cobertura: SOLO La Bañeza ~10k hab. cofleon.es SOAP caido
+#                sin alternativa para capital ni Ponferrada — La Bañeza es
+#                la unica fuente publica verificada en la provincia)
+#
+# Provincias parcialmente bloqueadas:
+#   - León: cofleon.es backend SOAP permanentemente caido. La Bañeza cubierta
+#     via PDF del Ayuntamiento (Policia Local). Capital y Ponferrada sin
+#     alternativa publica — todas las pistas (SACYL, JCyL, CGCOF, ayuntos)
+#     redirigen al cofleon.es caido.
+#
+# Provincias totalmente bloqueadas:
+#   - Lugo (coflugo.org): protegido con reCAPTCHA v3 (action=farmacia_guardia,
+#     site key 6LfwyCMiAAAAAJ_gBJDwXxd-gwifxEQU45M4lQEJ). Validacion del
+#     token server-side: POST sin token → resultado vacio. CGCOF redirige
+#     al mismo dominio. SERGAS y paxinasgalegas no exponen guardias en
+#     vivo. Sin alternativa publica.
+#
+# Sevilla — 5 zonas via OCR:
+#   - alcaladelrio, brenes, burguillos, cantillana, carmona: PDFs escaneados
+#     (sin capa de texto). Pipeline: pdfjs-dist render -> @napi-rs/canvas
+#     PNG -> tesseract.js OCR (idioma spa) -> regex pares Dia+Noche -> indice
+#     por dia desde el 1 del trimestre. Cache por hash de PDF en
+#     scripts/cache/sevilla-ocr/ y actions/cache por trimestre. Tiempo: 9
+#     min primer run del trimestre, ~6s en runs posteriores cuando el cache
+#     hit (PDF no cambio).
+#
+# Cobertura efectiva: 49 de 50 provincias (con León parcial) + Ceuta + Melilla
+# = 51 de 52 territorios (98%). El unico hueco completo es Lugo (reCAPTCHA
+# server-side). Leon parcial cubre solo La Bañeza, sin capital ni Ponferrada.
 #
 # Por que semanal y no diario:
 #   Los COF actualizan las guardias cada dia (cada provincia tiene un calendario
@@ -31,7 +94,7 @@ name: Fetch guardias farmacias snapshot
 #   tocar los scrapers.
 #
 # Tolerancia a fallos:
-#   Los 6 scrapers corren en serie pero son independientes — si uno falla los
+#   Los scrapers corren en serie pero son independientes — si uno falla los
 #   otros pueden haber commiteado con exito. Cada scraper tiene umbrales
 #   defensivos propios: si la API cambia o devuelve algo raro, exit 1 sin
 #   sobrescribir el JSON existente.
@@ -66,7 +129,7 @@ jobs:
         with:
           node-version: '20'
 
-      # Los 4 scrapers se ejecutan en serie para que un fallo de uno no
+      # Los scrapers se ejecutan en serie para que un fallo de uno no
       # bloquee a los otros. `continue-on-error` + `if: always()` en el step
       # de commit hace que commiteemos lo que tengamos aunque alguno falle.
       - name: Guardias Madrid (COFM)
@@ -82,8 +145,6 @@ jobs:
       - name: Guardias Gipuzkoa (COF Gipuzkoa)
         id: gipuzkoa
         continue-on-error: true
-        # Este scraper geocodifica con Nominatim (1 req/s) para ~90 farmacias.
-        # Estimado ~2 minutos. Timeout amplio por si Nominatim responde lento.
         timeout-minutes: 8
         run: node scripts/fetch-guardias-gipuzkoa.mjs
 
@@ -105,90 +166,303 @@ jobs:
       - name: Guardias Almeria (COF Almeria)
         id: almeria
         continue-on-error: true
-        # Geocodifica con Nominatim (1 req/s) ~70 farmacias. Estimado ~2 min.
         timeout-minutes: 8
         run: node scripts/fetch-guardias-almeria.mjs
 
       - name: Guardias Girona (COF Girona)
         id: girona
         continue-on-error: true
-        # Geocodifica con Nominatim (1 req/s) ~20 farmacias. Estimado ~1 min.
         timeout-minutes: 5
         run: node scripts/fetch-guardias-girona.mjs
 
       - name: Guardias Tarragona (COF Tarragona)
         id: tarragona
         continue-on-error: true
-        # Geocodifica con Nominatim (1 req/s) ~70 farmacias. Estimado ~2-3 min.
         timeout-minutes: 8
         run: node scripts/fetch-guardias-tarragona.mjs
 
       - name: Guardias Córdoba (COF Córdoba)
         id: cordoba
         continue-on-error: true
-        # Geocodifica con Nominatim (1 req/s) ~45 farmacias. Estimado ~2 min.
         timeout-minutes: 6
         run: node scripts/fetch-guardias-cordoba.mjs
 
       - name: Guardias Cantabria (COF Cantabria API REST)
         id: cantabria
         continue-on-error: true
-        # API JSON con GPS — sin geocoding. Estimado <30s.
         timeout-minutes: 3
         run: node scripts/fetch-guardias-cantabria.mjs
 
       - name: Guardias Pontevedra (COF Pontevedra API)
         id: pontevedra
         continue-on-error: true
-        # API JSON con GPS nativo — sin geocoding. Estimado <30s.
         timeout-minutes: 3
         run: node scripts/fetch-guardias-pontevedra.mjs
 
       - name: Guardias Las Palmas (COF Las Palmas API WordPress)
         id: laspalmas
         continue-on-error: true
-        # API WP con GPS nativo — sin geocoding. Nonce + cookies. <30s.
         timeout-minutes: 3
         run: node scripts/fetch-guardias-laspalmas.mjs
 
       - name: Guardias Alicante (COF Alicante REST API)
         id: alicante
         continue-on-error: true
-        # REST publico, sin auth. Geocodifica con Nominatim ~70 farmacias
-        # (1 req/s) → ~80s + 51 zonas a 150ms cada una.
         timeout-minutes: 8
         run: node scripts/fetch-guardias-alicante.mjs
 
       - name: Guardias Cádiz (COF Cádiz vcomm API)
         id: cadiz
         continue-on-error: true
-        # API JSON con coords nativas (string "[lat,lng]"). <30s.
         timeout-minutes: 3
         run: node scripts/fetch-guardias-cadiz.mjs
 
       - name: Guardias Ceuta (COF Ceuta vcomm API)
         id: ceuta
         continue-on-error: true
-        # API JSON identico a Cadiz, ~3 farmacias/dia. <30s.
         timeout-minutes: 3
         run: node scripts/fetch-guardias-ceuta.mjs
 
       - name: Guardias Valencia (MICOF portal HTML)
         id: valencia
         continue-on-error: true
-        # GET inicial para captcha + cookie, luego itera 27 localidades
-        # cabecera. Coords nativas en HTML. ~10-15s.
         timeout-minutes: 5
         run: node scripts/fetch-guardias-valencia.mjs
 
       - name: Guardias Castilla-La Mancha (SESCAM backend)
         id: clm
         continue-on-error: true
-        # Itera ~1500 ids de localidad contra el endpoint backend del SESCAM
-        # con pausa 100ms. ~2.5min total. Cubre las 5 provincias CLM en un
-        # unico JSON porque el endpoint es regional, no provincial.
         timeout-minutes: 8
         run: node scripts/fetch-guardias-clm.mjs
+
+      - name: Guardias Ourense (COF Ourense vcomm API)
+        id: ourense
+        continue-on-error: true
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-ourense.mjs
+
+      - name: Guardias Huesca (COF Huesca)
+        id: huesca
+        continue-on-error: true
+        # Geocodifica con Nominatim (~30 farmacias). Estimado ~1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-huesca.mjs
+
+      - name: Guardias Barcelona (farmaguia.net)
+        id: barcelona
+        continue-on-error: true
+        # Coords nativas en HTML. Estimado <1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-barcelona.mjs
+
+      - name: Guardias Baleares (COFIB ASMX)
+        id: baleares
+        continue-on-error: true
+        # SOAP con coords nativas. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-baleares.mjs
+
+      - name: Guardias Navarra (Datos Abiertos CKAN)
+        id: navarra
+        continue-on-error: true
+        # CKAN datastore JSON con coords. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-navarra.mjs
+
+      - name: Guardias Castellón (COF Castellón JSP)
+        id: castellon
+        continue-on-error: true
+        # JSP + JSESSIONID. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-castellon.mjs
+
+      - name: Guardias Asturias (farmasturias.org)
+        id: asturias
+        continue-on-error: true
+        # Geocoding Nominatim ~70 farmacias. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-asturias.mjs
+
+      - name: Guardias Rioja (riojasalud.es)
+        id: rioja
+        continue-on-error: true
+        # Geocoding Nominatim ~10 farmacias. ~1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-rioja.mjs
+
+      - name: Guardias Cáceres (COF Cáceres Laravel)
+        id: caceres
+        continue-on-error: true
+        # CSRF + sesion. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-caceres.mjs
+
+      - name: Guardias Lleida (COF Lleida ASP)
+        id: lleida
+        continue-on-error: true
+        # ASP IIS + iteracion 16 iniciales. Coords nativas. ~3 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-lleida.mjs
+
+      - name: Guardias Soria (cofsoria.es)
+        id: soria
+        continue-on-error: true
+        # Coords nativas en L.map.setView. <1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-soria.mjs
+
+      - name: Guardias Zamora (cofzamora.es)
+        id: zamora
+        continue-on-error: true
+        # Tabla home + Nominatim. ~1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-zamora.mjs
+
+      - name: Guardias Málaga (CGCOF id=29)
+        id: malaga
+        continue-on-error: true
+        # CGCOF + Nominatim ~50 farmacias. ~3 min.
+        timeout-minutes: 10
+        run: node scripts/fetch-guardias-malaga.mjs
+
+      - name: Guardias Zaragoza (CGCOF id=50)
+        id: zaragoza
+        continue-on-error: true
+        # CGCOF + Nominatim ~95 farmacias. ~5 min con back-off.
+        timeout-minutes: 15
+        run: node scripts/fetch-guardias-zaragoza.mjs
+
+      - name: Guardias Badajoz (CGCOF id=06)
+        id: badajoz
+        continue-on-error: true
+        # CGCOF + Nominatim ~70 farmacias. ~3 min.
+        timeout-minutes: 10
+        run: node scripts/fetch-guardias-badajoz.mjs
+
+      - name: Guardias Valladolid (COF Valladolid markers JS)
+        id: valladolid
+        continue-on-error: true
+        # HTML expone markers JS con lat/lng pre-geocodificadas. <30s.
+        timeout-minutes: 3
+        run: node scripts/fetch-guardias-valladolid.mjs
+
+      - name: Guardias Melilla (CGCOF id=52)
+        id: melilla
+        continue-on-error: true
+        # CGCOF — 1 zona, 2-3 farmacias guardia. <1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-melilla.mjs
+
+      - name: Guardias Ávila (CGCOF id=05)
+        id: avila
+        continue-on-error: true
+        # CGCOF — 18 zonas. ~10 farmacias guardia. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-avila.mjs
+
+      - name: Guardias Burgos (CGCOF id=09)
+        id: burgos
+        continue-on-error: true
+        # CGCOF — 25 zonas. ~16 farmacias guardia. Geocoding Nominatim. ~3 min.
+        timeout-minutes: 10
+        run: node scripts/fetch-guardias-burgos.mjs
+
+      - name: Guardias Salamanca (CGCOF id=37)
+        id: salamanca
+        continue-on-error: true
+        # CGCOF — 17 zonas. ~13 farmacias guardia. Geocoding Nominatim. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-salamanca.mjs
+
+      - name: Guardias Tenerife (COF Tenerife API JSON)
+        id: tenerife
+        continue-on-error: true
+        # API JSON con coords nativas. 53 municipios x 1 GET. ~1 min.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-tenerife.mjs
+
+      - name: Guardias Teruel (COF Teruel listado HTML)
+        id: teruel
+        continue-on-error: true
+        # Listado WP + ficha por slug + Nominatim. ~20 farmacias. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-teruel.mjs
+
+      - name: Guardias Segovia (COF Segovia PDF anual capital)
+        id: segovia
+        continue-on-error: true
+        # PDF anual capital + Nominatim. 2 farmacias/dia (diurna+nocturna). ~30s.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-segovia.mjs
+
+      - name: Guardias Granada (COF Granada PDF AJAX capital)
+        id: granada
+        continue-on-error: true
+        # AJAX → PDF + parser DIURNO/NOCTURNO + Nominatim. ~30 farmacias. ~2 min.
+        timeout-minutes: 8
+        run: node scripts/fetch-guardias-granada.mjs
+
+      - name: Guardias Palencia (COF Palencia PDF semanal capital)
+        id: palencia
+        continue-on-error: true
+        # HTML menu → PDF semanal + parser por dia + Nominatim. 3 farmacias/dia.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-palencia.mjs
+
+      - name: Guardias Huelva (COF Huelva PDF mensual + localizador)
+        id: huelva
+        continue-on-error: true
+        # PDF mensual con FARMACIAS 24H + match con localizador (lat/lng nativos).
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-huelva.mjs
+
+      - name: Guardias Jaén (COF Jaén PDF mensual capital)
+        id: jaen
+        continue-on-error: true
+        # PDF mensual capital + parser por dia + Nominatim. 5 farmacias/dia (3 diurnas + 2 nocturnas).
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-jaen.mjs
+
+      # Calcular trimestre y año actuales (UTC) para cachear el OCR Sevilla
+      # con clave estable durante el trimestre.
+      - name: Calcular trimestre actual
+        id: fecha
+        run: |
+          year=$(date -u +%Y)
+          mes=$(date -u +%m)
+          trimestre=$(( (10#$mes - 1) / 3 + 1 ))
+          echo "year=$year" >> "$GITHUB_OUTPUT"
+          echo "trimestre=$trimestre" >> "$GITHUB_OUTPUT"
+
+      # Cache del texto OCR de los 5 PDFs escaneados (alcaladelrio, brenes,
+      # burguillos, cantillana, carmona). Key = trimestre actual: cuando
+      # cambia el trimestre el cache se invalida y se re-OCR. Esto evita los
+      # ~9 min/run de OCR cuando el PDF no cambio entre semanas.
+      - name: Cache OCR Sevilla
+        uses: actions/cache@v4
+        with:
+          path: scripts/cache/sevilla-ocr
+          key: sevilla-ocr-${{ steps.fecha.outputs.year }}-T${{ steps.fecha.outputs.trimestre }}
+          restore-keys: |
+            sevilla-ocr-
+
+      - name: Guardias Sevilla (COF Sevilla 9 PDFs trimestrales por zona)
+        id: sevilla
+        continue-on-error: true
+        # 9 PDFs trimestrales (Aljarafe + 8 zonas). 4 texto + Sevilla capital +
+        # alcaladeguadaira texto + 5 zonas escaneadas con pipeline OCR
+        # (tesseract.js + @napi-rs/canvas). Cache OCR por trimestre = 9 min
+        # primer run del trimestre, luego ~6s. ~190 farmacias en ~72 municipios.
+        timeout-minutes: 25
+        run: node scripts/fetch-guardias-sevilla.mjs
+
+      - name: Guardias León (Ayto La Bañeza PDF policia local)
+        id: leon
+        continue-on-error: true
+        # PDF anual del Ayto de La Bañeza con calendario de guardias rotando entre
+        # 5 farmacias. Cobertura SOLO La Bañeza — capital y Ponferrada sin fuente.
+        timeout-minutes: 5
+        run: node scripts/fetch-guardias-leon.mjs
 
       - name: Resumen de resultados
         if: always()
@@ -211,6 +485,35 @@ jobs:
           echo "Ceuta:      ${{ steps.ceuta.outcome }}"
           echo "Valencia:   ${{ steps.valencia.outcome }}"
           echo "CLM:        ${{ steps.clm.outcome }}"
+          echo "Ourense:    ${{ steps.ourense.outcome }}"
+          echo "Huesca:     ${{ steps.huesca.outcome }}"
+          echo "Barcelona:  ${{ steps.barcelona.outcome }}"
+          echo "Baleares:   ${{ steps.baleares.outcome }}"
+          echo "Navarra:    ${{ steps.navarra.outcome }}"
+          echo "Castellón:  ${{ steps.castellon.outcome }}"
+          echo "Asturias:   ${{ steps.asturias.outcome }}"
+          echo "Rioja:      ${{ steps.rioja.outcome }}"
+          echo "Cáceres:    ${{ steps.caceres.outcome }}"
+          echo "Lleida:     ${{ steps.lleida.outcome }}"
+          echo "Soria:      ${{ steps.soria.outcome }}"
+          echo "Zamora:     ${{ steps.zamora.outcome }}"
+          echo "Málaga:     ${{ steps.malaga.outcome }}"
+          echo "Zaragoza:   ${{ steps.zaragoza.outcome }}"
+          echo "Badajoz:    ${{ steps.badajoz.outcome }}"
+          echo "Valladolid: ${{ steps.valladolid.outcome }}"
+          echo "Melilla:    ${{ steps.melilla.outcome }}"
+          echo "Ávila:      ${{ steps.avila.outcome }}"
+          echo "Burgos:     ${{ steps.burgos.outcome }}"
+          echo "Salamanca:  ${{ steps.salamanca.outcome }}"
+          echo "Tenerife:   ${{ steps.tenerife.outcome }}"
+          echo "Teruel:     ${{ steps.teruel.outcome }}"
+          echo "Segovia:    ${{ steps.segovia.outcome }}"
+          echo "Granada:    ${{ steps.granada.outcome }}"
+          echo "Palencia:   ${{ steps.palencia.outcome }}"
+          echo "Huelva:     ${{ steps.huelva.outcome }}"
+          echo "Jaén:       ${{ steps.jaen.outcome }}"
+          echo "Sevilla:    ${{ steps.sevilla.outcome }}"
+          echo "León:       ${{ steps.leon.outcome }}"
 
       - name: Commit snapshots si hay cambios
         id: commit
@@ -218,7 +521,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json 2>/dev/null || true
+          git add public/data/guardias-madrid.json public/data/guardias-bizkaia.json public/data/guardias-gipuzkoa.json public/data/guardias-alava.json public/data/guardias-coruna.json public/data/guardias-murcia.json public/data/guardias-almeria.json public/data/guardias-girona.json public/data/guardias-tarragona.json public/data/guardias-cordoba.json public/data/guardias-cantabria.json public/data/guardias-pontevedra.json public/data/guardias-laspalmas.json public/data/guardias-alicante.json public/data/guardias-cadiz.json public/data/guardias-ceuta.json public/data/guardias-valencia.json public/data/guardias-clm.json public/data/guardias-ourense.json public/data/guardias-huesca.json public/data/guardias-barcelona.json public/data/guardias-baleares.json public/data/guardias-navarra.json public/data/guardias-castellon.json public/data/guardias-asturias.json public/data/guardias-rioja.json public/data/guardias-caceres.json public/data/guardias-lleida.json public/data/guardias-soria.json public/data/guardias-zamora.json public/data/guardias-malaga.json public/data/guardias-zaragoza.json public/data/guardias-badajoz.json public/data/guardias-valladolid.json public/data/guardias-melilla.json public/data/guardias-avila.json public/data/guardias-burgos.json public/data/guardias-salamanca.json public/data/guardias-tenerife.json public/data/guardias-teruel.json public/data/guardias-segovia.json public/data/guardias-granada.json public/data/guardias-palencia.json public/data/guardias-huelva.json public/data/guardias-jaen.json public/data/guardias-sevilla.json public/data/guardias-leon.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo "Sin cambios en ningun guardias-*.json"
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -249,9 +552,38 @@ jobs:
           steps.cadiz.outcome == 'failure' &&
           steps.ceuta.outcome == 'failure' &&
           steps.valencia.outcome == 'failure' &&
-          steps.clm.outcome == 'failure'
+          steps.clm.outcome == 'failure' &&
+          steps.ourense.outcome == 'failure' &&
+          steps.huesca.outcome == 'failure' &&
+          steps.barcelona.outcome == 'failure' &&
+          steps.baleares.outcome == 'failure' &&
+          steps.navarra.outcome == 'failure' &&
+          steps.castellon.outcome == 'failure' &&
+          steps.asturias.outcome == 'failure' &&
+          steps.rioja.outcome == 'failure' &&
+          steps.caceres.outcome == 'failure' &&
+          steps.lleida.outcome == 'failure' &&
+          steps.soria.outcome == 'failure' &&
+          steps.zamora.outcome == 'failure' &&
+          steps.malaga.outcome == 'failure' &&
+          steps.zaragoza.outcome == 'failure' &&
+          steps.badajoz.outcome == 'failure' &&
+          steps.valladolid.outcome == 'failure' &&
+          steps.melilla.outcome == 'failure' &&
+          steps.avila.outcome == 'failure' &&
+          steps.burgos.outcome == 'failure' &&
+          steps.salamanca.outcome == 'failure' &&
+          steps.tenerife.outcome == 'failure' &&
+          steps.teruel.outcome == 'failure' &&
+          steps.segovia.outcome == 'failure' &&
+          steps.granada.outcome == 'failure' &&
+          steps.palencia.outcome == 'failure' &&
+          steps.huelva.outcome == 'failure' &&
+          steps.jaen.outcome == 'failure' &&
+          steps.sevilla.outcome == 'failure' &&
+          steps.leon.outcome == 'failure'
         run: |
-          echo "::error::Los 18 scrapers de guardias fallaron. Revisar los logs."
+          echo "::error::Los 47 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
   # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).

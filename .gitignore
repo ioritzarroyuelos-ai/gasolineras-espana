@@ -50,3 +50,14 @@ tests/e2e/.auth/
 
 # claude code metadata (worktrees, sessions, local-only)
 .claude/
+
+# scratch / dev (HTML/PDF descargados manualmente para investigar parsers)
+.tmp/
+
+# cache local de geocoding Nominatim — los CI workers llenan su propia cache
+# desde cero; solo es util en dev local para evitar ratelimit de Nominatim.
+scripts/cache/
+
+# tesseract.js descarga automaticamente el modelo de idioma 'spa' al CWD la
+# primera vez que se ejecuta el OCR. No commitear (~10MB) — se regenera.
+spa.traineddata

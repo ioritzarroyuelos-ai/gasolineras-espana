@@ -867,7 +867,7 @@ export function getStyles(nonce: string = ''): string {
     /* ---- Predictor semanal badge (popup) ----
        Placeholder + variantes good/neutral/bad. La logica vive en
        classifyPriceVsCycle; aqui solo pintamos segun el verdict. ---- */
-    .predict-slot { min-height: 0; margin: 6px 0 0; }
+    .predict-slot { min-height: 0; margin: 4px 0 0; }
     .predict-slot:empty { display: none; }
     .predict-badge {
       display:inline-block; padding:3px 9px; border-radius:8px;
@@ -1836,11 +1836,11 @@ export function getStyles(nonce: string = ''): string {
 
     /* ---- Popup: botones de accion ---- */
     .popup-actions {
-      display:flex; gap:6px; margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+      display:flex; gap:6px; margin-top:6px; padding-top:6px; border-top:1px solid #f1f5f9;
     }
     .popup-actions button {
       flex:1; border:1px solid #e2e8f0; background:#fff; border-radius:6px;
-      padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; color:#475569;
+      padding:4px 6px; font-size:11px; font-weight:600; cursor:pointer; color:#475569;
       display:flex; align-items:center; justify-content:center; gap:4px;
     }
     .popup-actions button:hover { background:#f0fdf4; color:#16a34a; border-color:#16a34a; }
@@ -2300,7 +2300,7 @@ export function getStyles(nonce: string = ''): string {
     .popup-seg-hrs          { color: #1e293b; }
 
     /* popup de precios */
-    .popup-price-main       { font-size: 22px; font-weight: 800; }
+    .popup-price-main       { font-size: 19px; font-weight: 800; }
     /* .popup-price-main-unit hereda font-weight:800 del <strong> padre — asi
        lo hacia el inline original (no habia override). Solo fijamos font-size. */
     .popup-price-main-unit  { font-size: 13px; }
@@ -2314,16 +2314,16 @@ export function getStyles(nonce: string = ''): string {
     .popup-price-main--gray   { color: #64748b; }
 
     /* popup de estaciones */
-    .popup-root             { font-family: system-ui, sans-serif; min-width: 250px; }
-    .popup-header           { color: #fff; padding: 14px 16px; margin: -12px -14px 12px; border-radius: 8px 8px 0 0; }
-    .popup-header-title     { font-weight: 800; font-size: 15px; line-height: 1.2; }
-    .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 4px; }
-    .popup-header-status    { margin-top: 6px; }
-    .popup-price-row        { display: flex; justify-content: space-between; align-items: center; padding: 8px 2px 10px; }
+    .popup-root             { font-family: system-ui, sans-serif; min-width: 220px; max-height: 65vh; overflow-y: auto; overscroll-behavior: contain; }
+    .popup-header           { color: #fff; padding: 10px 12px; margin: -12px -14px 8px; border-radius: 8px 8px 0 0; }
+    .popup-header-title     { font-weight: 800; font-size: 14px; line-height: 1.2; }
+    .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 3px; }
+    .popup-header-status    { margin-top: 4px; }
+    .popup-price-row        { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px 7px; }
     .popup-fuel-label       { font-size: 12px; color: #64748b; }
-    .popup-trend-top        { border-top: 1px solid #f1f5f9; padding-top: 8px; margin-top: 8px; }
+    .popup-trend-top        { border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 6px; }
     .popup-trend-caption    { font-size: 11px; font-weight: 700; color: #374151; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .popup-trend-caption--mb4 { margin-bottom: 4px; }
+    .popup-trend-caption--mb4 { margin-bottom: 3px; }
     /* Gradiente del header: mainBg en 135deg hacia #0f172a. Antes era
        inline con mainBg calculado por JS; ahora una clase por rango. */
     .popup-header--green    { background: linear-gradient(135deg, #16a34a 0%, #0f172a 100%); }
@@ -2332,8 +2332,8 @@ export function getStyles(nonce: string = ''): string {
     .popup-header--gray     { background: linear-gradient(135deg, #64748b 0%, #0f172a 100%); }
 
     /* navigation buttons (Google Maps / Waze / Apple Maps) */
-    .popup-nav-row          { display: flex; gap: 5px; margin-top: 12px; }
-    .popup-nav-btn          { flex: 1; text-align: center; padding: 8px 4px; border-radius: 8px; font-size: 11px; font-weight: 700; text-decoration: none; }
+    .popup-nav-row          { display: flex; gap: 5px; margin-top: 8px; }
+    .popup-nav-btn          { flex: 1; text-align: center; padding: 6px 4px; border-radius: 8px; font-size: 11px; font-weight: 700; text-decoration: none; }
     .popup-nav-google       { background: #4285f4; color: #fff; }
     .popup-nav-waze         { background: #09d3f7; color: #0d1b2a; }
     .popup-nav-apple        { background: #1c1c1e; color: #fff; }

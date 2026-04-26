@@ -819,9 +819,12 @@ function renderHistoryPanel(container, days) {
   body.innerHTML = '<div class="hist-loading">\u23F3 Cargando historial\u2026</div>';
 
   // Fetch estacion (obligatorio) + mediana provincial (opcional, no bloquea).
+  // El endpoint provincial valida fuel contra los codigos cortos del Ministerio
+  // ("95", "diesel"...), no contra la etiqueta larga del dropdown -- traducimos.
+  var fuelCodeForUrl = FUEL_CODES_BY_LABEL[fuel] || fuel;
   var stationUrl = '/api/history/' + encodeURIComponent(stationIdV) + '?days=' + days;
-  var medianUrl  = provinceId
-    ? '/api/history/province/' + encodeURIComponent(provinceId) + '?fuel=' + encodeURIComponent(fuel) + '&days=' + days
+  var medianUrl  = provinceId && FUEL_CODES_BY_LABEL[fuel]
+    ? '/api/history/province/' + encodeURIComponent(provinceId) + '?fuel=' + encodeURIComponent(fuelCodeForUrl) + '&days=' + days
     : null;
 
   var pStation = fetch(stationUrl, { credentials: 'same-origin' }).then(function(r) {
@@ -842,7 +845,11 @@ function renderHistoryPanel(container, days) {
       renderFallbackLocal(body, stationIdV, fuel, days);
       return;
     }
-    var series = (st && st.series && st.series[fuel]) || [];
+    // El servidor devuelve la serie indexada por codigo corto ("95",
+    // "diesel"...), pero fuel aqui es la etiqueta larga del Ministerio
+    // ("Precio Gasolina 95 E5"). Reusamos fuelCodeForUrl (mismo mapeo); si no
+    // esta en el mapa (GLP/H2 sin tracking D1) cae al fallback local.
+    var series = (st && st.series && st.series[fuelCodeForUrl]) || [];
     // Remap a formato interno {d, p} que usa buildSparkline.
     var points = series.map(function(p) { return { d: p.date, p: p.price }; });
     var medianPoints = null;

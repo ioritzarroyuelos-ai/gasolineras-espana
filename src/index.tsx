@@ -312,6 +312,131 @@ function filterStations(snapshot: MinistryResponse | null, predicate: (s: Statio
   return { ...snapshot, ListaEESSPrecio: snapshot.ListaEESSPrecio.filter(predicate) }
 }
 
+// ---- HISTORICO ESTATICO (1 año pre-generado, servido por CDN) ----
+// Forma del archivo public/data/history/{provincia}.json — generado offline por
+// scripts/backfill-static-history.mjs. El dedupe consecutivo (solo cambios de
+// precio) reduce ~5-10x el tamaño respecto a guardar un punto por dia: una
+// estacion media tiene ~50 cambios/año en lugar de 365 puntos.
+type StaticHistoryFile = {
+  v: number
+  provincia_id: string
+  from: string                    // YYYY-MM-DD primer dia
+  to: string                      // YYYY-MM-DD ultimo dia incluido
+  days: number
+  generated_at: string
+  // stations[stationId][fuelCode] = [[date, cents], ...] solo en cambios.
+  stations: Record<string, Record<string, Array<[string, number]>>>
+}
+type StaticMedianFile = {
+  v: number
+  provincia_id: string
+  from: string
+  to: string
+  days: number
+  generated_at: string
+  // median[fuelCode] = [[date, cents], ...] (sin dedupe — son <365 puntos por fuel).
+  median: Record<string, Array<[string, number]>>
+}
+
+// Suma 1 dia a una fecha YYYY-MM-DD. Lo hacemos via Date.UTC para no caer en
+// quirks de timezone (el endpoint razona siempre en UTC, igual que la columna
+// `date` de price_history).
+function incrementIsoDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00Z')
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// Re-hidrata una serie dedupeada [[date, cents], ...] a un punto por dia entre
+// [from, to]. Para cada dia, propaga el ultimo precio conocido. Ejemplo:
+//   dedup: [['2025-04-26', 1456], ['2025-05-15', 1462]]
+//   from: 2025-04-26, to: 2025-05-17
+//   => [{2025-04-26: 1456}, ..., {2025-05-14: 1456}, {2025-05-15: 1462}, {2025-05-16: 1462}, {2025-05-17: 1462}]
+//
+// Por que hidratar en lugar de devolver dedupe al cliente: el sparkline SVG
+// posiciona los puntos por indice (no por fecha real). Si dejamos solo
+// cambios, dos puntos a 1 mes de distancia se dibujan adyacentes — falsea
+// la trayectoria temporal. Hidratar mantiene el formato esperado por el
+// cliente sin tocar el render.
+function hydrateDedupe(
+  dedup: Array<[string, number]>,
+  from: string,
+  to: string,
+): Array<{ date: string; price: number }> {
+  if (dedup.length === 0) return []
+  const out: Array<{ date: string; price: number }> = []
+  let cursor = 0
+  let currentCents: number | null = null
+
+  // Antes del rango: avanzamos cursor hasta encontrar el ultimo punto <= from
+  // (lo guardamos como 'precio inicial'). Esto cubre el caso "el ultimo cambio
+  // fue hace 60 dias y el cliente pide solo 30" — el periodo arranca con ese
+  // precio aunque no haya cambios dentro.
+  while (cursor < dedup.length && dedup[cursor][0] < from) {
+    currentCents = dedup[cursor][1]
+    cursor++
+  }
+
+  const fromDate = new Date(from + 'T00:00:00Z')
+  const toDate = new Date(to + 'T00:00:00Z')
+  const day = new Date(fromDate.getTime())
+  while (day.getTime() <= toDate.getTime()) {
+    const iso = day.toISOString().slice(0, 10)
+    while (cursor < dedup.length && dedup[cursor][0] <= iso) {
+      currentCents = dedup[cursor][1]
+      cursor++
+    }
+    if (currentCents != null) {
+      out.push({ date: iso, price: currentCents / 1000 })
+    }
+    day.setUTCDate(day.getUTCDate() + 1)
+  }
+  return out
+}
+
+// Carga el JSON estatico de la provincia a la que pertenece `stationId` y
+// devuelve solo sus series dedupeadas (sin hidratar — el caller decide rango).
+// Devuelve null si no encontramos la provincia o no hay archivo estatico.
+async function loadStaticHistoryForStation(
+  origin: string,
+  stationId: string,
+  assets?: { fetch: (req: Request) => Promise<Response> },
+): Promise<{ to: string; from: string; byFuel: Record<string, Array<[string, number]>> } | null> {
+  // 1) Resolvemos la provincia desde stations.json (snapshot estatico ya
+  // cacheado en memoria por el resto de endpoints; coste marginal nulo).
+  const snap = await loadSnapshot<MinistryResponse>(origin, 'stations.json', assets)
+  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) return null
+  const station = snap.ListaEESSPrecio.find(s => s['IDEESS'] === stationId)
+  if (!station || !station.IDProvincia || !/^\d{1,2}$/.test(station.IDProvincia)) return null
+  const provKey = String(station.IDProvincia).padStart(2, '0')
+
+  // 2) Cargamos history/{provKey}.json. Si no existe (provincia sin backfill,
+  // o backfill todavia no aplicado), devolvemos null — el endpoint cae al
+  // comportamiento solo-D1.
+  const histFile = await loadSnapshot<StaticHistoryFile>(origin, 'history/' + provKey + '.json', assets)
+  if (!histFile || !histFile.stations || !histFile.stations[stationId]) return null
+  return {
+    to: histFile.to,
+    from: histFile.from,
+    byFuel: histFile.stations[stationId],
+  }
+}
+
+// Variante para la mediana provincial — carga el archivo pre-calculado.
+async function loadStaticMedianForProvince(
+  origin: string,
+  provinciaId: string,
+  fuel: string,
+  assets?: { fetch: (req: Request) => Promise<Response> },
+): Promise<{ to: string; from: string; points: Array<[string, number]> } | null> {
+  const provKey = String(provinciaId).padStart(2, '0')
+  const file = await loadSnapshot<StaticMedianFile>(origin, 'history/median/' + provKey + '.json', assets)
+  if (!file || !file.median) return null
+  const arr = file.median[fuel]
+  if (!arr) return null
+  return { to: file.to, from: file.from, points: arr }
+}
+
 // ---- CORS / ANTI-HOTLINK ----
 // El allowlist explicito quedaba redundante con la regla de originAllowed() que
 // acepta cualquier subdominio *.pages.dev (dondoe vive el deploy) + localhost
@@ -1770,48 +1895,103 @@ app.get('/api/history/:stationId', async c => {
     days = n
   }
 
-  if (!c.env.DB) {
-    // Dev sin binding D1: 503 explicito para que el cliente muestre UI de
-    // "historial no disponible" en lugar de error generico.
-    return c.json({ error: 'history_unavailable' }, 503, { 'Cache-Control': 'no-store' })
-  }
-
   // Cutoff = hoy - days. Usamos el mismo formato YYYY-MM-DD que usa la tabla
   // para evitar conversiones timezone-sensitive.
   const today = new Date()
   const cutoffDate = new Date(today.getTime())
   cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
   const cutoff = cutoffDate.toISOString().slice(0, 10)
+  const todayIso = today.toISOString().slice(0, 10)
+
+  // Series base por fuel — la rellenamos primero desde el JSON estatico (si
+  // existe) y luego sobreescribimos con datos D1 para fechas mas recientes.
+  // El JSON estatico se genera offline con scripts/backfill-static-history.mjs
+  // contra el endpoint /EstacionesTerrestresHist del Ministerio (2007→ayer);
+  // permite tener 365 dias de historico sin gastar writes de D1 (free tier
+  // limita a 100k/dia, 12M filas tardarian 4 meses en cargarse).
+  const series: Record<string, Array<{ date: string; price: number }>> = {}
+  for (const f of FUEL_CODES) series[f] = []
+  let staticTo: string | null = null
 
   try {
-    const stmt = c.env.DB
-      .prepare('SELECT fuel_code, date, price_cents FROM price_history WHERE station_id = ? AND date >= ? ORDER BY date ASC')
-      .bind(stationId, cutoff)
-    const { results } = await stmt.all<{ fuel_code: string; date: string; price_cents: number }>()
-
-    // Agrupamos por fuel_code para devolver un objeto { '95': [...], 'diesel': [...] }
-    // comodo de consumir desde el cliente sin logica extra de agrupacion.
-    const series: Record<string, Array<{ date: string; price: number }>> = {}
-    for (const f of FUEL_CODES) series[f] = []
-    for (const r of results) {
-      const arr = series[r.fuel_code]
-      if (!arr) continue  // combustible no mapeado (defensivo)
-      arr.push({ date: r.date, price: centsToEuros(r.price_cents) })
+    const staticData = await loadStaticHistoryForStation(c.req.url, stationId, c.env.ASSETS)
+    if (staticData) {
+      staticTo = staticData.to
+      // Filtrar al rango [cutoff, today] e hidratar (re-expandir el dedupe a
+      // un punto por dia para que el sparkline interpole correctamente sin
+      // falsas rampas entre cambios distantes).
+      for (const fuel of FUEL_CODES) {
+        const dedup = staticData.byFuel[fuel]
+        if (!dedup || dedup.length === 0) continue
+        series[fuel] = hydrateDedupe(dedup, cutoff, todayIso)
+      }
     }
-
-    return c.json(
-      { station_id: stationId, days, series },
-      200,
-      { 'Cache-Control': 'public, max-age=3600' },
-    )
   } catch (err) {
-    slog('error', 'history.query_failed', {
+    // Fallback silencioso: si el JSON estatico falla, seguimos con D1 solo.
+    slog('warn', 'history.static_load_failed', {
       stationId,
-      days,
-      err: String(err).slice(0, 300),
+      err: String(err).slice(0, 200),
     })
-    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
   }
+
+  // D1: leemos el rango que NO cubre el JSON estatico, o todo si no hay JSON.
+  // Los datos D1 sobreescriben (priorizan) sobre el JSON para esas fechas — el
+  // cron diario es la fuente mas reciente; el JSON estatico es snapshot fijo.
+  if (c.env.DB) {
+    const d1From = staticTo ? incrementIsoDate(staticTo) : cutoff
+    if (d1From <= todayIso) {
+      try {
+        const stmt = c.env.DB
+          .prepare('SELECT fuel_code, date, price_cents FROM price_history WHERE station_id = ? AND date >= ? ORDER BY date ASC')
+          .bind(stationId, d1From)
+        const { results } = await stmt.all<{ fuel_code: string; date: string; price_cents: number }>()
+        // Mergear: usamos un Map por fecha para que D1 sobreescriba a JSON
+        // (en caso de overlap) y mantengamos un solo punto por (fuel, date).
+        for (const f of FUEL_CODES) {
+          const arr = series[f]
+          if (arr.length === 0) continue
+          // Indexar serie estatica por fecha para sobreescritura barata.
+          const byDate = new Map<string, { date: string; price: number }>()
+          for (const p of arr) byDate.set(p.date, p)
+          series[f] = Array.from(byDate.values())
+        }
+        for (const r of results) {
+          const arr = series[r.fuel_code]
+          if (!arr) continue
+          // Mantener orden cronologico al insertar/sobreescribir.
+          const idx = arr.findIndex(p => p.date === r.date)
+          const point = { date: r.date, price: centsToEuros(r.price_cents) }
+          if (idx >= 0) arr[idx] = point
+          else arr.push(point)
+        }
+        // Re-ordenar por fecha (los append D1 pueden venir despues que los
+        // dias hidratados; cheap sort de ~365 elementos).
+        for (const f of FUEL_CODES) {
+          series[f].sort((a, b) => a.date.localeCompare(b.date))
+        }
+      } catch (err) {
+        slog('error', 'history.query_failed', {
+          stationId,
+          days,
+          err: String(err).slice(0, 300),
+        })
+        // Si la consulta D1 falla pero tenemos serie estatica, devolvemos eso.
+        if (!staticTo) {
+          return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+        }
+      }
+    }
+  } else if (!staticTo) {
+    // Ni D1 ni JSON estatico (dev sin binding y sin assets): 503 para que
+    // el cliente muestre UI de "historial no disponible".
+    return c.json({ error: 'history_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+
+  return c.json(
+    { station_id: stationId, days, series },
+    200,
+    { 'Cache-Control': 'public, max-age=3600' },
+  )
 })
 
 // Mediana provincial por dia para un combustible. Se dibuja como linea de
@@ -1853,93 +2033,112 @@ app.get('/api/history/province/:id', async c => {
     days = n
   }
 
-  if (!c.env.DB) {
+  const cutoffDate = new Date()
+  const todayDate = new Date()
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+  const todayIso = todayDate.toISOString().slice(0, 10)
+
+  // Median[date] = cents. La rellenamos primero desde el JSON estatico (mediana
+  // pre-calculada por buildMedianFile en backfill-static-history.mjs), luego
+  // sobreescribimos con datos D1 para fechas posteriores al `to` del JSON.
+  // Para el JSON estatico no hace falta hidratar: la mediana ya es un punto
+  // por dia (no esta dedupeada) en el archivo.
+  const medianByDate = new Map<string, number>()
+  let staticTo: string | null = null
+
+  try {
+    const staticMedian = await loadStaticMedianForProvince(c.req.url, id, fuel, c.env.ASSETS)
+    if (staticMedian) {
+      staticTo = staticMedian.to
+      for (const [date, cents] of staticMedian.points) {
+        if (date >= cutoff && date <= todayIso) {
+          medianByDate.set(date, cents)
+        }
+      }
+    }
+  } catch (err) {
+    slog('warn', 'history.static_median_load_failed', {
+      provinciaId: id,
+      fuel,
+      err: String(err).slice(0, 200),
+    })
+  }
+
+  // D1: solo consultamos el rango NO cubierto por el JSON estatico. Si no hay
+  // JSON estatico (provincia sin backfill), consultamos todo.
+  if (c.env.DB) {
+    const d1From = staticTo ? incrementIsoDate(staticTo) : cutoff
+    if (d1From <= todayIso) {
+      // Para mediana D1 necesitamos la lista de stationIds de la provincia.
+      const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+      if (snap && Array.isArray(snap.ListaEESSPrecio)) {
+        const stationIds = snap.ListaEESSPrecio
+          .filter(s => s.IDProvincia === id && typeof s['IDEESS'] === 'string' && /^\d{1,10}$/.test(s['IDEESS']))
+          .map(s => s['IDEESS'] as string)
+
+        if (stationIds.length > 0) {
+          // D1 limita a 100 parametros bound por query. Con 2 fijos (fuel, cutoff)
+          // podemos meter como mucho 98 station_ids por sub-query. Paginamos en
+          // chunks de 90 (margen) y consultamos en paralelo — Madrid (~900 estaciones)
+          // sale en 10 sub-queries, milisegundos en total.
+          const CHUNK = 90
+          const sqlTemplate = (n: number) =>
+            `SELECT date, price_cents FROM price_history WHERE fuel_code = ? AND date >= ? AND station_id IN (${new Array(n).fill('?').join(',')})`
+          try {
+            const queries: Promise<{ results: Array<{ date: string; price_cents: number }> }>[] = []
+            for (let i = 0; i < stationIds.length; i += CHUNK) {
+              const slice = stationIds.slice(i, i + CHUNK)
+              const sql = sqlTemplate(slice.length)
+              queries.push(
+                c.env.DB.prepare(sql).bind(fuel, d1From, ...slice)
+                  .all<{ date: string; price_cents: number }>()
+              )
+            }
+            const subResults = await Promise.all(queries)
+            // Agrupa por dia y calcula la mediana (valor central) — mismo
+            // algoritmo que el JSON estatico para que ambos sean consistentes.
+            const byDate = new Map<string, number[]>()
+            for (const sr of subResults) for (const r of sr.results) {
+              let arr = byDate.get(r.date)
+              if (!arr) { arr = []; byDate.set(r.date, arr) }
+              arr.push(r.price_cents)
+            }
+            for (const [date, arr] of byDate) {
+              arr.sort((a, b) => a - b)
+              const mid = arr[Math.floor(arr.length / 2)]
+              medianByDate.set(date, mid)  // sobreescribe JSON estatico si hay solapamiento
+            }
+          } catch (err) {
+            slog('error', 'history.province_median_failed', {
+              provinciaId: id,
+              fuel,
+              days,
+              err: String(err).slice(0, 300),
+            })
+            // Si D1 falla pero tenemos serie estatica, devolvemos eso.
+            if (!staticTo) {
+              return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+            }
+          }
+        }
+      }
+    }
+  } else if (!staticTo) {
     return c.json({ error: 'history_unavailable' }, 503, { 'Cache-Control': 'no-store' })
   }
 
-  // Para filtrar por provincia necesitamos la lista de stationIds de ella. La
-  // derivamos del snapshot estatico (ya cacheado en memoria por loadSnapshot),
-  // evitando duplicar metadata de estacion en D1.
-  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
-    return c.json({ error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
-  }
-  const stationIds = snap.ListaEESSPrecio
-    .filter(s => s.IDProvincia === id && typeof s['IDEESS'] === 'string' && /^\d{1,10}$/.test(s['IDEESS']))
-    .map(s => s['IDEESS'] as string)
-
-  if (stationIds.length === 0) {
-    return c.json(
-      { provincia_id: id, fuel, days, median: [] },
-      200,
-      { 'Cache-Control': 'public, max-age=3600' },
-    )
+  const median: Array<{ date: string; price: number }> = []
+  const dates = Array.from(medianByDate.keys()).sort()
+  for (const date of dates) {
+    median.push({ date, price: centsToEuros(medianByDate.get(date)!) })
   }
 
-  const cutoffDate = new Date()
-  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
-  const cutoff = cutoffDate.toISOString().slice(0, 10)
-
-  // D1 limita a 100 parametros bound por query. Con 2 fijos (fuel, cutoff)
-  // podemos meter como mucho 98 station_ids por sub-query. Paginamos en
-  // chunks de 90 (margen) y consultamos en paralelo — Madrid (~900 estaciones)
-  // sale en 10 sub-queries, milisegundos en total.
-  const CHUNK = 90
-  const sqlTemplate = (n: number) =>
-    `SELECT date, price_cents FROM price_history WHERE fuel_code = ? AND date >= ? AND station_id IN (${new Array(n).fill('?').join(',')})`
-
-  try {
-    const chunkResults: Array<{ date: string; price_cents: number }> = []
-    // Array de promises de sub-queries; D1 las ejecuta concurrentemente
-    // (Workers runtime soporta fetch concurrency nativo).
-    const queries: Promise<{ results: Array<{ date: string; price_cents: number }> }>[] = []
-    for (let i = 0; i < stationIds.length; i += CHUNK) {
-      const slice = stationIds.slice(i, i + CHUNK)
-      const sql = sqlTemplate(slice.length)
-      queries.push(
-        c.env.DB.prepare(sql).bind(fuel, cutoff, ...slice)
-          .all<{ date: string; price_cents: number }>()
-      )
-    }
-    const subResults = await Promise.all(queries)
-    for (const sr of subResults) for (const r of sr.results) chunkResults.push(r)
-    // Mantenemos 'results' para que el resto de la funcion (agregacion por
-    // fecha + mediana) no cambie.
-    const results = chunkResults
-
-    // Agrupa por dia y calcula la mediana (valor central). Para un numero
-    // par de observaciones tomamos el de indice n/2 (no la media de los dos
-    // centrales) — es mas barato y la diferencia practica es invisible en un
-    // sparkline a resolucion pixel.
-    const byDate = new Map<string, number[]>()
-    for (const r of results) {
-      let arr = byDate.get(r.date)
-      if (!arr) { arr = []; byDate.set(r.date, arr) }
-      arr.push(r.price_cents)
-    }
-    const median: Array<{ date: string; price: number }> = []
-    const dates = Array.from(byDate.keys()).sort()
-    for (const date of dates) {
-      const arr = byDate.get(date)!
-      arr.sort((a, b) => a - b)
-      const mid = arr[Math.floor(arr.length / 2)]
-      median.push({ date, price: centsToEuros(mid) })
-    }
-
-    return c.json(
-      { provincia_id: id, fuel, days, median },
-      200,
-      { 'Cache-Control': 'public, max-age=3600' },
-    )
-  } catch (err) {
-    slog('error', 'history.province_median_failed', {
-      provinciaId: id,
-      fuel,
-      days,
-      err: String(err).slice(0, 300),
-    })
-    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
-  }
+  return c.json(
+    { provincia_id: id, fuel, days, median },
+    200,
+    { 'Cache-Control': 'public, max-age=3600' },
+  )
 })
 
 // ---- STATS NACIONALES (Ship 15) ----

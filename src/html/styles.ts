@@ -1659,7 +1659,7 @@ export function getStyles(nonce: string = ''): string {
     body.dark .range-group .range-val { color:#4ade80; }
 
     /* ---- Sparkline ---- */
-    .sparkline { display:block; width:100%; height:60px; margin-top:6px; }
+    .sparkline { display:block; width:100%; height:70px; margin-top:0; }
     .sparkline path { fill:none; stroke-width:1.5; }
     .sparkline .sp-up   { stroke:#dc2626; }
     .sparkline .sp-down { stroke:#16a34a; }
@@ -1668,6 +1668,29 @@ export function getStyles(nonce: string = ''): string {
     /* Linea de referencia (mediana provincial) — discontinua, gris apagado
        para que no compita visualmente con el trazo principal. */
     .sparkline .sp-median { stroke:#94a3b8; stroke-width:1; stroke-dasharray:3,3; fill:none; }
+    /* Punto final: marca el ultimo precio para que el usuario vea de un vistazo
+       donde estamos hoy. Hereda el color del trazo principal via currentColor
+       (rojo si sube, verde si baja, gris si plano). */
+    .sparkline .sp-dot { fill:currentColor; stroke:#fff; stroke-width:0.5; }
+    body.dark .sparkline .sp-dot { stroke:#0f172a; }
+
+    /* ---- Sparkline con ejes ---- */
+    /* Grid 2x2: columna izquierda con max/min (eje Y), columna derecha con el
+       SVG y debajo las fechas (eje X). Antes el SVG iba pelado y no se entendia
+       que rango de precios ni de fechas mostraba. */
+    .hist-chart { display:grid; grid-template-columns: auto 1fr; column-gap:6px; row-gap:2px; margin-top:6px; }
+    .hist-chart-y {
+      grid-column:1; grid-row:1; display:flex; flex-direction:column;
+      justify-content:space-between; font-size:9px; color:#64748b;
+      font-variant-numeric:tabular-nums; padding:1px 0;
+    }
+    .hist-chart-y-max { line-height:1; }
+    .hist-chart-y-min { line-height:1; }
+    .hist-chart-canvas { grid-column:2; grid-row:1; min-width:0; }
+    .hist-chart-x {
+      grid-column:2; grid-row:2; display:flex; justify-content:space-between;
+      font-size:9px; color:#64748b;
+    }
     .trend-label { font-size:11px; color:#64748b; }
     .trend-up   { color:#dc2626; }
     .trend-down { color:#16a34a; }

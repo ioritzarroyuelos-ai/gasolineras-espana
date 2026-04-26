@@ -756,14 +756,32 @@ function buildSparkline(points, medianPoints) {
   var area = path + ' L' + lastX + ',' + h + ' L' + firstX + ',' + h + ' Z';
   var first = points[0].p, last = points[points.length-1].p;
   var cls = last > first + 0.005 ? 'sp-up' : (last < first - 0.005 ? 'sp-down' : 'sp-flat');
+  // Marcador del ultimo punto: un circulo en el final de la linea principal
+  // para que el usuario vea de un vistazo donde estamos hoy. preserveAspectRatio
+  // none deforma circulos, asi que usamos un rect cuadrado pequeno (3x3) que
+  // al estirarse en X se ve como un punto rectangular — aceptable y muy claro.
+  var lastY = yOf(points[points.length - 1].p);
   var svg = '<svg class="sparkline ' + cls + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">'
           + '<path class="sp-area" d="' + area + '"/>'
           + '<path d="' + path + '"/>';
   if (medianPoints && medianPoints.length >= 2) {
     svg += '<path class="sp-median" d="' + pathFor(medianPoints) + '"/>';
   }
+  svg += '<rect class="sp-dot" x="' + (parseFloat(lastX) - 1.5).toFixed(1) + '" y="' + (parseFloat(lastY) - 1.5).toFixed(1) + '" width="3" height="3"/>';
   svg += '</svg>';
   return svg;
+}
+
+// Formatea YYYY-MM-DD como "DD mes" en castellano abreviado ("19 abr").
+// Usado en los ejes del chart para que el rango sea autoexplicativo sin
+// necesidad de scrollear hasta las stats.
+var SPARK_MESES_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+function formatSparkDate(iso) {
+  if (!iso || iso.length < 10) return '';
+  var d = parseInt(iso.slice(8, 10), 10);
+  var m = parseInt(iso.slice(5, 7), 10) - 1;
+  if (isNaN(d) || m < 0 || m > 11) return '';
+  return d + ' ' + SPARK_MESES_ES[m];
 }
 
 // Panel de historico asincrono. buildPopup() emite el marcador HTML con
@@ -930,7 +948,25 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
       + '</div>'
     : '';
 
-  body.innerHTML = buildSparkline(points, medianPoints)
+  // Envolvemos el sparkline en un grid con eje Y a la izquierda (max arriba,
+  // min abajo) y eje X debajo (fecha inicio izquierda, fecha fin derecha).
+  // Antes el SVG iba "pelado" y el usuario no sabia que rango de fechas ni
+  // que precios mostraba — solo veia dos lineas sin contexto.
+  var firstDate = points[0].d;
+  var lastDate = points[points.length - 1].d;
+  var chartHtml = '<div class="hist-chart">'
+    + '<div class="hist-chart-y">'
+      + '<span class="hist-chart-y-max">' + fmt(max) + '</span>'
+      + '<span class="hist-chart-y-min">' + fmt(min) + '</span>'
+    + '</div>'
+    + '<div class="hist-chart-canvas">' + buildSparkline(points, medianPoints) + '</div>'
+    + '<div class="hist-chart-x">'
+      + '<span>' + formatSparkDate(firstDate) + '</span>'
+      + '<span>' + formatSparkDate(lastDate) + '</span>'
+    + '</div>'
+  + '</div>';
+
+  body.innerHTML = chartHtml
     + legend
     + '<div class="hist-stats">'
     + '<div class="hist-stat"><div class="hist-stat-label">Min</div><div class="hist-stat-value">' + fmt(min) + '</div></div>'

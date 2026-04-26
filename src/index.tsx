@@ -2311,46 +2311,120 @@ app.get('/api/predict/:stationId', async c => {
     currentEurL = n
   }
 
-  if (!c.env.DB) {
-    return c.json({ error: 'predict_unavailable' }, 503, { 'Cache-Control': 'no-store' })
-  }
-
   const now = new Date()
   const weekday = now.getUTCDay()      // 0=Dom .. 6=Sab (UTC — consistente con date UTC en D1)
   const cutoff = new Date(now.getTime())
   cutoff.setUTCDate(cutoff.getUTCDate() - 90)
   const cutoffStr = cutoff.toISOString().slice(0, 10)
+  const todayIso = now.toISOString().slice(0, 10)
 
   try {
-    // Lee los precios del mismo weekday en los ultimos 90d. SQLite no tiene
-    // DAYOFWEEK pero podemos usar strftime('%w', date) que devuelve 0-6 (0=Dom).
-    const stmt = c.env.DB
-      .prepare(
-        `SELECT date, price_cents
-         FROM price_history
-         WHERE station_id = ?
-           AND fuel_code  = ?
-           AND date       >= ?
-           AND CAST(strftime('%w', date) AS INTEGER) = ?
-         ORDER BY date ASC`
-      )
-      .bind(stationId, fuel, cutoffStr, weekday)
-    const { results } = await stmt.all<{ date: string; price_cents: number }>()
+    // Muestras del mismo dia de la semana en los ultimos 90d. Las recolectamos
+    // primero del JSON estatico (1 año de backfill — ~13 muestras del weekday
+    // garantizadas) y luego mergeamos con D1 para los dias mas recientes que
+    // no cubre el JSON. Sin esta combinacion, los primeros 90d del cron diario
+    // dejan <4 muestras y `classifyPriceVsCycle` marca confidence='low' →
+    // el badge muestra "poca muestra".
+    const samplesByDate = new Map<string, number>()  // D1 sobreescribe JSON
+    let staticTo: string | null = null
+    let lastKnownEurL: number | null = null  // fallback de currentEurL si no hay D1
 
-    const weekdaySamples = results.map(r => centsToEuros(r.price_cents))
-
-    // Si no dieron precio actual, intentamos deducirlo de la ultima muestra
-    // cualquiera (no solo del weekday). Query separada para no contaminar las
-    // muestras del predictor.
-    if (currentEurL == null) {
-      const last = await c.env.DB
-        .prepare('SELECT price_cents FROM price_history WHERE station_id = ? AND fuel_code = ? ORDER BY date DESC LIMIT 1')
-        .bind(stationId, fuel)
-        .all<{ price_cents: number }>()
-      if (last.results.length > 0) {
-        currentEurL = centsToEuros(last.results[0].price_cents)
+    try {
+      const staticData = await loadStaticHistoryForStation(c.req.url, stationId, c.env.ASSETS)
+      if (staticData) {
+        staticTo = staticData.to
+        const dedup = staticData.byFuel[fuel]
+        if (dedup && dedup.length > 0) {
+          // Hidratamos el dedupe a un punto por dia y filtramos por weekday.
+          // El hidratado es necesario porque el dedupe solo guarda cambios:
+          // si el ultimo cambio fue hace 30 dias, todos los weekdays despues
+          // mantienen ese precio y deben contar como muestras.
+          const points = hydrateDedupe(dedup, cutoffStr, todayIso)
+          for (const p of points) {
+            if (new Date(p.date + 'T00:00:00Z').getUTCDay() === weekday) {
+              samplesByDate.set(p.date, p.price)
+            }
+          }
+          // Ultimo precio conocido del JSON (cualquier dia). Fallback para
+          // currentEurL cuando no hay D1 ni viene en query.
+          lastKnownEurL = dedup[dedup.length - 1][1] / 1000
+        }
       }
+    } catch (err) {
+      slog('warn', 'predict.static_load_failed', {
+        stationId,
+        err: String(err).slice(0, 200),
+      })
     }
+
+    // D1: rango que NO cubre el JSON estatico, mismo weekday. SQLite no tiene
+    // DAYOFWEEK pero strftime('%w', date) devuelve 0-6 (0=Dom). Si no hay JSON,
+    // D1 cubre el rango completo 90d.
+    if (c.env.DB) {
+      const d1From = staticTo ? incrementIsoDate(staticTo) : cutoffStr
+      if (d1From <= todayIso) {
+        try {
+          const stmt = c.env.DB
+            .prepare(
+              `SELECT date, price_cents
+               FROM price_history
+               WHERE station_id = ?
+                 AND fuel_code  = ?
+                 AND date       >= ?
+                 AND CAST(strftime('%w', date) AS INTEGER) = ?
+               ORDER BY date ASC`
+            )
+            .bind(stationId, fuel, d1From, weekday)
+          const { results } = await stmt.all<{ date: string; price_cents: number }>()
+          for (const r of results) {
+            samplesByDate.set(r.date, centsToEuros(r.price_cents))
+          }
+        } catch (err) {
+          slog('error', 'predict.query_failed', {
+            stationId,
+            fuel,
+            err: String(err).slice(0, 300),
+          })
+          // Si la query D1 falla pero tenemos JSON estatico, seguimos con eso.
+          if (!staticTo) {
+            return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
+          }
+        }
+      }
+
+      // Fallback de currentEurL: ultima muestra cualquiera (no solo weekday).
+      // Query separada para no contaminar la lista de muestras del predictor.
+      if (currentEurL == null) {
+        try {
+          const last = await c.env.DB
+            .prepare('SELECT price_cents FROM price_history WHERE station_id = ? AND fuel_code = ? ORDER BY date DESC LIMIT 1')
+            .bind(stationId, fuel)
+            .all<{ price_cents: number }>()
+          if (last.results.length > 0) {
+            currentEurL = centsToEuros(last.results[0].price_cents)
+          }
+        } catch {
+          // ignoramos: caera al fallback del JSON o devolvera verdict=null
+        }
+      }
+    } else if (!staticTo) {
+      // Ni D1 ni JSON estatico (dev sin binding y sin assets).
+      return c.json({ error: 'predict_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+    }
+
+    // Si seguimos sin currentEurL (sin D1, sin query param), usamos el ultimo
+    // precio conocido del JSON estatico. Es desactualizado por horas/dias pero
+    // permite emitir un veredicto razonable.
+    if (currentEurL == null && lastKnownEurL != null) {
+      currentEurL = lastKnownEurL
+    }
+
+    // Ordenamos por fecha asc para consistencia con la API previa (los Map
+    // mantienen orden de insercion: JSON va antes que D1 y ambos vienen
+    // ordenados, pero un sort explicito asegura el invariante).
+    const weekdaySamples = Array.from(samplesByDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, price]) => price)
 
     if (currentEurL == null) {
       return c.json(

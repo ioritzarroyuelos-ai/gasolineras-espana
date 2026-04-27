@@ -358,8 +358,14 @@ function extraerTelefono(direccion) {
 async function ocrPdf(buf, zona) {
   const hash = createHash('sha256').update(buf).digest('hex').slice(0, 16)
   const cacheFile = resolve(OCR_CACHE_DIR, `${zona}-${hash}.txt`)
-  if (existsSync(cacheFile)) {
+  // Read-or-miss atomico: evitamos el patron existsSync()+readFileSync (TOCTOU)
+  // delegando el "existe?" al propio readFileSync. Si ENOENT, generamos OCR;
+  // cualquier otro error se propaga. CodeQL js/file-system-race lo flagea
+  // explicitamente cuando hay check-then-act sobre el filesystem.
+  try {
     return readFileSync(cacheFile, 'utf8')
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err
   }
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   const { createCanvas } = await import('@napi-rs/canvas')

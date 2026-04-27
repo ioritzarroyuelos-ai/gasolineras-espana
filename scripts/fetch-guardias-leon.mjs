@@ -49,10 +49,6 @@ function titleCase(s) {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase())
 }
 
-function normalize(s) {
-  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-}
-
 async function fetchPdf() {
   const res = await fetch(PDF_URL, { headers: { 'User-Agent': USER_AGENT }, redirect: 'follow' })
   if (!res.ok) throw new Error(`PDF HTTP ${res.status}`)

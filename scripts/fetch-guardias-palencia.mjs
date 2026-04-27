@@ -123,7 +123,6 @@ async function fetchMenu() {
 function elegirHref(items, zona, today) {
   const month = today.getMonth()
   const monthName = MESES[month].toUpperCase()
-  const day = today.getDate()
   // Filtrar por nombre de zona.
   const candidatos = items.filter(it => zona.menuRe.test(it.txt))
   if (candidatos.length === 0) return null

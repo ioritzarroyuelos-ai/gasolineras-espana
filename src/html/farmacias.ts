@@ -17,6 +17,16 @@
 //   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
 //     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
 //
+// Arquitectura visual:
+//   - MISMA imagen y estructura que /gasolineras/: header fijo verde con
+//     logo + brand title + subtitle + actions, sidebar lateral con
+//     filtros + lista de resultados, mapa principal a la derecha, footer
+//     al final. Reusamos la paleta y el gradient del shell de gasolineras
+//     (verde Tailwind 800→600) para que el portal CercaYa tenga
+//     coherencia visual entre servicios.
+//   - Hamburguesa para colapsar sidebar en movil (breakpoint 1023px),
+//     mismo patron que el shell de gasolineras (overlay con backdrop).
+//
 // Guardias (Fases 2-16 — cobertura nacional):
 //   - 47 ficheros /data/guardias-<territorio>.json cargados en paralelo
 //     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
@@ -40,18 +50,6 @@
 //   - Provincias totalmente bloqueadas sin scraper viable: Lugo (reCAPTCHA
 //     v3 server-side). Cobertura efectiva: 49 de 50 provincias + Ceuta +
 //     Melilla (la 50 es Leon, parcial).
-//
-// Arquitectura:
-//   - HTML + CSS + JS inline con nonce (CSP strict compatible con el
-//     resto del portal).
-//   - Leaflet servido localmente desde /static/vendor/map/ (mismo vendor
-//     que usa el mapa de gasolineras — cero CDN externo, menos latency
-//     y adblockers friendly).
-//   - JSON de farmacias descargado con fetch una sola vez, con cache HTTP
-//     aprovechando ETag (Cloudflare Pages sirve ASSETS con ETag por
-//     defecto).
-//   - Distancia Haversine pura en el cliente. Radio filtrado en JS para
-//     no tener que paginar/API-ficar.
 
 import { APP_VERSION } from '../lib/version'
 
@@ -111,7 +109,7 @@ export function buildFarmaciasPage(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#14532d" />
+  <meta name="theme-color" content="#16a34a" />
 
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(desc)}" />
@@ -145,6 +143,10 @@ export function buildFarmaciasPage(
   <script defer src="/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js"></script>
 
   <style nonce="${nonce}">
+    /* Variables — alineadas con el shell de gasolineras (paleta slate +
+       brand verde Tailwind). En light mode usamos slate clarito como
+       fondo y blanco como surface; en dark, slate oscuro. El brand verde
+       cubre header (gradient), botones primarios y acentos. */
     :root {
       --c-bg: #f8fafc;
       --c-surface: #ffffff;
@@ -155,9 +157,9 @@ export function buildFarmaciasPage(
       --c-brand-soft: #dcfce7;
       --c-border: #e2e8f0;
       --c-danger: #b91c1c;
-      --c-info-bg: #e0f2fe;
-      --c-info-text: #075985;
       --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
+      /* Gradient identico al app-header de gasolineras (styles.ts L33). */
+      --c-header-grad: linear-gradient(135deg, #14532d 0%, #166534 40%, #16a34a 100%);
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -170,9 +172,8 @@ export function buildFarmaciasPage(
         --c-brand-soft: #064e3b;
         --c-border: #334155;
         --c-danger: #fca5a5;
-        --c-info-bg: #0c4a6e;
-        --c-info-text: #bae6fd;
         --c-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        --c-header-grad: linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%);
       }
     }
     *, *::before, *::after { box-sizing: border-box; }
@@ -183,51 +184,96 @@ export function buildFarmaciasPage(
       color: var(--c-text);
       line-height: 1.55;
       min-height: 100vh;
-      display: flex;
-      flex-direction: column;
+      padding-top: 60px; /* compensar app-header fixed (60px) — mismo offset que gasolineras */
     }
     a { color: var(--c-brand-dark); }
     @media (prefers-color-scheme: dark) { a { color: var(--c-brand); } }
-    /* ---- Hero compacto ---- */
-    .hero {
-      background: linear-gradient(135deg, var(--c-brand-dark) 0%, var(--c-brand) 100%);
-      color: #ffffff;
-      padding: 24px 24px 20px;
-    }
-    .hero-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-    .hero-back {
-      color: #ffffff;
-      text-decoration: none;
-      font-size: 14px;
-      padding: 6px 12px;
-      border: 1px solid rgba(255,255,255,0.4);
-      border-radius: 8px;
-      transition: background 0.15s ease;
-    }
-    .hero-back:hover { background: rgba(255,255,255,0.1); }
-    .hero-title { font-size: 22px; font-weight: 700; margin: 0; letter-spacing: -0.01em; flex: 1; }
-    .hero-count { font-size: 13px; opacity: 0.92; }
 
-    /* ---- Toolbar ---- */
-    .toolbar {
-      background: var(--c-surface);
-      border-bottom: 1px solid var(--c-border);
-      padding: 12px 24px;
+    /* ===== APP-HEADER (mismo aspecto que /gasolineras/) ===== */
+    #app-header {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 60px; z-index: 1000;
+      background: var(--c-header-grad);
+      display: flex; align-items: center; padding: 0 16px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      gap: 8px;
     }
-    .toolbar-inner {
-      max-width: 1200px;
-      margin: 0 auto;
-      display: flex;
-      gap: 12px;
-      align-items: center;
-      flex-wrap: wrap;
+    #btn-toggle-sidebar {
+      display: none; /* visible solo en mobile (<1024px) */
+      background: transparent; border: 0; color: #fff;
+      width: 36px; height: 36px; border-radius: 8px;
+      cursor: pointer; font-size: 18px;
+      align-items: center; justify-content: center;
+    }
+    #btn-toggle-sidebar:hover, #btn-toggle-sidebar:focus-visible {
+      background: rgba(255,255,255,0.15);
+      outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px;
+    }
+    .brand-link {
+      display: flex; align-items: center; gap: 10px;
+      text-decoration: none; color: inherit;
+      min-width: 0; flex: 1;
+    }
+    .header-logo-img { width: 32px; height: 32px; flex-shrink: 0; }
+    .header-text { min-width: 0; }
+    .header-title {
+      color: #fff; font-weight: 700; font-size: 15px; line-height: 1.2;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .header-sub {
+      color: rgba(255,255,255,0.7); font-size: 11px; line-height: 1.2;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .header-actions {
+      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .header-badge {
+      background: rgba(255,255,255,0.2); color: #fff;
+      font-size: 12px; font-weight: 600;
+      border-radius: 9999px; padding: 3px 12px; white-space: nowrap;
+    }
+    .header-back {
+      color: #fff; text-decoration: none; font-size: 13px;
+      padding: 6px 10px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.3);
+      transition: background 0.15s ease;
+      white-space: nowrap;
+    }
+    .header-back:hover, .header-back:focus-visible {
+      background: rgba(255,255,255,0.15);
+      outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px;
+    }
+
+    /* ===== APP-BODY: sidebar + mapa, llena el viewport ===== */
+    #app-body {
+      position: relative;
+      height: calc(100vh - 60px);
+      display: flex; overflow: hidden;
+    }
+    #sidebar {
+      width: 320px; min-width: 320px;
+      background: var(--c-surface);
+      border-right: 1px solid var(--c-border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      box-shadow: 2px 0 8px rgba(0,0,0,0.06);
+      z-index: 100;
+    }
+    #sidebar-filters {
+      padding: 14px 16px;
+      background: var(--c-bg);
+      border-bottom: 1px solid var(--c-border);
+      flex: 0 0 auto;
+    }
+    .search-heading {
+      font-size: 13px; font-weight: 700;
+      color: var(--c-brand-dark);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      display: flex; align-items: center; gap: 6px;
+      margin: 0 0 10px;
+    }
+    @media (prefers-color-scheme: dark) {
+      .search-heading { color: var(--c-brand); }
     }
     /* Usamos --c-brand-dark (#14532d) para los botones con texto blanco para
        cumplir WCAG AA (4.5:1). El --c-brand (#16a34a) sobre blanco da 3.29:1,
@@ -238,32 +284,28 @@ export function buildFarmaciasPage(
       color: #ffffff;
       border: 0;
       border-radius: 8px;
-      padding: 8px 14px;
+      padding: 9px 14px;
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
       transition: filter 0.15s ease;
+      width: 100%;
     }
     .btn:hover, .btn:focus-visible {
       filter: brightness(1.15);
       outline: 2px solid var(--c-brand-dark);
       outline-offset: 2px;
     }
-    .btn-ghost {
-      background: transparent;
-      color: var(--c-brand-dark);
-      border: 1px solid var(--c-border);
+    .radius-group {
+      display: flex; margin-top: 12px;
+      border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden;
     }
-    @media (prefers-color-scheme: dark) {
-      .btn-ghost { color: var(--c-brand); }
-    }
-    .btn-ghost:hover { background: var(--c-brand-soft); }
-    .radius-group { display: inline-flex; border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden; }
     .radius-group button {
+      flex: 1;
       background: var(--c-surface);
       color: var(--c-text);
       border: 0;
-      padding: 8px 12px;
+      padding: 8px 10px;
       font-size: 13px;
       cursor: pointer;
       border-right: 1px solid var(--c-border);
@@ -275,31 +317,20 @@ export function buildFarmaciasPage(
       font-weight: 600;
     }
     .status-msg {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--c-muted);
-      flex: 1;
-      min-width: 180px;
+      margin-top: 10px;
+      line-height: 1.4;
     }
     .status-msg.error { color: var(--c-danger); }
 
-    /* ---- Layout principal ---- */
-    main {
-      flex: 1;
-      display: grid;
-      grid-template-columns: minmax(320px, 420px) 1fr;
-      gap: 0;
-      max-width: 1400px;
-      margin: 0 auto;
-      width: 100%;
-      min-height: 0;
-    }
-    .list-panel {
-      background: var(--c-surface);
-      border-right: 1px solid var(--c-border);
+    /* ===== Lista de farmacias dentro del sidebar ===== */
+    #list-wrap {
+      flex: 1 1 auto;
       overflow-y: auto;
-      max-height: calc(100vh - 150px);
+      min-height: 180px;
     }
-    .list-panel ol {
+    #list {
       list-style: none;
       margin: 0;
       padding: 0;
@@ -313,7 +344,7 @@ export function buildFarmaciasPage(
        focusable envuelve a otro focusable). */
     .card {
       position: relative;
-      padding: 14px 18px;
+      padding: 12px 16px;
       border-bottom: 1px solid var(--c-border);
       transition: background 0.15s ease;
     }
@@ -324,7 +355,7 @@ export function buildFarmaciasPage(
     .card[aria-current="true"] {
       background: var(--c-brand-soft);
       border-left: 3px solid var(--c-brand);
-      padding-left: 15px;
+      padding-left: 13px;
     }
     .card-select {
       background: transparent;
@@ -349,23 +380,22 @@ export function buildFarmaciasPage(
       outline-offset: -4px;
     }
     .card-name {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
-      margin: 0 0 4px;
+      margin: 0 0 3px;
       color: var(--c-text);
     }
     .card-addr {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--c-muted);
       margin: 0 0 6px;
     }
     .card-meta {
       position: relative;
-      z-index: 1; /* por encima del ::before del card-select para que los
-                     <a tel:> del meta sigan siendo clicables e independientes. */
+      z-index: 1;
       display: flex;
-      gap: 12px;
-      font-size: 12px;
+      gap: 10px;
+      font-size: 11px;
       color: var(--c-muted);
       flex-wrap: wrap;
     }
@@ -387,7 +417,7 @@ export function buildFarmaciasPage(
       background: #fef3c7;
       color: #78350f;
       font-weight: 700;
-      font-size: 11px;
+      font-size: 10px;
       letter-spacing: 0.02em;
       text-transform: uppercase;
       white-space: nowrap;
@@ -397,7 +427,7 @@ export function buildFarmaciasPage(
     }
     .guardia-horario {
       color: #78350f;
-      font-size: 12px;
+      font-size: 11px;
     }
     @media (prefers-color-scheme: dark) {
       .guardia-horario { color: #fcd34d; }
@@ -417,16 +447,21 @@ export function buildFarmaciasPage(
       box-shadow: 0 1px 3px rgba(0,0,0,.35);
     }
     .empty-state {
-      padding: 40px 24px;
+      padding: 32px 20px;
       text-align: center;
       color: var(--c-muted);
-      font-size: 14px;
+      font-size: 13px;
     }
 
-    /* ---- Mapa ---- */
+    /* ===== Mapa principal ===== */
+    #main-area {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      position: relative;
+    }
     #map {
-      height: calc(100vh - 150px);
-      min-height: 400px;
+      flex: 1 1 auto;
+      min-height: 300px;
       background: var(--c-bg);
     }
     .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
@@ -447,9 +482,9 @@ export function buildFarmaciasPage(
       border: 1px solid var(--c-border);
     }
 
-    /* ---- Footer ---- */
+    /* ===== Footer ===== */
     footer {
-      padding: 20px 24px;
+      padding: 14px 18px;
       text-align: center;
       font-size: 12px;
       color: var(--c-muted);
@@ -459,51 +494,108 @@ export function buildFarmaciasPage(
     footer a { text-decoration: underline; }
     footer a:hover { text-decoration: none; }
 
-    /* ---- Responsive: stack en movil ---- */
-    @media (max-width: 780px) {
-      main { grid-template-columns: 1fr; }
-      .list-panel { max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--c-border); }
-      #map { height: 55vh; min-height: 300px; }
-      .hero { padding: 16px 20px 14px; }
-      .hero-title { font-size: 18px; }
-      .toolbar-inner { gap: 8px; }
-      .btn { padding: 6px 10px; font-size: 13px; }
-      .radius-group button { padding: 6px 8px; font-size: 12px; }
+    /* ===== Mobile: sidebar overlay ===== */
+    /* Mismo patron que el shell de gasolineras: sidebar fixed con
+       transform:translateX(-110%) por defecto, slide-in al toggle. El
+       hamburger del header dispara la apertura. Backdrop dim cubre el
+       resto del viewport para indicar modal. */
+    #sidebar-backdrop {
+      display: none; position: fixed; inset: 0; z-index: 1050;
+      background: rgba(0,0,0,0.45);
+      backdrop-filter: blur(2px);
+    }
+    #sidebar-backdrop.show { display: block; }
+
+    @media (max-width: 1023px) {
+      #btn-toggle-sidebar { display: inline-flex; }
+      #sidebar {
+        position: fixed !important;
+        top: 60px; left: 0;
+        height: calc(100% - 60px);
+        width: min(340px, 92vw) !important;
+        min-width: 0 !important;
+        z-index: 1100;
+        transform: translateX(-110%);
+        transition: transform 0.28s ease;
+        box-shadow: none;
+      }
+      #sidebar.open { transform: translateX(0); box-shadow: 4px 0 16px rgba(0,0,0,0.25); }
+      #main-area { width: 100%; }
+      .header-back .header-back-text { display: none; }
+    }
+
+    @media (max-width: 480px) {
+      .header-title { font-size: 13px; }
+      .header-sub { display: none; }
+      .header-badge { display: none; }
+    }
+
+    /* sr-only: oculto visualmente pero accesible para lectores de pantalla y
+       mantiene un H1 semantico que el test e2e + Google buscan en la pagina. */
+    .sr-only {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0);
+      white-space: nowrap; border: 0;
     }
   </style>
 </head>
 <body>
-  <header class="hero">
-    <div class="hero-inner">
-      <a href="/" class="hero-back" aria-label="Volver a CercaYa">&larr; CercaYa</a>
-      <h1 class="hero-title">Farmacias en España</h1>
-      <span class="hero-count" id="hero-count" aria-live="polite"></span>
+
+  <h1 class="sr-only">Farmacias en España — directorio nacional con guardias</h1>
+
+  <header id="app-header">
+    <button type="button" id="btn-toggle-sidebar" aria-label="Abrir filtros y lista" aria-controls="sidebar" aria-expanded="false">
+      &#9776;
+    </button>
+
+    <a href="/" class="brand-link" aria-label="Volver al portal CercaYa">
+      <img src="${esc(logoUrl)}" alt="" class="header-logo-img" width="32" height="32" decoding="async" />
+      <div class="header-text">
+        <div class="header-title">Farmacias España</div>
+        <div class="header-sub">OpenStreetMap + COFs oficiales</div>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <span id="hero-count" class="header-badge" aria-live="polite"></span>
+      <a href="/" class="header-back" aria-label="Volver a CercaYa"><span class="header-back-text">CercaYa</span> &rarr;</a>
     </div>
   </header>
 
-  <div class="toolbar">
-    <div class="toolbar-inner">
-      <button type="button" class="btn" id="btn-geo" aria-label="Usar mi ubicación para ordenar por cercanía">
-        &#x1F4CD; Usar mi ubicación
-      </button>
-      <div class="radius-group" role="group" aria-label="Radio de búsqueda">
-        <button type="button" data-r="2" aria-pressed="false">2 km</button>
-        <button type="button" data-r="5" aria-pressed="true">5 km</button>
-        <button type="button" data-r="10" aria-pressed="false">10 km</button>
-      </div>
-      <span class="status-msg" id="status-msg" aria-live="polite">Pulsa &laquo;Usar mi ubicación&raquo; para ordenar por cercanía.</span>
-    </div>
-  </div>
+  <div id="sidebar-backdrop" hidden></div>
 
-  <main>
-    <aside class="list-panel" aria-label="Listado de farmacias">
-      <ol id="list" aria-live="polite"></ol>
-      <div class="empty-state" id="empty" hidden>
-        Aún no hay ubicación. Pulsa &laquo;Usar mi ubicación&raquo; o mueve el mapa para explorar.
+  <div id="app-body">
+    <aside id="sidebar" aria-label="Filtros y lista de farmacias">
+      <div id="sidebar-filters">
+        <h2 class="search-heading">
+          <span aria-hidden="true">&#x1F4CD;</span>
+          Búsqueda
+        </h2>
+        <button type="button" class="btn" id="btn-geo" aria-label="Usar mi ubicación para ordenar por cercanía">
+          &#x1F4CD; Usar mi ubicación
+        </button>
+        <div class="radius-group" role="group" aria-label="Radio de búsqueda">
+          <button type="button" data-r="2" aria-pressed="false">2 km</button>
+          <button type="button" data-r="5" aria-pressed="true">5 km</button>
+          <button type="button" data-r="10" aria-pressed="false">10 km</button>
+        </div>
+        <div class="status-msg" id="status-msg" aria-live="polite">Pulsa &laquo;Usar mi ubicación&raquo; para ordenar por cercanía.</div>
+      </div>
+
+      <div id="list-wrap">
+        <ol id="list" aria-live="polite"></ol>
+        <div class="empty-state" id="empty" hidden>
+          Aún no hay ubicación. Pulsa &laquo;Usar mi ubicación&raquo; o mueve el mapa para explorar.
+        </div>
       </div>
     </aside>
-    <section id="map" role="region" aria-label="Mapa de farmacias"></section>
-  </main>
+
+    <div id="main-area">
+      <section id="map" role="region" aria-label="Mapa de farmacias"></section>
+    </div>
+  </div>
 
   <footer>
     <div>Datos de <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) · CercaYa v${APP_VERSION}</div>
@@ -609,7 +701,7 @@ export function buildFarmaciasPage(
 
     function updateHeroCount(){
       if (state.user){
-        heroCount.textContent = state.filtered.length + ' farmacias a ≤' + state.radiusKm + ' km';
+        heroCount.textContent = state.filtered.length + ' a ≤' + state.radiusKm + ' km';
       } else {
         heroCount.textContent = state.all.length.toLocaleString('es-ES') + ' farmacias';
       }
@@ -863,7 +955,7 @@ export function buildFarmaciasPage(
       }
     }
 
-    // Cargar el JSON principal de farmacias + los 35 JSON de guardias en
+    // Cargar el JSON principal de farmacias + los 47 JSON de guardias en
     // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
     // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
@@ -919,7 +1011,7 @@ export function buildFarmaciasPage(
         setStatus('No se pudieron cargar los datos de farmacias: ' + (err && err.message || 'error desconocido') + '. Reintenta en unos minutos.', true);
       });
 
-    // Wire-up toolbar
+    // Wire-up sidebar / toolbar
     el('btn-geo').addEventListener('click', requestLocation);
     var radiusBtns = document.querySelectorAll('.radius-group button');
     for (var j = 0; j < radiusBtns.length; j++){
@@ -935,6 +1027,39 @@ export function buildFarmaciasPage(
         refilter();
       });
     }
+
+    // Toggle sidebar en mobile (mismo patron que el shell de gasolineras:
+    // hamburger en header dispara, backdrop cierra). En desktop (>=1024px)
+    // el sidebar siempre esta visible; en mobile se abre/cierra con clase
+    // .open + backdrop.show.
+    var sidebar = el('sidebar');
+    var backdrop = el('sidebar-backdrop');
+    var toggleBtn = el('btn-toggle-sidebar');
+    function openSidebar(){
+      sidebar.classList.add('open');
+      backdrop.classList.add('show');
+      backdrop.hidden = false;
+      toggleBtn.setAttribute('aria-expanded', 'true');
+    }
+    function closeSidebar(){
+      sidebar.classList.remove('open');
+      backdrop.classList.remove('show');
+      backdrop.hidden = true;
+      toggleBtn.setAttribute('aria-expanded', 'false');
+    }
+    toggleBtn.addEventListener('click', function(){
+      if (sidebar.classList.contains('open')) closeSidebar();
+      else openSidebar();
+    });
+    backdrop.addEventListener('click', closeSidebar);
+    // Cerrar al seleccionar una farmacia en mobile (mejor UX: el usuario
+    // hace tap en la card y queremos que vea el mapa con el popup abierto,
+    // no la sidebar tapando.)
+    list.addEventListener('click', function(ev){
+      if (window.matchMedia('(max-width: 1023px)').matches){
+        if (ev.target.closest('.card-select')) closeSidebar();
+      }
+    });
   })();
   </script>
 </body>

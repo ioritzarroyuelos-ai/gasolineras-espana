@@ -40,7 +40,6 @@ const USER_AGENT = 'cercaya-guardias/1.50 (+https://webapp-3ft.pages.dev)'
 const BBOX = { minLat: 37.3, maxLat: 38.7, minLng: -4.3, maxLng: -2.1 }
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-const DIAS_SEM = ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO']
 
 // Municipios principales con su idPoblacion. Los pequeños se ignoran porque
 // comparten PDF zonal o no tienen PDF.
@@ -255,12 +254,10 @@ function parsePdfBaeza(text, today) {
   for (const l of lines) {
     const m1 = l.match(reFechaPrim)
     const m2 = l.match(reDiaPrim)
-    let fecha, resto
+    let resto
     if (m1 && m1[1] === targetStr) {
-      fecha = m1[1]
       resto = m1[3]
     } else if (m2 && m2[2] === targetStr) {
-      fecha = m2[2]
       resto = m2[3]
     } else {
       continue

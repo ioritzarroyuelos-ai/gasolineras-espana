@@ -30,7 +30,7 @@
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.25.3",
     "@lhci/cli": "^0.15.1",
-    "@napi-rs/canvas": "^0.1.100",
+    "@napi-rs/canvas": "^1.0.0",
     "@playwright/test": "^1.59.1",
     "@resvg/resvg-js": "^2.6.2",
     "pdf-parse": "^2.4.5",

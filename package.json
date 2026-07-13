@@ -35,7 +35,7 @@
     "@resvg/resvg-js": "^2.6.2",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vite": "^8.1.4",
     "vitest": "^4.1.10",
     "wrangler": "^4.110.0"

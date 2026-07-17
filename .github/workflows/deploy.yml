@@ -112,6 +112,13 @@ jobs:
           test -f dist/manifest.json || { echo "::error::dist/manifest.json no existe"; exit 1; }
           echo "artefacto OK ($(du -sh dist | cut -f1))"
 
+      # wrangler 4.x requiere Node >=22. El runner ya no garantiza esa version
+      # por defecto, asi que la fijamos explicitamente antes de invocar wrangler.
+      - name: Usar Node.js 22 (requerido por wrangler 4.x)
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
       # Aplica migraciones D1 pendientes ANTES del deploy de assets. Asi el
       # nuevo codigo nunca se encuentra con un schema viejo (race window = 0).
       # `migrations apply` es idempotente: compara con la tabla interna

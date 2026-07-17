@@ -127,7 +127,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Los scrapers se ejecutan en serie para que un fallo de uno no
       # bloquee a los otros. `continue-on-error` + `if: always()` en el step
@@ -613,7 +613,7 @@ jobs:
       - uses: actions/setup-node@v5
         if: steps.secrets.outputs.present == 'true'
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install deps

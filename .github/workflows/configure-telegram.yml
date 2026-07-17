@@ -59,7 +59,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Safety check — abortar si ya hay bot salvo force=true

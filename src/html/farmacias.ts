@@ -464,6 +464,23 @@ export function buildFarmaciasPage(
       min-height: 300px;
       background: var(--c-bg);
     }
+    /* Boton flotante satelite — mismo patron visual que /gasolineras/. */
+    .sat-toggle {
+      width: 40px; height: 40px; padding: 0;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--c-surface, #fff);
+      color: var(--c-brand-dark, #14532d);
+      border: 1px solid var(--c-border, #d1d5db);
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    }
+    .sat-toggle:hover { color: var(--c-brand, #16a34a); }
+    .sat-toggle[aria-pressed="true"] {
+      background: var(--c-brand-dark, #14532d);
+      color: #fff;
+      border-color: var(--c-brand-dark, #14532d);
+    }
     .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
     .popup-name { font-weight: 600; font-size: 14px; margin: 0 0 4px; }
     .popup-addr { color: var(--c-muted); margin: 0 0 6px; }
@@ -848,11 +865,30 @@ export function buildFarmaciasPage(
         zoom: 6,
         preferCanvas: true,
       });
-      L.tileLayer('https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        maxZoom: 19,
-        subdomains: 'abcd',
-      }).addTo(state.map);
+      // Capas base compartidas con /gasolineras/ para que el portal CercaYa
+      // tenga la MISMA imagen. La preferencia vive en localStorage 'gs_basemap'
+      // (la MISMA clave que gasolineras): si el usuario eligio satelite alli,
+      // aqui tambien arranca en satelite, y viceversa.
+      var prefersDark = false;
+      try { prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch(_){}
+      state.baseLayers = {
+        light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
+        }),
+        dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
+        }),
+        // Ortofoto Esri via el proxy propio (mismo endpoint que gasolineras):
+        // asi respetamos la CSP (img-src 'self') sin pegar directo a arcgisonline.
+        satellite: L.tileLayer((location.origin || '') + '/api/tiles/satellite/{z}/{x}/{y}', {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19,
+        }),
+      };
+      var savedBasemap = null;
+      try { savedBasemap = localStorage.getItem('gs_basemap'); } catch(_){}
+      state.currentBase = savedBasemap === 'satellite' ? 'satellite' : (prefersDark ? 'dark' : 'light');
+      state.baseLayers[state.currentBase].addTo(state.map);
+      addBasemapToggle();
 
       state.cluster = L.markerClusterGroup({
         chunkedLoading: true,
@@ -906,6 +942,46 @@ export function buildFarmaciasPage(
       // dorado "G" para que el usuario las vea igualmente aunque no esten
       // en la lista. Son pocas (~50-150 en total) asi que sin clustering.
       addGuardiaLayer();
+    }
+
+    // Boton flotante para alternar mapa normal <-> satelite, replicando el
+    // control de /gasolineras/. Escribe la MISMA clave 'gs_basemap' para que la
+    // preferencia se comparta entre las dos vistas del portal.
+    function addBasemapToggle(){
+      if (!state.map) return;
+      var SAT_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7 9 3 5 7l4 4"/><path d="m17 11 4 4-4 4-4-4"/><path d="m8 12 4 4"/><path d="m16 8 3-3"/><path d="M9 21a6 6 0 0 0-6-6"/></svg>';
+      var Ctl = L.Control.extend({
+        options: { position: 'topright' },
+        onAdd: function(){
+          var btn = L.DomUtil.create('button', 'sat-toggle');
+          btn.type = 'button';
+          btn.innerHTML = SAT_SVG;
+          function sync(){
+            var onSat = state.currentBase === 'satellite';
+            btn.setAttribute('aria-pressed', onSat ? 'true' : 'false');
+            btn.setAttribute('aria-label', onSat ? 'Volver al mapa normal' : 'Ver mapa en vista satélite');
+            btn.title = onSat ? 'Volver al mapa normal' : 'Vista satélite';
+          }
+          sync();
+          L.DomEvent.disableClickPropagation(btn);
+          L.DomEvent.on(btn, 'click', function(){
+            var toSat = state.currentBase !== 'satellite';
+            state.map.removeLayer(state.baseLayers[state.currentBase]);
+            if (toSat) {
+              state.currentBase = 'satellite';
+            } else {
+              var dk = false;
+              try { dk = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch(_){}
+              state.currentBase = dk ? 'dark' : 'light';
+            }
+            state.baseLayers[state.currentBase].addTo(state.map);
+            try { localStorage.setItem('gs_basemap', toSat ? 'satellite' : 'map'); } catch(_){}
+            sync();
+          });
+          return btn;
+        }
+      });
+      state.map.addControl(new Ctl());
     }
 
     function addGuardiaLayer(){

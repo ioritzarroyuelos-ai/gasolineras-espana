@@ -32,17 +32,15 @@ function initMap() {
   //     No se aprieta mas porque sino desktop z6 no centra Canarias.
   //   - E=15: Menorca (lng 4.3) centrable en desktop zoom 6
   //     (15-10.55 = 4.45 ≥ 4.3).
-  var PAN_BOUNDS = L.latLngBounds(
-    [12.0, -25.95], // SW — minimo para centrar Canarias GC en desktop z6
-    [50.0,  15.0]   // NE — sin UK
+  // Encuadre FIJO a Espana (peninsula + Baleares + Ceuta/Melilla + Canarias).
+  // El mapa NO se puede desplazar fuera de estos limites: solo zoom. Bounds
+  // derivados del contorno real (dissolve de las provincias del IGN).
+  var ESPANA_BOUNDS = L.latLngBounds(
+    [27.5, -18.3],  // SW — El Hierro (Canarias)
+    [44.0,  4.5]    // NE — Pirineos / Menorca
   );
-  // PENINSULA_BOUNDS: solo para el fitBounds inicial — peninsula centrada
-  // sobre Madrid. Canarias queda fuera del viewport y el usuario la alcanza
-  // arrastrando hacia el SO.
-  var PENINSULA_BOUNDS = L.latLngBounds(
-    [35.8, -9.8],   // SW — Cabo San Vicente (PT) / Cadiz
-    [44.0,  4.5]    // NE — Pirineos orientales / Menorca
-  );
+  var PAN_BOUNDS = ESPANA_BOUNDS;
+  var PENINSULA_BOUNDS = ESPANA_BOUNDS;
 
   map = L.map('map', {
     zoomControl: false,
@@ -130,6 +128,16 @@ function initMap() {
   renderLabels();
   map.on('zoomend', renderLabels);
 
+  // ---- Recorte "estilo mapa del tiempo": mascara de mar + provincias ----
+  // Tapa todo lo que NO es Espana con mar liso (adios Francia/Africa) y dibuja
+  // las 50 provincias encima. Pane propio con z-index entre overlayPane(400) y
+  // markerPane(600) para quedar SOBRE las teselas (raster o MapLibre) y DEBAJO
+  // de los marcadores de gasolineras.
+  map.createPane('spainMask');
+  map.getPane('spainMask').style.zIndex = 450;
+  map.getPane('spainMask').style.pointerEvents = 'none';
+  addSpainOverlay();
+
   // Upgrade async a tiles vectoriales en castellano: fetcheamos el style
   // Liberty de OpenFreeMap, parcheamos todas las expresiones text-field para
   // que prioricen name:es con fallback a name:latin/name, y reemplazamos la
@@ -142,7 +150,34 @@ function initMap() {
     console.warn('[liberty] upgrade no aplicado, seguimos con raster:', (e && e.message) || e);
   });
 
-  setTimeout(function() { map.invalidateSize(true); }, 100);
+  setTimeout(function() {
+    map.invalidateSize(true);
+    // Encuadre fijo definitivo (ya con el contenedor a su tamano real): Espana
+    // llena la pantalla y setMinZoom impide alejarse mas alla de sus limites.
+    map.fitBounds(ESPANA_BOUNDS, { padding: [6, 6], animate: false });
+    map.setMinZoom(map.getZoom());
+  }, 100);
+}
+
+// Carga la mascara de mar (Espana recortada de un rectangulo) y las provincias.
+// Encadenado para garantizar orden de pintado: primero la mascara, luego las
+// provincias encima. Ambas en el pane 'spainMask' y no interactivas.
+var SEA_COLOR = '#a9cfe6';
+function addSpainOverlay() {
+  var maskStyle = function(){ return { stroke: false, fillColor: SEA_COLOR, fillOpacity: 1 }; };
+  var provStyle = function(){ return { fill: false, color: '#ffffff', weight: 1, opacity: 0.75 }; };
+  function addLayer(url, style){
+    return fetch(url).then(function(r){ return r.json(); }).then(function(gj){
+      L.geoJSON(gj, { pane: 'spainMask', interactive: false, style: style }).addTo(map);
+    });
+  }
+  // Orden de pintado (encadenado): primero las mascaras de mar (peninsula y
+  // Canarias) que recortan las teselas a Espana, luego las provincias encima.
+  addLayer('/data/es-mascara.geojson', maskStyle)
+    .then(function(){ return addLayer('/data/es-mascara-canarias.geojson', maskStyle); })
+    .then(function(){ return addLayer('/data/es-provincias.geojson', provStyle); })
+    .then(function(){ return addLayer('/data/es-provincias-canarias.geojson', provStyle); })
+    .catch(function(e){ console.warn('[spain-overlay] no aplicado:', (e && e.message) || e); });
 }
 
 // Poligono simplificado que cubre unicamente territorio espanol: Peninsula

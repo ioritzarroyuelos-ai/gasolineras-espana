@@ -36,7 +36,7 @@ function initMap() {
   // El mapa NO se puede desplazar fuera de estos limites: solo zoom. Bounds
   // derivados del contorno real (dissolve de las provincias del IGN).
   var ESPANA_BOUNDS = L.latLngBounds(
-    [27.5, -18.3],  // SW — El Hierro (Canarias)
+    [35.1, -9.7],   // SW — Melilla / Galicia (Canarias va en su recuadro)
     [44.0,  4.5]    // NE — Pirineos / Menorca
   );
   var PAN_BOUNDS = ESPANA_BOUNDS;
@@ -137,6 +137,7 @@ function initMap() {
   map.getPane('spainMask').style.zIndex = 450;
   map.getPane('spainMask').style.pointerEvents = 'none';
   addSpainOverlay();
+  initCanariasInset();
 
   // Upgrade async a tiles vectoriales en castellano: fetcheamos el style
   // Liberty de OpenFreeMap, parcheamos todas las expresiones text-field para
@@ -196,6 +197,84 @@ function addSpainOverlay() {
     .then(function(){ return addLayer('/data/es-lineas-provincias.geojson', lineStyle); })
     .then(function(){ map.on('zoomend', syncSpainOverlay); })
     .catch(function(e){ console.warn('[spain-overlay] no aplicado:', (e && e.message) || e); });
+}
+
+// ---- Recuadro de Canarias -------------------------------------------------
+// Mini-mapa anclado en la esquina que muestra las islas con la MISMA capa base
+// que el mapa principal y recortadas por su propia mascara. Gracias a el, el
+// mapa grande puede encuadrar solo la peninsula (como en los mapas del tiempo)
+// sin perder las gasolineras canarias, que se pintan aqui.
+var canariasMap = null;
+var canariasCluster = null;
+var canariasBase = null;
+
+function insetBaseLayer(satellite) {
+  return satellite
+    ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, noWrap: true })
+    : L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, noWrap: true });
+}
+
+function initCanariasInset() {
+  if (canariasMap) return;
+  var mapEl = document.getElementById('map');
+  if (!mapEl || !mapEl.parentNode || typeof L === 'undefined') return;
+  var box = document.createElement('div');
+  box.className = 'canarias-inset';
+  box.setAttribute('role', 'region');
+  box.setAttribute('aria-label', 'Islas Canarias');
+  mapEl.parentNode.appendChild(box);
+
+  canariasMap = L.map(box, {
+    zoomControl: false, attributionControl: false,
+    dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
+    boxZoom: false, keyboard: false, touchZoom: false
+  });
+  canariasMap.fitBounds(L.latLngBounds([27.55, -18.35], [29.45, -13.35]), { padding: [1, 1], animate: false });
+
+  var onSat = false;
+  try { onSat = localStorage.getItem('gs_basemap') === 'satellite'; } catch (_) {}
+  canariasBase = insetBaseLayer(onSat);
+  canariasBase.addTo(canariasMap);
+
+  // Mascara propia: recorta la capa base a las islas; fuera, mar liso.
+  fetch('/data/es-mascara-canarias.geojson').then(function(r){ return r.json(); }).then(function(gj){
+    if (!canariasMap) return;
+    L.geoJSON(gj, {
+      interactive: false,
+      style: function(){ return { stroke: false, fillColor: SEA_COLOR, fillOpacity: 1 }; }
+    }).addTo(canariasMap);
+  }).catch(function(){});
+
+  canariasCluster = L.markerClusterGroup({
+    maxClusterRadius: 38,
+    iconCreateFunction: function(cluster) {
+      var children = cluster.getAllChildMarkers();
+      var cPrices  = children.map(function(m) { return m.options._price; }).filter(function(p) { return p > 0; });
+      var cMin     = cPrices.length ? Math.min.apply(null, cPrices) : null;
+      var cColor   = cMin ? priceColor(cMin) : 'gray';
+      var count    = cluster.getChildCount();
+      return L.divIcon({
+        html: '<div class="cluster-icon cluster-icon--s36 cluster-icon--' + cColor + '">' +
+              '<span class="cluster-icon-count cluster-icon-count--fs11">' + count + '</span></div>',
+        className: '', iconSize: [36, 36], iconAnchor: [18, 18]
+      });
+    }
+  });
+  canariasMap.addLayer(canariasCluster);
+  setTimeout(function(){ if (canariasMap) canariasMap.invalidateSize(); }, 200);
+}
+
+// Conmuta la capa base del recuadro junto con la del mapa principal.
+function syncCanariasBase(satellite) {
+  if (!canariasMap) return;
+  if (canariasBase) canariasMap.removeLayer(canariasBase);
+  canariasBase = insetBaseLayer(satellite);
+  canariasBase.addTo(canariasMap);
+}
+
+// true si la estacion cae en Canarias (van al recuadro, no al mapa grande).
+function isCanarias(lat, lng) {
+  return lng < -11 && lat < 31;
 }
 
 // Muestra u oculta el recorte segun el zoom actual (ver MASK_MAX_ZOOM).
@@ -1355,6 +1434,7 @@ function renderMarkers(stations) {
   // la lista y los filtros siguen funcionando sin pins.
   if (typeof map === 'undefined' || !map) return;
   if (clusterGroup) map.removeLayer(clusterGroup);
+  if (canariasCluster) canariasCluster.clearLayers();  // el recuadro se repuebla abajo
   if (typeof heatLayer !== 'undefined' && heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
 
   var fuel = document.getElementById('sel-combustible').value;
@@ -1480,8 +1560,14 @@ function renderMarkers(stations) {
         }
       } catch (_) {}
     });
-    clusterGroup.addLayer(marker);
-    bounds.push([lat, lng]);
+    // Las canarias van al recuadro; el resto, al mapa grande. Solo estas
+    // ultimas cuentan para el fitBounds, para que la peninsula llene la vista.
+    if (canariasCluster && isCanarias(lat, lng)) {
+      canariasCluster.addLayer(marker);
+    } else {
+      clusterGroup.addLayer(marker);
+      bounds.push([lat, lng]);
+    }
   });
 
   map.addLayer(clusterGroup);
@@ -1860,6 +1946,7 @@ function buildChargersLayer(chargers) {
       }
 
       try { localStorage.setItem('gs_basemap', 'map'); } catch (_) {}
+      syncCanariasBase(false);   // el recuadro de Canarias sigue al principal
       btn.setAttribute('aria-pressed', 'false');
       btn.setAttribute('aria-label', 'Ver mapa en vista satelite');
     } else {
@@ -1880,6 +1967,7 @@ function buildChargersLayer(chargers) {
       }
 
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
+      syncCanariasBase(true);   // el recuadro de Canarias sigue al principal
       btn.setAttribute('aria-pressed', 'true');
       btn.setAttribute('aria-label', 'Volver al mapa normal');
     }

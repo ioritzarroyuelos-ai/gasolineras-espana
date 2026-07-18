@@ -1245,6 +1245,27 @@ export function getStyles(nonce: string = ''): string {
       background: #166534; color: #fff; border-color: #052e16;
     }
 
+    /* Recuadro de Canarias: mini-mapa en la esquina, al estilo de los mapas del
+       tiempo. Permite que la peninsula ocupe toda la pantalla sin dejar fuera
+       las islas. Elevado sobre el control de zoom (bottomright). */
+    .canarias-inset {
+      position: absolute;
+      right: 10px;
+      bottom: 104px;
+      width: 208px;
+      height: 104px;
+      border: 2px solid #334155;
+      border-radius: 3px;
+      overflow: hidden;
+      z-index: 650;
+      background: #cfe6f7;
+      box-shadow: 0 1px 5px rgba(0,0,0,.3);
+    }
+    .canarias-inset .leaflet-container { background: #cfe6f7; }
+    @media (max-width: 640px) {
+      .canarias-inset { width: 148px; height: 76px; bottom: 96px; right: 8px; }
+    }
+
     /* Ship 25.5: pin de punto de recarga electrica. Circulo azul con icono de
        rayo blanco. Tamaño compacto (26px) para que no compita visualmente con
        los pins-precio de gasolineras — mismas convenciones de sombra/borde. */

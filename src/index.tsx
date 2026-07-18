@@ -2,6 +2,12 @@ import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
+import { buildGuardiaMunicipioPage, guardiaHeaders } from './html/guardia-municipio'
+import {
+  guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
+  municipiosConGuardia, guardiasForMunicipio,
+  GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
+} from './lib/guardias'
 import {
   verifyGoogleIdToken,
   signSessionJWT,
@@ -950,6 +956,45 @@ app.get('/farmacias/', c => {
   return new Response(buildFarmaciasPage(nonce, c.req.url), { headers: farmaciasHeaders(nonce) })
 })
 
+// `/farmacias/:provincia/:municipio` — pagina SEO de farmacia de guardia,
+// renderizada ENTERA en servidor (a diferencia de /farmacias/, que es la SPA).
+// Motivo: "farmacia de guardia en <municipio>" es la consulta de mayor
+// intencion del proyecto y una SPA no se indexa. Los datos ya los generan los
+// scrapers de los 47 colegios provinciales, incluidos los que solo publican en
+// PDF, que es justo donde la competencia no llega.
+// 404 si la provincia, el fichero o el municipio no existen, para no meter
+// paginas vacias en el indice.
+app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
+  const provSlug = c.req.param('provinciaSlug')
+  const munSlug  = c.req.param('municipioSlug')
+  const prov = provinciaBySlug(provSlug)
+  if (!prov) return c.notFound()
+  const file = guardiasFileForProvincia(provSlug)
+  if (!file) return c.notFound()
+
+  const raw = await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)
+  if (!raw) return c.notFound()
+
+  const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
+  const municipios = municipiosConGuardia(all)
+  const munEntry = municipios.find(m => m.slug === munSlug)
+  if (!munEntry) return c.notFound()
+
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug + '/' + munSlug
+  return new Response(buildGuardiaMunicipioPage(nonce, {
+    provinciaSlug: provSlug,
+    provinciaName: prov.name,
+    municipioSlug: munSlug,
+    municipioName: munEntry.name,
+    guardias: guardiasForMunicipio(all, munSlug),
+    otrosMunicipios: municipios.filter(m => m.slug !== munSlug),
+    actualizado: raw.ts,
+    fuente: raw.source,
+    canonical,
+  }), { headers: guardiaHeaders(nonce) })
+})
+
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {
   const host = resolveHost(c)
@@ -960,6 +1005,7 @@ app.get('/robots.txt', c => {
     'Disallow: /api/',
     '',
     'Sitemap: ' + scheme + '://' + host + '/sitemap.xml',
+    'Sitemap: ' + scheme + '://' + host + '/sitemap-guardias.xml',
     '',
   ].join('\n')
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
@@ -1017,8 +1063,52 @@ app.get('/sitemap.xml', async c => {
       }
     }
   }
+  // El portal de farmacias tampoco estaba declarado: sin esto, Google no tenia
+  // ni una sola URL de farmacias por donde entrar.
+  entries.push(`  <url><loc>${base}/farmacias/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries.join('\n')}
+</urlset>`
+  return c.text(body, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' })
+})
+
+// ---- SEO: sitemap de farmacias de guardia ----
+// Va en un sitemap APARTE (declarado en robots.txt junto al principal) porque
+// necesita cargar los 47 snapshots de los colegios y no queremos penalizar el
+// sitemap de gasolineras, que es el que mas se pide. Cada fichero se carga UNA
+// vez aunque cubra varias provincias (el caso de 'clm').
+app.get('/sitemap-guardias.xml', async c => {
+  const host = resolveHost(c)
+  const scheme = resolveScheme(c)
+  const base = scheme + '://' + host
+  const today = new Date().toISOString().slice(0, 10)
+  const entries: string[] = []
+  const cache = new Map<string, GuardiasFile | null>()
+
+  for (const provSlug of Object.keys(GUARDIAS_TERRITORIO_BY_PROVINCIA)) {
+    const prov = provinciaBySlug(provSlug)
+    const file = guardiasFileForProvincia(provSlug)
+    if (!prov || !file) continue
+    if (!cache.has(file)) {
+      try {
+        cache.set(file, await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS))
+      } catch (err) {
+        slog('warn', 'sitemap_guardias.snapshot_failed', { file, err: String(err).slice(0, 160) })
+        cache.set(file, null)
+      }
+    }
+    const raw = cache.get(file)
+    if (!raw) continue
+    const rows = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
+    const lastmod = (raw.ts || '').slice(0, 10) || today
+    for (const m of municipiosConGuardia(rows)) {
+      entries.push(`  <url><loc>${base}/farmacias/${provSlug}/${m.slug}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`)
+    }
+  }
+
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entries.join('\n')}

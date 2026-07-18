@@ -331,11 +331,11 @@ export function getStyles(nonce: string = ''): string {
       border: none !important;
       background: #fff !important;
     }
-    .leaflet-popup-content { min-width:230px; max-width:268px; font-size:12px; margin:10px 12px !important; line-height:1.35; }
+    .leaflet-popup-content { min-width:210px; max-width:250px; font-size:12px; margin:8px 10px !important; line-height:1.3; }
     /* En pantallas estrechas el popup no debe comerse el mapa entero. */
     @media (max-width: 640px) {
-      .leaflet-popup-content { min-width:200px; max-width:240px; margin:8px 10px !important; }
-      .popup-root { max-height: 44vh; }
+      .leaflet-popup-content { min-width:190px; max-width:225px; margin:7px 9px !important; }
+      .popup-root { max-height: 38vh; }
     }
     .leaflet-popup-tip-container { display:none; }
     .leaflet-popup-close-button {
@@ -1718,7 +1718,7 @@ export function getStyles(nonce: string = ''): string {
     body.dark .range-group .range-val { color:#4ade80; }
 
     /* ---- Sparkline ---- */
-    .sparkline { display:block; width:100%; height:52px; margin-top:0; }
+    .sparkline { display:block; width:100%; height:44px; margin-top:0; }
     .sparkline path { fill:none; stroke-width:1.5; }
     .sparkline .sp-up   { stroke:#dc2626; }
     .sparkline .sp-down { stroke:#16a34a; }
@@ -1769,11 +1769,11 @@ export function getStyles(nonce: string = ''): string {
     body.dark .hist-toggle:hover { background:#334155; }
     body.dark .hist-toggle.active { background:#16a34a; color:#fff; }
     .hist-stats {
-      display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;
+      display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:4px;
       margin-top:4px; font-size:10px;
     }
     .hist-stat {
-      background:#f8fafc; border-radius:6px; padding:4px 6px; text-align:center;
+      background:#f8fafc; border-radius:6px; padding:3px 4px; text-align:center; min-width:0; overflow:hidden;
     }
     body.dark .hist-stat { background:#0f172a; }
     .hist-stat-label { color:#64748b; font-size:10px; text-transform:uppercase; letter-spacing:0.04em; }
@@ -2398,7 +2398,10 @@ export function getStyles(nonce: string = ''): string {
     /* popup de estaciones */
     /* 50vh (antes 65vh): el popup ocupaba dos tercios de la pantalla y tapaba
        el mapa. Con scroll interno sigue cabiendo todo el contenido. */
-    .popup-root             { font-family: system-ui, sans-serif; min-width: 200px; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
+    /* overflow-x hidden: aparecia una barra de scroll HORIZONTAL porque las
+       estadisticas (grid de 3 columnas) desbordaban el ancho. Con minmax(0,1fr)
+       en el grid ya no desborda, y esto lo remata. */
+    .popup-root             { font-family: system-ui, sans-serif; min-width: 200px; max-height: 42vh; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
     .popup-header           { color: #fff; padding: 10px 12px; margin: -12px -14px 8px; border-radius: 8px 8px 0 0; }
     .popup-header-title     { font-weight: 800; font-size: 14px; line-height: 1.2; }
     .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 3px; }

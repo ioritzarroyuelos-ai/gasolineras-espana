@@ -1703,7 +1703,7 @@ function renderMarkers(stations) {
     var color = priceColor(price);
     var icon  = makeIcon(color, price);
     var marker = L.marker([lat, lng], { icon: icon, _price: price || 0 });
-    marker.bindPopup(buildPopup(s), { maxWidth: 268, className: 'custom-popup' });
+    marker.bindPopup(buildPopup(s), { maxWidth: 250, className: 'custom-popup' });
     var stId = stationId(s);
     marker.on('click', function() { highlightCard(idx); });
     // Marcamos la estacion como visitada y disparamos la carga asincrona del

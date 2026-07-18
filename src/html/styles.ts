@@ -331,7 +331,12 @@ export function getStyles(nonce: string = ''): string {
       border: none !important;
       background: #fff !important;
     }
-    .leaflet-popup-content { min-width:260px; max-width:300px; font-size:13px; margin:14px 16px !important; line-height:1.4; }
+    .leaflet-popup-content { min-width:230px; max-width:268px; font-size:12px; margin:10px 12px !important; line-height:1.35; }
+    /* En pantallas estrechas el popup no debe comerse el mapa entero. */
+    @media (max-width: 640px) {
+      .leaflet-popup-content { min-width:200px; max-width:240px; margin:8px 10px !important; }
+      .popup-root { max-height: 44vh; }
+    }
     .leaflet-popup-tip-container { display:none; }
     .leaflet-popup-close-button {
       color: #fff !important; font-size: 20px !important;
@@ -1713,7 +1718,7 @@ export function getStyles(nonce: string = ''): string {
     body.dark .range-group .range-val { color:#4ade80; }
 
     /* ---- Sparkline ---- */
-    .sparkline { display:block; width:100%; height:70px; margin-top:0; }
+    .sparkline { display:block; width:100%; height:52px; margin-top:0; }
     .sparkline path { fill:none; stroke-width:1.5; }
     .sparkline .sp-up   { stroke:#dc2626; }
     .sparkline .sp-down { stroke:#16a34a; }
@@ -1765,7 +1770,7 @@ export function getStyles(nonce: string = ''): string {
     body.dark .hist-toggle.active { background:#16a34a; color:#fff; }
     .hist-stats {
       display:grid; grid-template-columns: repeat(3, 1fr); gap:6px;
-      margin-top:6px; font-size:11px;
+      margin-top:4px; font-size:10px;
     }
     .hist-stat {
       background:#f8fafc; border-radius:6px; padding:4px 6px; text-align:center;
@@ -2391,7 +2396,9 @@ export function getStyles(nonce: string = ''): string {
     .popup-price-main--gray   { color: #64748b; }
 
     /* popup de estaciones */
-    .popup-root             { font-family: system-ui, sans-serif; min-width: 220px; max-height: 65vh; overflow-y: auto; overscroll-behavior: contain; }
+    /* 50vh (antes 65vh): el popup ocupaba dos tercios de la pantalla y tapaba
+       el mapa. Con scroll interno sigue cabiendo todo el contenido. */
+    .popup-root             { font-family: system-ui, sans-serif; min-width: 200px; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
     .popup-header           { color: #fff; padding: 10px 12px; margin: -12px -14px 8px; border-radius: 8px 8px 0 0; }
     .popup-header-title     { font-weight: 800; font-size: 14px; line-height: 1.2; }
     .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 3px; }
@@ -2399,7 +2406,7 @@ export function getStyles(nonce: string = ''): string {
     .popup-price-row        { display: flex; justify-content: space-between; align-items: center; padding: 6px 2px 7px; }
     .popup-fuel-label       { font-size: 12px; color: #64748b; }
     .popup-trend-top        { border-top: 1px solid #f1f5f9; padding-top: 6px; margin-top: 6px; }
-    .popup-trend-caption    { font-size: 11px; font-weight: 700; color: #374151; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .popup-trend-caption    { font-size: 10px; font-weight: 700; color: #374151; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.05em; }
     .popup-trend-caption--mb4 { margin-bottom: 3px; }
     /* Gradiente del header: mainBg en 135deg hacia #0f172a. Antes era
        inline con mainBg calculado por JS; ahora una clase por rango. */

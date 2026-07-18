@@ -3,6 +3,8 @@ import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import { buildGuardiaMunicipioPage, guardiaHeaders } from './html/guardia-municipio'
+import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
+import { buildObservatorio, variacionPct } from './lib/observatorio'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio,
@@ -995,6 +997,72 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
   }), { headers: guardiaHeaders(nonce) })
 })
 
+// ---- Observatorio de precios ----
+// Pagina de datos pensada para SER CITADA por medios y foros: el Geoportal
+// oficial solo publica la foto de hoy, sin comparar provincias ni marcas y sin
+// historico, y los agregadores que compiten beben de ese mismo fichero. Aqui se
+// publica lo que ninguno da (ranking, diferencia entre extremos y variacion),
+// que es lo unico enlazable — y los enlaces son lo que hace posicionar al resto
+// del sitio, incluidas las paginas de farmacias de guardia.
+app.get('/precios-carburantes', async c => {
+  const nonce = genNonce()
+  let snap: MinistryResponse | null = null
+  try {
+    snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  } catch (err) {
+    slog('warn', 'observatorio.snapshot_failed', { err: String(err).slice(0, 160) })
+  }
+  const obs = buildObservatorio(snap)
+  if (!obs) return c.notFound()
+
+  // Variacion desde el historico propio. Si D1 no responde, la pagina sale
+  // igualmente con los rankings: el dato de hoy no depende de la base.
+  const variacionG95: Variacion[] = []
+  const variacionDiesel: Variacion[] = []
+  try {
+    if (!c.env.DB) throw new Error('sin binding D1')
+    const cut = new Date()
+    cut.setUTCDate(cut.getUTCDate() - 95)
+    const { results } = await c.env.DB
+      .prepare(
+        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents ' +
+        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
+        'GROUP BY date, fuel_code ORDER BY date ASC'
+      )
+      .bind('95', 'diesel', cut.toISOString().slice(0, 10))
+      .all<{ date: string; fuel_code: string; avg_cents: number }>()
+
+    const series = new Map<string, Array<{ date: string; v: number }>>([['95', []], ['diesel', []]])
+    for (const r of results) {
+      series.get(r.fuel_code)?.push({ date: r.date, v: r.avg_cents })
+    }
+    // Para cada ventana, compara el ultimo dato con el punto mas cercano a
+    // "hoy - N dias" (no siempre hay dato exacto de ese dia).
+    const calc = (arr: Array<{ date: string; v: number }>, dias: number): number | null => {
+      if (arr.length < 2) return null
+      const ultimo = arr[arr.length - 1]
+      const objetivo = new Date(ultimo.date)
+      objetivo.setUTCDate(objetivo.getUTCDate() - dias)
+      const target = objetivo.toISOString().slice(0, 10)
+      let previo: { date: string; v: number } | null = null
+      for (const p of arr) { if (p.date <= target) previo = p; else break }
+      return previo ? variacionPct(ultimo.v, previo.v) : null
+    }
+    for (const dias of [7, 30, 90]) {
+      variacionG95.push({ dias, pct: calc(series.get('95') || [], dias) })
+      variacionDiesel.push({ dias, pct: calc(series.get('diesel') || [], dias) })
+    }
+  } catch (err) {
+    slog('warn', 'observatorio.history_failed', { err: String(err).slice(0, 160) })
+  }
+
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/precios-carburantes'
+  return new Response(
+    buildObservatorioPage(nonce, { obs, variacionG95, variacionDiesel, canonical, deposito: 50 }),
+    { headers: observatorioHeaders(nonce) },
+  )
+})
+
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {
   const host = resolveHost(c)
@@ -1065,6 +1133,7 @@ app.get('/sitemap.xml', async c => {
   }
   // El portal de farmacias tampoco estaba declarado: sin esto, Google no tenia
   // ni una sola URL de farmacias por donde entrar.
+  entries.push(`  <url><loc>${base}/precios-carburantes</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/farmacias/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)

@@ -331,10 +331,28 @@ export function getStyles(nonce: string = ''): string {
       border: none !important;
       background: #fff !important;
     }
-    .leaflet-popup-content { min-width:210px; max-width:250px; font-size:12px; margin:8px 10px !important; line-height:1.3; }
+    /* --pop-mx/--pop-my: margen interior del popup. El header a sangre lo
+       reutiliza en negativo (ver .popup-header), asi que ambos van SIEMPRE
+       sincronizados. Antes eran valores sueltos y al reducir el margen del
+       contenido el header sobresalia ~4px por lado: eso desbordaba el ancho y
+       dibujaba una barra de scroll horizontal en el borde inferior. */
+    /* SIN margen lateral en el contenedor: el margen va en cada seccion (ver
+       .popup-root > *). Antes el header a sangre lo conseguia con margenes
+       NEGATIVOS, y un elemento que se sale por los lados dentro de una caja con
+       scroll desborda siempre -> barra gris horizontal en el borde inferior.
+       Ahora el header ocupa el 100% sin salirse y no hay nada que desborde. */
+    .leaflet-popup-content {
+      --pop-mx: 14px;
+      min-width:210px; max-width:270px; font-size:12px; line-height:1.3;
+      margin: 0 !important;
+      overflow-x: hidden;
+      overflow-wrap: anywhere;   /* textos largos parten en vez de desbordar */
+    }
+    .popup-root > *:not(.popup-header) { padding-left: var(--pop-mx, 14px); padding-right: var(--pop-mx, 14px); }
+    .popup-root { padding-bottom: 10px; }
     /* En pantallas estrechas el popup no debe comerse el mapa entero. */
     @media (max-width: 640px) {
-      .leaflet-popup-content { min-width:190px; max-width:225px; margin:7px 9px !important; }
+      .leaflet-popup-content { --pop-mx: 12px; min-width:190px; max-width:240px; }
       .popup-root { max-height: 38vh; }
     }
     .leaflet-popup-tip-container { display:none; }
@@ -2402,7 +2420,10 @@ export function getStyles(nonce: string = ''): string {
        estadisticas (grid de 3 columnas) desbordaban el ancho. Con minmax(0,1fr)
        en el grid ya no desborda, y esto lo remata. */
     .popup-root             { font-family: system-ui, sans-serif; min-width: 200px; max-height: 42vh; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
-    .popup-header           { color: #fff; padding: 10px 12px; margin: -12px -14px 8px; border-radius: 8px 8px 0 0; }
+    /* Header a sangre: los negativos SE DERIVAN del margen del contenido, asi
+       no puede volver a sobresalir aunque se cambie el margen. */
+    /* Ocupa el 100% del popup sin margenes negativos: ya no puede desbordar. */
+    .popup-header           { color: #fff; padding: 9px var(--pop-mx, 14px); margin: 0 0 8px; border-radius: 8px 8px 0 0; }
     .popup-header-title     { font-weight: 800; font-size: 14px; line-height: 1.2; }
     .popup-header-sub       { font-size: 11px; opacity: 0.75; margin-top: 3px; }
     .popup-header-status    { margin-top: 4px; }

@@ -163,21 +163,40 @@ function initMap() {
 // Encadenado para garantizar orden de pintado: primero la mascara, luego las
 // provincias encima. Ambas en el pane 'spainMask' y no interactivas.
 var SEA_COLOR = '#a9cfe6';
+// A partir de este zoom el recorte se OCULTA. La silueta es vectorial a escala
+// nacional: al acercarse no puede seguir la costa real y se comeria tierra
+// (bahias, rias, puertos). En vista pais/region es donde aporta — quitar
+// Francia/Africa —; de cerca el mapa normal es mejor.
+var MASK_MAX_ZOOM = 9;
+var spainOverlayLayers = [];
 function addSpainOverlay() {
-  var maskStyle = function(){ return { stroke: false, fillColor: SEA_COLOR, fillOpacity: 1 }; };
-  var provStyle = function(){ return { fill: false, color: '#ffffff', weight: 1, opacity: 0.75 }; };
+  // Mascara: un rectangulo enorme relleno de mar con TODO el territorio espanol
+  // recortado como agujeros (peninsula, Baleares, Canarias, Ceuta y Melilla) —
+  // por eso las islas dejan ver el satelite. El stroke dibuja la linea de costa;
+  // el borde del rectangulo exterior cae fuera del viewport (maxBounds).
+  var maskStyle = function(){ return { stroke: true, color: '#ffffff', weight: 1, opacity: 0.9, fillColor: SEA_COLOR, fillOpacity: 1 }; };
+  var lineStyle = function(){ return { fill: false, color: '#ffffff', weight: 0.9, opacity: 0.6 }; };
   function addLayer(url, style){
     return fetch(url).then(function(r){ return r.json(); }).then(function(gj){
-      L.geoJSON(gj, { pane: 'spainMask', interactive: false, style: style }).addTo(map);
+      var layer = L.geoJSON(gj, { pane: 'spainMask', interactive: false, style: style });
+      spainOverlayLayers.push(layer);
+      if (map.getZoom() <= MASK_MAX_ZOOM) layer.addTo(map);
     });
   }
-  // Orden de pintado (encadenado): primero las mascaras de mar (peninsula y
-  // Canarias) que recortan las teselas a Espana, luego las provincias encima.
   addLayer('/data/es-mascara.geojson', maskStyle)
-    .then(function(){ return addLayer('/data/es-mascara-canarias.geojson', maskStyle); })
-    .then(function(){ return addLayer('/data/es-provincias.geojson', provStyle); })
-    .then(function(){ return addLayer('/data/es-provincias-canarias.geojson', provStyle); })
+    .then(function(){ return addLayer('/data/es-lineas-provincias.geojson', lineStyle); })
+    .then(function(){ map.on('zoomend', syncSpainOverlay); })
     .catch(function(e){ console.warn('[spain-overlay] no aplicado:', (e && e.message) || e); });
+}
+
+// Muestra u oculta el recorte segun el zoom actual (ver MASK_MAX_ZOOM).
+function syncSpainOverlay() {
+  var show = map.getZoom() <= MASK_MAX_ZOOM;
+  for (var i = 0; i < spainOverlayLayers.length; i++) {
+    var l = spainOverlayLayers[i];
+    if (show && !map.hasLayer(l)) l.addTo(map);
+    else if (!show && map.hasLayer(l)) map.removeLayer(l);
+  }
 }
 
 // Poligono simplificado que cubre unicamente territorio espanol: Peninsula

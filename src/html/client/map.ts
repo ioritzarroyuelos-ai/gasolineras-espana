@@ -461,6 +461,9 @@ async function applyLibertyLanguage() {
       // Es quien manda en la COSTA: un vertice cada ~0,5 m a z14.
       extra.push({
         id: 'omt-ocean-fill', type: 'fill', source: 'openmaptiles', 'source-layer': 'water',
+        // minzoom 9: por debajo el oceano viene de Natural Earth como poligono
+        // global y tapaba el pais entero (mapa azul). Desde z9 son datos OSM.
+        minzoom: 9,
         filter: ['==', ['get', 'class'], 'ocean'],
         paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 }
       });
@@ -613,8 +616,13 @@ async function applyLibertyLanguage() {
     satStyle.sources['pnoa'] = {
       type: 'raster',
       tiles: [
-        'https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{-y}.jpeg'
+        'https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{y}.jpeg'
       ],
+      // El servicio del IGN es TMS (eje Y invertido). OJO: en MapLibre GL esto
+      // se indica con scheme:'tms' y {y} normal — el {-y} de la plantilla es
+      // sintaxis de LEAFLET y MapLibre no la interpreta: no cargaba ninguna
+      // tesela y el mapa se veia azul entero.
+      scheme: 'tms',
       tileSize: 256,
       maxzoom: 19,
       attribution: '<a href="https://www.scne.es">CC BY 4.0 scne.es</a>'
@@ -627,11 +635,14 @@ async function applyLibertyLanguage() {
       { id: 'sea-bg', type: 'background', paint: { 'background-color': SEA_COLOR } },
       // 2) Ortofoto oficial del IGN, que solo cubre Espana.
       { id: 'satellite-base', type: 'raster', source: 'pnoa', minzoom: 0, maxzoom: 22 },
-      // 3) Oceano en azul liso con precision METRICA, tomado del propio tile
-      //    vectorial que ya se descarga para la toponimia: a z14 tiene un
-      //    vertice cada ~0,5 m, frente a uno cada ~3,5 km del poligono que
-      //    cortaba muelles y puertos. Coste de red: cero.
+      // 3) Oceano en azul liso con precision METRICA del propio tile vectorial.
+      //    minzoom 9: por debajo, OpenMapTiles sirve el oceano desde Natural
+      //    Earth como un poligono global que tapaba TODO el pais (el mapa se
+      //    veia azul entero). Desde z9 ya son datos OSM y solo cubre agua.
+      //    Ahi abajo no hace falta: PNOA solo tiene datos en Espana, asi que
+      //    el recorte lo da la propia ortofoto sobre el fondo azul.
       { id: 'omt-ocean', type: 'fill', source: 'openmaptiles', 'source-layer': 'water',
+        minzoom: 9,
         filter: ['==', ['get', 'class'], 'ocean'],
         paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 } }
     ];

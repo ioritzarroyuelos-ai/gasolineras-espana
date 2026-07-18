@@ -611,6 +611,12 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   // worker-src necesita blob: porque MapLibre crea Web Workers a partir de
   // blob URLs (optimizacion de cold start del motor vectorial).
   connectSrc.push('https://tiles.openfreemap.org')
+  // PNOA Maxima Actualidad (IGN): ortofoto oficial de Espana a 25 cm/px que
+  // sustituye a Esri en la vista satelite. MapLibre GL lee los tiles con
+  // fetch(), asi que el host tiene que estar en connect-src (img-src ya cubre
+  // el caso raster de Leaflet). El servicio envia Access-Control-Allow-Origin:*
+  // por lo que no hace falta proxearlo.
+  connectSrc.push('https://tms-pnoa-ma.idee.es')
   // jsdelivr: Chrome DevTools intenta fetchear los source maps .css.map
   // del CSS de FontAwesome (unico recurso tercero que queda). Permitirlo
   // solo quita ruido de la consola, no amplia superficie (style-src ya

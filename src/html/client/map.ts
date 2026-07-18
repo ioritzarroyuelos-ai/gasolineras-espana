@@ -55,7 +55,10 @@ function initMap() {
     minZoom: 5,   // 5 (no 4) — a zoom 4 el viewport cubre medio globo y
                   // PAN_BOUNDS no alcanza a envolverlo: quedaria pinned.
                   // A zoom 5 mobile peninsula todavia encaja en fitBounds.
-    maxZoom: 20,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
+    // 19 = ultimo nivel con DATO REAL del PNOA (22,9 cm/px a 40 grados). Dejarlo
+    // en 20 hacia que el motor estirase la tesela de z19: exactamente el
+    // pixelado que se veia. Preferimos cortar donde acaba la informacion real.
+    maxZoom: 19,  // OBLIGATORIO para maplibre-gl-leaflet: si falta, el bridge
                   // lanza "Map has no maxZoom specified" y la promesa del
                   // layer queda sin manejar, rompiendo otros flujos UI.
     maxBounds: PAN_BOUNDS,
@@ -80,7 +83,7 @@ function initMap() {
   // tiles se cortaban antes de donde llegaba el viewport al arrastrar.
   mapLayers.light = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
+    subdomains: 'abcd', maxZoom: 19, minZoom: 5, noWrap: true
   });
   // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
   // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
@@ -88,7 +91,7 @@ function initMap() {
   // mantenemos coherencia con "todo en castellano".
   mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 20, minZoom: 5, noWrap: true
+    subdomains: 'abcd', maxZoom: 19, minZoom: 5, noWrap: true
   });
   // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key). SIN
   // overlay de etiquetas ajeno: el intento inicial con CARTO voyager_only_labels
@@ -96,9 +99,10 @@ function initMap() {
   // ademas cubrian paises que no son Espana. La toponimia la ponemos con
   // labelLayer (SPAIN_LABELS, ya esta en castellano y filtrada a Espana).
   // maxZoom de Esri es 19 — limite del proveedor.
-  mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxZoom: 20, minZoom: 5, noWrap: true   // Esri llega a z20; con 19 se estiraba
+  mapLayers.satellite = L.tileLayer('https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{y}.jpeg', {
+    attribution: '<a href="https://www.scne.es">CC BY 4.0 scne.es</a>',
+    tms: true,   // el TMS del IGN tiene el eje Y invertido
+    maxZoom: 19, minZoom: 5, noWrap: true
   });
 
   // Activar capa segun tema actual. Si el usuario tenia preferencia "satellite"
@@ -249,7 +253,7 @@ function updateRegionUI() {
 
 function insetBaseLayer(satellite) {
   return satellite
-    ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, noWrap: true })
+    ? L.tileLayer('https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{y}.jpeg', { tms: true, maxZoom: 19, noWrap: true, attribution: '<a href="https://www.scne.es">CC BY 4.0 scne.es</a>' })
     : L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, noWrap: true });
 }
 
@@ -445,14 +449,33 @@ async function applyLibertyLanguage() {
       if (lr.ok) esLines = await lr.json();
     } catch (_) {}
 
-    function insertSpainLayers(st) {
-      if (!esMask || !st || !Array.isArray(st.layers)) return st;
+    // opts.mascara: incluir el poligono del contorno IGN. Solo hace falta en el
+    // mapa normal, para tapar tierra extranjera (Portugal, Francia, Marruecos).
+    // En satelite NO se usa: PNOA ya viene recortado a Espana de origen.
+    function insertSpainLayers(st, opts) {
+      if (!st || !Array.isArray(st.layers)) return st;
+      opts = opts || {};
       st.sources = st.sources || {};
-      st.sources['es-mask'] = { type: 'geojson', data: esMask };
-      var extra = [{
-        id: 'es-mask-fill', type: 'fill', source: 'es-mask',
+      var extra = [];
+      // Oceano en azul liso con precision METRICA, del propio tile vectorial.
+      // Es quien manda en la COSTA: un vertice cada ~0,5 m a z14.
+      extra.push({
+        id: 'omt-ocean-fill', type: 'fill', source: 'openmaptiles', 'source-layer': 'water',
+        filter: ['==', ['get', 'class'], 'ocean'],
         paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 }
-      }];
+      });
+      // El contorno IGN solo tapa tierra extranjera y SOLO en vista general:
+      // su resolucion (un vertice cada ~3,5 km) cortaba muelles al acercarse,
+      // asi que se apaga a partir de MASK_MAX_ZOOM. De la costa ya se ocupa la
+      // capa de oceano de arriba, que es tres ordenes de magnitud mas precisa.
+      if (opts.mascara && esMask) {
+        st.sources['es-mask'] = { type: 'geojson', data: esMask };
+        extra.push({
+          id: 'es-mask-fill', type: 'fill', source: 'es-mask',
+          maxzoom: MASK_MAX_ZOOM + 1,
+          paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 }
+        });
+      }
       if (esLines) {
         st.sources['es-lines'] = { type: 'geojson', data: esLines };
         extra.push({
@@ -533,11 +556,12 @@ async function applyLibertyLanguage() {
     // Montamos el vector tile layer y lo swap-eamos por el raster claro.
     // minZoom/maxZoom: el bridge maplibre-gl-leaflet valida que el layer
     // conozca sus limites de zoom — sin ellos lanza "Map has no maxZoom".
-    insertSpainLayers(style);   // recorte bajo los nombres (mapa normal)
+    // Mapa normal: si necesita la mascara para tapar tierra extranjera.
+    insertSpainLayers(style, { mascara: true });
     var libertyLayer = L.maplibreGL({
       style: style,
       minZoom: 4,
-      maxZoom: 20,
+      maxZoom: 19,
       attribution: '&copy; <a href="https://openfreemap.org/">OpenFreeMap</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     });
     // Swap SIEMPRE la referencia mapLayers.light por el Liberty vector, aunque
@@ -575,30 +599,42 @@ async function applyLibertyLanguage() {
     // la vez, asi que funciona.
     var satStyle = JSON.parse(JSON.stringify(style));
     satStyle.sources = satStyle.sources || {};
-    satStyle.sources['esri-satellite'] = {
+    // Ortofoto oficial del IGN (PNOA Maxima Actualidad) en lugar de Esri:
+    //  - 25 cm/pixel reales (z19 = 22,9 cm/px a 40 grados) frente a los ~50 cm
+    //    de Esri: se distingue la acera de una calle.
+    //  - Solo cubre Espana; fuera devuelve tesela TRANSPARENTE. Es decir, el
+    //    recorte del pais lo da la propia fuente con precision oficial, sin
+    //    poligonos que corten muelles y puertos.
+    //  - Envia Access-Control-Allow-Origin:* , asi que MapLibre GL puede leer
+    //    el tile por fetch() sin pasar por nuestro proxy.
+    //  - TMS: eje Y invertido, de ahi el {-y} (MapLibre lo soporta nativo).
+    // Verificado el 2026-07-18: z19 OK en Madrid y en Santa Cruz de Tenerife,
+    // z20 devuelve 404 (el TMS se pregenera hasta z19).
+    satStyle.sources['pnoa'] = {
       type: 'raster',
-      // Proxeamos via nuestro Worker: Esri no envia CORS y MapLibre GL necesita
-      // leer el body del tile por fetch(). El Worker re-emite con
-      // Access-Control-Allow-Origin:* y Cache-Control largo.
       tiles: [
-        (location.origin || '') + '/api/tiles/satellite/{z}/{x}/{y}'
+        'https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{-y}.jpeg'
       ],
       tileSize: 256,
-      // Esri sirve hasta z20 (z21 devuelve 400). Declararlo en 19 hacia que
-      // MapLibre estirase la tesela de z19 al acercarse al maximo: de ahi que
-      // el satelite se viera borroso/pixelado en el ultimo nivel de zoom.
-      maxzoom: 20,
-      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
+      maxzoom: 19,
+      attribution: '<a href="https://www.scne.es">CC BY 4.0 scne.es</a>'
     };
     // Reconstruimos layers: raster satelite primero, luego solo las symbol
     // originales (con halo reforzado para contraste sobre ortofoto).
-    var satLayers = [{
-      id: 'satellite-base',
-      type: 'raster',
-      source: 'esri-satellite',
-      minzoom: 0,
-      maxzoom: 22
-    }];
+    var satLayers = [
+      // 1) Mar de fondo. Es lo que se ve alli donde PNOA no tiene datos: el
+      //    oceano y todo lo que no es Espana (Francia, Portugal, Africa).
+      { id: 'sea-bg', type: 'background', paint: { 'background-color': SEA_COLOR } },
+      // 2) Ortofoto oficial del IGN, que solo cubre Espana.
+      { id: 'satellite-base', type: 'raster', source: 'pnoa', minzoom: 0, maxzoom: 22 },
+      // 3) Oceano en azul liso con precision METRICA, tomado del propio tile
+      //    vectorial que ya se descarga para la toponimia: a z14 tiene un
+      //    vertice cada ~0,5 m, frente a uno cada ~3,5 km del poligono que
+      //    cortaba muelles y puertos. Coste de red: cero.
+      { id: 'omt-ocean', type: 'fill', source: 'openmaptiles', 'source-layer': 'water',
+        filter: ['==', ['get', 'class'], 'ocean'],
+        paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 } }
+    ];
     if (Array.isArray(satStyle.layers)) {
       for (var sj = 0; sj < satStyle.layers.length; sj++) {
         var L2 = satStyle.layers[sj];
@@ -617,14 +653,17 @@ async function applyLibertyLanguage() {
       }
     }
     satStyle.layers = satLayers;
-    insertSpainLayers(satStyle);   // recorte entre el satelite y los nombres
+    // Satelite: SIN mascara. PNOA ya viene recortado a Espana con precision
+    // oficial, asi que solo anadimos las lineas de provincia (y el oceano, que
+    // ya va en satLayers).
+    insertSpainLayers(satStyle, { mascara: false });
     // Quitamos glyphs/sprite no-bloqueantes: no hace falta tocarlos, ya
     // vienen en el style original y el bridge los reutiliza.
 
     var satLayer = L.maplibreGL({
       style: satStyle,
       minZoom: 4,
-      maxZoom: 20,
+      maxZoom: 19,
       attribution: 'Tiles &copy; Esri &mdash; &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://openfreemap.org/">OpenFreeMap</a>'
     });
     // Swap la referencia mapLayers.satellite (raster Esri original) por el

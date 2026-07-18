@@ -460,12 +460,18 @@ async function applyLibertyLanguage() {
           paint: { 'line-color': '#ffffff', 'line-width': 0.9, 'line-opacity': 0.6 }
         });
       }
-      var idx = -1;
+      // Reordenamos en tres bloques: primero TODO lo que no es texto (terreno,
+      // agua, carreteras, fronteras), luego la mascara, y al final los rotulos.
+      // Insertar "antes del primer symbol" no bastaba: el estilo trae capas de
+      // terreno y fronteras DESPUES de ese punto y se pintaban encima del
+      // recorte — por eso segian viendose Francia y Marruecos sin satelite.
+      var noTexto = [], texto = [];
       for (var q = 0; q < st.layers.length; q++) {
-        if (st.layers[q] && st.layers[q].type === 'symbol') { idx = q; break; }
+        var ly = st.layers[q];
+        if (!ly) continue;
+        if (ly.type === 'symbol') texto.push(ly); else noTexto.push(ly);
       }
-      if (idx < 0) idx = st.layers.length;
-      st.layers = st.layers.slice(0, idx).concat(extra, st.layers.slice(idx));
+      st.layers = noTexto.concat(extra, texto);
       return st;
     }
 

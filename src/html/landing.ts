@@ -126,6 +126,11 @@ export function buildLandingPage(
   <meta name="description" content="${esc(desc)}" />
   <link rel="canonical" href="${esc(canonical)}" />
 
+  <!-- Verificacion de propiedad en Google Search Console. Google la lee SOLO en
+       la portada, asi que tiene que seguir aqui: si se quita, Search Console
+       desverifica la propiedad y se pierde el acceso a los informes. -->
+  <meta name="google-site-verification" content="qzv_20xQiNesXM4hX5ZqYozonYMqZhY-Wop2Tndu81w" />
+
   <!-- Favicons + logos (comparten con la app de gasolineras) -->
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
   <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />

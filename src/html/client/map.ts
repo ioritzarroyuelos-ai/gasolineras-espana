@@ -162,7 +162,8 @@ function initMap() {
 // Carga la mascara de mar (Espana recortada de un rectangulo) y las provincias.
 // Encadenado para garantizar orden de pintado: primero la mascara, luego las
 // provincias encima. Ambas en el pane 'spainMask' y no interactivas.
-var SEA_COLOR = '#a9cfe6';
+var SEA_COLOR = '#cfe6f7';   // azul del mar (mapa de atlas)
+var LAND_COLOR = '#5ecfa5';  // verde de los paises vecinos (Portugal, Francia, Marruecos)
 // A partir de este zoom el recorte se OCULTA. La silueta es vectorial a escala
 // nacional: al acercarse no puede seguir la costa real y se comeria tierra
 // (bahias, rias, puertos). En vista pais/region es donde aporta — quitar
@@ -174,8 +175,9 @@ function addSpainOverlay() {
   // recortado como agujeros (peninsula, Baleares, Canarias, Ceuta y Melilla) —
   // por eso las islas dejan ver el satelite. El stroke dibuja la linea de costa;
   // el borde del rectangulo exterior cae fuera del viewport (maxBounds).
-  var maskStyle = function(){ return { stroke: true, color: '#ffffff', weight: 1, opacity: 0.9, fillColor: SEA_COLOR, fillOpacity: 1 }; };
-  var lineStyle = function(){ return { fill: false, color: '#ffffff', weight: 0.9, opacity: 0.6 }; };
+  var maskStyle = function(){ return { stroke: false, fillColor: SEA_COLOR, fillOpacity: 1 }; };
+  var vecinosStyle = function(){ return { stroke: true, color: '#3fae87', weight: 0.8, fillColor: LAND_COLOR, fillOpacity: 1 }; };
+  var lineStyle = function(){ return { fill: false, color: '#ffffff', weight: 0.9, opacity: 0.7 }; };
   function addLayer(url, style){
     return fetch(url).then(function(r){ return r.json(); }).then(function(gj){
       var layer = L.geoJSON(gj, { pane: 'spainMask', interactive: false, style: style });
@@ -183,7 +185,14 @@ function addSpainOverlay() {
       if (map.getZoom() <= MASK_MAX_ZOOM) layer.addTo(map);
     });
   }
+  // Orden de pintado, de abajo a arriba:
+  //   1) mascara: mar liso tapando TODO lo que no es Espana (adios satelite de
+  //      Francia y Africa, que es lo que sobraba),
+  //   2) vecinos: Portugal, Francia, Marruecos... en verde plano encima del mar,
+  //   3) provincias: divisiones internas.
+  // Dentro de Espana no se pinta nada, asi que se ve el satelite.
   addLayer('/data/es-mascara.geojson', maskStyle)
+    .then(function(){ return addLayer('/data/es-vecinos.geojson', vecinosStyle); })
     .then(function(){ return addLayer('/data/es-lineas-provincias.geojson', lineStyle); })
     .then(function(){ map.on('zoomend', syncSpainOverlay); })
     .catch(function(e){ console.warn('[spain-overlay] no aplicado:', (e && e.message) || e); });

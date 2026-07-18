@@ -1266,6 +1266,39 @@ export function getStyles(nonce: string = ''): string {
       .canarias-inset { width: 148px; height: 76px; bottom: 96px; right: 8px; }
     }
 
+    /* "Ampliar": abre Canarias a pantalla completa en el mapa grande. El
+       recuadro es un acceso, no un sitio donde encerrar a quien vive alli. */
+    .canarias-expand {
+      position: absolute; top: 4px; right: 4px; z-index: 500;
+      font-size: 11px; font-weight: 500; line-height: 1;
+      padding: 4px 7px;
+      background: rgba(255,255,255,0.92);
+      color: #14532d;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .canarias-expand:hover, .canarias-expand:focus-visible {
+      background: #ffffff; color: #166534;
+    }
+
+    /* Vuelta a la peninsula desde la vista canaria. */
+    .btn-volver-peninsula {
+      position: absolute; left: 12px; top: 12px; z-index: 800;
+      font-size: 13px; font-weight: 500;
+      padding: 7px 12px;
+      background: rgba(255,255,255,0.95);
+      color: #14532d;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    }
+    .btn-volver-peninsula:hover, .btn-volver-peninsula:focus-visible { background: #ffffff; }
+    body.dark .canarias-expand, body.dark .btn-volver-peninsula {
+      background: rgba(15,23,42,0.92); color: #86efac; border-color: #334155;
+    }
+
     /* Ship 25.5: pin de punto de recarga electrica. Circulo azul con icono de
        rayo blanco. Tamaño compacto (26px) para que no compita visualmente con
        los pins-precio de gasolineras — mismas convenciones de sombra/borde. */

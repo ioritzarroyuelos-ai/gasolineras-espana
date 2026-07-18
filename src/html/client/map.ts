@@ -41,6 +41,10 @@ function initMap() {
   );
   var PAN_BOUNDS = ESPANA_BOUNDS;
   var PENINSULA_BOUNDS = ESPANA_BOUNDS;
+  // Las dos vistas del mapa grande (ver setMapRegion): Canarias tambien se ve
+  // a pantalla completa, no solo dentro del recuadro.
+  PENINSULA_VIEW = ESPANA_BOUNDS;
+  CANARIAS_VIEW = L.latLngBounds([27.5, -18.4], [29.5, -13.3]);
 
   map = L.map('map', {
     zoomControl: false,
@@ -210,6 +214,39 @@ var canariasMap = null;
 var canariasCluster = null;
 var canariasBase = null;
 
+// El mapa grande trabaja en dos regiones. Canarias NO es un recuadro donde te
+// encierran: pulsando el recuadro, el archipielago pasa a ocupar la pantalla
+// entera igual que la peninsula, y un boton devuelve a la vista peninsular.
+var PENINSULA_VIEW = null;
+var CANARIAS_VIEW = null;
+var mapRegion = 'peninsula';
+
+function setMapRegion(region) {
+  if (!map || !PENINSULA_VIEW || !CANARIAS_VIEW || region === mapRegion) return;
+  mapRegion = region;
+  var b = region === 'canarias' ? CANARIAS_VIEW : PENINSULA_VIEW;
+  // Soltamos los limites para poder volar a la otra region y los re-aplicamos
+  // al llegar, junto con el minZoom del nuevo encuadre.
+  map.setMinZoom(4);
+  map.setMaxBounds(null);
+  map.fitBounds(b, { padding: [6, 6], animate: true });
+  map.once('moveend', function() {
+    map.setMaxBounds(b);
+    map.setMinZoom(map.getZoom());
+  });
+  updateRegionUI();
+  if (typeof applyFilters === 'function' && allStations && allStations.length) applyFilters();
+}
+
+// Muestra el recuadro (vista peninsular) o el boton de volver (vista canaria).
+function updateRegionUI() {
+  var box = document.querySelector('.canarias-inset');
+  var btn = document.getElementById('btn-volver-peninsula');
+  var canarias = mapRegion === 'canarias';
+  if (box) box.style.display = canarias ? 'none' : '';
+  if (btn) btn.style.display = canarias ? '' : 'none';
+}
+
 function insetBaseLayer(satellite) {
   return satellite
     ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, noWrap: true })
@@ -238,6 +275,28 @@ function initCanariasInset() {
   });
   canariasMap.fitBounds(CAN_BOUNDS, { padding: [1, 1], animate: false });
   canariasMap.setMinZoom(canariasMap.getZoom());
+
+  // Boton para abrir Canarias A PANTALLA COMPLETA en el mapa grande. El
+  // recuadro es un acceso, no un sitio donde encerrar a quien vive alli.
+  var expand = document.createElement('button');
+  expand.type = 'button';
+  expand.className = 'canarias-expand';
+  expand.title = 'Ver Canarias a pantalla completa';
+  expand.setAttribute('aria-label', 'Ver Canarias a pantalla completa');
+  expand.textContent = 'Ampliar';
+  L.DomEvent.disableClickPropagation(expand);
+  expand.addEventListener('click', function() { setMapRegion('canarias'); });
+  box.appendChild(expand);
+
+  // Boton de vuelta, sobre el mapa grande, visible solo en la vista canaria.
+  var back = document.createElement('button');
+  back.type = 'button';
+  back.id = 'btn-volver-peninsula';
+  back.className = 'btn-volver-peninsula';
+  back.textContent = '← Peninsula';
+  back.style.display = 'none';
+  back.addEventListener('click', function() { setMapRegion('peninsula'); });
+  mapEl.parentNode.appendChild(back);
 
   var onSat = false;
   try { onSat = localStorage.getItem('gs_basemap') === 'satellite'; } catch (_) {}
@@ -1626,11 +1685,15 @@ function renderMarkers(stations) {
     });
     // Las canarias van al recuadro; el resto, al mapa grande. Solo estas
     // ultimas cuentan para el fitBounds, para que la peninsula llene la vista.
-    if (canariasCluster && isCanarias(lat, lng)) {
-      canariasCluster.addLayer(marker);
-    } else {
+    // Manda la region activa: sus estaciones van al mapa GRANDE y cuentan para
+    // el encuadre. En vista peninsular, las canarias alimentan el recuadro.
+    var enCan = isCanarias(lat, lng);
+    var alPrincipal = (mapRegion === 'canarias') ? enCan : !enCan;
+    if (alPrincipal) {
       clusterGroup.addLayer(marker);
       bounds.push([lat, lng]);
+    } else if (enCan && canariasCluster) {
+      canariasCluster.addLayer(marker);
     }
   });
 

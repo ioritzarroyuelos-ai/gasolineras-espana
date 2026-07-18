@@ -94,7 +94,7 @@ function initMap() {
   // maxZoom de Esri es 19 — limite del proveedor.
   mapLayers.satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
-    maxZoom: 19, minZoom: 5, noWrap: true
+    maxZoom: 20, minZoom: 5, noWrap: true   // Esri llega a z20; con 19 se estiraba
   });
 
   // Activar capa segun tema actual. Si el usuario tenia preferencia "satellite"
@@ -212,7 +212,7 @@ var canariasBase = null;
 
 function insetBaseLayer(satellite) {
   return satellite
-    ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, noWrap: true })
+    ? L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20, noWrap: true })
     : L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 19, noWrap: true });
 }
 
@@ -226,12 +226,18 @@ function initCanariasInset() {
   box.setAttribute('aria-label', 'Islas Canarias');
   mapEl.parentNode.appendChild(box);
 
+  // Interactivo: el recuadro es un mapa de verdad, no una foto. Se puede hacer
+  // zoom y desplazarse, pero acotado al archipielago para no perderse en el
+  // Atlantico. minZoom se fija al encuadre completo de las islas.
+  var CAN_BOUNDS = L.latLngBounds([27.5, -18.4], [29.5, -13.3]);
   canariasMap = L.map(box, {
     zoomControl: false, attributionControl: false,
-    dragging: false, scrollWheelZoom: false, doubleClickZoom: false,
-    boxZoom: false, keyboard: false, touchZoom: false
+    dragging: true, scrollWheelZoom: true, doubleClickZoom: true,
+    boxZoom: false, keyboard: false, touchZoom: true,
+    maxBounds: CAN_BOUNDS, maxBoundsViscosity: 1.0, maxZoom: 19
   });
-  canariasMap.fitBounds(L.latLngBounds([27.55, -18.35], [29.45, -13.35]), { padding: [1, 1], animate: false });
+  canariasMap.fitBounds(CAN_BOUNDS, { padding: [1, 1], animate: false });
+  canariasMap.setMinZoom(canariasMap.getZoom());
 
   var onSat = false;
   try { onSat = localStorage.getItem('gs_basemap') === 'satellite'; } catch (_) {}
@@ -513,7 +519,10 @@ async function applyLibertyLanguage() {
         (location.origin || '') + '/api/tiles/satellite/{z}/{x}/{y}'
       ],
       tileSize: 256,
-      maxzoom: 19,
+      // Esri sirve hasta z20 (z21 devuelve 400). Declararlo en 19 hacia que
+      // MapLibre estirase la tesela de z19 al acercarse al maximo: de ahi que
+      // el satelite se viera borroso/pixelado en el ultimo nivel de zoom.
+      maxzoom: 20,
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics'
     };
     // Reconstruimos layers: raster satelite primero, luego solo las symbol

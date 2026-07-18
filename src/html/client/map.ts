@@ -610,7 +610,8 @@ async function applyLibertyLanguage() {
     //    poligonos que corten muelles y puertos.
     //  - Envia Access-Control-Allow-Origin:* , asi que MapLibre GL puede leer
     //    el tile por fetch() sin pasar por nuestro proxy.
-    //  - TMS: eje Y invertido, de ahi el {-y} (MapLibre lo soporta nativo).
+    //  - Es un TMS: eje Y invertido. En MapLibre GL eso se declara con
+    //    scheme:'tms' (ver abajo), NO con {-y} en la plantilla.
     // Verificado el 2026-07-18: z19 OK en Madrid y en Santa Cruz de Tenerife,
     // z20 devuelve 404 (el TMS se pregenera hasta z19).
     satStyle.sources['pnoa'] = {

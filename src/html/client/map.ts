@@ -192,8 +192,10 @@ function addSpainOverlay() {
   //   2) vecinos: Portugal, Francia, Marruecos... en verde plano encima del mar,
   //   3) provincias: divisiones internas.
   // Dentro de Espana no se pinta nada, asi que se ve el satelite.
+  // Sin capa de vecinos: su geometria viene de otra fuente (menos precisa que
+  // el contorno del IGN) y en la frontera terrestre dejaba una franja de "mar"
+  // entre Portugal/Francia y Espana. Fuera del pais, mar liso y punto.
   addLayer('/data/es-mascara.geojson', maskStyle)
-    .then(function(){ return addLayer('/data/es-vecinos.geojson', vecinosStyle); })
     .then(function(){ return addLayer('/data/es-lineas-provincias.geojson', lineStyle); })
     .then(function(){ map.on('zoomend', syncSpainOverlay); })
     .catch(function(e){ console.warn('[spain-overlay] no aplicado:', (e && e.message) || e); });
@@ -277,6 +279,17 @@ function isCanarias(lat, lng) {
   return lng < -11 && lat < 31;
 }
 
+// Retira el overlay de Leaflet. Se llama cuando MapLibre ha cargado: alli el
+// recorte va DENTRO del style (bajo los nombres), asi que este sobra y ademas
+// cortaba la toponimia al pintarse por encima de todo.
+function removeSpainOverlay() {
+  for (var i = 0; i < spainOverlayLayers.length; i++) {
+    if (map.hasLayer(spainOverlayLayers[i])) map.removeLayer(spainOverlayLayers[i]);
+  }
+  spainOverlayLayers = [];
+  map.off('zoomend', syncSpainOverlay);
+}
+
 // Muestra u oculta el recorte segun el zoom actual (ver MASK_MAX_ZOOM).
 function syncSpainOverlay() {
   var show = map.getZoom() <= MASK_MAX_ZOOM;
@@ -354,6 +367,43 @@ async function applyLibertyLanguage() {
     if (!resp.ok) return;
     var style = await resp.json();
 
+    // Recorte de Espana DENTRO del style, no como overlay encima del mapa.
+    // Motivo: un overlay de Leaflet se pinta sobre TODO y cortaba los nombres
+    // (p.ej. "Cadiz" partido por el borde). Metiendo la mascara como una capa
+    // fill situada JUSTO ANTES de las capas de texto, el recorte tapa el
+    // terreno de fuera pero la toponimia se dibuja encima y queda intacta.
+    var esMask = null, esLines = null;
+    try {
+      var mr = await fetch('/data/es-mascara.geojson');
+      if (mr.ok) esMask = await mr.json();
+      var lr = await fetch('/data/es-lineas-provincias.geojson');
+      if (lr.ok) esLines = await lr.json();
+    } catch (_) {}
+
+    function insertSpainLayers(st) {
+      if (!esMask || !st || !Array.isArray(st.layers)) return st;
+      st.sources = st.sources || {};
+      st.sources['es-mask'] = { type: 'geojson', data: esMask };
+      var extra = [{
+        id: 'es-mask-fill', type: 'fill', source: 'es-mask',
+        paint: { 'fill-color': SEA_COLOR, 'fill-opacity': 1 }
+      }];
+      if (esLines) {
+        st.sources['es-lines'] = { type: 'geojson', data: esLines };
+        extra.push({
+          id: 'es-prov-lines', type: 'line', source: 'es-lines',
+          paint: { 'line-color': '#ffffff', 'line-width': 0.9, 'line-opacity': 0.6 }
+        });
+      }
+      var idx = -1;
+      for (var q = 0; q < st.layers.length; q++) {
+        if (st.layers[q] && st.layers[q].type === 'symbol') { idx = q; break; }
+      }
+      if (idx < 0) idx = st.layers.length;
+      st.layers = st.layers.slice(0, idx).concat(extra, st.layers.slice(idx));
+      return st;
+    }
+
     // Patch recursivo de text-field. Capturamos CUALQUIER key que empiece por
     // 'name' (name, name:latin, name:en, name:nonlatin, name_en, name_es,
     // name_int, ...) salvo las espanolas, y las reescribimos al mismo coalesce
@@ -412,6 +462,7 @@ async function applyLibertyLanguage() {
     // Montamos el vector tile layer y lo swap-eamos por el raster claro.
     // minZoom/maxZoom: el bridge maplibre-gl-leaflet valida que el layer
     // conozca sus limites de zoom — sin ellos lanza "Map has no maxZoom".
+    insertSpainLayers(style);   // recorte bajo los nombres (mapa normal)
     var libertyLayer = L.maplibreGL({
       style: style,
       minZoom: 4,
@@ -492,6 +543,7 @@ async function applyLibertyLanguage() {
       }
     }
     satStyle.layers = satLayers;
+    insertSpainLayers(satStyle);   // recorte entre el satelite y los nombres
     // Quitamos glyphs/sprite no-bloqueantes: no hace falta tocarlos, ya
     // vienen en el style original y el bridge los reutiliza.
 
@@ -519,6 +571,9 @@ async function applyLibertyLanguage() {
       labelLayer = null;
       map.off('zoomend', renderLabels);
     }
+    // El recorte ya viaja dentro del style de MapLibre, por debajo del texto:
+    // retiramos el overlay de Leaflet para no duplicarlo ni tapar nombres.
+    removeSpainOverlay();
   } catch (e) {
     // Silent — nos quedamos con el raster + SPAIN_LABELS que ya estan activos.
   }

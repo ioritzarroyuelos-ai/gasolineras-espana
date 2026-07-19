@@ -10,6 +10,14 @@ import {
   type ObservatorioPre, type VariacionesObservatorio, type FilaHistorico,
 } from './lib/observatorio'
 import {
+  parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
+  estacionesDeProvincia, estacionesDeMunicipio,
+  type EstacionITV, type ItvFile,
+} from './lib/itv'
+import {
+  buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, itvHeaders,
+} from './html/itv'
+import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio,
   GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
@@ -1001,6 +1009,77 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
   }), { headers: guardiaHeaders(nonce) })
 })
 
+// ---- ITV ----
+// La portada anunciaba ITV desde el Ship 27 sin que existiera la seccion. Los
+// datos salen del FeatureServer publico de la DGT (ver scripts/fetch-itv.mjs).
+//
+// Expectativas realistas: a diferencia de las guardias, aqui el dato es ESTATICO
+// y la SERP la copan sitios especializados en ITV con captacion de citas. Esto
+// cierra la promesa de la portada y da cobertura de cola larga por municipio,
+// pero no se espera de aqui el trafico que dan las guardias.
+async function cargaItv(c: { req: { url: string }; env: Env }): Promise<EstacionITV[]> {
+  return parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
+}
+
+app.get('/itv/', async c => {
+  const todas = await cargaItv(c)
+  if (!todas.length) return c.notFound()
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/'
+  return new Response(
+    buildItvIndexPage(nonce, provinciasConItv(todas), todas.length, canonical),
+    { headers: itvHeaders(nonce) },
+  )
+})
+
+// Canonicalizamos `/itv` -> `/itv/` para no duplicar, igual que /gasolineras.
+app.get('/itv', c => c.redirect('/itv/', 301))
+
+app.get('/itv/:provinciaSlug', async c => {
+  const provSlug = c.req.param('provinciaSlug')
+  const prov = provinciaPorSlug(provSlug)
+  if (!prov) return c.notFound()
+
+  const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
+  // Sin estaciones no se publica pagina: mejor un 404 que una URL vacia en el indice.
+  if (!deProvincia.length) return c.notFound()
+
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug
+  return new Response(buildItvProvinciaPage(nonce, {
+    provinciaSlug: provSlug,
+    provinciaName: prov.name,
+    estaciones: deProvincia,
+    municipios: municipiosConItv(deProvincia),
+    canonical,
+  }), { headers: itvHeaders(nonce) })
+})
+
+app.get('/itv/:provinciaSlug/:municipioSlug', async c => {
+  const provSlug = c.req.param('provinciaSlug')
+  const munSlug  = c.req.param('municipioSlug')
+  const prov = provinciaPorSlug(provSlug)
+  if (!prov) return c.notFound()
+
+  const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
+  if (!deProvincia.length) return c.notFound()
+
+  const municipios = municipiosConItv(deProvincia)
+  const munEntry = municipios.find(m => m.slug === munSlug)
+  if (!munEntry) return c.notFound()
+
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug + '/' + munSlug
+  return new Response(buildItvMunicipioPage(nonce, {
+    provinciaSlug: provSlug,
+    provinciaName: prov.name,
+    municipioName: munEntry.name,
+    estaciones: estacionesDeMunicipio(deProvincia, munSlug),
+    otrosMunicipios: municipios.filter(m => m.slug !== munSlug),
+    canonical,
+  }), { headers: itvHeaders(nonce) })
+})
+
 // ---- Observatorio de precios ----
 // Pagina de datos pensada para SER CITADA por medios y foros: el Geoportal
 // oficial solo publica la foto de hoy, sin comparar provincias ni marcas y sin
@@ -1127,6 +1206,25 @@ app.get('/sitemap.xml', async c => {
   // ni una sola URL de farmacias por donde entrar.
   entries.push(`  <url><loc>${base}/precios-carburantes</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/farmacias/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+
+  // ITV: indice + provincia + municipio. changefreq mensual porque, al reves
+  // que las guardias o los precios, el dato es estatico — decir "daily" aqui
+  // solo gastaria presupuesto de rastreo en paginas que no cambian.
+  try {
+    const todasItv = parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
+    if (todasItv.length) {
+      entries.push(`  <url><loc>${base}/itv/</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`)
+      for (const p of provinciasConItv(todasItv)) {
+        entries.push(`  <url><loc>${base}/itv/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`)
+        for (const m of municipiosConItv(estacionesDeProvincia(todasItv, p.id))) {
+          entries.push(`  <url><loc>${base}/itv/${p.slug}/${m.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>`)
+        }
+      }
+    }
+  } catch (err) {
+    slog('warn', 'sitemap.itv_failed', { err: String(err).slice(0, 200) })
+  }
+
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)
   const body = `<?xml version="1.0" encoding="UTF-8"?>

@@ -1,0 +1,46 @@
+name: Fetch estaciones de ITV
+
+# Mensual, no diario: al contrario que los precios o las guardias, la red de
+# estaciones de ITV es practicamente estatica — abren o cierran unas pocas al
+# año. Rastrear esto a diario solo gastaria cuota sin aportar nada.
+#
+# Fuentes (ver scripts/fetch-itv.mjs):
+#   - FeatureServer publico de la DGT, sin API key.
+#   - Portal de datos abiertos de la GVA, solo para las 3 fijas de Castellon,
+#     que la DGT no incluye.
+
+on:
+  schedule:
+    - cron: '0 4 1 * *'   # dia 1 de cada mes, 04:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-itv
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Descargar estaciones de ITV
+        run: node scripts/fetch-itv.mjs
+
+      - name: Commit si hay cambios
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/itv.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en las estaciones de ITV"
+          else
+            git commit -m "chore(data): actualizar estaciones de ITV $(date -u +%Y-%m-%d)"
+            git push
+          fi

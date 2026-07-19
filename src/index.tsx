@@ -2,7 +2,9 @@ import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
-import { buildGuardiaMunicipioPage, guardiaHeaders } from './html/guardia-municipio'
+import {
+  buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage, guardiaHeaders,
+} from './html/guardia-municipio'
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
 import {
   buildObservatorio, observatorioFromPre, calculaVariaciones,
@@ -978,6 +980,46 @@ app.get('/farmacias/', c => {
 // PDF, que es justo donde la competencia no llega.
 // 404 si la provincia, el fichero o el municipio no existen, para no meter
 // paginas vacias en el indice.
+// `/farmacias/guardia` — indice nacional de provincias con guardia.
+// IMPORTANTE: va declarada ANTES que `/farmacias/:provinciaSlug`, o el parametro
+// se tragaria "guardia" como si fuera un slug de provincia.
+app.get('/farmacias/guardia', c => {
+  const provincias = PROVINCIAS
+    .filter(p => guardiasFileForProvincia(p.slug))
+    .map(p => ({ slug: p.slug, name: p.name }))
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/guardia'
+  return new Response(
+    buildGuardiaIndexPage(nonce, provincias, canonical),
+    { headers: guardiaHeaders(nonce) },
+  )
+})
+
+// `/farmacias/:provincia` — municipios de la provincia con guardia publicada.
+// Es el eslabon que faltaba entre el indice y las 1.289 paginas de municipio.
+app.get('/farmacias/:provinciaSlug', async c => {
+  const provSlug = c.req.param('provinciaSlug')
+  const prov = provinciaBySlug(provSlug)
+  if (!prov) return c.notFound()
+  const file = guardiasFileForProvincia(provSlug)
+  if (!file) return c.notFound()
+
+  const raw = await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)
+  if (!raw) return c.notFound()
+
+  const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
+  const municipios = municipiosConGuardia(all)
+  // Sin municipios no se publica pagina: mejor 404 que una URL vacia indexada.
+  if (!municipios.length) return c.notFound()
+
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug
+  return new Response(
+    buildGuardiaProvinciaPage(nonce, provSlug, prov.name, municipios, raw.ts, canonical),
+    { headers: guardiaHeaders(nonce) },
+  )
+})
+
 app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
   const provSlug = c.req.param('provinciaSlug')
   const munSlug  = c.req.param('municipioSlug')
@@ -1206,6 +1248,15 @@ app.get('/sitemap.xml', async c => {
   // ni una sola URL de farmacias por donde entrar.
   entries.push(`  <url><loc>${base}/precios-carburantes</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/farmacias/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+
+  // Indice y provincias de guardia: son el camino de enlaces hasta las 1.289
+  // paginas de municipio, que hasta ahora eran huerfanas.
+  entries.push(`  <url><loc>${base}/farmacias/guardia</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+  for (const p of PROVINCIAS) {
+    if (guardiasFileForProvincia(p.slug)) {
+      entries.push(`  <url><loc>${base}/farmacias/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`)
+    }
+  }
 
   // ITV: indice + provincia + municipio. changefreq mensual porque, al reves
   // que las guardias o los precios, el dato es estatico — decir "daily" aqui

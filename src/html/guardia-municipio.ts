@@ -187,6 +187,107 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '</body></html>'
 }
 
+// ---- Indices de navegacion ----
+//
+// POR QUE EXISTEN. Search Console, inspeccionando /farmacias/madrid/madrid:
+// "Google no reconoce esta URL", "No se ha detectado ninguna pagina de
+// referencia". Las 1.289 paginas de municipio se enlazaban ENTRE SI, pero
+// ninguna pagina del sitio apuntaba a ellas: eran una isla. Googlebot entra por
+// la portada y recorre enlaces; sin camino, no llegaba, y quedaba solo el
+// sitemap, que tarda mucho mas en descubrirlas.
+//
+// Estas dos paginas construyen ese camino: portada -> indice -> provincia -> municipio.
+
+const CSS_INDICE =
+  ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+  + '*{box-sizing:border-box}'
+  + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
+  + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
+  + 'header a{color:#fff;text-decoration:none;font-weight:600}'
+  + 'main{max-width:760px;margin:0 auto;padding:18px}'
+  + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
+  + 'h2{font-size:17px;margin:26px 0 10px}'
+  + '.sub{color:var(--mu);font-size:14px;margin:0 0 18px}'
+  + '.lista ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
+  + '.lista li a{display:inline-block;padding:6px 12px;border:1px solid var(--bd);border-radius:999px;'
+  + 'font-size:14px;color:var(--vd);text-decoration:none;background:#fff}'
+  + '.lista li a b{color:var(--mu);font-size:12px;font-weight:600}'
+  + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
+  + '.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
+  + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
+  + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
+  + 'footer a{color:var(--vd)}'
+  + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
+  + '.aviso{background:#1e293b;border-color:#334155}'
+  + '.btn,.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
+
+function envoltorioIndice(nonce: string, title: string, desc: string, canonical: string, cuerpo: string): string {
+  return '<!DOCTYPE html><html lang="es"><head>'
+    + '<meta charset="utf-8" />'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1" />'
+    + '<title>' + esc(title) + '</title>'
+    + '<meta name="description" content="' + esc(desc) + '" />'
+    + '<link rel="canonical" href="' + esc(canonical) + '" />'
+    + '<meta name="theme-color" content="#16a34a" />'
+    + '<meta property="og:title" content="' + esc(title) + '" />'
+    + '<meta property="og:description" content="' + esc(desc) + '" />'
+    + '<meta property="og:type" content="website" />'
+    + '<meta property="og:url" content="' + esc(canonical) + '" />'
+    + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
+    + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + '</style></head><body>'
+    + '<header><a href="/">CercaYa</a></header><main>' + cuerpo + '</main>'
+    + '<footer>Datos de los Colegios Oficiales de Farmaceuticos. '
+    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '</body></html>'
+}
+
+export interface ProvinciaGuardia {
+  slug: string
+  name: string
+}
+
+// /farmacias/guardia — indice nacional de provincias con guardia.
+export function buildGuardiaIndexPage(nonce: string, provincias: ProvinciaGuardia[], canonical: string): string {
+  const title = 'Farmacias de guardia hoy en España, por provincia | CercaYa'
+  const desc = 'Consulta que farmacia esta de guardia hoy en tu municipio. '
+    + 'Datos de los Colegios Oficiales de Farmaceuticos de ' + provincias.length + ' provincias.'
+  const lista = provincias.map(p =>
+    '<li><a href="/farmacias/' + esc(p.slug) + '">' + esc(p.name) + '</a></li>'
+  ).join('')
+  return envoltorioIndice(nonce, title, desc, canonical,
+    '<h1>Farmacias de guardia hoy</h1>'
+    + '<p class="sub">Elige tu provincia para ver los municipios con guardia publicada</p>'
+    + '<nav class="lista"><ul>' + lista + '</ul></nav>'
+    + '<p class="aviso">Los turnos los publica cada Colegio Oficial de Farmaceuticos y pueden cambiar. '
+    + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre.</p>'
+    + '<p><a class="btn" href="/farmacias/">Ver el mapa de farmacias</a></p>'
+  )
+}
+
+// /farmacias/:provincia — municipios de esa provincia con guardia.
+export function buildGuardiaProvinciaPage(
+  nonce: string, provinciaSlug: string, provinciaName: string,
+  municipios: MunicipioGuardia[], actualizado: string | undefined, canonical: string,
+): string {
+  const title = 'Farmacia de guardia en ' + provinciaName + ' | CercaYa'
+  const desc = 'Farmacias de guardia hoy en los ' + municipios.length + ' municipios de '
+    + provinciaName + ' con turno publicado: direccion, telefono y horario.'
+  const fecha = fechaLegible(actualizado)
+  const lista = municipios.map(m =>
+    '<li><a href="/farmacias/' + esc(provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name)
+    + (m.count > 1 ? ' <b>' + m.count + '</b>' : '') + '</a></li>'
+  ).join('')
+  return envoltorioIndice(nonce, title, desc, canonical,
+    '<h1>Farmacia de guardia en ' + esc(provinciaName) + '</h1>'
+    + '<p class="sub">' + municipios.length + ' municipio' + (municipios.length === 1 ? '' : 's')
+    + ' con guardia publicada' + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>'
+    + '<nav class="lista"><ul>' + lista + '</ul></nav>'
+    + '<p class="aviso">Si tu municipio no aparece, su colegio no publica turno o no hay guardia hoy. '
+    + 'Consulta el municipio mas cercano.</p>'
+    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>'
+  )
+}
+
 export function guardiaHeaders(nonce: string): Record<string, string> {
   const csp = [
     "default-src 'self'",

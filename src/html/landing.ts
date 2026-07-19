@@ -325,6 +325,20 @@ export function buildLandingPage(
     }
     footer .foot-links { margin-bottom: 8px; }
     footer .foot-links a { margin: 0 8px; }
+    .mas-links { margin-top: 34px; }
+    .mas-links h2 { font-size: 17px; margin: 0 0 12px; color: var(--c-text); }
+    .mas-links ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+    .mas-links li a {
+      display: block;
+      padding: 12px 16px;
+      border: 1px solid var(--c-border);
+      border-radius: 10px;
+      background: var(--c-surface);
+      color: var(--c-text);
+      text-decoration: none;
+      font-size: 15px;
+    }
+    .mas-links li a:hover { border-color: var(--c-brand); }
     @media (max-width: 520px) {
       .hero { padding: 40px 20px 36px; }
       main { padding: 32px 20px 24px; }
@@ -355,19 +369,36 @@ export function buildLandingPage(
         <span class="badge badge-active">Disponible</span>
       </a>
 
-      <div class="tile tile-coming" role="group" aria-label="ITV (próximamente)">
+      <a href="/itv/" class="tile tile-active" aria-label="Abrir Estaciones de ITV">
         <div class="tile-icon" aria-hidden="true">&#x1F527;</div>
         <h2>ITV</h2>
-        <p>Estaciones de Inspección Técnica de Vehículos cercanas con horarios y precios oficiales.</p>
-        <span class="badge badge-coming">Próximamente</span>
-      </div>
+        <p>Todas las estaciones de Inspección Técnica de Vehículos de España, con dirección, teléfono y cómo llegar.</p>
+        <span class="badge badge-active">Disponible</span>
+      </a>
     </section>
+
+    <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
+         una isla. Verificado en Search Console sobre /farmacias/madrid/madrid:
+         "No se ha detectado ninguna pagina de referencia" y "Google no reconoce
+         esta URL". Googlebot entra por aqui y recorre enlaces; si no hay camino,
+         no llega, y el sitemap por si solo tarda mucho mas en descubrirlas. -->
+    <nav class="mas-links" aria-label="Secciones con datos por municipio">
+      <h2>Consulta por municipio</h2>
+      <ul>
+        <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
+        <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
+        <li><a href="/precios-carburantes">Observatorio de precios de los carburantes</a></li>
+      </ul>
+    </nav>
   </main>
 
   <footer>
     <div class="foot-links">
       <a href="/gasolineras/">Gasolineras</a>·
       <a href="/farmacias/">Farmacias</a>·
+      <a href="/farmacias/guardia">Farmacias de guardia</a>·
+      <a href="/itv/">ITV</a>·
+      <a href="/precios-carburantes">Precios</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>
     </div>

@@ -4,7 +4,11 @@ import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import { buildGuardiaMunicipioPage, guardiaHeaders } from './html/guardia-municipio'
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
-import { buildObservatorio, observatorioFromPre, variacionPct, type ObservatorioPre } from './lib/observatorio'
+import {
+  buildObservatorio, observatorioFromPre, calculaVariaciones,
+  KV_VARIACIONES,
+  type ObservatorioPre, type VariacionesObservatorio, type FilaHistorico,
+} from './lib/observatorio'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio,
@@ -1034,49 +1038,27 @@ app.get('/precios-carburantes', async c => {
   if (!obs) return c.notFound()
   const tObs = Date.now() - tIni
 
-  // Variacion desde el historico propio. Si D1 no responde, la pagina sale
-  // igualmente con los rankings: el dato de hoy no depende de la base.
-  const tD1Ini = Date.now()
-  const variacionG95: Variacion[] = []
-  const variacionDiesel: Variacion[] = []
+  // Variaciones: se leen de KV, donde las deja el cron de ingesta. NO se
+  // consulta D1 aqui — hacerlo costaba 11,9 s por visita (ver el comentario en
+  // src/lib/observatorio.ts). Si la clave no esta todavia, la pagina sale con
+  // los rankings y sin variaciones, que es la misma degradacion que ya habia
+  // prevista para cuando D1 no respondia.
+  const tVarIni = Date.now()
+  let variacionG95: Variacion[] = []
+  let variacionDiesel: Variacion[] = []
   try {
-    if (!c.env.DB) throw new Error('sin binding D1')
-    const cut = new Date()
-    cut.setUTCDate(cut.getUTCDate() - 95)
-    const { results } = await c.env.DB
-      .prepare(
-        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents ' +
-        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
-        'GROUP BY date, fuel_code ORDER BY date ASC'
-      )
-      .bind('95', 'diesel', cut.toISOString().slice(0, 10))
-      .all<{ date: string; fuel_code: string; avg_cents: number }>()
-
-    const series = new Map<string, Array<{ date: string; v: number }>>([['95', []], ['diesel', []]])
-    for (const r of results) {
-      series.get(r.fuel_code)?.push({ date: r.date, v: r.avg_cents })
-    }
-    // Para cada ventana, compara el ultimo dato con el punto mas cercano a
-    // "hoy - N dias" (no siempre hay dato exacto de ese dia).
-    const calc = (arr: Array<{ date: string; v: number }>, dias: number): number | null => {
-      if (arr.length < 2) return null
-      const ultimo = arr[arr.length - 1]
-      const objetivo = new Date(ultimo.date)
-      objetivo.setUTCDate(objetivo.getUTCDate() - dias)
-      const target = objetivo.toISOString().slice(0, 10)
-      let previo: { date: string; v: number } | null = null
-      for (const p of arr) { if (p.date <= target) previo = p; else break }
-      return previo ? variacionPct(ultimo.v, previo.v) : null
-    }
-    for (const dias of [7, 30, 90]) {
-      variacionG95.push({ dias, pct: calc(series.get('95') || [], dias) })
-      variacionDiesel.push({ dias, pct: calc(series.get('diesel') || [], dias) })
+    const raw = await c.env.USER_DATA?.get(KV_VARIACIONES, { type: 'json' }) as VariacionesObservatorio | null
+    if (raw?.g95 && raw?.diesel) {
+      variacionG95 = raw.g95
+      variacionDiesel = raw.diesel
+    } else {
+      slog('warn', 'observatorio.variaciones_miss', {})
     }
   } catch (err) {
-    slog('warn', 'observatorio.history_failed', { err: String(err).slice(0, 160) })
+    slog('warn', 'observatorio.variaciones_failed', { err: String(err).slice(0, 160) })
   }
 
-  const tD1 = Date.now() - tD1Ini
+  const tD1 = Date.now() - tVarIni
 
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/precios-carburantes'
   const tRender = Date.now()
@@ -4035,6 +4017,10 @@ async function runDailyIngest(env: Env): Promise<IngestResult> {
     return { ok: false, reason: 'batch_failed', detail }
   }
 
+  // Ya con el dia de hoy ingerido, dejamos calculadas las variaciones que pinta
+  // /precios-carburantes. Aqui esos ~12 s no molestan a nadie; en una visita si.
+  await refrescaVariaciones(env)
+
   const ms = Date.now() - startedAt
   slog('info', 'cron.ingest.ok', {
     date,
@@ -4043,6 +4029,37 @@ async function runDailyIngest(env: Env): Promise<IngestResult> {
     ms,
   })
   return { ok: true, date, rows: rows.length, batches: batches.length, ms }
+}
+
+// Agrega el historico y guarda en KV las variaciones a 7/30/90 dias.
+//
+// Es la consulta cara del sistema: ~2,2 millones de filas, unos 12 s. Se hace
+// una vez al dia en el cron en lugar de en cada visita, que es lo que dejaba
+// /precios-carburantes en 11,9 s de TTFB con 1.289 URLs esperando rastreo.
+//
+// No propaga errores: si esto falla, la ingesta del dia sigue siendo valida y la
+// pagina simplemente sale sin variaciones.
+async function refrescaVariaciones(env: Env): Promise<void> {
+  if (!env.DB || !env.USER_DATA) return
+  const t0 = Date.now()
+  try {
+    const cut = new Date()
+    cut.setUTCDate(cut.getUTCDate() - 95)
+    const { results } = await env.DB
+      .prepare(
+        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents ' +
+        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
+        'GROUP BY date, fuel_code ORDER BY date ASC'
+      )
+      .bind('95', 'diesel', cut.toISOString().slice(0, 10))
+      .all<FilaHistorico>()
+
+    const variaciones = calculaVariaciones(results || [])
+    await env.USER_DATA.put(KV_VARIACIONES, JSON.stringify(variaciones))
+    slog('info', 'cron.variaciones.ok', { filas: (results || []).length, ms: Date.now() - t0 })
+  } catch (err) {
+    slog('error', 'cron.variaciones.failed', { err: String(err).slice(0, 300), ms: Date.now() - t0 })
+  }
 }
 
 // Purga semanal: borra filas con date < hoy-2a. Mantiene la BD dentro del

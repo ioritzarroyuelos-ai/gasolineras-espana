@@ -153,6 +153,67 @@ export function variacionPct(actual: number | null, previo: number | null): numb
   return Math.round(((actual - previo) / previo) * 1000) / 10
 }
 
+// ---- Variaciones a 7/30/90 dias ----
+//
+// El dato son SEIS numeros, pero obtenerlos costaba 11,9 s medidos en produccion
+// (cabecera X-Diag: d1=11902 sobre un total de 11911). La consulta agregaba unos
+// 95 dias x 2 combustibles x 11.460 estaciones ~ 2,2 millones de filas, y como
+// price_cents no esta en idx_fuel_date, cada fila obligaba a saltar a la tabla.
+// D1 resuelve una PK en 106 ms y se hunde en agregaciones de ese tamano.
+//
+// Por eso ya no se calcula al servir la pagina: lo hace el cron de ingesta, que
+// recorre lo mismo una vez al dia, y deja el resultado en KV. Si falta, la
+// pagina sale sin variaciones — que es la degradacion que el codigo ya preveia
+// cuando D1 no respondia.
+
+export interface VariacionCalc {
+  dias: number
+  pct: number | null
+}
+
+export interface VariacionesObservatorio {
+  generatedAt: string
+  g95: VariacionCalc[]
+  diesel: VariacionCalc[]
+}
+
+export const VENTANAS_DIAS = [7, 30, 90] as const
+
+export interface FilaHistorico {
+  date: string
+  fuel_code: string
+  avg_cents: number
+}
+
+// Para cada ventana compara el ultimo dato con el punto mas cercano a
+// "ultimo - N dias": no siempre hay dato exacto de ese dia.
+function variacionesDeSerie(arr: Array<{ date: string; v: number }>): VariacionCalc[] {
+  return VENTANAS_DIAS.map(dias => {
+    if (arr.length < 2) return { dias, pct: null }
+    const ultimo = arr[arr.length - 1]
+    const objetivo = new Date(ultimo.date)
+    objetivo.setUTCDate(objetivo.getUTCDate() - dias)
+    const target = objetivo.toISOString().slice(0, 10)
+    let previo: { date: string; v: number } | null = null
+    for (const p of arr) { if (p.date <= target) previo = p; else break }
+    return { dias, pct: previo ? variacionPct(ultimo.v, previo.v) : null }
+  })
+}
+
+// rows debe venir ordenado por fecha ascendente.
+export function calculaVariaciones(rows: FilaHistorico[], ahora: Date = new Date()): VariacionesObservatorio {
+  const series = new Map<string, Array<{ date: string; v: number }>>([['95', []], ['diesel', []]])
+  for (const r of rows) series.get(r.fuel_code)?.push({ date: r.date, v: r.avg_cents })
+  return {
+    generatedAt: ahora.toISOString(),
+    g95: variacionesDeSerie(series.get('95') || []),
+    diesel: variacionesDeSerie(series.get('diesel') || []),
+  }
+}
+
+// Clave en KV donde el cron deja el resultado.
+export const KV_VARIACIONES = 'observatorio:variaciones'
+
 // ---- Camino rapido: observatorio pre-calculado ----
 //
 // buildObservatorio() cuesta 9,4 s en produccion porque obliga a parsear los

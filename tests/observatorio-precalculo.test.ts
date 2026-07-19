@@ -15,7 +15,7 @@
 // umbrales de descarte, rotulos sucios y empates de precio.
 
 import { describe, it, expect } from 'vitest'
-import { buildObservatorio, observatorioFromPre } from '../src/lib/observatorio'
+import { buildObservatorio, observatorioFromPre, calculaVariaciones } from '../src/lib/observatorio'
 import { construyeObservatorio, normalizaMarca, parsePrecio } from '../scripts/lib/observatorio-precalculo.mjs'
 
 const G95 = 'Precio Gasolina 95 E5'
@@ -136,6 +136,56 @@ describe('equivalencia precalculo <-> Worker', () => {
     const barcelona = out.g95.provincias.findIndex(p => p.slug === 'barcelona')
     expect(out.g95.provincias[madrid].precio).toBe(out.g95.provincias[barcelona].precio)
     expect(barcelona).toBeLessThan(madrid)   // 08 antes que 28
+  })
+})
+
+describe('calculaVariaciones', () => {
+  // Serie diaria sintetica: el precio sube de forma constante.
+  function serie(desde: string, dias: number, inicial: number, incrDiario: number) {
+    const filas = []
+    const d = new Date(desde + 'T00:00:00Z')
+    for (let i = 0; i < dias; i++) {
+      const fecha = new Date(d)
+      fecha.setUTCDate(fecha.getUTCDate() + i)
+      const iso = fecha.toISOString().slice(0, 10)
+      filas.push({ date: iso, fuel_code: '95', avg_cents: inicial + i * incrDiario })
+      filas.push({ date: iso, fuel_code: 'diesel', avg_cents: inicial + 50 + i * incrDiario })
+    }
+    return filas
+  }
+
+  it('calcula las tres ventanas sobre una serie completa', () => {
+    // 100 dias, +1 milesima/dia desde 1500. El ultimo vale 1599.
+    const v = calculaVariaciones(serie('2026-04-01', 100, 1500, 1))
+    expect(v.g95.map(x => x.dias)).toEqual([7, 30, 90])
+    // A 7 dias: de 1592 a 1599 = +0,4%
+    expect(v.g95[0].pct).toBeCloseTo(0.4, 1)
+    // A 90 dias: de 1509 a 1599 = +6,0%
+    expect(v.g95[2].pct).toBeCloseTo(6.0, 1)
+    expect(v.diesel[2].pct).not.toBeNull()
+  })
+
+  it('devuelve null en las ventanas sin historico suficiente', () => {
+    // Solo 10 dias: 30 y 90 no tienen punto de comparacion.
+    const v = calculaVariaciones(serie('2026-07-01', 10, 1500, 1))
+    expect(v.g95[0].pct).not.toBeNull()   // 7 dias si entra
+    expect(v.g95[1].pct).toBeNull()       // 30 no
+    expect(v.g95[2].pct).toBeNull()       // 90 no
+  })
+
+  it('no revienta con la serie vacia', () => {
+    const v = calculaVariaciones([])
+    expect(v.g95.every(x => x.pct === null)).toBe(true)
+    expect(v.diesel.every(x => x.pct === null)).toBe(true)
+    expect(v.generatedAt).toBeTruthy()
+  })
+
+  it('ignora combustibles que no son 95 ni diesel', () => {
+    const v = calculaVariaciones([
+      { date: '2026-07-01', fuel_code: 'glp', avg_cents: 900 },
+      { date: '2026-07-18', fuel_code: 'glp', avg_cents: 950 },
+    ])
+    expect(v.g95.every(x => x.pct === null)).toBe(true)
   })
 })
 

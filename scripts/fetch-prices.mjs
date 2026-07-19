@@ -6,6 +6,7 @@
 import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { construyeObservatorio } from './lib/observatorio-precalculo.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -139,6 +140,22 @@ async function main() {
       }
     }
     if (deltas.length) console.log('  deltas vs anterior: ' + deltas.join(', '))
+  }
+
+  // 5) Observatorio de precios pre-calculado (ver scripts/lib/observatorio-precalculo.mjs).
+  //    Evita que /precios-carburantes tenga que parsear los 11,9 MB de
+  //    stations.json en cada visita, que costaba 9,4 s medidos en produccion.
+  const observatorio = construyeObservatorio(all)
+  if (observatorio) {
+    const obsPath = resolve(DATA_DIR, 'observatorio.json')
+    const payload = JSON.stringify(observatorio)
+    writeFileSync(obsPath, payload)
+    console.log(`  escrito ${obsPath} (${Math.round(payload.length / 1024)} KB, ` +
+      `${observatorio.g95.provincias.length} provincias, ${observatorio.g95.marcas.length} marcas)`)
+  } else {
+    // No abortamos: el Worker tiene camino de respaldo y el resto del snapshot
+    // ya esta escrito y es valido.
+    console.error('  AVISO: no se pudo construir el observatorio')
   }
 
   console.log('OK')

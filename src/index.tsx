@@ -4,7 +4,7 @@ import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import { buildGuardiaMunicipioPage, guardiaHeaders } from './html/guardia-municipio'
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
-import { buildObservatorio, variacionPct } from './lib/observatorio'
+import { buildObservatorio, observatorioFromPre, variacionPct, type ObservatorioPre } from './lib/observatorio'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio,
@@ -1006,13 +1006,24 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
 // del sitio, incluidas las paginas de farmacias de guardia.
 app.get('/precios-carburantes', async c => {
   const nonce = genNonce()
-  let snap: MinistryResponse | null = null
-  try {
-    snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-  } catch (err) {
-    slog('warn', 'observatorio.snapshot_failed', { err: String(err).slice(0, 160) })
+
+  // Camino rapido: agregados ya calculados por scripts/fetch-prices.mjs. Son
+  // unos pocos KB frente a los 11,9 MB de stations.json, cuyo parseo costaba
+  // 9,4 s por visita. Si el fichero falta o no valida, se cae al calculo
+  // completo: la pagina sale igual, solo que lenta.
+  let obs = observatorioFromPre(
+    await loadSnapshot<ObservatorioPre>(c.req.url, 'observatorio.json', c.env.ASSETS)
+  )
+  if (!obs) {
+    slog('warn', 'observatorio.pre_miss', {})
+    let snap: MinistryResponse | null = null
+    try {
+      snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    } catch (err) {
+      slog('warn', 'observatorio.snapshot_failed', { err: String(err).slice(0, 160) })
+    }
+    obs = buildObservatorio(snap)
   }
-  const obs = buildObservatorio(snap)
   if (!obs) return c.notFound()
 
   // Variacion desde el historico propio. Si D1 no responde, la pagina sale

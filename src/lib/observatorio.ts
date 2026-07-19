@@ -152,3 +152,75 @@ export function variacionPct(actual: number | null, previo: number | null): numb
   if (actual == null || previo == null || previo === 0) return null
   return Math.round(((actual - previo) / previo) * 1000) / 10
 }
+
+// ---- Camino rapido: observatorio pre-calculado ----
+//
+// buildObservatorio() cuesta 9,4 s en produccion porque obliga a parsear los
+// 11,9 MB de stations.json y recorrer 12.000 estaciones dos veces. Para evitarlo,
+// scripts/fetch-prices.mjs deja los agregados ya resueltos en
+// public/data/observatorio.json cada vez que baja el snapshot.
+//
+// Ese fichero guarda las provincias por ID y sin nombre: el join con PROVINCIAS
+// se hace aqui, para que la tabla de slugs siga viviendo en un unico sitio.
+//
+// buildObservatorio() se mantiene como respaldo: si el fichero falta (deploy
+// anterior al primer cron) o no valida, la pagina sale igual, solo que lenta.
+
+export interface ProvinciaPre {
+  id: string
+  precio: number
+  estaciones: number
+}
+
+export interface ObservatorioPreFuel {
+  nacional: number | null
+  provincias: ProvinciaPre[]
+  marcas: MarcaPrecio[]
+}
+
+export interface ObservatorioPre {
+  v?: number
+  fechaMinisterio?: string
+  totalEstaciones?: number
+  g95?: ObservatorioPreFuel
+  diesel?: ObservatorioPreFuel
+}
+
+const PROVINCIA_BY_ID: ReadonlyMap<string, { slug: string; name: string }> =
+  new Map(PROVINCIAS.map(p => [p.id, { slug: p.slug, name: p.name }]))
+
+function hidrataFuel(pre: ObservatorioPreFuel): ObservatorioFuel {
+  const provincias: ProvinciaPrecio[] = []
+  // El script ya las deja ordenadas de mas barata a mas cara; aqui solo se
+  // resuelve el nombre. Un ID que no este en PROVINCIAS (p.ej. "00" de una
+  // estacion sin provincia) simplemente se cae.
+  for (const p of pre.provincias) {
+    const hit = PROVINCIA_BY_ID.get(p.id)
+    if (!hit) continue
+    provincias.push({ id: p.id, slug: hit.slug, name: hit.name, precio: p.precio, estaciones: p.estaciones })
+  }
+  return { nacional: pre.nacional, provincias, marcas: pre.marcas }
+}
+
+function fuelValido(f: unknown): f is ObservatorioPreFuel {
+  if (!f || typeof f !== 'object') return false
+  const x = f as ObservatorioPreFuel
+  return Array.isArray(x.provincias) && Array.isArray(x.marcas)
+    && (x.nacional === null || typeof x.nacional === 'number')
+}
+
+// Devuelve null si el fichero no encaja con lo esperado, para que el llamante
+// pueda caer al calculo completo en lugar de servir una pagina rota.
+export function observatorioFromPre(pre: ObservatorioPre | null): Observatorio | null {
+  if (!pre || pre.v !== 1) return null
+  if (!fuelValido(pre.g95) || !fuelValido(pre.diesel)) return null
+  const g95 = hidrataFuel(pre.g95)
+  const diesel = hidrataFuel(pre.diesel)
+  if (!g95.provincias.length && !diesel.provincias.length) return null
+  return {
+    fechaMinisterio: pre.fechaMinisterio,
+    totalEstaciones: typeof pre.totalEstaciones === 'number' ? pre.totalEstaciones : 0,
+    g95,
+    diesel,
+  }
+}

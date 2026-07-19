@@ -2807,6 +2807,18 @@ app.post('/api/cron/ingest', async c => {
   const auth = await authorizeCron(c)
   if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
   const result = await runDailyIngest(c.env)
+
+  // Las variaciones del observatorio tardan ~12 s (agregan ~2,2 M de filas). El
+  // curl del workflow corta a los 60 s, asi que NO se hacen esperar: waitUntil
+  // deja que el Worker las termine despues de haber respondido. Si el runtime no
+  // expone executionCtx, se calculan en linea antes de responder.
+  if (result.ok) {
+    try {
+      c.executionCtx.waitUntil(refrescaVariaciones(c.env))
+    } catch {
+      await refrescaVariaciones(c.env)
+    }
+  }
   return c.json(result, result.ok ? 200 : 500, { 'Cache-Control': 'no-store' })
 })
 
@@ -4016,10 +4028,6 @@ async function runDailyIngest(env: Env): Promise<IngestResult> {
     })
     return { ok: false, reason: 'batch_failed', detail }
   }
-
-  // Ya con el dia de hoy ingerido, dejamos calculadas las variaciones que pinta
-  // /precios-carburantes. Aqui esos ~12 s no molestan a nadie; en una visita si.
-  await refrescaVariaciones(env)
 
   const ms = Date.now() - startedAt
   slog('info', 'cron.ingest.ok', {

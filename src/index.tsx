@@ -1011,10 +1011,17 @@ app.get('/precios-carburantes', async c => {
   // unos pocos KB frente a los 11,9 MB de stations.json, cuyo parseo costaba
   // 9,4 s por visita. Si el fichero falta o no valida, se cae al calculo
   // completo: la pagina sale igual, solo que lenta.
+  // DIAGNOSTICO TEMPORAL: la pagina tarda ~11,5 s y las mediciones externas
+  // descartan los assets (stations.json entero se sirve en 400 ms). Estas marcas
+  // dicen por que camino va y cuanto cuesta cada tramo. Quitar cuando se cierre.
+  const tIni = Date.now()
+  let ruta = 'pre'
+
   let obs = observatorioFromPre(
     await loadSnapshot<ObservatorioPre>(c.req.url, 'observatorio.json', c.env.ASSETS)
   )
   if (!obs) {
+    ruta = 'fallback'
     slog('warn', 'observatorio.pre_miss', {})
     let snap: MinistryResponse | null = null
     try {
@@ -1025,9 +1032,11 @@ app.get('/precios-carburantes', async c => {
     obs = buildObservatorio(snap)
   }
   if (!obs) return c.notFound()
+  const tObs = Date.now() - tIni
 
   // Variacion desde el historico propio. Si D1 no responde, la pagina sale
   // igualmente con los rankings: el dato de hoy no depende de la base.
+  const tD1Ini = Date.now()
   const variacionG95: Variacion[] = []
   const variacionDiesel: Variacion[] = []
   try {
@@ -1067,11 +1076,18 @@ app.get('/precios-carburantes', async c => {
     slog('warn', 'observatorio.history_failed', { err: String(err).slice(0, 160) })
   }
 
+  const tD1 = Date.now() - tD1Ini
+
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/precios-carburantes'
-  return new Response(
-    buildObservatorioPage(nonce, { obs, variacionG95, variacionDiesel, canonical, deposito: 50 }),
-    { headers: observatorioHeaders(nonce) },
-  )
+  const tRender = Date.now()
+  const html = buildObservatorioPage(nonce, { obs, variacionG95, variacionDiesel, canonical, deposito: 50 })
+  return new Response(html, {
+    headers: {
+      ...observatorioHeaders(nonce),
+      // DIAGNOSTICO TEMPORAL — ver comentario al principio de la ruta.
+      'X-Diag': `ruta=${ruta};obs=${tObs};d1=${tD1};render=${Date.now() - tRender};total=${Date.now() - tIni}`,
+    },
+  })
 })
 
 // ---- SEO: robots.txt ----

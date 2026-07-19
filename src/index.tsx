@@ -17,8 +17,9 @@ import {
   type EstacionITV, type ItvFile,
 } from './lib/itv'
 import {
-  buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, itvHeaders,
+  buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, buildItvPreciosPage, itvHeaders,
 } from './html/itv'
+import { tarifaPorProvincia } from './lib/itv-tarifas'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio,
@@ -1077,6 +1078,18 @@ app.get('/itv/', async c => {
 // Canonicalizamos `/itv` -> `/itv/` para no duplicar, igual que /gasolineras.
 app.get('/itv', c => c.redirect('/itv/', 301))
 
+// `/itv/precios` — comparativa nacional. Va ANTES de `/itv/:provinciaSlug` o el
+// parametro se tragaria "precios" como si fuera un slug de provincia.
+//
+// Es la pagina con mas opcion real de posicionar de todo el vertical: el dato es
+// oficial y citable, y las SERP de "precio ITV" las ocupan agregadores que no
+// citan fuente ni distinguen el regimen fiscal de cada territorio.
+app.get('/itv/precios', c => {
+  const nonce = genNonce()
+  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/precios'
+  return new Response(buildItvPreciosPage(nonce, canonical), { headers: itvHeaders(nonce) })
+})
+
 app.get('/itv/:provinciaSlug', async c => {
   const provSlug = c.req.param('provinciaSlug')
   const prov = provinciaPorSlug(provSlug)
@@ -1093,6 +1106,7 @@ app.get('/itv/:provinciaSlug', async c => {
     provinciaName: prov.name,
     estaciones: deProvincia,
     municipios: municipiosConItv(deProvincia),
+    tarifa: tarifaPorProvincia(provSlug),
     canonical,
   }), { headers: itvHeaders(nonce) })
 })
@@ -1265,6 +1279,8 @@ app.get('/sitemap.xml', async c => {
     const todasItv = parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
     if (todasItv.length) {
       entries.push(`  <url><loc>${base}/itv/</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`)
+      // Prioridad alta: es la pagina del vertical con opcion real de posicionar.
+      entries.push(`  <url><loc>${base}/itv/precios</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>`)
       for (const p of provinciasConItv(todasItv)) {
         entries.push(`  <url><loc>${base}/itv/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`)
         for (const m of municipiosConItv(estacionesDeProvincia(todasItv, p.id))) {

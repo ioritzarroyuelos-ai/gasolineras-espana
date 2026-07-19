@@ -7,6 +7,10 @@
 
 import type { EstacionITV, MunicipioITV, ProvinciaITV } from '../lib/itv'
 import { telHref, mapsHref } from '../lib/itv'
+import {
+  TARIFAS, LIBERALIZADAS, SIN_DATO, TASA_DGT, NOMBRE_IMPUESTO, desglosa,
+  type Tarifa,
+} from '../lib/itv-tarifas'
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -38,9 +42,33 @@ const CSS =
   + '.lista li a b{font-weight:600;color:var(--mu);font-size:12px}'
   + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + 'footer a{color:var(--vd)}'
+  // La tabla de precios se desborda en movil: scroll propio, nunca el body.
+  + '.tabla-wrap{overflow-x:auto;margin:0 0 8px}'
+  + 'table.tarifas{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}'
+  + 'table.tarifas th,table.tarifas td{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left}'
+  + 'table.tarifas thead th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mu)}'
+  + 'table.tarifas tbody th{font-weight:600}'
+  + 'table.tarifas td b{font-size:15px}'
+  + 'table.tarifas .desg{color:var(--mu);font-size:12.5px;white-space:nowrap}'
+  + '.ojo{color:var(--v);font-weight:700}'
+  + '.motivos,.fuentes{padding-left:18px}'
+  + '.motivos li{margin-bottom:10px}'
+  + '.fuentes{font-size:13px;color:var(--mu)}'
+  + '.fuentes li{margin-bottom:6px}'
+  + '.fuentes a{color:var(--vd)}'
+  + '.vig{opacity:.8}'
+  + '.legal{font-size:12.5px;color:var(--mu);border-top:1px solid var(--bd);margin-top:24px;padding-top:12px}'
+  + '.legal p{margin:0 0 8px}'
+  + '.precio-box{border:1px solid var(--bd);border-radius:10px;padding:14px;background:var(--bg);margin-bottom:12px}'
+  + '.precio-linea{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 6px;gap:12px}'
+  + '.precio-linea b{font-size:20px;color:var(--vd)}'
+  + '.precio-desg{margin:8px 0 0;font-size:13px;color:var(--mu)}'
+  + '.precio-nota{margin:8px 0 0;font-size:13px;color:var(--mu)}'
+  + '.precio-fuente{margin:8px 0 0;font-size:12px;color:var(--mu);opacity:.85}'
   + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-  + '.card,.aviso{background:#1e293b;border-color:#334155}'
+  + '.card,.aviso,.precio-box{background:#1e293b;border-color:#334155}'
   + '.btn{background:#0f172a;color:#93c5fd;border-color:#334155}'
+  + '.precio-linea b,.fuentes a{color:#93c5fd}'
   + '.lista li a{background:#0f172a;color:#93c5fd;border-color:#334155}}'
 
 interface Meta {
@@ -135,6 +163,7 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
   return envoltorio({ title, desc, canonical, nonce },
     '<h1>Estaciones de ITV en España</h1>'
     + '<p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
+    + '<p><a class="btn" href="/itv/precios">Cuánto cuesta la ITV en cada comunidad</a></p>'
     + '<nav class="lista"><ul>' + lista + '</ul></nav>'
     + AVISO
   )
@@ -146,14 +175,19 @@ export interface ItvProvinciaData {
   provinciaName: string
   estaciones: EstacionITV[]
   municipios: MunicipioITV[]
+  tarifa: Tarifa | null
   canonical: string
 }
 
 export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): string {
   const n = d.estaciones.length
-  const title = 'ITV en ' + d.provinciaName + ': ' + n + ' estaciones | CercaYa'
-  const desc = 'Todas las estaciones de ITV de ' + d.provinciaName + ': direccion, telefono y como llegar. '
-    + 'Consulta la mas cercana por municipio.'
+  const precio = d.tarifa && d.tarifa.gasolina != null ? desglosa(d.tarifa, d.tarifa.gasolina) : null
+  const title = 'ITV en ' + d.provinciaName + ': ' + n + ' estaciones'
+    + (precio ? ' y precio ' + eur(precio.total) : '') + ' | CercaYa'
+  const desc = (precio
+      ? 'Cuánto cuesta la ITV en ' + d.provinciaName + ' (' + eur(precio.total) + ' un turismo de gasolina) y '
+      : 'Todas las estaciones de ITV de ' + d.provinciaName + ': dirección, teléfono y cómo llegar. ')
+    + 'todas las estaciones por municipio.'
   const lista = d.municipios.map(m =>
     '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name)
     + (m.count > 1 ? ' <b>' + m.count + '</b>' : '') + '</a></li>'
@@ -163,6 +197,7 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
     '<h1>ITV en ' + esc(d.provinciaName) + '</h1>'
     + '<p class="sub">' + n + ' estacion' + (n === 1 ? '' : 'es') + ' en ' + d.municipios.length + ' municipio'
     + (d.municipios.length === 1 ? '' : 's') + '</p>'
+    + bloquePrecioProvincia(d.tarifa, d.provinciaName)
     + (d.municipios.length ? '<h2>Por municipio</h2><nav class="lista"><ul>' + lista + '</ul></nav>' : '')
     + AVISO
     + '<p><a class="btn" href="/itv/">Ver todas las provincias</a></p>'
@@ -200,6 +235,111 @@ export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): strin
     + '<p><a class="btn" href="/itv/' + esc(d.provinciaSlug) + '">Ver toda la provincia de ' + esc(d.provinciaName) + '</a></p>'
     + otros
   )
+}
+
+// ---- Precios: /itv/precios ----
+//
+// La cifra principal es el PRECIO FINAL (base + impuesto del territorio + tasa
+// DGT). Es lo unico comparable entre comunidades: cada boletin publica con un
+// criterio distinto, y poner "46,00 €" de Ceuta al lado de "41,47 €" de Valencia
+// infravalora el gasto real en Ceuta un 18%.
+
+function eur(n: number): string {
+  return n.toFixed(2).replace('.', ',') + ' €'
+}
+
+function filaTarifa(t: Tarifa): string {
+  const g = t.gasolina != null ? desglosa(t, t.gasolina) : null
+  const d = t.diesel != null ? desglosa(t, t.diesel) : null
+  return '<tr>'
+    + '<th scope="row">' + esc(t.nombre) + (t.fiabilidad === 'media' ? ' <span class="ojo" title="Con matices">*</span>' : '') + '</th>'
+    + '<td>' + (g ? '<b>' + eur(g.total) + '</b>' : '&mdash;') + '</td>'
+    + '<td>' + (d ? '<b>' + eur(d.total) + '</b>' : '&mdash;') + '</td>'
+    + '<td class="desg">' + (g ? eur(g.base) + ' + ' + esc(NOMBRE_IMPUESTO[t.impuesto]) + ' + ' + eur(TASA_DGT) : '&mdash;') + '</td>'
+    + '</tr>'
+}
+
+export function buildItvPreciosPage(nonce: string, canonical: string): string {
+  const title = 'Precio de la ITV 2026 por comunidad autónoma | CercaYa'
+  const desc = 'Cuánto cuesta pasar la ITV en cada comunidad autónoma en 2026, con el precio final '
+    + 'que se paga en caja: tarifa oficial, impuesto de cada territorio y tasa de Tráfico.'
+
+  const ordenadas = [...TARIFAS].sort((a, b) => {
+    const ta = a.gasolina != null ? desglosa(a, a.gasolina).total : Infinity
+    const tb = b.gasolina != null ? desglosa(b, b.gasolina).total : Infinity
+    return ta - tb
+  })
+
+  const conNota = ordenadas.filter(t => t.nota)
+
+  return envoltorio({ title, desc, canonical, nonce },
+    '<h1>Cuánto cuesta la ITV en 2026</h1>'
+    + '<p class="sub">Precio final de una inspección periódica de turismo, ordenado de más barato a más caro. '
+    + 'Incluye el impuesto de cada territorio y la tasa de Tráfico.</p>'
+
+    + '<div class="tabla-wrap"><table class="tarifas">'
+    + '<thead><tr><th scope="col">Comunidad</th><th scope="col">Gasolina</th>'
+    + '<th scope="col">Diésel</th><th scope="col">Cómo se compone</th></tr></thead>'
+    + '<tbody>' + ordenadas.map(filaTarifa).join('') + '</tbody>'
+    + '</table></div>'
+
+    + '<h2>Dónde no hay precio oficial</h2>'
+    + '<ul class="motivos">'
+    + LIBERALIZADAS.map(x => '<li><b>' + esc(x.nombre) + '.</b> ' + esc(x.motivo) + '</li>').join('')
+    + '</ul>'
+
+    + '<h2>Territorios sin dato publicable</h2>'
+    + '<ul class="motivos">'
+    + SIN_DATO.map(x => '<li><b>' + esc(x.nombre) + '.</b> ' + esc(x.motivo) + '</li>').join('')
+    + '</ul>'
+
+    + (conNota.length
+        ? '<h2>Matices por territorio <span class="ojo">*</span></h2><ul class="motivos">'
+          + conNota.map(t => '<li><b>' + esc(t.nombre) + '.</b> ' + esc(t.nota!) + '</li>').join('')
+          + '</ul>'
+        : '')
+
+    + '<h2>De dónde salen estas cifras</h2>'
+    + '<ul class="fuentes">'
+    + ordenadas.map(t => '<li><b>' + esc(t.nombre) + ':</b> '
+        + (t.fuenteUrl
+            ? '<a href="' + esc(t.fuenteUrl) + '" target="_blank" rel="noopener nofollow">' + esc(t.norma) + '</a>'
+            : esc(t.norma))
+        + ' <span class="vig">(' + esc(t.vigencia) + ')</span></li>').join('')
+    + '</ul>'
+
+    + '<div class="legal">'
+    + '<p><b>Precios máximos, no precios reales.</b> Las tarifas reguladas son máximos: cada estación '
+    + 'puede cobrar menos. Confirma el precio en la estación antes de acudir.</p>'
+    + '<p><b>Impuestos.</b> Se aplica IVA (21%) en la península y Baleares, IGIC (7%) en Canarias e '
+    + 'IPSI en Ceuta (9%) y Melilla (4%). En Extremadura y en los consells de Balears la ITV es una '
+    + 'tasa y no lleva impuesto indirecto. Los tipos pueden cambiar.</p>'
+    + '<p><b>Tasa de Tráfico.</b> A las inspecciones periódicas se suma la tasa de la DGT por anotar '
+    + 'el resultado en el Registro de Vehículos (' + eur(TASA_DGT) + ' en 2026), que la estación '
+    + 'recauda por cuenta de la DGT. No está sujeta a IVA, IGIC ni IPSI.</p>'
+    + '<p><b>Información no vinculante.</b> Datos elaborados a partir de los boletines oficiales '
+    + 'citados arriba. Pueden existir errores o desfases; las fuentes oficiales prevalecen.</p>'
+    + '</div>'
+
+    + '<p><a class="btn" href="/itv/">Ver las estaciones de ITV por provincia</a></p>'
+  )
+}
+
+// Bloque de precio que se inserta en la pagina de cada provincia.
+export function bloquePrecioProvincia(t: Tarifa | null, provinciaName: string): string {
+  if (!t || t.gasolina == null) return ''
+  const g = desglosa(t, t.gasolina)
+  const d = t.diesel != null ? desglosa(t, t.diesel) : null
+  return '<h2>Cuánto cuesta la ITV en ' + esc(provinciaName) + '</h2>'
+    + '<div class="precio-box">'
+    + '<p class="precio-linea"><span>Turismo gasolina</span> <b>' + eur(g.total) + '</b></p>'
+    + (d ? '<p class="precio-linea"><span>Turismo diésel</span> <b>' + eur(d.total) + '</b></p>' : '')
+    + '<p class="precio-desg">' + eur(g.base) + ' de tarifa + ' + esc(NOMBRE_IMPUESTO[t.impuesto])
+    + ' + ' + eur(TASA_DGT) + ' de tasa de Tráfico. Es un precio máximo: puede cobrarse menos.</p>'
+    + (t.nota ? '<p class="precio-nota">' + esc(t.nota) + '</p>' : '')
+    + '<p class="precio-fuente">Fuente: ' + esc(t.norma) + '</p>'
+    + '</div>'
+    + '<p><a class="btn" href="/itv/precios">Comparar el precio con el resto de España</a></p>'
 }
 
 export function itvHeaders(nonce: string): Record<string, string> {

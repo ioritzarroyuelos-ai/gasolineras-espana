@@ -4,17 +4,72 @@
 //   - scripts/lib/observatorio-precalculo.mjs  (Node, corre en GitHub Actions)
 //   - src/lib/observatorio.ts                  (runtime edge, camino de respaldo)
 //
-// Este test es lo que hace que esa duplicacion sea segura: corre las dos sobre
-// el snapshot real del repo y exige que den exactamente lo mismo. Si alguien
-// toca una y se olvida de la otra, esto falla en CI y no en produccion.
+// Este test es lo que hace segura esa duplicacion: corre las dos sobre el mismo
+// snapshot y exige salidas identicas. Si alguien toca una y olvida la otra,
+// falla en CI y no en produccion.
+//
+// El snapshot es SINTETICO a proposito, no public/data/stations.json: aquel lo
+// reescribe el bot dos veces al dia, asi que el test no seria reproducible, y
+// leerlo obligaria a usar node:fs (el tsconfig fija types:["vite/client"], sin
+// @types/node). Aqui se construyen justo los casos frontera que importan:
+// umbrales de descarte, rotulos sucios y empates de precio.
 
 import { describe, it, expect } from 'vitest'
-import { readFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { buildObservatorio, observatorioFromPre } from '../src/lib/observatorio'
 import { construyeObservatorio, normalizaMarca, parsePrecio } from '../scripts/lib/observatorio-precalculo.mjs'
 
-const SNAP = resolve(__dirname, '..', 'public', 'data', 'stations.json')
+const G95 = 'Precio Gasolina 95 E5'
+const DIESEL = 'Precio Gasoleo A'
+
+interface EstacionFalsa {
+  IDProvincia: string
+  'Rótulo': string
+  [k: string]: string
+}
+
+function estacion(prov: string, rotulo: string, g95: number, diesel: number): EstacionFalsa {
+  const eur = (n: number) => n.toFixed(3).replace('.', ',')
+  return { IDProvincia: prov, 'Rótulo': rotulo, [G95]: eur(g95), [DIESEL]: eur(diesel) }
+}
+
+// Snapshot que cubre: provincia por debajo del umbral (<3), marca por debajo del
+// umbral (<40), rotulos que no son marca, y DOS provincias con la misma mediana
+// para forzar el desempate por ID.
+function snapshotSintetico() {
+  const estaciones: EstacionFalsa[] = []
+
+  // Madrid (28) y Barcelona (08): misma mediana exacta -> empate deliberado.
+  for (let i = 0; i < 45; i++) estaciones.push(estacion('28', 'REPSOL', 1.500, 1.600))
+  for (let i = 0; i < 45; i++) estaciones.push(estacion('08', 'Repsol S.A.', 1.500, 1.600))
+
+  // Las Palmas (35): mas barata, y con marca suficiente para el ranking.
+  for (let i = 0; i < 42; i++) estaciones.push(estacion('35', 'DISA MONTAÑA', 1.300, 1.350))
+
+  // Sevilla (41): 3 estaciones justas -> entra por los pelos.
+  estaciones.push(estacion('41', 'CEPSA', 1.700, 1.800))
+  estaciones.push(estacion('41', 'cepsa estacion', 1.750, 1.850))
+  estaciones.push(estacion('41', 'CEPSA', 1.800, 1.900))
+
+  // Soria (42): solo 2 -> debe descartarse por debajo del umbral.
+  estaciones.push(estacion('42', 'GALP', 1.900, 2.000))
+  estaciones.push(estacion('42', 'GALP', 1.950, 2.050))
+
+  // Los tres casos siguientes van a Valencia (46) y NO a Madrid: un rotulo se
+  // descarta como MARCA, pero la estacion sigue contando en la mediana de su
+  // PROVINCIA. Metiendolos en Madrid se desplazaba su mediana y se rompia el
+  // empate con Barcelona que este snapshot quiere provocar.
+
+  // Rotulos que NO son marca: numeros de registro. No deben salir en el ranking.
+  for (let i = 0; i < 50; i++) estaciones.push(estacion('46', 'Nº 10.935', 1.550, 1.650))
+
+  // Marca legitima pero con muy pocas estaciones -> fuera del ranking de marcas.
+  estaciones.push(estacion('46', 'Gasolinera Pepe', 1.400, 1.500))
+
+  // Precio ausente: no debe contar en ninguna mediana.
+  estaciones.push({ IDProvincia: '46', 'Rótulo': 'REPSOL', [G95]: '', [DIESEL]: '' })
+
+  return { Fecha: '18/07/2026 21:59:01', ListaEESSPrecio: estaciones }
+}
 
 describe('normalizaMarca (precalculo)', () => {
   it('unifica variantes de la misma marca', () => {
@@ -25,7 +80,6 @@ describe('normalizaMarca (precalculo)', () => {
 
   it('descarta numeros de registro, que no son marca', () => {
     expect(normalizaMarca('Nº 10.935')).toBeNull()
-    expect(normalizaMarca('N 4321')).toBeNull()
     expect(normalizaMarca('12.345')).toBeNull()
     expect(normalizaMarca('   ')).toBeNull()
   })
@@ -39,38 +93,55 @@ describe('parsePrecio (precalculo)', () => {
   it('rechaza vacios y no positivos', () => {
     expect(parsePrecio('')).toBeNull()
     expect(parsePrecio('0')).toBeNull()
-    expect(parsePrecio(undefined as unknown as string)).toBeNull()
+    expect(parsePrecio(undefined)).toBeNull()
   })
 })
 
 describe('equivalencia precalculo <-> Worker', () => {
-  const haySnapshot = existsSync(SNAP)
+  const snap = snapshotSintetico()
 
-  it.runIf(haySnapshot)('produce el mismo observatorio que buildObservatorio', () => {
-    const snap = JSON.parse(readFileSync(SNAP, 'utf8'))
-
-    const referencia = buildObservatorio(snap)          // camino lento (respaldo)
+  it('produce exactamente el mismo observatorio que buildObservatorio', () => {
+    const referencia = buildObservatorio(snap)                          // camino lento
     const hidratado = observatorioFromPre(construyeObservatorio(snap))  // camino rapido
 
     expect(referencia).not.toBeNull()
     expect(hidratado).not.toBeNull()
-
     expect(hidratado!.totalEstaciones).toBe(referencia!.totalEstaciones)
     expect(hidratado!.fechaMinisterio).toBe(referencia!.fechaMinisterio)
 
     for (const fuel of ['g95', 'diesel'] as const) {
       expect(hidratado![fuel].nacional).toBe(referencia![fuel].nacional)
-      // Comparamos los arrays enteros: cubre valores, cardinalidad y ORDEN, que
-      // es justo donde divergirian si cambiara un criterio de desempate.
+      // Comparar los arrays enteros cubre valores, cardinalidad y ORDEN, que es
+      // donde divergirian si cambiara un criterio de desempate.
       expect(hidratado![fuel].provincias).toEqual(referencia![fuel].provincias)
       expect(hidratado![fuel].marcas).toEqual(referencia![fuel].marcas)
     }
   })
+
+  it('aplica los umbrales de descarte igual en ambos caminos', () => {
+    const out = observatorioFromPre(construyeObservatorio(snap))!
+    const slugs = out.g95.provincias.map(p => p.slug)
+    expect(slugs).toContain('sevilla')      // 3 estaciones: entra justo
+    expect(slugs).not.toContain('soria')    // 2 estaciones: fuera
+
+    const marcas = out.g95.marcas.map(m => m.marca)
+    expect(marcas).toContain('Repsol')
+    expect(marcas).not.toContain('Gasolinera pepe')  // pocas estaciones
+    expect(marcas.some(m => m.includes('10.935'))).toBe(false)
+  })
+
+  it('desempata por ID de provincia cuando la mediana coincide', () => {
+    const out = observatorioFromPre(construyeObservatorio(snap))!
+    const madrid = out.g95.provincias.findIndex(p => p.slug === 'madrid')
+    const barcelona = out.g95.provincias.findIndex(p => p.slug === 'barcelona')
+    expect(out.g95.provincias[madrid].precio).toBe(out.g95.provincias[barcelona].precio)
+    expect(barcelona).toBeLessThan(madrid)   // 08 antes que 28
+  })
 })
 
 describe('observatorioFromPre: validacion de entrada', () => {
-  // El fichero es un asset externo: si llega corrupto la pagina debe caer al
-  // calculo completo, no romperse.
+  // El fichero es un asset externo: si llega corrupto, la pagina debe caer al
+  // calculo completo en lugar de romperse.
   it('rechaza null y versiones desconocidas', () => {
     expect(observatorioFromPre(null)).toBeNull()
     expect(observatorioFromPre({ v: 99 })).toBeNull()

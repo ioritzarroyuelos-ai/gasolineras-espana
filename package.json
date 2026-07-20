@@ -22,7 +22,7 @@
     "postinstall": "git rev-parse --git-dir >/dev/null 2>&1 && git config --local core.hooksPath .githooks || true"
   },
   "dependencies": {
-    "hono": "^4.12.30",
+    "hono": "^4.12.31",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -36,9 +36,9 @@
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
+    "vite": "^8.1.5",
     "vitest": "^4.1.10",
-    "wrangler": "^4.110.0"
+    "wrangler": "^4.112.0"
   },
   "overrides": {
     "@hono/node-server": ">=1.19.13"

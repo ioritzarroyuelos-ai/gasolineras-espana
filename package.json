@@ -30,15 +30,15 @@
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.26.1",
     "@lhci/cli": "^0.15.1",
-    "@napi-rs/canvas": "^1.0.2",
-    "@playwright/test": "^1.62.0",
+    "@napi-rs/canvas": "^1.0.3",
+    "@playwright/test": "^1.62.1",
     "@resvg/resvg-js": "^2.6.2",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
+    "vite": "^8.2.0",
     "vitest": "^4.1.10",
-    "wrangler": "^4.114.0"
+    "wrangler": "^4.116.0"
   },
   "overrides": {
     "@hono/node-server": ">=1.19.13"

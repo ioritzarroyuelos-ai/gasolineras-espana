@@ -22,15 +22,15 @@
     "postinstall": "git rev-parse --git-dir >/dev/null 2>&1 && git config --local core.hooksPath .githooks || true"
   },
   "dependencies": {
-    "hono": "^4.13.0",
+    "hono": "^4.13.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.12.1",
+    "@axe-core/playwright": "^4.13.0",
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.26.1",
     "@lhci/cli": "^0.15.1",
-    "@napi-rs/canvas": "^1.0.3",
+    "@napi-rs/canvas": "^1.0.6",
     "@playwright/test": "^1.62.1",
     "@resvg/resvg-js": "^2.6.2",
     "pdf-parse": "^2.4.5",
@@ -38,7 +38,7 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10",
-    "wrangler": "^4.119.0"
+    "wrangler": "^4.123.0"
   },
   "overrides": {
     "@hono/node-server": ">=1.19.13"

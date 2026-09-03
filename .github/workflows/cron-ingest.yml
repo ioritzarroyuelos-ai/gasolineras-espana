@@ -1,9 +1,10 @@
 name: D1 cron — ingesta diaria de precios
 
 # Cloudflare Pages no soporta Cron Triggers nativos (son Workers-only). Este
-# workflow los reemplaza: a las 20:00 UTC (1h despues del fetch-prices de las
-# 19:00) hace un POST a /api/cron/ingest, que lee el snapshot ya desplegado
-# y upsertea precios del dia a D1.
+# workflow los reemplaza: hace un POST a /api/cron/ingest (que lee el snapshot
+# ya desplegado y upsertea precios del dia a D1) DOS veces al dia:
+#   - 09:00 UTC (11:00 España): guardado de la manana, tras la foto de las 07:00 UTC.
+#   - 20:00 UTC: guardado de la tarde, 1h despues del fetch-prices de las 19:00.
 #
 # Requisitos:
 #   - Secret CRON_TOKEN en el repo (Settings → Secrets → Actions).
@@ -15,6 +16,11 @@ name: D1 cron — ingesta diaria de precios
 
 on:
   schedule:
+    # 09:00 UTC = 11:00 España (verano). Guardado de la manana: corre despues de
+    # que la foto de precios de las 07:00 UTC (09:00 España) este descargada y
+    # desplegada, para que la media del dia aparezca ya por la manana.
+    - cron: '0 9 * * *'
+    # 20:00 UTC: guardado de la tarde (1h despues del fetch-prices de las 19:00).
     - cron: '0 20 * * *'
   workflow_dispatch:
 

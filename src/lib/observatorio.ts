@@ -183,6 +183,7 @@ export interface FilaHistorico {
   date: string
   fuel_code: string
   avg_cents: number
+  n?: number
 }
 
 // Para cada ventana compara el ultimo dato con el punto mas cercano a
@@ -213,6 +214,10 @@ export function calculaVariaciones(rows: FilaHistorico[], ahora: Date = new Date
 
 // Clave en KV donde el cron deja el resultado.
 export const KV_VARIACIONES = 'observatorio:variaciones'
+
+// Serie diaria (95 dias) del precio medio nacional, dejada por el cron para que
+// /api/stats/national (home) no reagregue D1 en cada visita.
+export const KV_STATS_NACIONAL = 'stats:national:series'
 
 // ---- Camino rapido: observatorio pre-calculado ----
 //

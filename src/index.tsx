@@ -8,7 +8,7 @@ import {
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
 import {
   buildObservatorio, observatorioFromPre, calculaVariaciones,
-  KV_VARIACIONES,
+  KV_VARIACIONES, KV_STATS_NACIONAL,
   type ObservatorioPre, type VariacionesObservatorio, type FilaHistorico,
 } from './lib/observatorio'
 import {
@@ -368,6 +368,11 @@ function incrementIsoDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00Z')
   d.setUTCDate(d.getUTCDate() + 1)
   return d.toISOString().slice(0, 10)
+}
+
+// Devuelve la fecha ISO mayor de las dos (YYYY-MM-DD compara bien como texto).
+function maxIsoDate(a: string, b: string): string {
+  return a >= b ? a : b
 }
 
 // Re-hidrata una serie dedupeada [[date, cents], ...] a un punto por dia entre
@@ -2260,7 +2265,7 @@ app.get('/api/history/:stationId', async c => {
   // Los datos D1 sobreescriben (priorizan) sobre el JSON para esas fechas — el
   // cron diario es la fuente mas reciente; el JSON estatico es snapshot fijo.
   if (c.env.DB) {
-    const d1From = staticTo ? incrementIsoDate(staticTo) : cutoff
+    const d1From = staticTo ? maxIsoDate(incrementIsoDate(staticTo), cutoff) : cutoff
     if (d1From <= todayIso) {
       try {
         const stmt = c.env.DB
@@ -2390,7 +2395,7 @@ app.get('/api/history/province/:id', async c => {
   // D1: solo consultamos el rango NO cubierto por el JSON estatico. Si no hay
   // JSON estatico (provincia sin backfill), consultamos todo.
   if (c.env.DB) {
-    const d1From = staticTo ? incrementIsoDate(staticTo) : cutoff
+    const d1From = staticTo ? maxIsoDate(incrementIsoDate(staticTo), cutoff) : cutoff
     if (d1From <= todayIso) {
       // Para mediana D1 necesitamos la lista de stationIds de la provincia.
       const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
@@ -2484,6 +2489,61 @@ app.get('/api/history/province/:id', async c => {
 //
 // Cache-Control: public, max-age=3600 — igual que history/*. Tras el cron
 // diario los valores cambian, pero dentro del dia son constantes.
+type StatFuelRow = { date: string; fuel_code: string; avg_cents: number; n?: number }
+
+interface NationalStatsFuel {
+  today: number | null
+  avg30d: number | null
+  delta_pct: number | null
+  samples_today: number | null
+  days_available: number
+  last_date: string | null
+}
+
+// Agrega el precio medio nacional a partir de una serie diaria ya calculada
+// (una fila por dia y combustible). Se comparte entre el camino rapido (serie
+// leida de KV, dejada por el cron) y el de respaldo (serie recien traida de D1),
+// para que ambos devuelvan EXACTAMENTE la misma forma que espera el cliente.
+function computeNationalStats(rows: StatFuelRow[], days: number): { days: number; fuels: Record<string, NationalStatsFuel> } {
+  const FUELS = ['95', 'diesel'] as const
+  const cutoffDate = new Date()
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  const cutoff = cutoffDate.toISOString().slice(0, 10)
+
+  const byFuel = new Map<string, StatFuelRow[]>()
+  for (const f of FUELS) byFuel.set(f, [])
+  for (const r of rows) {
+    if (r.date < cutoff) continue
+    const arr = byFuel.get(r.fuel_code)
+    if (arr) arr.push(r)
+  }
+
+  const out: Record<string, NationalStatsFuel> = {}
+  for (const fuel of FUELS) {
+    const arr = (byFuel.get(fuel) || []).slice().sort((a, b) => a.date.localeCompare(b.date))
+    if (arr.length === 0) {
+      out[fuel] = { today: null, avg30d: null, delta_pct: null, samples_today: null, days_available: 0, last_date: null }
+      continue
+    }
+    const last = arr[arr.length - 1]
+    const todayEur = centsToEuros(Math.round(last.avg_cents))
+    let sum = 0
+    for (const r of arr) sum += r.avg_cents
+    const avgCents = sum / arr.length
+    const avgEur = centsToEuros(Math.round(avgCents))
+    const deltaPct = avgCents > 0 ? ((last.avg_cents - avgCents) / avgCents) * 100 : 0
+    out[fuel] = {
+      today: todayEur,
+      avg30d: avgEur,
+      delta_pct: Math.round(deltaPct * 100) / 100,
+      samples_today: typeof last.n === 'number' ? last.n : null,
+      days_available: arr.length,
+      last_date: last.date,
+    }
+  }
+  return { days, fuels: out }
+}
+
 app.get('/api/stats/national', async c => {
   const key = clientKey(c)
   const rl = histLimiter.check(key)
@@ -2491,9 +2551,6 @@ app.get('/api/stats/national', async c => {
     return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
   }
 
-  // days: clamp [7, 90]. Minimo 7 para que "avg30d" tenga sentido estadistico;
-  // maximo 90 para acotar el coste y porque tendencias > 3 meses no son utiles
-  // como contexto de "¿esta caro hoy?".
   const daysParam = c.req.query('days')
   let days = 30
   if (daysParam != null) {
@@ -2504,84 +2561,48 @@ app.get('/api/stats/national', async c => {
     days = n
   }
 
+  const CACHE = { 'Cache-Control': 'public, max-age=3600' }
+
+  // Camino rapido: la serie diaria ya la deja calculada el cron diario
+  // (refrescaVariaciones) en KV. Leerla evita reagregar ~665k filas de D1 en
+  // CADA visita a la home, que costaba ~4 s y amenazaba la cuota de lectura de D1.
+  try {
+    const cached = await c.env.USER_DATA?.get(KV_STATS_NACIONAL, { type: 'json' }) as { rows?: StatFuelRow[] } | null
+    if (cached && Array.isArray(cached.rows) && cached.rows.length) {
+      return c.json(computeNationalStats(cached.rows, days), 200, CACHE)
+    }
+  } catch (err) {
+    slog('warn', 'stats.kv_read_failed', { err: String(err).slice(0, 200) })
+  }
+
+  // Respaldo: si KV esta vacio (antes del primer cron) o falla, calculamos de D1
+  // UNA vez y guardamos el resultado en KV (autorrelleno), para que las
+  // siguientes visitas no vuelvan a tocar D1 aunque el cron falle un dia.
   if (!c.env.DB) {
     return c.json({ error: 'stats_unavailable' }, 503, { 'Cache-Control': 'no-store' })
   }
-
+  const SERIE_DIAS = 95   // >= el maximo de days (90), para servir cualquier ventana desde KV
   const cutoffDate = new Date()
-  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - days)
+  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - SERIE_DIAS)
   const cutoff = cutoffDate.toISOString().slice(0, 10)
-
-  // Solo 2 combustibles: gasolina 95 y diesel A — cubren ~90% del uso civil.
-  // Si en futuro anadimos 98/diesel_plus, basta con extender FUELS (y la UI).
-  const FUELS = ['95', 'diesel'] as const
-  type FuelCode = typeof FUELS[number]
-
   try {
-    const stmt = c.env.DB
+    const { results } = await c.env.DB
       .prepare(
         'SELECT date, fuel_code, AVG(price_cents) AS avg_cents, COUNT(*) AS n ' +
         'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
         'GROUP BY date, fuel_code ORDER BY date ASC'
       )
-      .bind(FUELS[0], FUELS[1], cutoff)
-    const { results } = await stmt.all<{ date: string; fuel_code: string; avg_cents: number; n: number }>()
-
-    // Agrupamos por fuel_code. Clave: solo entran FUELS reconocidos (ya filtra
-    // el WHERE, pero defensivo por si el esquema cambia).
-    const byFuel = new Map<string, Array<{ date: string; avg_cents: number; n: number }>>()
-    for (const f of FUELS) byFuel.set(f, [])
-    for (const r of results) {
-      const arr = byFuel.get(r.fuel_code)
-      if (!arr) continue
-      arr.push({ date: r.date, avg_cents: r.avg_cents, n: r.n })
+      .bind('95', 'diesel', cutoff)
+      .all<StatFuelRow>()
+    const rows = results || []
+    if (c.env.USER_DATA && rows.length) {
+      const payload = JSON.stringify({ generatedAt: new Date().toISOString(), rows })
+      try { c.executionCtx.waitUntil(c.env.USER_DATA.put(KV_STATS_NACIONAL, payload)) }
+      catch { await c.env.USER_DATA.put(KV_STATS_NACIONAL, payload) }
     }
-
-    const out: Record<string, {
-      today: number | null
-      avg30d: number | null
-      delta_pct: number | null
-      samples_today: number
-      days_available: number
-      last_date: string | null
-    }> = {}
-
-    for (const fuel of FUELS) {
-      const arr = byFuel.get(fuel) || []
-      if (arr.length === 0) {
-        out[fuel] = { today: null, avg30d: null, delta_pct: null, samples_today: 0, days_available: 0, last_date: null }
-        continue
-      }
-      // Ultimo dia disponible (ya viene ORDER BY date ASC).
-      const last = arr[arr.length - 1]
-      const todayEur = centsToEuros(Math.round(last.avg_cents))
-      // Media de medias diarias (simple, no ponderada por count — todos los dias
-      // pesan igual independientemente de cuantas estaciones reportaran).
-      let sum = 0
-      for (const r of arr) sum += r.avg_cents
-      const avgCents = sum / arr.length
-      const avgEur = centsToEuros(Math.round(avgCents))
-      const deltaPct = avgCents > 0 ? ((last.avg_cents - avgCents) / avgCents) * 100 : 0
-      out[fuel] = {
-        today: todayEur,
-        avg30d: avgEur,
-        delta_pct: Math.round(deltaPct * 100) / 100,  // 2 decimales
-        samples_today: last.n,
-        days_available: arr.length,
-        last_date: last.date,
-      }
-    }
-
-    return c.json(
-      { days, fuels: out },
-      200,
-      { 'Cache-Control': 'public, max-age=3600' },
-    )
+    return c.json(computeNationalStats(rows, days), 200, CACHE)
   } catch (err) {
-    slog('error', 'stats.national_failed', {
-      days,
-      err: String(err).slice(0, 300),
-    })
+    slog('error', 'stats.national_failed', { days, err: String(err).slice(0, 300) })
     return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
   }
 })
@@ -2683,7 +2704,7 @@ app.get('/api/predict/:stationId', async c => {
     // DAYOFWEEK pero strftime('%w', date) devuelve 0-6 (0=Dom). Si no hay JSON,
     // D1 cubre el rango completo 90d.
     if (c.env.DB) {
-      const d1From = staticTo ? incrementIsoDate(staticTo) : cutoffStr
+      const d1From = staticTo ? maxIsoDate(incrementIsoDate(staticTo), cutoffStr) : cutoffStr
       if (d1From <= todayIso) {
         try {
           const stmt = c.env.DB
@@ -4203,16 +4224,20 @@ async function refrescaVariaciones(env: Env): Promise<void> {
     cut.setUTCDate(cut.getUTCDate() - 95)
     const { results } = await env.DB
       .prepare(
-        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents ' +
+        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents, COUNT(*) AS n ' +
         'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
         'GROUP BY date, fuel_code ORDER BY date ASC'
       )
       .bind('95', 'diesel', cut.toISOString().slice(0, 10))
       .all<FilaHistorico>()
 
-    const variaciones = calculaVariaciones(results || [])
+    const filas = results || []
+    const variaciones = calculaVariaciones(filas)
     await env.USER_DATA.put(KV_VARIACIONES, JSON.stringify(variaciones))
-    slog('info', 'cron.variaciones.ok', { filas: (results || []).length, ms: Date.now() - t0 })
+    // Misma serie diaria que consume /api/stats/national (home): la dejamos
+    // calculada aqui para que la home no reagregue D1 en cada visita.
+    await env.USER_DATA.put(KV_STATS_NACIONAL, JSON.stringify({ generatedAt: new Date().toISOString(), rows: filas }))
+    slog('info', 'cron.variaciones.ok', { filas: filas.length, ms: Date.now() - t0 })
   } catch (err) {
     slog('error', 'cron.variaciones.failed', { err: String(err).slice(0, 300), ms: Date.now() - t0 })
   }

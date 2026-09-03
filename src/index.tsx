@@ -3,7 +3,8 @@ import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import {
-  buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage, guardiaHeaders,
+  buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage,
+  buildGuardiaProvinciaFlatPage, guardiaHeaders,
 } from './html/guardia-municipio'
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
 import {
@@ -1015,11 +1016,18 @@ app.get('/farmacias/:provinciaSlug', async c => {
 
   const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
   const municipios = municipiosConGuardia(all)
-  // Sin municipios no se publica pagina: mejor 404 que una URL vacia indexada.
-  if (!municipios.length) return c.notFound()
 
   const nonce = genNonce()
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug
+  // Sin municipios (Baleares, Huesca): la fuente no trae municipio pero SI trae
+  // guardias con direccion y telefono; se listan directamente en vez de un 404.
+  if (!municipios.length) {
+    if (!all.length) return c.notFound()
+    return new Response(
+      buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical),
+      { headers: guardiaHeaders(nonce) },
+    )
+  }
   return new Response(
     buildGuardiaProvinciaPage(nonce, provSlug, prov.name, municipios, raw.ts, canonical),
     { headers: guardiaHeaders(nonce) },

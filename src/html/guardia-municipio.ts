@@ -58,6 +58,48 @@ function mapsHref(g: Guardia): string {
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(g.direccion + ' ' + g.municipio)
 }
 
+// Tarjeta de una guardia. Se usa en la pagina provincial "plana" (Baleares y
+// Huesca, que no traen municipio). No se toca buildGuardiaMunicipioPage para no
+// arriesgar las 1.289 paginas que ya funcionan.
+function guardiaCard(g: Guardia, localidad: string): string {
+  const tel = telHref(g.telefono)
+  return '<article class="g-card">'
+    + '<h3 class="g-dir">' + esc(g.direccion || 'Farmacia de guardia') + '</h3>'
+    + '<p class="g-hora"><strong>' + esc(horarioLegible(g)) + '</strong></p>'
+    + (g.cp ? '<p class="g-meta">' + esc(g.cp) + ' ' + esc(localidad) + '</p>' : '')
+    + '<div class="g-acciones">'
+    + (tel ? '<a class="g-btn g-btn--tel" href="' + esc(tel) + '">Llamar ' + esc(g.telefono) + '</a>' : '')
+    + '<a class="g-btn" href="' + esc(mapsHref(g)) + '" target="_blank" rel="noopener">Como llegar</a>'
+    + '</div>'
+    + '</article>'
+}
+
+// Pagina provincial cuando la fuente NO trae municipio (Baleares, Huesca):
+// en vez de un 404, se listan todas las guardias de la provincia directamente.
+export function buildGuardiaProvinciaFlatPage(
+  nonce: string, provinciaSlug: string, provinciaName: string,
+  guardias: Guardia[], actualizado: string | undefined, canonical: string,
+): string {
+  const n = guardias.length
+  const title = 'Farmacia de guardia en ' + provinciaName + ' | CercaYa'
+  const desc = 'Las ' + n + ' farmacias de guardia de ' + provinciaName
+    + ': direccion, telefono y horario. Datos del Colegio Oficial de Farmaceuticos.'
+  const fecha = fechaLegible(actualizado)
+  const cards = n
+    ? guardias.map(x => guardiaCard(x, provinciaName)).join('')
+    : '<p class="g-vacio">No hay farmacia de guardia publicada ahora mismo para ' + esc(provinciaName) + '.</p>'
+  return envoltorioIndice(nonce, title, desc, canonical,
+    '<h1>Farmacia de guardia en ' + esc(provinciaName) + '</h1>'
+    + '<p class="sub">' + n + ' farmacia' + (n === 1 ? '' : 's') + ' de guardia'
+    + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>'
+    + cards
+    + '<p class="aviso">Los turnos los publica el Colegio Oficial de Farmaceuticos y pueden cambiar. '
+    + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. '
+    + 'Si vas a desplazarte, confirma antes por telefono.</p>'
+    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>'
+  )
+}
+
 // Datos estructurados: una Pharmacy por farmacia de guardia. Ayuda a que
 // Google entienda la pagina y pueda mostrarla como resultado enriquecido.
 function jsonLd(d: GuardiaPageData): string {

@@ -1,13 +1,13 @@
 // Landing del portal CercaYa en `/`. Tests sencillos — es HTML estatico sin
-// JS. Comprobamos: renderiza los 3 tiles, Gasolineras + Farmacias son
-// clickables (ITV sigue proximamente), los shortcuts PWA viejos (?action=)
-// siguen redirigiendo al mapa, sin axe violations y sin fetch de red raros.
+// JS. Comprobamos: renderiza los 3 tiles, los tres (Gasolineras, Farmacias e
+// ITV) son clickables, los shortcuts PWA viejos (?action=) siguen redirigiendo
+// al mapa, sin axe violations y sin fetch de red raros.
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 test.describe('Landing CercaYa (/)', () => {
-  test('renderiza los 3 tiles (Gasolineras y Farmacias activos, ITV próximamente)', async ({ page }) => {
+  test('renderiza los 3 tiles activos (Gasolineras, Farmacias e ITV)', async ({ page }) => {
     await page.goto('/')
     await expect(page).toHaveTitle(/CercaYa/i)
 
@@ -29,9 +29,14 @@ test.describe('Landing CercaYa (/)', () => {
     await expect(farmTile).toBeVisible()
     await expect(farmTile).toHaveAttribute('href', '/farmacias/')
 
-    // Solo ITV queda "Próximamente" — 1 solo badge-coming.
-    const comingBadges = page.locator('.badge-coming')
-    await expect(comingBadges).toHaveCount(1)
+    // ITV tile tiene link a /itv/ (activo desde la fase 3 del roadmap).
+    const itvTile = page.getByRole('link', { name: /abrir estaciones de itv/i })
+    await expect(itvTile).toBeVisible()
+    await expect(itvTile).toHaveAttribute('href', '/itv/')
+
+    // Los tres tiles estan activos: 3 badges "Disponible" y ninguno "Proximamente".
+    await expect(page.locator('.badge-active')).toHaveCount(3)
+    await expect(page.locator('.badge-coming')).toHaveCount(0)
   })
 
   test('clicar el tile Gasolineras navega a /gasolineras/', async ({ page }) => {

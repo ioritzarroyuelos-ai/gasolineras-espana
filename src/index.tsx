@@ -9,8 +9,7 @@ import {
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
 import {
   buildObservatorio, observatorioFromPre, calculaVariaciones,
-  KV_VARIACIONES, KV_STATS_NACIONAL,
-  type ObservatorioPre, type VariacionesObservatorio, type FilaHistorico,
+  type ObservatorioPre, type FilaHistorico,
 } from './lib/observatorio'
 import {
   parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
@@ -63,6 +62,7 @@ import {
   purgeCutoffDate,
   FUEL_CODES,
   centsToEuros,
+  hydrateDedupe,
 } from './lib/history'
 
 type StationRecord = Record<string, string> & {
@@ -336,10 +336,14 @@ function filterStations(snapshot: MinistryResponse | null, predicate: (s: Statio
   return { ...snapshot, ListaEESSPrecio: snapshot.ListaEESSPrecio.filter(predicate) }
 }
 
-// ---- HISTORICO ESTATICO (1 año pre-generado, servido por CDN) ----
-// Forma del archivo public/data/history/{provincia}.json — generado offline por
-// scripts/backfill-static-history.mjs. El dedupe consecutivo (solo cambios de
-// precio) reduce ~5-10x el tamaño respecto a guardar un punto por dia: una
+// ---- HISTORICO ESTATICO (servido por CDN, al dia por el bot) ----
+// Forma del archivo public/data/history/{provincia}.json. Lo genero
+// scripts/backfill-static-history.mjs (un año, abril de 2026) y desde septiembre
+// de 2026 lo alarga con cada foto de precios scripts/actualiza-historico-estatico.mjs
+// (formato en scripts/lib/historico-estatico.mjs). Con `to` = hoy, los endpoints
+// de historico no piden nada a D1: leer la serie de D1 costaba millones de filas
+// al dia y agoto el cupo del plan gratuito. El dedupe consecutivo (solo cambios
+// de precio) reduce ~5-10x el tamaño respecto a guardar un punto por dia: una
 // estacion media tiene ~50 cambios/año en lugar de 365 puntos.
 type StaticHistoryFile = {
   v: number
@@ -374,53 +378,6 @@ function incrementIsoDate(iso: string): string {
 // Devuelve la fecha ISO mayor de las dos (YYYY-MM-DD compara bien como texto).
 function maxIsoDate(a: string, b: string): string {
   return a >= b ? a : b
-}
-
-// Re-hidrata una serie dedupeada [[date, cents], ...] a un punto por dia entre
-// [from, to]. Para cada dia, propaga el ultimo precio conocido. Ejemplo:
-//   dedup: [['2025-04-26', 1456], ['2025-05-15', 1462]]
-//   from: 2025-04-26, to: 2025-05-17
-//   => [{2025-04-26: 1456}, ..., {2025-05-14: 1456}, {2025-05-15: 1462}, {2025-05-16: 1462}, {2025-05-17: 1462}]
-//
-// Por que hidratar en lugar de devolver dedupe al cliente: el sparkline SVG
-// posiciona los puntos por indice (no por fecha real). Si dejamos solo
-// cambios, dos puntos a 1 mes de distancia se dibujan adyacentes — falsea
-// la trayectoria temporal. Hidratar mantiene el formato esperado por el
-// cliente sin tocar el render.
-function hydrateDedupe(
-  dedup: Array<[string, number]>,
-  from: string,
-  to: string,
-): Array<{ date: string; price: number }> {
-  if (dedup.length === 0) return []
-  const out: Array<{ date: string; price: number }> = []
-  let cursor = 0
-  let currentCents: number | null = null
-
-  // Antes del rango: avanzamos cursor hasta encontrar el ultimo punto <= from
-  // (lo guardamos como 'precio inicial'). Esto cubre el caso "el ultimo cambio
-  // fue hace 60 dias y el cliente pide solo 30" — el periodo arranca con ese
-  // precio aunque no haya cambios dentro.
-  while (cursor < dedup.length && dedup[cursor][0] < from) {
-    currentCents = dedup[cursor][1]
-    cursor++
-  }
-
-  const fromDate = new Date(from + 'T00:00:00Z')
-  const toDate = new Date(to + 'T00:00:00Z')
-  const day = new Date(fromDate.getTime())
-  while (day.getTime() <= toDate.getTime()) {
-    const iso = day.toISOString().slice(0, 10)
-    while (cursor < dedup.length && dedup[cursor][0] <= iso) {
-      currentCents = dedup[cursor][1]
-      cursor++
-    }
-    if (currentCents != null) {
-      out.push({ date: iso, price: currentCents / 1000 })
-    }
-    day.setUTCDate(day.getUTCDate() + 1)
-  }
-  return out
 }
 
 // Carga el JSON estatico de la provincia a la que pertenece `stationId` y
@@ -464,6 +421,46 @@ async function loadStaticMedianForProvince(
   const arr = file.median[fuel]
   if (!arr) return null
   return { to: file.to, from: file.from, points: arr }
+}
+
+// Serie diaria nacional (media de centimos y numero de estaciones por dia y
+// combustible), la deja el bot en history/national.json. La consumen la home
+// (/api/stats/national) y el observatorio (variaciones a 7/30/90 dias). Antes
+// salia de agregar ~2,1 M de filas de D1 en cada guardado, que era el gasto que
+// agotaba el cupo diario de lecturas.
+type StaticNationalFile = {
+  v: number
+  from: string
+  to: string
+  days: number
+  generated_at: string
+  // series[fuelCode] = [[date, avg_cents, n], ...] un punto por dia.
+  series: Record<string, Array<[string, number, number]>>
+}
+
+// Devuelve la serie nacional como filas {date, fuel_code, avg_cents, n} en orden
+// de fecha, que es la forma que ya esperan computeNationalStats() y
+// calculaVariaciones(). null si el fichero falta o no valida: los llamantes
+// degradan (home sin bloque de precios, observatorio sin variaciones) en vez de
+// caer a D1, que es justo lo que no queremos.
+async function loadStaticNational(
+  origin: string,
+  assets?: { fetch: (req: Request) => Promise<Response> },
+): Promise<FilaHistorico[] | null> {
+  const file = await loadSnapshot<StaticNationalFile>(origin, 'history/national.json', assets)
+  if (!file || file.v !== 1 || !file.series || typeof file.series !== 'object') return null
+  const rows: FilaHistorico[] = []
+  for (const fuel of Object.keys(file.series)) {
+    const serie = file.series[fuel]
+    if (!Array.isArray(serie)) continue
+    for (const p of serie) {
+      if (!Array.isArray(p) || typeof p[0] !== 'string' || typeof p[1] !== 'number') continue
+      rows.push({ date: p[0], fuel_code: fuel, avg_cents: p[1], n: typeof p[2] === 'number' ? p[2] : undefined })
+    }
+  }
+  if (!rows.length) return null
+  rows.sort((a, b) => a.date.localeCompare(b.date))
+  return rows
 }
 
 // ---- CORS / ANTI-HOTLINK ----
@@ -1177,18 +1174,19 @@ app.get('/precios-carburantes', async c => {
   }
   if (!obs) return c.notFound()
 
-  // Variaciones: se leen de KV, donde las deja el cron de ingesta. NO se
-  // consulta D1 aqui — hacerlo costaba 11,9 s por visita (ver el comentario en
-  // src/lib/observatorio.ts). Si la clave no esta todavia, la pagina sale con
-  // los rankings y sin variaciones, que es la misma degradacion que ya habia
-  // prevista para cuando D1 no respondia.
+  // Variaciones: se calculan sobre la serie nacional que el bot deja en
+  // history/national.json. NO se consulta D1 aqui — hacerlo costaba 11,9 s por
+  // visita y millones de filas del cupo diario (ver src/lib/observatorio.ts).
+  // Si el fichero falta, la pagina sale con los rankings y sin variaciones, que
+  // es la misma degradacion que ya habia prevista para cuando D1 no respondia.
   let variacionG95: Variacion[] = []
   let variacionDiesel: Variacion[] = []
   try {
-    const raw = await c.env.USER_DATA?.get(KV_VARIACIONES, { type: 'json' }) as VariacionesObservatorio | null
-    if (raw?.g95 && raw?.diesel) {
-      variacionG95 = raw.g95
-      variacionDiesel = raw.diesel
+    const serie = await loadStaticNational(c.req.url, c.env.ASSETS)
+    if (serie) {
+      const v = calculaVariaciones(serie)
+      variacionG95 = v.g95
+      variacionDiesel = v.diesel
     } else {
       slog('warn', 'observatorio.variaciones_miss', {})
     }
@@ -2240,10 +2238,9 @@ app.get('/api/history/:stationId', async c => {
 
   // Series base por fuel — la rellenamos primero desde el JSON estatico (si
   // existe) y luego sobreescribimos con datos D1 para fechas mas recientes.
-  // El JSON estatico se genera offline con scripts/backfill-static-history.mjs
-  // contra el endpoint /EstacionesTerrestresHist del Ministerio (2007→ayer);
-  // permite tener 365 dias de historico sin gastar writes de D1 (free tier
-  // limita a 100k/dia, 12M filas tardarian 4 meses en cargarse).
+  // El JSON estatico lo mantiene al dia el bot (scripts/actualiza-historico-estatico.mjs
+  // tras cada foto de precios), asi que normalmente llega hasta hoy y D1 no se
+  // consulta; solo si el bot fallara un dia se pediria ese dia a D1.
   const series: Record<string, Array<{ date: string; price: number }>> = {}
   for (const f of FUEL_CODES) series[f] = []
   let staticTo: string | null = null
@@ -2480,23 +2477,23 @@ app.get('/api/history/province/:id', async c => {
 // Precio medio nacional por dia para los dos combustibles mas consumidos
 // (gasolina 95 + gasoleo A). Devuelve, para cada fuel:
 //
-//   - today     : media del ultimo dia disponible en price_history
+//   - today     : media del ultimo dia disponible en la serie
 //   - avg30d    : media simple de las medias diarias del periodo
 //   - delta_pct : (today - avg30d) / avg30d * 100 — positivo = mas caro hoy
 //   - samples   : cuantas estaciones aportaron hoy (sanity check / confianza)
 //
-// Usamos AVG(price_cents) via SQL (30 filas × 2 fuels = 60 filas transferidas,
-// independiente del numero de estaciones). La mediana seria mas robusta a
-// outliers pero requiere traer todas las filas (600k/mes peor caso) y SQLite
-// no tiene PERCENTILE nativo. A escala nacional con ~11k estaciones/dia, el
-// 5% de outliers raramente desplaza la media > 1 cent — acceptable.
+// La serie diaria (media de centimos por dia y combustible) la deja el bot en
+// history/national.json; aqui solo se agrega la ventana pedida. Es media, no
+// mediana, por continuidad con lo que calculaba AVG(price_cents) en D1: a escala
+// nacional con ~11k estaciones/dia, el 5% de outliers raramente desplaza la
+// media > 1 cent — acceptable.
 //
 // Motivacion: el usuario abre la app en la home sin saber si el precio que ve
 // en su ciudad es "bueno" o "malo" en contexto. Un "precio medio nacional
 // hoy: 1.48 € ↓ 0.2% vs. 30d" da contexto inmediato.
 //
-// Cache-Control: public, max-age=3600 — igual que history/*. Tras el cron
-// diario los valores cambian, pero dentro del dia son constantes.
+// Cache-Control: public, max-age=3600 — igual que history/*. Tras cada foto
+// del bot los valores cambian, pero entre fotos son constantes.
 type StatFuelRow = { date: string; fuel_code: string; avg_cents: number; n?: number }
 
 interface NationalStatsFuel {
@@ -2509,9 +2506,8 @@ interface NationalStatsFuel {
 }
 
 // Agrega el precio medio nacional a partir de una serie diaria ya calculada
-// (una fila por dia y combustible). Se comparte entre el camino rapido (serie
-// leida de KV, dejada por el cron) y el de respaldo (serie recien traida de D1),
-// para que ambos devuelvan EXACTAMENTE la misma forma que espera el cliente.
+// (una fila por dia y combustible), hoy la de history/national.json. Devuelve
+// exactamente la forma que espera el cliente (core.ts).
 function computeNationalStats(rows: StatFuelRow[], days: number): { days: number; fuels: Record<string, NationalStatsFuel> } {
   const FUELS = ['95', 'diesel'] as const
   const cutoffDate = new Date()
@@ -2571,48 +2567,21 @@ app.get('/api/stats/national', async c => {
 
   const CACHE = { 'Cache-Control': 'public, max-age=3600' }
 
-  // Camino rapido: la serie diaria ya la deja calculada el cron diario
-  // (refrescaVariaciones) en KV. Leerla evita reagregar ~665k filas de D1 en
-  // CADA visita a la home, que costaba ~4 s y amenazaba la cuota de lectura de D1.
+  // Serie diaria de history/national.json (10 min en memoria via loadSnapshot).
+  // Sin fichero no hay respaldo en D1 a proposito: reagregar ~2,1 M de filas en
+  // cada visita es lo que agoto el cupo diario del plan gratuito. La home sale
+  // sin el bloque de precios ese dia, igual que cuando D1 no respondia.
+  let rows: FilaHistorico[] | null = null
   try {
-    const cached = await c.env.USER_DATA?.get(KV_STATS_NACIONAL, { type: 'json' }) as { rows?: StatFuelRow[] } | null
-    if (cached && Array.isArray(cached.rows) && cached.rows.length) {
-      return c.json(computeNationalStats(cached.rows, days), 200, CACHE)
-    }
+    rows = await loadStaticNational(c.req.url, c.env.ASSETS)
   } catch (err) {
-    slog('warn', 'stats.kv_read_failed', { err: String(err).slice(0, 200) })
+    slog('warn', 'stats.static_load_failed', { err: String(err).slice(0, 200) })
   }
-
-  // Respaldo: si KV esta vacio (antes del primer cron) o falla, calculamos de D1
-  // UNA vez y guardamos el resultado en KV (autorrelleno), para que las
-  // siguientes visitas no vuelvan a tocar D1 aunque el cron falle un dia.
-  if (!c.env.DB) {
+  if (!rows) {
+    slog('error', 'stats.national_unavailable', { days })
     return c.json({ error: 'stats_unavailable' }, 503, { 'Cache-Control': 'no-store' })
   }
-  const SERIE_DIAS = 95   // >= el maximo de days (90), para servir cualquier ventana desde KV
-  const cutoffDate = new Date()
-  cutoffDate.setUTCDate(cutoffDate.getUTCDate() - SERIE_DIAS)
-  const cutoff = cutoffDate.toISOString().slice(0, 10)
-  try {
-    const { results } = await c.env.DB
-      .prepare(
-        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents, COUNT(*) AS n ' +
-        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
-        'GROUP BY date, fuel_code ORDER BY date ASC'
-      )
-      .bind('95', 'diesel', cutoff)
-      .all<StatFuelRow>()
-    const rows = results || []
-    if (c.env.USER_DATA && rows.length) {
-      const payload = JSON.stringify({ generatedAt: new Date().toISOString(), rows })
-      try { c.executionCtx.waitUntil(c.env.USER_DATA.put(KV_STATS_NACIONAL, payload)) }
-      catch { await c.env.USER_DATA.put(KV_STATS_NACIONAL, payload) }
-    }
-    return c.json(computeNationalStats(rows, days), 200, CACHE)
-  } catch (err) {
-    slog('error', 'stats.national_failed', { days, err: String(err).slice(0, 300) })
-    return c.json({ error: 'query_failed' }, 500, { 'Cache-Control': 'no-store' })
-  }
+  return c.json(computeNationalStats(rows, days), 200, CACHE)
 })
 
 // ---- PREDICTOR SEMANAL (D1 + classifyPriceVsCycle) ----
@@ -2984,18 +2953,10 @@ app.post('/api/cron/ingest', async c => {
   const auth = await authorizeCron(c)
   if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
   const result = await runDailyIngest(c.env)
-
-  // Las variaciones del observatorio tardan ~12 s (agregan ~2,2 M de filas). El
-  // curl del workflow corta a los 60 s, asi que NO se hacen esperar: waitUntil
-  // deja que el Worker las termine despues de haber respondido. Si el runtime no
-  // expone executionCtx, se calculan en linea antes de responder.
-  if (result.ok) {
-    try {
-      c.executionCtx.waitUntil(refrescaVariaciones(c.env))
-    } catch {
-      await refrescaVariaciones(c.env)
-    }
-  }
+  // Solo escribe: la serie nacional y las variaciones ya no se recalculan aqui
+  // (las deja el bot en history/national.json), asi que este cron no gasta cupo
+  // de lecturas de D1. La ingesta se mantiene como respaldo de los endpoints de
+  // historico para el dia en que el bot falle.
   return c.json(result, result.ok ? 200 : 500, { 'Cache-Control': 'no-store' })
 })
 
@@ -4214,41 +4175,6 @@ async function runDailyIngest(env: Env): Promise<IngestResult> {
     ms,
   })
   return { ok: true, date, rows: rows.length, batches: batches.length, ms }
-}
-
-// Agrega el historico y guarda en KV las variaciones a 7/30/90 dias.
-//
-// Es la consulta cara del sistema: ~2,2 millones de filas, unos 12 s. Se hace
-// una vez al dia en el cron en lugar de en cada visita, que es lo que dejaba
-// /precios-carburantes en 11,9 s de TTFB con 1.289 URLs esperando rastreo.
-//
-// No propaga errores: si esto falla, la ingesta del dia sigue siendo valida y la
-// pagina simplemente sale sin variaciones.
-async function refrescaVariaciones(env: Env): Promise<void> {
-  if (!env.DB || !env.USER_DATA) return
-  const t0 = Date.now()
-  try {
-    const cut = new Date()
-    cut.setUTCDate(cut.getUTCDate() - 95)
-    const { results } = await env.DB
-      .prepare(
-        'SELECT date, fuel_code, AVG(price_cents) AS avg_cents, COUNT(*) AS n ' +
-        'FROM price_history WHERE fuel_code IN (?, ?) AND date >= ? ' +
-        'GROUP BY date, fuel_code ORDER BY date ASC'
-      )
-      .bind('95', 'diesel', cut.toISOString().slice(0, 10))
-      .all<FilaHistorico>()
-
-    const filas = results || []
-    const variaciones = calculaVariaciones(filas)
-    await env.USER_DATA.put(KV_VARIACIONES, JSON.stringify(variaciones))
-    // Misma serie diaria que consume /api/stats/national (home): la dejamos
-    // calculada aqui para que la home no reagregue D1 en cada visita.
-    await env.USER_DATA.put(KV_STATS_NACIONAL, JSON.stringify({ generatedAt: new Date().toISOString(), rows: filas }))
-    slog('info', 'cron.variaciones.ok', { filas: filas.length, ms: Date.now() - t0 })
-  } catch (err) {
-    slog('error', 'cron.variaciones.failed', { err: String(err).slice(0, 300), ms: Date.now() - t0 })
-  }
 }
 
 // Purga semanal: borra filas con date < hoy-2a. Mantiene la BD dentro del

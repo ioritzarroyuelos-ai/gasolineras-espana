@@ -44,12 +44,28 @@ jobs:
       - name: Fetch snapshot del Ministerio
         run: node scripts/fetch-prices.mjs
 
+      # Apunta los precios de hoy en el historico estatico (public/data/history:
+      # series por gasolinera, mediana provincial y media nacional). Es lo que
+      # permite que las graficas, la portada y el observatorio no toquen D1, cuyo
+      # cupo gratuito de lecturas (5 M/dia) se agoto el 3 de septiembre de 2026.
+      # Si falla, se restauran los ficheros anteriores y la foto de precios se
+      # sube igual: el Worker pedira a D1 solo el dia que falte.
+      - name: Actualizar historico estatico
+        run: |
+          set +e
+          node scripts/actualiza-historico-estatico.mjs
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "::warning::actualiza-historico-estatico fallo (exit $RC): se restaura public/data/history y se sube solo la foto."
+            git checkout -- public/data/history
+          fi
+
       - name: Commit snapshot si hay cambios
         id: commit
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json
+          git add public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/history
           if git diff --cached --quiet; then
             echo "Sin cambios en el snapshot"
             echo "changed=false" >> "$GITHUB_OUTPUT"

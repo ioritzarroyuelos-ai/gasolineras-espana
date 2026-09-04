@@ -132,3 +132,50 @@ export function purgeCutoffDate(now: Date, years: number = 2): string {
   d.setUTCFullYear(d.getUTCFullYear() - years)
   return d.toISOString().slice(0, 10)
 }
+
+// Re-hidrata una serie dedupeada [[date, cents], ...] a un punto por dia entre
+// [from, to]. Para cada dia, propaga el ultimo precio conocido. Ejemplo:
+//   dedup: [['2025-04-26', 1456], ['2025-05-15', 1462]]
+//   from: 2025-04-26, to: 2025-05-17
+//   => [{2025-04-26: 1456}, ..., {2025-05-14: 1456}, {2025-05-15: 1462}, {2025-05-16: 1462}, {2025-05-17: 1462}]
+//
+// Por que hidratar en lugar de devolver dedupe al cliente: el sparkline SVG
+// posiciona los puntos por indice (no por fecha real). Si dejamos solo
+// cambios, dos puntos a 1 mes de distancia se dibujan adyacentes — falsea
+// la trayectoria temporal. Hidratar mantiene el formato esperado por el
+// cliente sin tocar el render.
+export function hydrateDedupe(
+  dedup: Array<[string, number]>,
+  from: string,
+  to: string,
+): Array<{ date: string; price: number }> {
+  if (dedup.length === 0) return []
+  const out: Array<{ date: string; price: number }> = []
+  let cursor = 0
+  let currentCents: number | null = null
+
+  // Antes del rango: avanzamos cursor hasta encontrar el ultimo punto <= from
+  // (lo guardamos como 'precio inicial'). Esto cubre el caso "el ultimo cambio
+  // fue hace 60 dias y el cliente pide solo 30" — el periodo arranca con ese
+  // precio aunque no haya cambios dentro.
+  while (cursor < dedup.length && dedup[cursor][0] < from) {
+    currentCents = dedup[cursor][1]
+    cursor++
+  }
+
+  const fromDate = new Date(from + 'T00:00:00Z')
+  const toDate = new Date(to + 'T00:00:00Z')
+  const day = new Date(fromDate.getTime())
+  while (day.getTime() <= toDate.getTime()) {
+    const iso = day.toISOString().slice(0, 10)
+    while (cursor < dedup.length && dedup[cursor][0] <= iso) {
+      currentCents = dedup[cursor][1]
+      cursor++
+    }
+    if (currentCents != null) {
+      out.push({ date: iso, price: currentCents / 1000 })
+    }
+    day.setUTCDate(day.getUTCDate() + 1)
+  }
+  return out
+}

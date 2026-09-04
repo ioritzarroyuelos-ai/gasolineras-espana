@@ -155,16 +155,14 @@ export function variacionPct(actual: number | null, previo: number | null): numb
 
 // ---- Variaciones a 7/30/90 dias ----
 //
-// El dato son SEIS numeros, pero obtenerlos costaba 11,9 s medidos en produccion
-// (cabecera X-Diag: d1=11902 sobre un total de 11911). La consulta agregaba unos
-// 95 dias x 2 combustibles x 11.460 estaciones ~ 2,2 millones de filas, y como
-// price_cents no esta en idx_fuel_date, cada fila obligaba a saltar a la tabla.
-// D1 resuelve una PK en 106 ms y se hunde en agregaciones de ese tamano.
-//
-// Por eso ya no se calcula al servir la pagina: lo hace el cron de ingesta, que
-// recorre lo mismo una vez al dia, y deja el resultado en KV. Si falta, la
-// pagina sale sin variaciones — que es la degradacion que el codigo ya preveia
-// cuando D1 no respondia.
+// El dato son SEIS numeros, pero obtenerlos de D1 costaba 11,9 s medidos en
+// produccion (cabecera X-Diag: d1=11902 sobre un total de 11911): la consulta
+// agregaba unos 95 dias x 2 combustibles x 11.460 estaciones ~ 2,2 millones de
+// filas. Movida al cron seguia costando esos 2,2 millones de filas del cupo
+// diario de lecturas (5 millones en el plan gratuito), y el 3 de septiembre de
+// 2026 lo agoto. Por eso ahora la serie diaria nacional la deja el bot en
+// public/data/history/national.json (scripts/actualiza-historico-estatico.mjs)
+// y aqui solo se comparan puntos de esa serie; D1 no interviene.
 
 export interface VariacionCalc {
   dias: number
@@ -211,13 +209,6 @@ export function calculaVariaciones(rows: FilaHistorico[], ahora: Date = new Date
     diesel: variacionesDeSerie(series.get('diesel') || []),
   }
 }
-
-// Clave en KV donde el cron deja el resultado.
-export const KV_VARIACIONES = 'observatorio:variaciones'
-
-// Serie diaria (95 dias) del precio medio nacional, dejada por el cron para que
-// /api/stats/national (home) no reagregue D1 en cada visita.
-export const KV_STATS_NACIONAL = 'stats:national:series'
 
 // ---- Camino rapido: observatorio pre-calculado ----
 //

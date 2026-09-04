@@ -10,7 +10,8 @@
 // fuera a los competidores en varias provincias, ya lo resuelve el OCR del
 // workflow fetch-guardias.
 
-import type { Guardia, MunicipioGuardia } from '../lib/guardias'
+import { frescuraGuardia } from '../lib/guardias'
+import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
 
 export interface GuardiaPageData {
   provinciaSlug: string
@@ -44,6 +45,33 @@ function fechaLegible(iso?: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return ''
   return d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+// A partir de la frescura del snapshot, decide como presentar el turno:
+//   - fiable y de hoy      -> se puede decir "de guardia hoy", se muestran las tarjetas.
+//   - fiable pero de ayer  -> se muestran, pero etiquetadas con su fecha (sin "hoy").
+//   - no fiable (>30 h)    -> NO se muestra el turno: aviso de caducado + noindex.
+// `lugar` es el municipio o la provincia, para el texto del aviso.
+function piezasFrescura(fr: GuardiaFrescura, lugar: string): {
+  hoy: boolean; mostrarCards: boolean; noindex: boolean; banner: string; nota: string
+} {
+  const fecha = fechaLegible(fr.fecha)
+  if (!fr.fiable) {
+    return {
+      hoy: false, mostrarCards: false, noindex: true, nota: '',
+      banner: '<p class="g-caducado"><strong>No tenemos el turno de guardia actualizado de ' + esc(lugar) + '.</strong> '
+        + (fecha ? 'El ultimo dato que teniamos era del ' + esc(fecha) + ' y puede estar caducado. ' : '')
+        + 'Para asegurarte, llama a tu farmacia habitual o a tu Colegio Oficial de Farmaceuticos. '
+        + 'En una urgencia grave, llama al 112.</p>',
+    }
+  }
+  if (!fr.esHoy) {
+    return {
+      hoy: false, mostrarCards: true, noindex: false, banner: '',
+      nota: fecha ? '<p class="g-nota">Turno publicado el ' + esc(fecha) + '. Confirma llamando antes de desplazarte.</p>' : '',
+    }
+  }
+  return { hoy: true, mostrarCards: true, noindex: false, banner: '', nota: '' }
 }
 
 function telHref(t: string): string {
@@ -80,23 +108,30 @@ export function buildGuardiaProvinciaFlatPage(
   nonce: string, provinciaSlug: string, provinciaName: string,
   guardias: Guardia[], actualizado: string | undefined, canonical: string,
 ): string {
-  const n = guardias.length
-  const title = 'Farmacia de guardia en ' + provinciaName + ' | CercaYa'
+  const fr = frescuraGuardia(actualizado)
+  const p = piezasFrescura(fr, provinciaName)
+  const n = p.mostrarCards ? guardias.length : 0
+  const title = 'Farmacia de guardia en ' + provinciaName + (n && p.hoy ? ' hoy' : '') + ' | CercaYa'
   const desc = 'Las ' + n + ' farmacias de guardia de ' + provinciaName
     + ': direccion, telefono y horario. Datos del Colegio Oficial de Farmaceuticos.'
   const fecha = fechaLegible(actualizado)
-  const cards = n
-    ? guardias.map(x => guardiaCard(x, provinciaName)).join('')
-    : '<p class="g-vacio">No hay farmacia de guardia publicada ahora mismo para ' + esc(provinciaName) + '.</p>'
+  const cards = !p.mostrarCards
+    ? p.banner
+    : (n
+      ? guardias.map(x => guardiaCard(x, provinciaName)).join('')
+      : '<p class="g-vacio">No hay farmacia de guardia publicada ahora mismo para ' + esc(provinciaName) + '.</p>')
   return envoltorioIndice(nonce, title, desc, canonical,
     '<h1>Farmacia de guardia en ' + esc(provinciaName) + '</h1>'
-    + '<p class="sub">' + n + ' farmacia' + (n === 1 ? '' : 's') + ' de guardia'
-    + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>'
+    + (p.mostrarCards
+        ? '<p class="sub">' + n + ' farmacia' + (n === 1 ? '' : 's') + ' de guardia'
+          + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>' + p.nota
+        : '')
     + cards
     + '<p class="aviso">Los turnos los publica el Colegio Oficial de Farmaceuticos y pueden cambiar. '
     + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. '
     + 'Si vas a desplazarte, confirma antes por telefono.</p>'
-    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>'
+    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>',
+    p.noindex,
   )
 }
 
@@ -135,17 +170,20 @@ function jsonLd(d: GuardiaPageData): string {
 }
 
 export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): string {
-  const n = d.guardias.length
+  const fr = frescuraGuardia(d.actualizado)
+  const p = piezasFrescura(fr, d.municipioName)
+  const n = p.mostrarCards ? d.guardias.length : 0
+  const hoyTxt = (n && p.hoy) ? ' hoy' : ''
   const title = n
-    ? 'Farmacia de guardia en ' + d.municipioName + ' hoy | CercaYa'
+    ? 'Farmacia de guardia en ' + d.municipioName + hoyTxt + ' | CercaYa'
     : 'Farmacias de guardia en ' + d.municipioName + ' | CercaYa'
   const desc = n
-    ? 'Farmacia' + (n > 1 ? 's' : '') + ' de guardia hoy en ' + d.municipioName +
+    ? 'Farmacia' + (n > 1 ? 's' : '') + ' de guardia' + hoyTxt + ' en ' + d.municipioName +
       ' (' + d.provinciaName + '): direccion, telefono y horario. Datos del Colegio Oficial de Farmaceuticos.'
     : 'Consulta las farmacias de guardia en ' + d.municipioName + ' (' + d.provinciaName + ').'
   const fecha = fechaLegible(d.actualizado)
 
-  const cards = n ? d.guardias.map(g => {
+  const cards = !p.mostrarCards ? p.banner : (d.guardias.length ? d.guardias.map(g => {
     const tel = telHref(g.telefono)
     return '<article class="g-card">'
       + '<h3 class="g-dir">' + esc(g.direccion || 'Farmacia de guardia') + '</h3>'
@@ -157,7 +195,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
       + '</div>'
       + '</article>'
   }).join('') : '<p class="g-vacio">No hay farmacia de guardia publicada ahora mismo para ' + esc(d.municipioName)
-      + '. Consulta el <a href="/farmacias/">mapa de farmacias</a> o el municipio mas cercano.</p>'
+      + '. Consulta el <a href="/farmacias/">mapa de farmacias</a> o el municipio mas cercano.</p>')
 
   const otros = d.otrosMunicipios.length
     ? '<nav class="g-otros"><h2>Otros municipios de ' + esc(d.provinciaName) + '</h2><ul>'
@@ -172,6 +210,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '<meta name="viewport" content="width=device-width, initial-scale=1" />'
     + '<title>' + esc(title) + '</title>'
     + '<meta name="description" content="' + esc(desc) + '" />'
+    + (p.noindex ? '<meta name="robots" content="noindex,follow" />' : '')
     + '<link rel="canonical" href="' + esc(d.canonical) + '" />'
     + '<meta name="theme-color" content="#16a34a" />'
     + '<meta property="og:title" content="' + esc(title) + '" />'
@@ -179,7 +218,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(d.canonical) + '" />'
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd(d) + '</script>'
+    + (p.mostrarCards && d.guardias.length ? '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd(d) + '</script>' : '')
     + '<style nonce="' + esc(nonce) + '">'
     + ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
     + '*{box-sizing:border-box}'
@@ -199,6 +238,8 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
     + '.g-btn--tel{background:var(--v);border-color:var(--v);color:#fff}'
     + '.g-vacio{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:14px}'
+    + '.g-caducado{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;border-radius:10px;padding:14px;margin:0 0 14px;font-size:15px}'
+    + '.g-nota{background:var(--bg);border-left:3px solid #f59e0b;color:#92400e;padding:8px 12px;margin:0 0 14px;font-size:13px;border-radius:6px}'
     + '.g-aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
     + '.g-otros ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
     + '.g-otros li a{display:inline-block;padding:5px 10px;border:1px solid var(--bd);border-radius:999px;'
@@ -207,6 +248,8 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + 'footer a{color:var(--vd)}'
     + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
     + '.g-card,.g-vacio,.g-aviso{background:#1e293b;border-color:#334155}'
+    + '.g-caducado{background:#450a0a;border-color:#7f1d1d;color:#fecaca}'
+    + '.g-nota{background:#1e293b;border-color:#f59e0b;color:#fcd34d}'
     + '.g-btn{background:#0f172a;color:#86efac;border-color:#334155}'
     + '.g-otros li a{background:#0f172a;color:#86efac;border-color:#334155}}'
     + '</style></head><body>'
@@ -217,6 +260,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '')
     + (d.fuente ? ' &middot; fuente: ' + esc(d.fuente) : '')
     + '</p>'
+    + p.nota
     + cards
     + '<p class="g-aviso">Los turnos los publica el Colegio Oficial de Farmaceuticos y pueden cambiar. '
     + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. '
@@ -255,20 +299,25 @@ const CSS_INDICE =
   + 'font-size:14px;color:var(--vd);text-decoration:none;background:#fff}'
   + '.lista li a b{color:var(--mu);font-size:12px;font-weight:600}'
   + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
+  + '.g-caducado{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;border-radius:10px;padding:14px;margin:0 0 14px;font-size:15px}'
+  + '.g-nota{background:var(--bg);border-left:3px solid #f59e0b;color:#92400e;padding:8px 12px;margin:0 0 14px;font-size:13px;border-radius:6px}'
   + '.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
   + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
   + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + 'footer a{color:var(--vd)}'
   + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
   + '.aviso{background:#1e293b;border-color:#334155}'
+  + '.g-caducado{background:#450a0a;border-color:#7f1d1d;color:#fecaca}'
+  + '.g-nota{background:#1e293b;border-color:#f59e0b;color:#fcd34d}'
   + '.btn,.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
 
-function envoltorioIndice(nonce: string, title: string, desc: string, canonical: string, cuerpo: string): string {
+function envoltorioIndice(nonce: string, title: string, desc: string, canonical: string, cuerpo: string, noindex = false): string {
   return '<!DOCTYPE html><html lang="es"><head>'
     + '<meta charset="utf-8" />'
     + '<meta name="viewport" content="width=device-width, initial-scale=1" />'
     + '<title>' + esc(title) + '</title>'
     + '<meta name="description" content="' + esc(desc) + '" />'
+    + (noindex ? '<meta name="robots" content="noindex,follow" />' : '')
     + '<link rel="canonical" href="' + esc(canonical) + '" />'
     + '<meta name="theme-color" content="#16a34a" />'
     + '<meta property="og:title" content="' + esc(title) + '" />'
@@ -311,8 +360,10 @@ export function buildGuardiaProvinciaPage(
   nonce: string, provinciaSlug: string, provinciaName: string,
   municipios: MunicipioGuardia[], actualizado: string | undefined, canonical: string,
 ): string {
-  const title = 'Farmacia de guardia en ' + provinciaName + ' | CercaYa'
-  const desc = 'Farmacias de guardia hoy en los ' + municipios.length + ' municipios de '
+  const fr = frescuraGuardia(actualizado)
+  const p = piezasFrescura(fr, provinciaName)
+  const title = 'Farmacia de guardia en ' + provinciaName + (p.hoy ? ' hoy' : '') + ' | CercaYa'
+  const desc = 'Farmacias de guardia en los ' + municipios.length + ' municipios de '
     + provinciaName + ' con turno publicado: direccion, telefono y horario.'
   const fecha = fechaLegible(actualizado)
   const lista = municipios.map(m =>
@@ -321,12 +372,15 @@ export function buildGuardiaProvinciaPage(
   ).join('')
   return envoltorioIndice(nonce, title, desc, canonical,
     '<h1>Farmacia de guardia en ' + esc(provinciaName) + '</h1>'
+    + p.banner
     + '<p class="sub">' + municipios.length + ' municipio' + (municipios.length === 1 ? '' : 's')
     + ' con guardia publicada' + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>'
+    + p.nota
     + '<nav class="lista"><ul>' + lista + '</ul></nav>'
     + '<p class="aviso">Si tu municipio no aparece, su colegio no publica turno o no hay guardia hoy. '
     + 'Consulta el municipio mas cercano.</p>'
-    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>'
+    + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>',
+    p.noindex,
   )
 }
 

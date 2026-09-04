@@ -1,6 +1,6 @@
 name: Fetch guardias farmacias snapshot
 
-# v1.27 — Refresca los snapshots de farmacias de guardia una vez por semana
+# v1.28 — Refresca los snapshots de farmacias de guardia A DIARIO
 # desde 47 fuentes (45 COF provinciales + SESCAM regional para CLM + Ayto
 # La Bañeza para León):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
@@ -101,9 +101,13 @@ name: Fetch guardias farmacias snapshot
 
 on:
   schedule:
-    # Lunes a las 05:45 UTC = 06:45/07:45 Madrid. Justo despues de los otros
-    # crons diarios (prices 05:00, guardias algo mas tarde para no solapar).
-    - cron: '45 5 * * 1'
+    # Todos los dias a las 05:45 UTC = 06:45/07:45 Madrid. Justo despues de los
+    # otros crons (prices 05:00, guardias algo mas tarde para no solapar).
+    # Diario, no semanal: muchos colegios rotan la guardia cada dia, asi que el
+    # turno solo es "de hoy" si se captura hoy. Los territorios que fallen se
+    # avisan por Telegram (guardias-monitor) y la web oculta su turno viejo
+    # (frescuraGuardia en src/lib/guardias.ts).
+    - cron: '45 5 * * *'
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -530,6 +534,18 @@ jobs:
             git push
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Avisa por Telegram si algun territorio no se refresco en este pase (su
+      # scraper fallo). Best-effort: continue-on-error para no bloquear nunca el
+      # deploy. Reutiliza el bot de "gasolineras error monitor".
+      # Ver scripts/guardias-monitor.mjs.
+      - name: Avisar de guardias sin refrescar (Telegram)
+        if: always()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node scripts/guardias-monitor.mjs
 
       # Si TODOS fallan, que el job se marque como failed para que el monitor
       # de GHA lo detecte. Si al menos uno hizo commit, job OK.

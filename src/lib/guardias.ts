@@ -127,6 +127,39 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
   return out
 }
 
+// ---- Frescura del snapshot de guardias ----
+//
+// Un turno de guardia es de un DIA concreto (el dia que el scraper lo capturo;
+// muchos colegios rotan a diario). El robot corre a diario: si un territorio no
+// se refresca, su fichero se queda viejo y NO se puede presentar como "de hoy".
+// A partir del `ts` del fichero se decide si el dato es fiable y si es de hoy.
+//
+// GUARDIA_STALE_HORAS = 30: un pase diario deja el dato con <=~24 h de
+// antiguedad; pasadas ~30 h es que se salto al menos un pase (fallo del scraper
+// o del cron) y el turno deja de mostrarse. El margen sobre 24 h absorbe el
+// hueco nocturno (el robot corre de madrugada, 06:00 UTC) y el jitter de GitHub
+// Actions, para no apagar la pagina cada noche.
+export const GUARDIA_STALE_HORAS = 30
+
+export interface GuardiaFrescura {
+  fiable: boolean   // dato del ultimo pase diario: se puede mostrar
+  esHoy: boolean    // capturado hoy (UTC): se puede decir "de guardia hoy"
+  fecha: string     // YYYY-MM-DD de captura (para etiquetar), '' si no hay ts
+  horas: number     // antiguedad en horas (Infinity si no hay ts valido)
+}
+
+// ahora se inyecta en los tests; en produccion es new Date().
+export function frescuraGuardia(ts: string | undefined, ahora: Date = new Date()): GuardiaFrescura {
+  if (!ts) return { fiable: false, esHoy: false, fecha: '', horas: Infinity }
+  const t = Date.parse(ts)
+  if (!Number.isFinite(t)) return { fiable: false, esHoy: false, fecha: '', horas: Infinity }
+  const horas = (ahora.getTime() - t) / 3600000
+  const fecha = new Date(t).toISOString().slice(0, 10)
+  const hoy = ahora.toISOString().slice(0, 10)
+  const fiable = horas <= GUARDIA_STALE_HORAS
+  return { fiable, esHoy: fiable && fecha === hoy, fecha, horas }
+}
+
 // Filtra las guardias que pertenecen a una provincia concreta. Solo hace falta
 // para el fichero 'clm' (5 provincias en uno); alli el CP si viene y sus dos
 // primeros digitos son el codigo INE. Para el resto de ficheros no se filtra,

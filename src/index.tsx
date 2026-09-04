@@ -22,7 +22,7 @@ import {
 import { tarifaPorProvincia } from './lib/itv-tarifas'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
-  municipiosConGuardia, guardiasForMunicipio,
+  municipiosConGuardia, guardiasForMunicipio, frescuraGuardia,
   GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
 } from './lib/guardias'
 import {
@@ -1016,18 +1016,23 @@ app.get('/farmacias/:provinciaSlug', async c => {
 
   const nonce = genNonce()
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug
+  // Si el territorio no se ha refrescado en el ultimo pase (>30 h), no lo
+  // dejamos indexar: la pagina mostrara el aviso de caducado en vez del turno.
+  const hdrs = frescuraGuardia(raw.ts).fiable
+    ? guardiaHeaders(nonce)
+    : { ...guardiaHeaders(nonce), 'X-Robots-Tag': 'noindex, follow' }
   // Sin municipios (Baleares, Huesca): la fuente no trae municipio pero SI trae
   // guardias con direccion y telefono; se listan directamente en vez de un 404.
   if (!municipios.length) {
     if (!all.length) return c.notFound()
     return new Response(
       buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical),
-      { headers: guardiaHeaders(nonce) },
+      { headers: hdrs },
     )
   }
   return new Response(
     buildGuardiaProvinciaPage(nonce, provSlug, prov.name, municipios, raw.ts, canonical),
-    { headers: guardiaHeaders(nonce) },
+    { headers: hdrs },
   )
 })
 
@@ -1049,6 +1054,9 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
 
   const nonce = genNonce()
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug + '/' + munSlug
+  const hdrs = frescuraGuardia(raw.ts).fiable
+    ? guardiaHeaders(nonce)
+    : { ...guardiaHeaders(nonce), 'X-Robots-Tag': 'noindex, follow' }
   return new Response(buildGuardiaMunicipioPage(nonce, {
     provinciaSlug: provSlug,
     provinciaName: prov.name,
@@ -1059,7 +1067,7 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
     actualizado: raw.ts,
     fuente: raw.source,
     canonical,
-  }), { headers: guardiaHeaders(nonce) })
+  }), { headers: hdrs })
 })
 
 // ---- ITV ----
@@ -1339,6 +1347,9 @@ app.get('/sitemap-guardias.xml', async c => {
     }
     const raw = cache.get(file)
     if (!raw) continue
+    // Territorio sin refrescar (>30 h): fuera del sitemap para que Google no
+    // rastree paginas cuyo turno ya no mostramos como valido.
+    if (!frescuraGuardia(raw.ts).fiable) continue
     const rows = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
     const lastmod = (raw.ts || '').slice(0, 10) || today
     for (const m of municipiosConGuardia(rows)) {

@@ -1036,6 +1036,16 @@ export function buildFarmaciasPage(
     // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
     // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
     // porque el SESCAM las sirve juntas desde un unico endpoint backend.
+    // Un territorio solo cuenta como "de guardia" si su snapshot se refresco en
+    // el ultimo pase diario (<=30 h). Mas viejo = scraper caido: no pintamos su
+    // etiqueta de guardia (mejor sin etiqueta que una falsa). Espejo de
+    // GUARDIA_STALE_HORAS en src/lib/guardias.ts.
+    function guardiaFiable(ts){
+      if (!ts) return false;
+      var t = Date.parse(ts);
+      if (isNaN(t)) return false;
+      return (Date.now() - t) <= 30 * 3600 * 1000;
+    }
     var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla', 'leon'];
     var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -1061,7 +1071,7 @@ export function buildFarmaciasPage(
         var allGuardias = [];
         for (var i = 1; i <= territorios.length; i++){
           var g = results[i];
-          if (g && Array.isArray(g.guardias)) {
+          if (g && Array.isArray(g.guardias) && guardiaFiable(g.ts)) {
             for (var k = 0; k < g.guardias.length; k++) allGuardias.push(g.guardias[k]);
           }
         }

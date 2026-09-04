@@ -89,6 +89,18 @@ test.describe('Farmacias (/farmacias/)', () => {
   })
 
   test('aparece al menos una card con badge DE GUARDIA geolocalizando en Madrid', async ({ page, context }) => {
+    // El badge de guardia solo aparece si el snapshot de Madrid es reciente
+    // (<30 h; ver frescuraGuardia en src/lib/guardias.ts). El robot corre a
+    // diario, pero si el fixture commiteado ha envejecido (p.ej. el bot llevaba
+    // sin correr), no hay badge POR DISEÑO — no es un fallo. En ese caso el test
+    // se salta; con datos frescos verifica el mecanismo del badge.
+    const madridTs = await page.request.get('/data/guardias-madrid.json')
+      .then(r => (r.ok() ? r.json() : null))
+      .then(j => (j && typeof j.ts === 'string' ? Date.parse(j.ts) : NaN))
+      .catch(() => NaN)
+    const fresco = Number.isFinite(madridTs) && (Date.now() - madridTs) <= 30 * 3600 * 1000
+    test.skip(!fresco, 'guardias-madrid.json no es reciente (<30 h): sin badge por diseño')
+
     // Mockear geolocation en Puerta del Sol (40.4168, -3.7038). Madrid tiene
     // ~158 farmacias de guardia hoy y el radio de 5km cubre el centro.
     await context.grantPermissions(['geolocation'])

@@ -53,8 +53,11 @@ const BBOX = { minLat: 40.5, maxLat: 42.9, minLng: 0.2, maxLng: 1.8 }
 
 // Mapeo numero de mes -> nombre en castellano (la web esta en catalan pero
 // el bloque de calendario usa nombres de mes en castellano: "25 de abril").
-const MESES_ES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
-                  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+// El calendario de coflleida.cat esta en CATALAN ("5 de setembre"), no en
+// castellano. Antes buscabamos meses en castellano y no encontraba el dia -> 0
+// farmacias. Nombres de mes en catalan:
+const MESES_CA = ['gener', 'febrer', 'març', 'abril', 'maig', 'juny',
+                  'juliol', 'agost', 'setembre', 'octubre', 'novembre', 'desembre']
 
 function hoyParts() {
   const d = new Date()
@@ -62,7 +65,7 @@ function hoyParts() {
     dia: d.getDate(),
     mes: d.getMonth() + 1,
     anyo: d.getFullYear(),
-    diaMesEs: `${d.getDate()} de ${MESES_ES[d.getMonth()]}`,
+    diaMesEs: `${d.getDate()} de ${MESES_CA[d.getMonth()]}`,
   }
 }
 
@@ -129,6 +132,9 @@ function clean(s, max) {
     const num = m.match(/^&#(\d+);$/)
     if (num) {
       const n = parseInt(num[1], 10)
+      // Decodifica cualquier referencia numerica valida (p.ej. &#39; -> ').
+      // Es una sola pasada sobre el texto ya extraido: no re-dispara entidades.
+      if (Number.isFinite(n) && n >= 32 && n <= 0x10ffff) return String.fromCodePoint(n)
       return HTML_NUM_ENTITIES[n] || m
     }
     return m
@@ -169,7 +175,7 @@ function extraerFarmaciasDelDia(html, diaMesEs) {
   const idxDia = html.indexOf(diaMesEs)
   if (idxDia === -1) return out
   // Buscar el siguiente "DD de <mes>" para acotar el bloque del dia actual.
-  const siguienteFecha = html.slice(idxDia + diaMesEs.length).search(/\d{1,2} de (enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)/)
+  const siguienteFecha = html.slice(idxDia + diaMesEs.length).search(/\d{1,2} de (gener|febrer|març|abril|maig|juny|juliol|agost|setembre|octubre|novembre|desembre)/)
   const fin = siguienteFecha === -1 ? html.length : (idxDia + diaMesEs.length + siguienteFecha)
   const bloque = html.slice(idxDia, fin)
 

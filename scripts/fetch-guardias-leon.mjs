@@ -134,7 +134,7 @@ async function geocode(direccion) {
   for (const v of variants) {
     const coord = await geocodeOne(`${v}, ${MUNICIPIO}, León, España`)
     if (coord) return coord
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   return null
 }

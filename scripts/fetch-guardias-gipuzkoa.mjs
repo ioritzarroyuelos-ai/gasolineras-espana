@@ -134,7 +134,7 @@ async function geocode(nombre, direccion, poblacion) {
       // swallow — probamos el siguiente query
     }
     // Delay entre queries del mismo registro para no pegar a Nominatim.
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   geoCache.set(key, null)
   return null

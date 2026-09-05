@@ -151,7 +151,7 @@ async function geocode(direccion, municipio) {
   for (const v of variants) {
     const coord = await geocodeOne(`${v}, ${municipio}, Sevilla, España`)
     if (coord) return coord
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   // Fallback: solo municipio (centro del pueblo) si la direccion no se
   // encuentra. Mejor algo que nada.
@@ -527,7 +527,7 @@ async function main() {
       f.coord = coord
       nuevas++
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   if (nuevas > 0) saveCache(cache)
 

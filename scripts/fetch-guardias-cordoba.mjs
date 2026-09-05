@@ -186,7 +186,7 @@ async function geocode(calle) {
     } catch {
       // swallow
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   geoCache.set(key, null)
   return null

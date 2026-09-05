@@ -238,7 +238,7 @@ async function main() {
       descartadas++
       console.log('FAIL')
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   if (geocodedNuevas > 0) {
     saveCache(cache)

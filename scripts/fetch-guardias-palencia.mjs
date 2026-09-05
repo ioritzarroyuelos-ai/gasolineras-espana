@@ -215,7 +215,7 @@ async function geocode(direccion, pueblo) {
       const q = p ? `${v}, ${p}, Palencia, España` : `${v}, Palencia, España`
       const coord = await geocodeOne(q)
       if (coord) return coord
-      await new Promise(r => setTimeout(r, 1100))
+      if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
     }
   }
   // Ultimo fallback: solo pueblo (centro del pueblo) si lo hay.
@@ -224,7 +224,7 @@ async function geocode(direccion, pueblo) {
       if (!p) continue
       const coord = await geocodeOne(`${p}, Palencia, España`)
       if (coord) return coord
-      await new Promise(r => setTimeout(r, 1100))
+      if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
     }
   }
   return null
@@ -703,7 +703,7 @@ async function main() {
     } else {
       console.log('FAIL')
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   if (nuevas > 0) saveCache(cache)
 

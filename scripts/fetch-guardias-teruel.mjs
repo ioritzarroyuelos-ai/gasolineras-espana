@@ -235,7 +235,7 @@ async function main() {
         console.log('FAIL')
       }
     }
-    await new Promise(r => setTimeout(r, 1100)) // Rate-limit Nominatim 1 req/s
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100)) // Rate-limit Nominatim 1 req/s
   }
   if (nuevas > 0) {
     saveCache(cache)

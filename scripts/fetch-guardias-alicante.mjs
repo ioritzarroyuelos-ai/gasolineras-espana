@@ -212,7 +212,7 @@ async function main() {
     if (i % 10 === 0) {
       console.log(`  ${i}/${dedupe.size} procesadas, ${okCount} OK, ${failCount} sin coord`)
     }
-    if (i < dedupe.size) await new Promise(r => setTimeout(r, 1100))
+    if (i < dedupe.size) if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
 
   console.log(`  ${guardias.length} guardias con coord (${failCount} sin resultado en Nominatim)`)

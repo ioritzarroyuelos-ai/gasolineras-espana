@@ -202,7 +202,7 @@ async function geocode(nombre, calle, localidad, cp) {
     } catch {
       // swallow — siguiente query
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   geoCache.set(key, null)
   return null

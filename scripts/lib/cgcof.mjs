@@ -163,6 +163,11 @@ export function extraerFarmaciasDelHtml(html) {
 /** Geocoding via Nominatim respetuoso (1.1s entre peticiones). Retorna [lat,lng] o null.
  *  Ante 429 (rate-limit) hace back-off exponencial hasta 3 reintentos. */
 export async function geocodeNominatim(direccion, municipio, provincia, bbox, userAgent) {
+  // CI: sin geocoding en vivo. Nominatim ralentiza/bloquea las IPs del runner y
+  // el mapa se retiro (las coordenadas no se usan). Centinela [0,0] para que los
+  // scrapers CGCOF (avila, badajoz, burgos, malaga, melilla, salamanca, zaragoza)
+  // no aborten por falta de coordenadas y el pase sea rapido.
+  if (process.env.GITHUB_ACTIONS) return [0, 0]
   const q = `${direccion}, ${municipio}, ${provincia}, España`
   const url = `${NOMINATIM_URL}?format=json&limit=1&countrycodes=es&q=${encodeURIComponent(q)}`
   for (let attempt = 1; attempt <= 3; attempt++) {

@@ -140,7 +140,7 @@ async function geocode(direccion) {
   for (const v of variants) {
     const coord = await geocodeOne(`${v}, Granada, España`)
     if (coord) return coord
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   return null
 }
@@ -244,7 +244,7 @@ async function main() {
       descartadas++
       console.log('FAIL')
     }
-    await new Promise(r => setTimeout(r, 1100))
+    if (!process.env.GITHUB_ACTIONS) await new Promise(r => setTimeout(r, 1100))
   }
   if (nuevas > 0) saveCache(cache)
   if (descartadas > 0) console.log(`  ${descartadas} sin coord`)

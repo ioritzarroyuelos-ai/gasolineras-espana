@@ -37,7 +37,12 @@ const CACHE_DIR = resolve(__dirname, 'cache')
 const CACHE_FILE = resolve(CACHE_DIR, 'segovia-geo.json')
 const OUT_FILE = resolve(DATA_DIR, 'guardias-segovia.json')
 
-const PDF_URL = 'https://cofsegovia.com/wp-content/uploads/2026/03/CALENDARIO-GUARDIAS-SEGOVIA-CAPITAL-2026.pdf'
+// Pagina que enlaza el PDF del calendario. La URL del PDF cambia (el path
+// incluye año/mes de subida: 2026/03 -> 2026/06 ...), asi que NO se fija: se
+// descubre buscando en esta pagina el enlace "CALENDARIO-GUARDIAS-SEGOVIA-
+// CAPITAL...pdf". PDF_URL queda como ultimo recurso si el descubrimiento falla.
+const GUARDIAS_PAGE = 'https://cofsegovia.com/farmacias-de-guardia/'
+const PDF_URL = 'https://cofsegovia.com/wp-content/uploads/2026/06/CALENDARIO-GUARDIAS-SEGOVIA-CAPITAL-2026.pdf'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 const USER_AGENT = 'cercaya-guardias/1.40 (+https://webapp-3ft.pages.dev)'
 
@@ -65,6 +70,23 @@ async function fetchPdf(url) {
   if (!res.ok) throw new Error(`HTTP ${res.status} en ${url}`)
   const buf = await res.arrayBuffer()
   return new Uint8Array(buf)
+}
+
+// Busca en la pagina de guardias el enlace al PDF del calendario de la CAPITAL.
+// Devuelve la URL o null si no lo encuentra (el llamante cae a PDF_URL).
+async function descubrePdfUrl() {
+  try {
+    const res = await fetch(GUARDIAS_PAGE, { headers: { 'User-Agent': USER_AGENT } })
+    if (!res.ok) return null
+    const html = await res.text()
+    const urls = html.match(/https?:\/\/[^"' ]+?\.pdf/gi) || []
+    // El calendario de la capital es el que interesa (los rurales tienen otro
+    // formato). Nombre estable: "CALENDARIO-GUARDIAS-SEGOVIA-CAPITAL".
+    const hit = urls.find(u => /CALENDARIO-GUARDIAS-SEGOVIA-CAPITAL/i.test(u))
+    return hit || null
+  } catch {
+    return null
+  }
 }
 
 async function geocode(direccion) {
@@ -125,7 +147,9 @@ function parseDia(lines, target) {
 
 async function main() {
   console.log('Descargando guardias Segovia (COF Segovia PDF anual capital)...')
-  const data = await fetchPdf(PDF_URL)
+  const pdfUrl = (await descubrePdfUrl()) || PDF_URL
+  console.log(`  PDF: ${pdfUrl}`)
+  const data = await fetchPdf(pdfUrl)
   const parser = new PDFParse({ data })
   const r = await parser.getText({ itemJoiner: '@@@' })
   const lines = r.text.split('\n')

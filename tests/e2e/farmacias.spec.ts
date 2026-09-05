@@ -1,51 +1,28 @@
-// E2E de `/farmacias/` — pagina con mapa + lista de farmacias OSM +
-// guardias (cobertura nacional, 47 territorios).
+// E2E de `/farmacias/` — buscador de FARMACIA DE GUARDIA por municipio (texto).
 //
-// Comprobamos:
-//   - shell renderiza (header, toolbar, layout principal)
-//   - fetch del snapshot funciona (count en el header se pinta)
-//   - los radios filter son accesibles y uno esta aria-pressed por defecto
-//   - canonical + meta description presentes
-//   - canonicalizacion /farmacias -> /farmacias/
-//   - sin violaciones graves de axe (excluyendo tiles de Leaflet)
-//   - los 46 snapshots de guardias estan servidos y con count > 0
-//   - al menos una card aparece con data-guardia=true y badge visible
-//     cuando geolocalizamos al usuario en Madrid
-//
-// No comprobamos geolocalizacion real — Playwright permite mockearla pero
-// complicaria el test mas de lo que aporta para un MVP. El boton y el flujo
-// se verifican manualmente.
+// El mapa de todas las farmacias (Leaflet + geolocalizacion + farmacias.json) se
+// retiro (sept 2026); ahora la pagina es un buscador de texto que autocompleta
+// municipios desde /api/guardias/municipios y lleva a la pagina de guardia de
+// ese municipio (SSR). Comprobamos:
+//   - shell del buscador (H1, input, enlace "por provincia"), sin mapa
+//   - canonical + meta description, y canonicalizacion /farmacias -> /farmacias/
+//   - el endpoint del indice devuelve municipios
+//   - el autocompletado sugiere y navega al pulsar
+//   - los 47 snapshots de guardias siguen servidos con count > 0
+//   - sin violaciones graves de axe
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-test.describe('Farmacias (/farmacias/)', () => {
-  test('carga el shell con hero, toolbar y mapa', async ({ page }) => {
+test.describe('Farmacias de guardia (/farmacias/)', () => {
+  test('carga el buscador (H1, input, enlace por provincia) y ya no hay mapa', async ({ page }) => {
     await page.goto('/farmacias/')
-    await expect(page).toHaveTitle(/Farmacias.*CercaYa/i)
-
-    // Hero con titulo y boton "volver"
-    await expect(page.getByRole('heading', { level: 1, name: /farmacias en españa/i })).toBeVisible()
-    await expect(page.getByRole('link', { name: /volver a cercaya/i })).toBeVisible()
-
-    // Toolbar: boton de ubicacion + radios
-    await expect(page.getByRole('button', { name: /usar mi ubicación/i })).toBeVisible()
-    // Radio de 5km esta pulsado por defecto
-    await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'true')
-
-    // Mapa y lista presentes en el DOM
-    await expect(page.locator('#map')).toBeVisible()
-    await expect(page.locator('#list')).toBeVisible()
-  })
-
-  test('carga el snapshot y muestra el count en el hero', async ({ page }) => {
-    await page.goto('/farmacias/')
-    // Esperamos a que el fetch del JSON termine y se pinte el contador.
-    // Timeout generoso porque el JSON pesa ~1.5MB sin gzip.
-    await expect.poll(
-      async () => (await page.locator('#hero-count').textContent())?.trim() || '',
-      { timeout: 15_000 }
-    ).toMatch(/\d+.*farmacias/i)
+    await expect(page).toHaveTitle(/Farmacia de guardia.*CercaYa/i)
+    await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia en españa/i })).toBeVisible()
+    await expect(page.locator('#q')).toBeVisible()
+    await expect(page.getByRole('link', { name: /provincia por provincia/i })).toBeVisible()
+    // El mapa ya no existe.
+    await expect(page.locator('#map')).toHaveCount(0)
   })
 
   test('canonicalizacion /farmacias -> /farmacias/', async ({ page }) => {
@@ -64,12 +41,43 @@ test.describe('Farmacias (/farmacias/)', () => {
     expect(canonical).toMatch(/\/farmacias\/$/)
   })
 
-  test('cambiar el radio actualiza aria-pressed', async ({ page }) => {
+  test('/api/guardias/municipios devuelve el indice de municipios', async ({ request }) => {
+    const res = await request.get('/api/guardias/municipios')
+    expect(res.status()).toBe(200)
+    const body = await res.json()
+    expect(Array.isArray(body)).toBe(true)
+    expect(body.length).toBeGreaterThan(100)
+    // Cada entrada: nombre municipio, provincia, url de su pagina de guardia.
+    for (const e of body.slice(0, 20)) {
+      expect(typeof e.n).toBe('string')
+      expect(typeof e.p).toBe('string')
+      expect(e.u).toMatch(/^\/farmacias\//)
+    }
+  })
+
+  test('el autocompletado sugiere municipios al escribir', async ({ page }) => {
     await page.goto('/farmacias/')
-    // Por defecto 5km. Pulsamos 2km.
-    await page.locator('.radius-group button[data-r="2"]').click()
-    await expect(page.locator('.radius-group button[data-r="2"]')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.locator('.radius-group button[data-r="5"]')).toHaveAttribute('aria-pressed', 'false')
+    const input = page.locator('#q')
+    await input.click()
+    await input.fill('madrid')
+    const sugs = page.locator('#sugs')
+    await expect(sugs).toBeVisible({ timeout: 10_000 })
+    // Al menos una sugerencia con enlace a una pagina de municipio.
+    const link = sugs.locator('a').first()
+    await expect(link).toBeVisible()
+    await expect(link).toHaveAttribute('href', /^\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
+  })
+
+  test('pulsar una sugerencia navega a la pagina de guardia del municipio', async ({ page }) => {
+    await page.goto('/farmacias/')
+    const input = page.locator('#q')
+    await input.click()
+    await input.fill('madrid')
+    const sugs = page.locator('#sugs')
+    await expect(sugs).toBeVisible({ timeout: 10_000 })
+    await sugs.locator('a').first().click()
+    await expect(page).toHaveURL(/\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
+    await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia/i })).toBeVisible()
   })
 
   test('los 47 snapshots de guardias se sirven con count > 0', async ({ request }) => {
@@ -81,53 +89,18 @@ test.describe('Farmacias (/farmacias/)', () => {
       expect(body.territorio, `territorio field del json ${t}`).toBe(t)
       expect(Array.isArray(body.guardias), `${t} guardias array`).toBe(true)
       expect(body.count, `${t} count > 0`).toBeGreaterThan(0)
-      // Schema fijo — sirve de defensa contra cambios accidentales en los scrapers.
       expect(body.schema).toEqual([
         'lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc',
       ])
     }
   })
 
-  test('aparece al menos una card con badge DE GUARDIA geolocalizando en Madrid', async ({ page, context }) => {
-    // El badge de guardia solo aparece si el snapshot de Madrid es reciente
-    // (<30 h; ver frescuraGuardia en src/lib/guardias.ts). El robot corre a
-    // diario, pero si el fixture commiteado ha envejecido (p.ej. el bot llevaba
-    // sin correr), no hay badge POR DISEÑO — no es un fallo. En ese caso el test
-    // se salta; con datos frescos verifica el mecanismo del badge.
-    const madridTs = await page.request.get('/data/guardias-madrid.json')
-      .then(r => (r.ok() ? r.json() : null))
-      .then(j => (j && typeof j.ts === 'string' ? Date.parse(j.ts) : NaN))
-      .catch(() => NaN)
-    const fresco = Number.isFinite(madridTs) && (Date.now() - madridTs) <= 30 * 3600 * 1000
-    test.skip(!fresco, 'guardias-madrid.json no es reciente (<30 h): sin badge por diseño')
-
-    // Mockear geolocation en Puerta del Sol (40.4168, -3.7038). Madrid tiene
-    // ~158 farmacias de guardia hoy y el radio de 5km cubre el centro.
-    await context.grantPermissions(['geolocation'])
-    await context.setGeolocation({ latitude: 40.4168, longitude: -3.7038 })
-
+  test('sin violaciones graves de axe', async ({ page }) => {
     await page.goto('/farmacias/')
-    await page.getByRole('button', { name: /usar mi ubicación/i }).click()
-
-    // Esperar a que se pinte al menos una tarjeta con data-guardia.
-    // Timeout generoso por el fetch del JSON principal (~1.5MB) + los 4
-    // JSON de guardias.
-    const guardiaCard = page.locator('li.card[data-guardia="true"]').first()
-    await expect(guardiaCard, 'al menos una tarjeta marcada como guardia').toBeVisible({ timeout: 20_000 })
-    await expect(guardiaCard.locator('.badge-guardia')).toHaveText(/de guardia/i)
-  })
-
-  test('sin violaciones graves de axe (excluyendo Leaflet tiles)', async ({ page }) => {
-    await page.goto('/farmacias/')
-    // Esperamos al bootstrap del mapa para auditar el DOM montado.
-    await expect(page.locator('#map .leaflet-container, #map canvas, #map')).toBeVisible()
+    await expect(page.locator('#q')).toBeVisible()
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
-      // Leaflet mete <img> de tiles sin alt intencionado — igual que en la home.
-      .exclude('.leaflet-tile-container')
-      .exclude('.leaflet-marker-pane')
-      .exclude('.leaflet-popup-pane')
       .analyze()
 
     const severe = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')

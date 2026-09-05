@@ -999,6 +999,54 @@ app.get('/farmacias/guardia', c => {
   )
 })
 
+// Indice de municipios con guardia para el autocompletado de /farmacias/.
+// Recorre los 47 ficheros una vez y cachea 30 min en memoria. Devuelve
+// [{n: municipio, p: provincia, u: url de su pagina de guardia}]. Reusa las
+// MISMAS funciones que las rutas SSR (municipiosConGuardia, guardiasForProvincia),
+// asi que los slugs coinciden exactos y el enlace nunca da 404. Incluye tambien
+// los territorios caducados: el usuario los encuentra y su pagina ya muestra el
+// aviso de "sin turno actualizado".
+let muniGuardiaIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
+const MUNI_INDEX_TTL = 30 * 60 * 1000
+
+app.get('/api/guardias/municipios', async c => {
+  const CACHE = { 'Cache-Control': 'public, max-age=3600' }
+  if (muniGuardiaIndex && Date.now() - muniGuardiaIndex.ts < MUNI_INDEX_TTL) {
+    return c.json(muniGuardiaIndex.data, 200, CACHE)
+  }
+  const out: Array<{ n: string; p: string; u: string }> = []
+  const seen = new Set<string>()
+  const cache = new Map<string, GuardiasFile | null>()
+  for (const provSlug of Object.keys(GUARDIAS_TERRITORIO_BY_PROVINCIA)) {
+    const prov = provinciaBySlug(provSlug)
+    const file = guardiasFileForProvincia(provSlug)
+    if (!prov || !file) continue
+    if (!cache.has(file)) {
+      try { cache.set(file, await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)) }
+      catch { cache.set(file, null) }
+    }
+    const raw = cache.get(file)
+    if (!raw) continue
+    const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
+    const municipios = municipiosConGuardia(all)
+    if (municipios.length) {
+      for (const m of municipios) {
+        const u = '/farmacias/' + provSlug + '/' + m.slug
+        if (seen.has(u)) continue
+        seen.add(u)
+        out.push({ n: m.name, p: prov.name, u })
+      }
+    } else if (all.length) {
+      // Provincia sin municipio (Baleares, Huesca): entrada provincial.
+      const u = '/farmacias/' + provSlug
+      if (!seen.has(u)) { seen.add(u); out.push({ n: prov.name, p: prov.name, u }) }
+    }
+  }
+  out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
+  muniGuardiaIndex = { ts: Date.now(), data: out }
+  return c.json(out, 200, CACHE)
+})
+
 // `/farmacias/:provincia` — municipios de la provincia con guardia publicada.
 // Es el eslabon que faltaba entre el indice y las 1.289 paginas de municipio.
 app.get('/farmacias/:provinciaSlug', async c => {

@@ -1,55 +1,16 @@
-// Pagina `/farmacias/` del portal CercaYa — MVP nacional.
+// Pagina /farmacias/ — buscador de FARMACIA DE GUARDIA por municipio (solo texto).
 //
-// Vision del usuario:
-//   "Que segun la ubicacion del usuario le diga las farmacias de su
-//   municipio con todos horarios y todo lo que pueda tener, que le diga
-//   las farmacias de guardia de esa misma semana, que pueda seleccionar
-//   esa farmacia y le diga en un gps a cuanto esta de la farmacia."
+// Historia: antes era un mapa (Leaflet) con TODAS las farmacias de OpenStreetMap
+// y geolocalizacion. Se retiro (sept 2026) por decision del usuario: el mapa
+// dependia de geocodificar direcciones con Nominatim, que bloquea las IPs del
+// servidor, y ademas el valor real es "que farmacia esta de guardia en mi
+// pueblo", no "todas las farmacias". Ahora es un buscador de texto: escribes tu
+// municipio, autocompleta desde /api/guardias/municipios, y te lleva a la pagina
+// de guardia de ese municipio (SSR, ya existente, con la red de seguridad que
+// oculta turnos caducados).
 //
-// Funcionalidad actual:
-//   - Snapshot nacional de OSM (~18k farmacias) con name/addr/phone/hours.
-//   - Geolocalizacion opcional: si el usuario acepta, ordenamos por
-//     distancia Haversine y centramos el mapa en su posicion.
-//   - Filtro por radio (2km / 5km / 10km).
-//   - Lista con top-50 mas cercanas para no saturar el DOM.
-//   - Mapa con clustering (Leaflet + markercluster — vendor ya servido
-//     por el proyecto desde /static/vendor/map/).
-//   - Ficha por farmacia: nombre, direccion, tel: tap-to-call, horario
-//     crudo de OSM, boton "Como llegar" (Google Maps / Apple Maps).
-//
-// Arquitectura visual:
-//   - MISMA imagen y estructura que /gasolineras/: header fijo verde con
-//     logo + brand title + subtitle + actions, sidebar lateral con
-//     filtros + lista de resultados, mapa principal a la derecha, footer
-//     al final. Reusamos la paleta y el gradient del shell de gasolineras
-//     (verde Tailwind 800→600) para que el portal CercaYa tenga
-//     coherencia visual entre servicios.
-//   - Hamburguesa para colapsar sidebar en movil (breakpoint 1023px),
-//     mismo patron que el shell de gasolineras (overlay con backdrop).
-//
-// Guardias (Fases 2-16 — cobertura nacional):
-//   - 47 ficheros /data/guardias-<territorio>.json cargados en paralelo
-//     tras farmacias.json: madrid, bizkaia, gipuzkoa, alava, coruna, murcia,
-//     almeria, girona, tarragona, cordoba, cantabria, pontevedra,
-//     laspalmas, alicante, cadiz, ceuta, valencia, clm, ourense, huesca,
-//     barcelona, baleares, navarra, castellon, asturias, rioja, caceres,
-//     lleida, soria, zamora, malaga, zaragoza, badajoz, valladolid, melilla,
-//     avila, burgos, salamanca, tenerife, teruel, segovia, granada, palencia,
-//     huelva, jaen, sevilla, leon.
-//   - clm agrupa las 5 provincias de Castilla-La Mancha (Albacete, Ciudad
-//     Real, Cuenca, Guadalajara, Toledo) en un unico fichero porque el
-//     SESCAM las sirve juntas desde el mismo endpoint backend.
-//   - Si una farmacia OSM coincide (~100m) con una de guardia, aparece
-//     con badge "DE GUARDIA" + horario en card y popup.
-//   - Las guardias sin match OSM (porque el COF tiene farmacia que OSM no
-//     indexa, o porque el matching fue impreciso) se pintan en el mapa
-//     como marker dorado extra, sin entrar en la lista.
-//   - Leon: cobertura SOLO La Banyeza (~10k hab) via Ayto Policia Local.
-//     COF Leon (cofleon.es) tiene SOAP caido sin alternativa publica para
-//     Leon capital ni Ponferrada.
-//   - Provincias totalmente bloqueadas sin scraper viable: Lugo (reCAPTCHA
-//     v3 server-side). Cobertura efectiva: 49 de 50 provincias + Ceuta +
-//     Melilla (la 50 es Leon, parcial).
+// Sin mapa, sin geolocalizacion, sin cargar farmacias.json ni los 47 snapshots
+// de guardias en el cliente: solo un indice pequeno de municipios.
 
 import { APP_VERSION } from '../lib/version'
 
@@ -61,42 +22,19 @@ export function buildFarmaciasPage(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/farmacias/'
-  const title = 'Farmacias en España · CercaYa'
-  const desc = 'Farmacias cercanas en España con dirección, teléfono y horario. Usa tu ubicación para ver las más próximas ordenadas por distancia. Datos de OpenStreetMap, sin registro.'
+  const title = 'Farmacia de guardia en España · CercaYa'
+  const desc = 'Busca la farmacia de guardia de tu municipio: dirección, teléfono y horario. '
+    + 'Datos de los Colegios Oficiales de Farmacéuticos, sin registro.'
   const logoUrl = origin + '/static/logo.svg'
 
-  // JSON-LD: declaramos la pagina como WebPage + Service. Cuando tengamos
-  // guardias, anyadiremos un Dataset por territorio.
   const jsonLd = {
     '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'WebPage',
-        name: title,
-        url: canonical,
-        description: desc,
-        inLanguage: 'es-ES',
-        isPartOf: {
-          '@type': 'WebSite',
-          name: 'CercaYa',
-          url: origin,
-        },
-      },
-      {
-        '@type': 'Service',
-        name: 'Farmacias España',
-        description: desc,
-        url: canonical,
-        serviceType: 'Localización de farmacias',
-        areaServed: { '@type': 'Country', name: 'España' },
-        provider: {
-          '@type': 'Organization',
-          name: 'CercaYa',
-          url: origin,
-          logo: logoUrl,
-        },
-      },
-    ],
+    '@type': 'WebPage',
+    name: title,
+    url: canonical,
+    description: desc,
+    inLanguage: 'es-ES',
+    isPartOf: { '@type': 'WebSite', name: 'CercaYa', url: origin },
   }
 
   const esc = (s: string): string => s
@@ -135,1016 +73,185 @@ export function buildFarmaciasPage(
 
   <script type="application/ld+json" nonce="${nonce}">${JSON.stringify(jsonLd)}</script>
 
-  <!-- Leaflet local (mismo vendor que el mapa de gasolineras) -->
-  <link rel="stylesheet" href="/static/vendor/map/leaflet/leaflet.css" />
-  <link rel="stylesheet" href="/static/vendor/map/leaflet.markercluster/MarkerCluster.css" />
-  <link rel="stylesheet" href="/static/vendor/map/leaflet.markercluster/MarkerCluster.Default.css" />
-  <script defer src="/static/vendor/map/leaflet/leaflet.js"></script>
-  <script defer src="/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js"></script>
-
   <style nonce="${nonce}">
-    /* Variables — alineadas con el shell de gasolineras (paleta slate +
-       brand verde Tailwind). En light mode usamos slate clarito como
-       fondo y blanco como surface; en dark, slate oscuro. El brand verde
-       cubre header (gradient), botones primarios y acentos. */
     :root {
-      --c-bg: #f8fafc;
-      --c-surface: #ffffff;
-      --c-text: #0f172a;
-      --c-muted: #64748b;
-      --c-brand-dark: #14532d;
-      --c-brand: #16a34a;
-      --c-brand-soft: #dcfce7;
-      --c-border: #e2e8f0;
-      --c-danger: #b91c1c;
-      --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
-      /* Gradient identico al app-header de gasolineras (styles.ts L33). */
-      --c-header-grad: linear-gradient(135deg, #14532d 0%, #166534 40%, #16a34a 100%);
+      --c-bg: #f8fafc; --c-surface: #ffffff; --c-text: #0f172a; --c-muted: #64748b;
+      --c-brand-dark: #14532d; --c-brand: #16a34a; --c-brand-soft: #dcfce7;
+      --c-border: #e2e8f0; --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --c-bg: #0f172a;
-        --c-surface: #1e293b;
-        --c-text: #f1f5f9;
-        --c-muted: #94a3b8;
-        --c-brand-dark: #064e3b;
-        --c-brand: #4ade80;
-        --c-brand-soft: #064e3b;
-        --c-border: #334155;
-        --c-danger: #fca5a5;
-        --c-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        --c-header-grad: linear-gradient(135deg, #052e16 0%, #14532d 50%, #166534 100%);
+        --c-bg: #0f172a; --c-surface: #1e293b; --c-text: #e2e8f0; --c-muted: #94a3b8;
+        --c-brand-dark: #16a34a; --c-brand: #22c55e; --c-brand-soft: #052e16;
+        --c-border: #334155; --c-shadow: 0 4px 12px rgba(0,0,0,0.4);
       }
     }
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      background: var(--c-bg);
-      color: var(--c-text);
-      line-height: 1.55;
-      min-height: 100vh;
-      padding-top: 60px; /* compensar app-header fixed (60px) — mismo offset que gasolineras */
-    }
-    a { color: var(--c-brand-dark); }
-    @media (prefers-color-scheme: dark) { a { color: var(--c-brand); } }
-
-    /* ===== APP-HEADER (mismo aspecto que /gasolineras/) ===== */
-    #app-header {
-      position: fixed; top: 0; left: 0; right: 0;
-      height: 60px; z-index: 1000;
-      background: var(--c-header-grad);
-      display: flex; align-items: center; padding: 0 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
-      gap: 8px;
-    }
-    #btn-toggle-sidebar {
-      display: none; /* visible solo en mobile (<1024px) */
-      background: transparent; border: 0; color: #fff;
-      width: 36px; height: 36px; border-radius: 8px;
-      cursor: pointer; font-size: 18px;
-      align-items: center; justify-content: center;
-    }
-    #btn-toggle-sidebar:hover, #btn-toggle-sidebar:focus-visible {
-      background: rgba(255,255,255,0.15);
-      outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px;
-    }
-    .brand-link {
-      display: flex; align-items: center; gap: 10px;
-      text-decoration: none; color: inherit;
-      min-width: 0; flex: 1;
-    }
-    .header-logo-img { width: 32px; height: 32px; flex-shrink: 0; }
-    .header-text { min-width: 0; }
-    .header-title {
-      color: #fff; font-weight: 700; font-size: 15px; line-height: 1.2;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .header-sub {
-      color: rgba(255,255,255,0.7); font-size: 11px; line-height: 1.2;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .header-actions {
-      display: flex; align-items: center; gap: 6px; flex-shrink: 0;
-    }
-    .header-badge {
-      background: rgba(255,255,255,0.2); color: #fff;
-      font-size: 12px; font-weight: 600;
-      border-radius: 9999px; padding: 3px 12px; white-space: nowrap;
-    }
-    .header-back {
-      color: #fff; text-decoration: none; font-size: 13px;
-      padding: 6px 10px; border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.3);
-      transition: background 0.15s ease;
-      white-space: nowrap;
-    }
-    .header-back:hover, .header-back:focus-visible {
-      background: rgba(255,255,255,0.15);
-      outline: 2px solid rgba(255,255,255,0.6); outline-offset: 2px;
-    }
-
-    /* ===== APP-BODY: sidebar + mapa, llena el viewport ===== */
-    #app-body {
-      position: relative;
-      height: calc(100vh - 60px);
-      display: flex; overflow: hidden;
-    }
-    #sidebar {
-      width: 320px; min-width: 320px;
-      background: var(--c-surface);
-      border-right: 1px solid var(--c-border);
-      display: flex; flex-direction: column;
-      overflow: hidden;
-      box-shadow: 2px 0 8px rgba(0,0,0,0.06);
-      z-index: 100;
-    }
-    #sidebar-filters {
-      padding: 14px 16px;
-      background: var(--c-bg);
-      border-bottom: 1px solid var(--c-border);
-      flex: 0 0 auto;
-    }
-    .search-heading {
-      font-size: 13px; font-weight: 700;
-      color: var(--c-brand-dark);
-      text-transform: uppercase; letter-spacing: 0.04em;
-      display: flex; align-items: center; gap: 6px;
-      margin: 0 0 10px;
-    }
-    @media (prefers-color-scheme: dark) {
-      .search-heading { color: var(--c-brand); }
-    }
-    /* Usamos --c-brand-dark (#14532d) para los botones con texto blanco para
-       cumplir WCAG AA (4.5:1). El --c-brand (#16a34a) sobre blanco da 3.29:1,
-       por debajo del minimo para texto normal. Solo se puede usar brand claro
-       como fondo si el texto va en bold >=18px (ratio minimo 3:1). */
-    .btn {
-      background: var(--c-brand-dark);
-      color: #ffffff;
-      border: 0;
-      border-radius: 8px;
-      padding: 9px 14px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: filter 0.15s ease;
-      width: 100%;
-    }
-    .btn:hover, .btn:focus-visible {
-      filter: brightness(1.15);
-      outline: 2px solid var(--c-brand-dark);
-      outline-offset: 2px;
-    }
-    .radius-group {
-      display: flex; margin-top: 12px;
-      border: 1px solid var(--c-border); border-radius: 8px; overflow: hidden;
-    }
-    .radius-group button {
-      flex: 1;
-      background: var(--c-surface);
-      color: var(--c-text);
-      border: 0;
-      padding: 8px 10px;
-      font-size: 13px;
-      cursor: pointer;
-      border-right: 1px solid var(--c-border);
-    }
-    .radius-group button:last-child { border-right: 0; }
-    .radius-group button[aria-pressed="true"] {
-      background: var(--c-brand-dark);
-      color: #ffffff;
-      font-weight: 600;
-    }
-    .status-msg {
-      font-size: 12px;
-      color: var(--c-muted);
-      margin-top: 10px;
-      line-height: 1.4;
-    }
-    .status-msg.error { color: var(--c-danger); }
-
-    /* ===== Lista de farmacias dentro del sidebar ===== */
-    #list-wrap {
-      flex: 1 1 auto;
-      overflow-y: auto;
-      min-height: 180px;
-    }
-    #list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-    }
-    /* Stretched-link pattern: el <li> es un contenedor pasivo (sin role ni
-       tabindex) y dentro hay un <button class="card-select"> cuyo ::before
-       se estira sobre toda la tarjeta. Asi la zona de click es el card
-       entero pero el unico focusable "del card" es ese boton. Los <a tel:>
-       del .card-meta quedan en z-index superior y son focusables propios.
-       De esta forma no violamos la regla axe no-focusable-content (ningun
-       focusable envuelve a otro focusable). */
-    .card {
-      position: relative;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--c-border);
-      transition: background 0.15s ease;
-    }
-    .card:hover,
-    .card:focus-within {
-      background: var(--c-brand-soft);
-    }
-    .card[aria-current="true"] {
-      background: var(--c-brand-soft);
-      border-left: 3px solid var(--c-brand);
-      padding-left: 13px;
-    }
-    .card-select {
-      background: transparent;
-      border: 0;
-      padding: 0;
-      margin: 0;
-      font: inherit;
-      color: inherit;
-      text-align: left;
-      cursor: pointer;
-      display: block;
-      width: 100%;
-    }
-    .card-select::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: 0;
-    }
-    .card-select:focus-visible {
-      outline: 2px solid var(--c-brand-dark);
-      outline-offset: -4px;
-    }
-    .card-name {
-      font-size: 14px;
-      font-weight: 600;
-      margin: 0 0 3px;
-      color: var(--c-text);
-    }
-    .card-addr {
-      font-size: 12px;
-      color: var(--c-muted);
-      margin: 0 0 6px;
-    }
-    .card-meta {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      gap: 10px;
-      font-size: 11px;
-      color: var(--c-muted);
-      flex-wrap: wrap;
-    }
-    .card-dist {
-      color: var(--c-brand-dark);
-      font-weight: 600;
-    }
-    @media (prefers-color-scheme: dark) {
-      .card-dist { color: var(--c-brand); }
-    }
-    /* Badge DE GUARDIA — rojo oscuro sobre amarillo palido, contraste WCAG AA.
-       Solo aparece cuando la farmacia tiene match en los snapshots de guardia. */
-    .badge-guardia {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      padding: 2px 8px;
-      border-radius: 4px;
-      background: #fef3c7;
-      color: #78350f;
-      font-weight: 700;
-      font-size: 10px;
-      letter-spacing: 0.02em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-    @media (prefers-color-scheme: dark) {
-      .badge-guardia { background: #422006; color: #fcd34d; }
-    }
-    .guardia-horario {
-      color: #78350f;
-      font-size: 11px;
-    }
-    @media (prefers-color-scheme: dark) {
-      .guardia-horario { color: #fcd34d; }
-    }
-    /* Marker de guardia sin match OSM: dorado con anillo rojo. */
-    .guardia-pin-only {
-      background: #f59e0b;
-      color: #78350f;
-      font-weight: 800;
-      font-size: 14px;
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 2px solid #b45309;
-      box-shadow: 0 1px 3px rgba(0,0,0,.35);
-    }
-    .empty-state {
-      padding: 32px 20px;
-      text-align: center;
-      color: var(--c-muted);
-      font-size: 13px;
-    }
-
-    /* ===== Mapa principal ===== */
-    #main-area {
-      flex: 1; min-width: 0;
-      display: flex; flex-direction: column;
-      position: relative;
-    }
-    #map {
-      flex: 1 1 auto;
-      min-height: 300px;
-      background: var(--c-bg);
-    }
-    /* Boton flotante satelite — mismo patron visual que /gasolineras/. */
-    .sat-toggle {
-      width: 40px; height: 40px; padding: 0;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--c-surface, #fff);
-      color: var(--c-brand-dark, #14532d);
-      border: 1px solid var(--c-border, #d1d5db);
-      border-radius: 8px;
-      cursor: pointer;
-      box-shadow: 0 1px 4px rgba(0,0,0,.25);
-    }
-    .sat-toggle:hover { color: var(--c-brand, #16a34a); }
-    .sat-toggle[aria-pressed="true"] {
-      background: var(--c-brand-dark, #14532d);
-      color: #fff;
-      border-color: var(--c-brand-dark, #14532d);
-    }
-    .leaflet-popup-content { font-size: 13px; line-height: 1.45; }
-    .popup-name { font-weight: 600; font-size: 14px; margin: 0 0 4px; }
-    .popup-addr { color: var(--c-muted); margin: 0 0 6px; }
-    .popup-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-    .popup-actions a {
-      font-size: 12px;
-      padding: 4px 10px;
-      background: var(--c-brand-dark);
-      color: #ffffff;
-      text-decoration: none;
-      border-radius: 6px;
-    }
-    .popup-actions a.secondary {
-      background: transparent;
-      color: var(--c-brand-dark);
-      border: 1px solid var(--c-border);
-    }
-
-    /* ===== Footer ===== */
-    footer {
-      padding: 14px 18px;
-      text-align: center;
-      font-size: 12px;
-      color: var(--c-muted);
-      border-top: 1px solid var(--c-border);
-      background: var(--c-surface);
-    }
-    footer a { text-decoration: underline; }
-    footer a:hover { text-decoration: none; }
-
-    /* ===== Mobile: sidebar overlay ===== */
-    /* Mismo patron que el shell de gasolineras: sidebar fixed con
-       transform:translateX(-110%) por defecto, slide-in al toggle. El
-       hamburger del header dispara la apertura. Backdrop dim cubre el
-       resto del viewport para indicar modal. */
-    #sidebar-backdrop {
-      display: none; position: fixed; inset: 0; z-index: 1050;
-      background: rgba(0,0,0,0.45);
-      backdrop-filter: blur(2px);
-    }
-    #sidebar-backdrop.show { display: block; }
-
-    @media (max-width: 1023px) {
-      #btn-toggle-sidebar { display: inline-flex; }
-      #sidebar {
-        position: fixed !important;
-        top: 60px; left: 0;
-        height: calc(100% - 60px);
-        width: min(340px, 92vw) !important;
-        min-width: 0 !important;
-        z-index: 1100;
-        transform: translateX(-110%);
-        transition: transform 0.28s ease;
-        box-shadow: none;
-      }
-      #sidebar.open { transform: translateX(0); box-shadow: 4px 0 16px rgba(0,0,0,0.25); }
-      #main-area { width: 100%; }
-      .header-back .header-back-text { display: none; }
-    }
-
-    @media (max-width: 480px) {
-      .header-title { font-size: 13px; }
-      .header-sub { display: none; }
-      .header-badge { display: none; }
-    }
-
-    /* sr-only: oculto visualmente pero accesible para lectores de pantalla y
-       mantiene un H1 semantico que el test e2e + Google buscan en la pagina. */
-    .sr-only {
-      position: absolute !important;
-      width: 1px; height: 1px;
-      padding: 0; margin: -1px;
-      overflow: hidden; clip: rect(0,0,0,0);
-      white-space: nowrap; border: 0;
-    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+      color: var(--c-text); background: var(--c-bg); line-height: 1.5; }
+    header { background: linear-gradient(135deg,#166534,#16a34a); color: #fff; padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px; }
+    header .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
+    header .brand-title { font-weight: 700; font-size: 17px; }
+    header .brand-sub { font-size: 12px; opacity: .85; }
+    header .back { margin-left: auto; color: #fff; text-decoration: none; font-weight: 600; font-size: 14px; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px 18px 40px; }
+    h1 { font-size: 26px; line-height: 1.2; margin: 8px 0 6px; }
+    .lead { color: var(--c-muted); margin: 0 0 22px; font-size: 15px; }
+    .search { position: relative; }
+    .search label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 15px; }
+    .search input { width: 100%; padding: 14px 16px; font-size: 17px; border: 2px solid var(--c-border);
+      border-radius: 12px; background: var(--c-surface); color: var(--c-text); }
+    .search input:focus { outline: none; border-color: var(--c-brand); }
+    .sugs { list-style: none; margin: 6px 0 0; padding: 6px; position: absolute; left: 0; right: 0;
+      background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
+      box-shadow: var(--c-shadow); max-height: 320px; overflow-y: auto; z-index: 10; }
+    .sugs li { margin: 0; }
+    .sugs a, .sugs .sug-msg { display: block; padding: 10px 12px; border-radius: 8px;
+      text-decoration: none; color: var(--c-text); font-size: 15px; }
+    .sugs a small { display: block; color: var(--c-muted); font-size: 12px; }
+    .sugs a:hover, .sugs a.active { background: var(--c-brand-soft); }
+    .sug-msg { color: var(--c-muted); font-size: 14px; }
+    .hint { font-size: 13px; color: var(--c-muted); margin: 10px 0 0; }
+    .browse { margin: 26px 0 0; }
+    .browse a { display: inline-block; padding: 10px 16px; border: 1px solid var(--c-border);
+      border-radius: 10px; background: var(--c-surface); color: var(--c-brand-dark);
+      text-decoration: none; font-weight: 600; font-size: 15px; }
+    .aviso { font-size: 13px; color: var(--c-muted); border-left: 3px solid var(--c-brand);
+      background: var(--c-surface); padding: 10px 14px; border-radius: 6px; margin: 26px 0 0; }
+    footer { border-top: 1px solid var(--c-border); margin-top: 34px; padding: 18px;
+      text-align: center; color: var(--c-muted); font-size: 13px; }
+    footer a { color: var(--c-brand-dark); }
   </style>
 </head>
 <body>
-
-  <h1 class="sr-only">Farmacias en España — directorio nacional con guardias</h1>
-
-  <header id="app-header">
-    <button type="button" id="btn-toggle-sidebar" aria-label="Abrir filtros y lista" aria-controls="sidebar" aria-expanded="false">
-      &#9776;
-    </button>
-
-    <a href="/" class="brand-link" aria-label="Volver al portal CercaYa">
-      <img src="${esc(logoUrl)}" alt="" class="header-logo-img" width="32" height="32" decoding="async" />
-      <div class="header-text">
-        <div class="header-title">Farmacias España</div>
-        <div class="header-sub">OpenStreetMap + COFs oficiales</div>
-      </div>
+  <header>
+    <a href="/" class="brand" aria-label="Volver al portal CercaYa">
+      <img src="${esc(logoUrl)}" alt="" width="32" height="32" decoding="async" />
+      <span>
+        <span class="brand-title">Farmacias de guardia</span>
+        <span class="brand-sub">Datos de los Colegios de Farmacéuticos</span>
+      </span>
     </a>
-
-    <div class="header-actions">
-      <span id="hero-count" class="header-badge" aria-live="polite"></span>
-      <a href="/" class="header-back" aria-label="Volver a CercaYa"><span class="header-back-text">CercaYa</span> &rarr;</a>
-    </div>
+    <a href="/" class="back">CercaYa &rarr;</a>
   </header>
 
-  <div id="sidebar-backdrop" hidden></div>
+  <main>
+    <h1>Farmacia de guardia en España</h1>
+    <p class="lead">Escribe tu municipio y te llevamos a la farmacia que está de guardia, con dirección, teléfono y horario.</p>
 
-  <div id="app-body">
-    <aside id="sidebar" aria-label="Filtros y lista de farmacias">
-      <div id="sidebar-filters">
-        <h2 class="search-heading">
-          <span aria-hidden="true">&#x1F4CD;</span>
-          Búsqueda
-        </h2>
-        <button type="button" class="btn" id="btn-geo" aria-label="Usar mi ubicación para ordenar por cercanía">
-          &#x1F4CD; Usar mi ubicación
-        </button>
-        <div class="radius-group" role="group" aria-label="Radio de búsqueda">
-          <button type="button" data-r="2" aria-pressed="false">2 km</button>
-          <button type="button" data-r="5" aria-pressed="true">5 km</button>
-          <button type="button" data-r="10" aria-pressed="false">10 km</button>
-        </div>
-        <div class="status-msg" id="status-msg" aria-live="polite">Pulsa &laquo;Usar mi ubicación&raquo; para ordenar por cercanía.</div>
-      </div>
-
-      <div id="list-wrap">
-        <ol id="list" aria-live="polite"></ol>
-        <div class="empty-state" id="empty" hidden>
-          Aún no hay ubicación. Pulsa &laquo;Usar mi ubicación&raquo; o mueve el mapa para explorar.
-        </div>
-      </div>
-    </aside>
-
-    <div id="main-area">
-      <section id="map" role="region" aria-label="Mapa de farmacias"></section>
+    <div class="search">
+      <label for="q">¿En qué municipio?</label>
+      <input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+        placeholder="Cuéllar, Utrera, Gijón..."
+        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugs" />
+      <ul id="sugs" class="sugs" role="listbox" aria-label="Municipios" hidden></ul>
     </div>
-  </div>
+    <p class="hint">Empieza a escribir el nombre de tu municipio.</p>
+
+    <div class="browse">
+      <a href="/farmacias/guardia">O consulta provincia por provincia &rarr;</a>
+    </div>
+
+    <p class="aviso">Los turnos los publica cada Colegio Oficial de Farmacéuticos y pueden cambiar.
+      Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. Si vas a desplazarte,
+      confirma antes por teléfono. En una urgencia grave, llama al 112.</p>
+  </main>
 
   <footer>
-    <div>Datos de <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a> (ODbL) · CercaYa v${APP_VERSION}</div>
+    <div>Datos de los Colegios Oficiales de Farmacéuticos · <a href="/">CercaYa</a> · <a href="/privacidad">Privacidad</a> · v${APP_VERSION}</div>
   </footer>
 
   <script nonce="${nonce}">
-  (function(){
-    'use strict';
+  (function () {
+    var input = document.getElementById('q');
+    var box = document.getElementById('sugs');
+    var muni = [];      // [{n, p, u}]
+    var loaded = false;
+    var active = -1;    // indice resaltado
+    var shown = [];     // sugerencias visibles
 
-    // Estado global del cliente. Mantengo esto en un objeto para que sea
-    // facil de inspeccionar desde devtools y para que el codigo no caiga
-    // en closures accidentales.
-    var state = {
-      all: [],          // array crudo desde farmacias.json
-      filtered: [],     // subset por radio + ubicacion
-      user: null,       // { lat, lng } tras geolocalizacion
-      radiusKm: 5,
-      selected: null,   // indice en filtered
-      map: null,
-      cluster: null,
-      userMarker: null,
-      // Guardias agregadas de los 47 territorios (cobertura nacional). Cada
-      // entrada sigue el schema [lat, lng, direccion, poblacion, telefono,
-      // cp, horarioGuardia, horarioGuardiaDesc]. Se carga en paralelo a
-      // farmacias.json — si algun fetch falla, seguimos sin ese territorio.
-      guardias: [],
-      // Mapa "bucketKey -> guardia" para lookup O(1) al matchear una
-      // farmacia OSM con una guardia. Clave = lat(4dec)_lng(4dec) que agrupa
-      // en celdas de ~11m — suficientemente fino para no falsos matches y
-      // lo bastante amplio para tolerar diferencias de coord de 1-2 decimales.
-      guardiaByBucket: null,
-      guardiaLayer: null, // L.layerGroup con markers de guardias sin match OSM
-    };
-
-    var el = function(id){ return document.getElementById(id); };
-    var list = el('list');
-    var statusMsg = el('status-msg');
-    var empty = el('empty');
-    var heroCount = el('hero-count');
-
-    function setStatus(msg, isErr){
-      statusMsg.textContent = msg;
-      statusMsg.classList.toggle('error', !!isErr);
+    // Normaliza para comparar sin acentos ni mayusculas.
+    function norm(s) {
+      return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
     }
 
-    // Haversine. Radio de la Tierra en km. La aproximacion plana seria mas
-    // rapida para distancias cortas pero la diferencia sobre 10km es <0.1m,
-    // asi que no merece la pena.
-    function haversine(lat1, lon1, lat2, lon2){
-      var R = 6371;
-      var dLat = (lat2 - lat1) * Math.PI / 180;
-      var dLon = (lon2 - lon1) * Math.PI / 180;
-      var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-      return 2 * R * Math.asin(Math.sqrt(a));
-    }
-
-    // Formatea una distancia en km a texto breve. <1km -> "450 m", resto -> "2.3 km".
-    function fmtDist(km){
-      if (km < 1) return Math.round(km * 1000) + ' m';
-      return km.toFixed(1).replace('.', ',') + ' km';
-    }
-
-    // Clave de bucket para matcheo guardia<->OSM. 4 decimales = ~11m,
-    // suficientemente permisivo para absorber el error de geocoding (~20m
-    // en zonas urbanas) y estricto para no matchear la farmacia de al lado.
-    // En la practica redondeamos a 3 decimales (~110m) tambien para tener
-    // un segundo nivel mas tolerante — algunas guardias de Gipuzkoa vienen
-    // de Nominatim con precision variable.
-    function bucketKeyFine(lat, lng){
-      return lat.toFixed(4) + '_' + lng.toFixed(4);
-    }
-    function bucketKeyCoarse(lat, lng){
-      return lat.toFixed(3) + '_' + lng.toFixed(3);
-    }
-
-    // Devuelve la entrada de guardia asociada a una farmacia OSM, o null.
-    // Intenta primero bucket fino (<11m) y luego grueso (<110m). La grueso
-    // es para el caso "misma farmacia pero con una coord algo desplazada".
-    function findGuardia(lat, lng){
-      if (!state.guardiaByBucket) return null;
-      var fine = state.guardiaByBucket.fine.get(bucketKeyFine(lat, lng));
-      if (fine) return fine;
-      var coarse = state.guardiaByBucket.coarse.get(bucketKeyCoarse(lat, lng));
-      return coarse || null;
-    }
-
-    // Sanitiza texto para innerHTML. Mejor que atar el DOM a cadenas crudas.
-    function esc(s){
+    function esc(s) {
       return String(s == null ? '' : s)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }
 
-    // Construye el enlace a Maps. En iOS Safari, 'maps:' abre Apple Maps;
-    // en todo lo demas vale el link https a Google Maps. Usamos este unico
-    // patron que funciona para todos y deja que el SO decida.
-    function mapsLink(lat, lng, label){
-      var q = encodeURIComponent(label + ' @' + lat + ',' + lng);
-      return 'https://www.google.com/maps/dir/?api=1&destination=' + lat + ',' + lng + '&destination_name=' + q;
+    function cerrar() {
+      box.hidden = true; box.innerHTML = ''; active = -1; shown = [];
+      input.setAttribute('aria-expanded', 'false');
     }
 
-    function updateHeroCount(){
-      if (state.user){
-        heroCount.textContent = state.filtered.length + ' a ≤' + state.radiusKm + ' km';
-      } else {
-        heroCount.textContent = state.all.length.toLocaleString('es-ES') + ' farmacias';
+    function msg(t) {
+      box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>';
+      box.hidden = false; shown = []; active = -1;
+      input.setAttribute('aria-expanded', 'true');
+    }
+
+    function render(q) {
+      var nq = norm(q);
+      if (nq.length < 2) { cerrar(); return; }
+      if (!loaded) { msg('Cargando municipios\\u2026'); return; }
+      var res = [];
+      for (var i = 0; i < muni.length && res.length < 12; i++) {
+        if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
       }
+      shown = res; active = -1;
+      if (res.length === 0) { msg('No encontramos ese municipio. Prueba con otro nombre o mira por provincia.'); return; }
+      var html = '';
+      for (var j = 0; j < res.length; j++) {
+        html += '<li role="option"><a href="' + esc(res[j].u) + '">' + esc(res[j].n)
+          + '<small>' + esc(res[j].p) + '</small></a></li>';
+      }
+      box.innerHTML = html;
+      box.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
     }
 
-    // Refiltra por radio y usuario. Si no hay usuario, mostramos las 50 mas
-    // cercanas al centro actual del mapa (para que la lista no quede vacia).
-    function refilter(){
-      var cx, cy;
-      if (state.user){
-        cx = state.user.lng; cy = state.user.lat;
-      } else if (state.map){
-        var c = state.map.getCenter();
-        cx = c.lng; cy = c.lat;
-      } else {
-        state.filtered = [];
-        renderList();
+    function marcar(idx) {
+      var links = box.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) links[i].classList.toggle('active', i === idx);
+      if (idx >= 0 && links[idx]) links[idx].scrollIntoView({ block: 'nearest' });
+    }
+
+    function ir(idx) {
+      if (idx >= 0 && shown[idx]) { window.location.href = shown[idx].u; return true; }
+      return false;
+    }
+
+    // Carga el indice una vez, al primer foco/teclazo.
+    function cargar() {
+      if (loaded) return;
+      fetch('/api/guardias/municipios', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (data) {
+          muni = Array.isArray(data) ? data : (data && data.municipios) || [];
+          loaded = true;
+          if (norm(input.value).length >= 2) render(input.value);
+        })
+        .catch(function () { loaded = true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
+    }
+
+    input.addEventListener('focus', cargar);
+    input.addEventListener('input', function () { cargar(); render(input.value); });
+    input.addEventListener('keydown', function (e) {
+      if (box.hidden || shown.length === 0) {
+        if (e.key === 'Enter') { e.preventDefault(); }
         return;
       }
-      var r = state.radiusKm;
-      var arr = [];
-      for (var i = 0; i < state.all.length; i++){
-        var f = state.all[i];
-        var d = haversine(cy, cx, f[0], f[1]);
-        if (!state.user || d <= r){
-          arr.push({ idx: i, dist: d });
-        }
-      }
-      arr.sort(function(a,b){ return a.dist - b.dist; });
-      // Cap a 50 items para no saturar el DOM — el mapa muestra todos.
-      state.filtered = arr.slice(0, 50);
-      renderList();
-      updateHeroCount();
-    }
-
-    function renderList(){
-      list.innerHTML = '';
-      if (state.filtered.length === 0){
-        empty.hidden = false;
-        if (state.user){
-          setStatus('No hay farmacias en ' + state.radiusKm + ' km de tu ubicación. Prueba un radio mayor.');
-        }
-        return;
-      }
-      empty.hidden = true;
-      var frag = document.createDocumentFragment();
-      for (var i = 0; i < state.filtered.length; i++){
-        var row = state.filtered[i];
-        var f = state.all[row.idx];
-        var g = findGuardia(f[0], f[1]); // guardia asociada o null
-        var li = document.createElement('li');
-        li.className = 'card' + (g ? ' card-guardia' : '');
-        li.setAttribute('data-idx', String(row.idx));
-        if (g) li.setAttribute('data-guardia', 'true');
-        // Stretched-link: el boton envuelve nombre+direccion y su ::before
-        // cubre toda la tarjeta. Asi todo el card es clickable sin que el
-        // <li> sea focusable-ambiguo.
-        var btnHtml =
-          '<button type="button" class="card-select" data-idx="' + row.idx + '" aria-label="Ver ' + esc(f[2]) + ' en el mapa' + (g ? ' (de guardia)' : '') + '">' +
-            '<p class="card-name">' + esc(f[2]) + '</p>' +
-            (f[3] ? '<p class="card-addr">' + esc(f[3]) + '</p>' : '') +
-          '</button>';
-        var meta = [];
-        meta.push('<span class="card-dist">' + esc(fmtDist(row.dist)) + '</span>');
-        if (g) {
-          // Badge + horario de guardia. El horario puede venir como "08:00 - 22:00"
-          // o como null/vacio — no lo ocultamos si hay, aunque sea corto.
-          meta.push('<span class="badge-guardia">De guardia</span>');
-          if (g[6]) meta.push('<span class="guardia-horario">&#x1F550; ' + esc(g[6]) + '</span>');
-        }
-        if (f[4]) meta.push('<a href="tel:' + esc(f[4].replace(/\\s+/g,'')) + '">' + esc(f[4]) + '</a>');
-        if (f[5]) meta.push('<span>' + esc(f[5].length > 40 ? f[5].slice(0,40) + '…' : f[5]) + '</span>');
-        li.innerHTML = btnHtml + '<div class="card-meta">' + meta.join('') + '</div>';
-        var btn = li.querySelector('.card-select');
-        btn.addEventListener('click', onCardClick);
-        frag.appendChild(li);
-      }
-      list.appendChild(frag);
-    }
-
-    function onCardClick(ev){
-      var idx = parseInt(this.getAttribute('data-idx'), 10);
-      selectFarmacia(idx, true);
-    }
-
-    function selectFarmacia(idx, panMap){
-      state.selected = idx;
-      // aria-current en la tarjeta activa
-      var cards = list.querySelectorAll('.card');
-      for (var i = 0; i < cards.length; i++){
-        var c = cards[i];
-        c.setAttribute('aria-current', c.getAttribute('data-idx') === String(idx) ? 'true' : 'false');
-      }
-      if (!state.map) return;
-      var f = state.all[idx];
-      if (panMap) state.map.setView([f[0], f[1]], Math.max(state.map.getZoom(), 15));
-      // Abrir el popup del marker correspondiente
-      var m = markers[idx];
-      if (m && state.map.hasLayer(state.cluster)){
-        state.cluster.zoomToShowLayer(m, function(){
-          m.openPopup();
-        });
-      }
-    }
-
-    // Geolocalizacion. Pedimos con high accuracy porque las farmacias son
-    // a nivel calle — un GPS de ~10m ayuda. Timeout 15s para no dejar al
-    // usuario esperando indefinidamente.
-    function requestLocation(){
-      if (!navigator.geolocation){
-        setStatus('Tu navegador no admite geolocalización.', true);
-        return;
-      }
-      setStatus('Obteniendo tu ubicación…');
-      navigator.geolocation.getCurrentPosition(function(pos){
-        state.user = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        setStatus('Ubicación detectada. Mostrando farmacias a ≤' + state.radiusKm + ' km.');
-        if (state.map){
-          state.map.setView([state.user.lat, state.user.lng], 14);
-          if (state.userMarker) state.map.removeLayer(state.userMarker);
-          state.userMarker = L.circleMarker([state.user.lat, state.user.lng], {
-            radius: 8, color: '#16a34a', fillColor: '#16a34a', fillOpacity: 0.6, weight: 2
-          }).addTo(state.map).bindTooltip('Tu ubicación', { permanent: false });
-        }
-        refilter();
-      }, function(err){
-        var msg = 'No se pudo obtener tu ubicación.';
-        if (err && err.code === err.PERMISSION_DENIED) msg = 'Has denegado el permiso de ubicación.';
-        else if (err && err.code === err.POSITION_UNAVAILABLE) msg = 'Ubicación no disponible (sin GPS?).';
-        else if (err && err.code === err.TIMEOUT) msg = 'El GPS tardó demasiado. Prueba de nuevo.';
-        setStatus(msg, true);
-      }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
-    }
-
-    // Mantenemos refs a los markers por indice absoluto para poder abrirlos
-    // desde el click en la lista. El cluster es el layer real en el mapa;
-    // este dict es solo un indice inverso.
-    var markers = {};
-
-    function initMap(){
-      // Centro inicial: aprox centro geografico de Espana peninsular.
-      state.map = L.map('map', {
-        center: [40.0, -3.7],
-        zoom: 6,
-        preferCanvas: true,
-      });
-      // Capas base compartidas con /gasolineras/ para que el portal CercaYa
-      // tenga la MISMA imagen. La preferencia vive en localStorage 'gs_basemap'
-      // (la MISMA clave que gasolineras): si el usuario eligio satelite alli,
-      // aqui tambien arranca en satelite, y viceversa.
-      var prefersDark = false;
-      try { prefersDark = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch(_){}
-      state.baseLayers = {
-        light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
-        }),
-        dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-          attribution: '&copy; OpenStreetMap &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
-        }),
-        // Ortofoto Esri via el proxy propio (mismo endpoint que gasolineras):
-        // asi respetamos la CSP (img-src 'self') sin pegar directo a arcgisonline.
-        satellite: L.tileLayer((location.origin || '') + '/api/tiles/satellite/{z}/{x}/{y}', {
-          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community', maxZoom: 19,
-        }),
-      };
-      var savedBasemap = null;
-      try { savedBasemap = localStorage.getItem('gs_basemap'); } catch(_){}
-      state.currentBase = savedBasemap === 'satellite' ? 'satellite' : (prefersDark ? 'dark' : 'light');
-      state.baseLayers[state.currentBase].addTo(state.map);
-      addBasemapToggle();
-
-      state.cluster = L.markerClusterGroup({
-        chunkedLoading: true,
-        spiderfyOnMaxZoom: true,
-        showCoverageOnHover: false,
-        maxClusterRadius: 60,
-      });
-      var icon = L.divIcon({
-        className: 'farmacia-pin',
-        html: '<div style="background:#16a34a;color:#fff;font-weight:700;font-size:16px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3);">+</div>',
-        iconSize: [26, 26],
-        iconAnchor: [13, 13],
-      });
-      for (var i = 0; i < state.all.length; i++){
-        var f = state.all[i];
-        var m = L.marker([f[0], f[1]], { icon: icon });
-        // Popup lazy: se construye al abrirlo para no gastar memoria con 18k DOMs.
-        (function(mk, data, idx){
-          mk.bindPopup(function(){
-            var name = esc(data[2]);
-            var addr = data[3] ? '<p class="popup-addr">' + esc(data[3]) + '</p>' : '';
-            var phoneLink = data[4] ? '<a href="tel:' + esc(data[4].replace(/\\s+/g,'')) + '" class="secondary">&#x260E; ' + esc(data[4]) + '</a>' : '';
-            var hours = data[5] ? '<p style="margin:4px 0 0;font-size:12px;">&#x1F550; ' + esc(data[5]) + '</p>' : '';
-            var dirLink = '<a href="' + esc(mapsLink(data[0], data[1], data[2])) + '" target="_blank" rel="noopener">Cómo llegar</a>';
-            // Si esta farmacia esta de guardia, lo mostramos arriba del todo
-            // con el horario (si lo hay) y la zona/barrio (campo 7 de guardias).
-            var g = findGuardia(data[0], data[1]);
-            var gHtml = '';
-            if (g) {
-              var horario = g[6] ? ' &middot; &#x1F550; ' + esc(g[6]) : '';
-              var zona = g[7] ? '<p style="margin:2px 0 0;font-size:11px;color:#78350f;">' + esc(g[7]) + '</p>' : '';
-              gHtml = '<p style="margin:0 0 6px;"><span class="badge-guardia">De guardia</span>' + horario + '</p>' + zona;
-            }
-            return (
-              gHtml +
-              '<p class="popup-name">' + name + '</p>' + addr + hours +
-              '<div class="popup-actions">' + dirLink + phoneLink + '</div>'
-            );
-          }, { maxWidth: 260 });
-        })(m, f, i);
-        markers[i] = m;
-        state.cluster.addLayer(m);
-      }
-      state.map.addLayer(state.cluster);
-      state.map.on('moveend', function(){
-        if (!state.user) refilter();
-      });
-
-      // Capa extra con las guardias que NO tienen match en OSM (es decir, no
-      // hay farmacia OSM cerca que les corresponda). Pintamos un marker
-      // dorado "G" para que el usuario las vea igualmente aunque no esten
-      // en la lista. Son pocas (~50-150 en total) asi que sin clustering.
-      addGuardiaLayer();
-    }
-
-    // Boton flotante para alternar mapa normal <-> satelite, replicando el
-    // control de /gasolineras/. Escribe la MISMA clave 'gs_basemap' para que la
-    // preferencia se comparta entre las dos vistas del portal.
-    function addBasemapToggle(){
-      if (!state.map) return;
-      var SAT_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 7 9 3 5 7l4 4"/><path d="m17 11 4 4-4 4-4-4"/><path d="m8 12 4 4"/><path d="m16 8 3-3"/><path d="M9 21a6 6 0 0 0-6-6"/></svg>';
-      var Ctl = L.Control.extend({
-        options: { position: 'topright' },
-        onAdd: function(){
-          var btn = L.DomUtil.create('button', 'sat-toggle');
-          btn.type = 'button';
-          btn.innerHTML = SAT_SVG;
-          function sync(){
-            var onSat = state.currentBase === 'satellite';
-            btn.setAttribute('aria-pressed', onSat ? 'true' : 'false');
-            btn.setAttribute('aria-label', onSat ? 'Volver al mapa normal' : 'Ver mapa en vista satélite');
-            btn.title = onSat ? 'Volver al mapa normal' : 'Vista satélite';
-          }
-          sync();
-          L.DomEvent.disableClickPropagation(btn);
-          L.DomEvent.on(btn, 'click', function(){
-            var toSat = state.currentBase !== 'satellite';
-            state.map.removeLayer(state.baseLayers[state.currentBase]);
-            if (toSat) {
-              state.currentBase = 'satellite';
-            } else {
-              var dk = false;
-              try { dk = !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch(_){}
-              state.currentBase = dk ? 'dark' : 'light';
-            }
-            state.baseLayers[state.currentBase].addTo(state.map);
-            try { localStorage.setItem('gs_basemap', toSat ? 'satellite' : 'map'); } catch(_){}
-            sync();
-          });
-          return btn;
-        }
-      });
-      state.map.addControl(new Ctl());
-    }
-
-    function addGuardiaLayer(){
-      if (!state.map || state.guardias.length === 0) return;
-      // Si ya existe, la recreamos desde cero.
-      if (state.guardiaLayer) state.map.removeLayer(state.guardiaLayer);
-      var osmKeys = new Set();
-      for (var i = 0; i < state.all.length; i++){
-        var f = state.all[i];
-        osmKeys.add(bucketKeyFine(f[0], f[1]));
-        osmKeys.add(bucketKeyCoarse(f[0], f[1]));
-      }
-      var gIcon = L.divIcon({
-        className: 'guardia-pin-wrap',
-        html: '<div class="guardia-pin-only" aria-label="Farmacia de guardia">G</div>',
-        iconSize: [28, 28],
-        iconAnchor: [14, 14],
-      });
-      var group = L.layerGroup();
-      var added = 0;
-      for (var j = 0; j < state.guardias.length; j++){
-        var g = state.guardias[j];
-        var matched = osmKeys.has(bucketKeyFine(g[0], g[1])) || osmKeys.has(bucketKeyCoarse(g[0], g[1]));
-        if (matched) continue; // esta guardia se muestra via la farmacia OSM
-        var gm = L.marker([g[0], g[1]], { icon: gIcon });
-        (function(mk, data){
-          mk.bindPopup(function(){
-            var horario = data[6] ? '<p style="margin:4px 0 0;font-size:12px;">&#x1F550; ' + esc(data[6]) + '</p>' : '';
-            var zona = data[7] ? '<p style="margin:2px 0 0;font-size:11px;color:#78350f;">' + esc(data[7]) + '</p>' : '';
-            var phoneLink = data[4] ? '<a href="tel:' + esc(String(data[4]).replace(/\\s+/g,'')) + '" class="secondary">&#x260E; ' + esc(data[4]) + '</a>' : '';
-            var dirLink = '<a href="' + esc(mapsLink(data[0], data[1], data[2])) + '" target="_blank" rel="noopener">Cómo llegar</a>';
-            return (
-              '<p style="margin:0 0 6px;"><span class="badge-guardia">De guardia</span></p>' +
-              '<p class="popup-name">' + esc(data[2]) + '</p>' +
-              (data[3] ? '<p class="popup-addr">' + esc(data[3]) + '</p>' : '') +
-              horario + zona +
-              '<div class="popup-actions">' + dirLink + phoneLink + '</div>'
-            );
-          }, { maxWidth: 260 });
-        })(gm, g);
-        group.addLayer(gm);
-        added++;
-      }
-      if (added > 0) {
-        group.addTo(state.map);
-        state.guardiaLayer = group;
-      }
-    }
-
-    // Cargar el JSON principal de farmacias + los 47 JSON de guardias en
-    // paralelo. Si alguno de los de guardias falla (red, 404, CDN frio), la
-    // pagina sigue funcionando sin ese territorio — no rompemos el flujo.
-    // 'clm' agrupa las 5 provincias de Castilla-La Mancha en un solo JSON
-    // porque el SESCAM las sirve juntas desde un unico endpoint backend.
-    // Un territorio solo cuenta como "de guardia" si su snapshot se refresco en
-    // el ultimo pase diario (<=30 h). Mas viejo = scraper caido: no pintamos su
-    // etiqueta de guardia (mejor sin etiqueta que una falsa). Espejo de
-    // GUARDIA_STALE_HORAS en src/lib/guardias.ts.
-    function guardiaFiable(ts){
-      if (!ts) return false;
-      var t = Date.parse(ts);
-      if (isNaN(t)) return false;
-      return (Date.now() - t) <= 30 * 3600 * 1000;
-    }
-    var territorios = ['madrid', 'bizkaia', 'gipuzkoa', 'alava', 'coruna', 'murcia', 'almeria', 'girona', 'tarragona', 'cordoba', 'cantabria', 'pontevedra', 'laspalmas', 'alicante', 'cadiz', 'ceuta', 'valencia', 'clm', 'ourense', 'huesca', 'barcelona', 'baleares', 'navarra', 'castellon', 'asturias', 'rioja', 'caceres', 'lleida', 'soria', 'zamora', 'malaga', 'zaragoza', 'badajoz', 'valladolid', 'melilla', 'avila', 'burgos', 'salamanca', 'tenerife', 'teruel', 'segovia', 'granada', 'palencia', 'huelva', 'jaen', 'sevilla', 'leon'];
-    var pFarmacias = fetch('/data/farmacias.json', { cache: 'default' }).then(function(r){
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      return r.json();
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, shown.length - 1); marcar(active); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); marcar(active); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (!ir(active)) ir(0); }
+      else if (e.key === 'Escape') { cerrar(); }
     });
-    var pGuardias = territorios.map(function(t){
-      return fetch('/data/guardias-' + t + '.json', { cache: 'default' })
-        .then(function(r){ return r.ok ? r.json() : null; })
-        .catch(function(){ return null; });
-    });
-
-    Promise.all([pFarmacias].concat(pGuardias))
-      .then(function(results){
-        var farm = results[0];
-        if (!farm || !Array.isArray(farm.farmacias)){
-          throw new Error('Formato inesperado del snapshot');
-        }
-        state.all = farm.farmacias;
-
-        // Juntar todas las guardias en un solo array. Cada una ya viene con
-        // el mismo schema [lat, lng, direccion, poblacion, telefono, cp,
-        // horarioGuardia, horarioGuardiaDesc] asi que no hay que transformar.
-        var allGuardias = [];
-        for (var i = 1; i <= territorios.length; i++){
-          var g = results[i];
-          if (g && Array.isArray(g.guardias) && guardiaFiable(g.ts)) {
-            for (var k = 0; k < g.guardias.length; k++) allGuardias.push(g.guardias[k]);
-          }
-        }
-        state.guardias = allGuardias;
-        // Indexar para lookup O(1). Mantenemos 2 buckets (fino y grueso).
-        var fine = new Map();
-        var coarse = new Map();
-        for (var m = 0; m < allGuardias.length; m++){
-          var gg = allGuardias[m];
-          if (typeof gg[0] !== 'number' || typeof gg[1] !== 'number') continue;
-          var kf = bucketKeyFine(gg[0], gg[1]);
-          var kc = bucketKeyCoarse(gg[0], gg[1]);
-          if (!fine.has(kf)) fine.set(kf, gg);
-          if (!coarse.has(kc)) coarse.set(kc, gg);
-        }
-        state.guardiaByBucket = { fine: fine, coarse: coarse };
-
-        updateHeroCount();
-        initMap();
-        refilter();
-      })
-      .catch(function(err){
-        setStatus('No se pudieron cargar los datos de farmacias: ' + (err && err.message || 'error desconocido') + '. Reintenta en unos minutos.', true);
-      });
-
-    // Wire-up sidebar / toolbar
-    el('btn-geo').addEventListener('click', requestLocation);
-    var radiusBtns = document.querySelectorAll('.radius-group button');
-    for (var j = 0; j < radiusBtns.length; j++){
-      radiusBtns[j].addEventListener('click', function(){
-        var r = parseInt(this.getAttribute('data-r'), 10);
-        state.radiusKm = r;
-        for (var k = 0; k < radiusBtns.length; k++){
-          radiusBtns[k].setAttribute('aria-pressed', radiusBtns[k] === this ? 'true' : 'false');
-        }
-        if (state.user){
-          setStatus('Mostrando farmacias a ≤' + r + ' km de tu ubicación.');
-        }
-        refilter();
-      });
-    }
-
-    // Toggle sidebar en mobile (mismo patron que el shell de gasolineras:
-    // hamburger en header dispara, backdrop cierra). En desktop (>=1024px)
-    // el sidebar siempre esta visible; en mobile se abre/cierra con clase
-    // .open + backdrop.show.
-    var sidebar = el('sidebar');
-    var backdrop = el('sidebar-backdrop');
-    var toggleBtn = el('btn-toggle-sidebar');
-    function openSidebar(){
-      sidebar.classList.add('open');
-      backdrop.classList.add('show');
-      backdrop.hidden = false;
-      toggleBtn.setAttribute('aria-expanded', 'true');
-    }
-    function closeSidebar(){
-      sidebar.classList.remove('open');
-      backdrop.classList.remove('show');
-      backdrop.hidden = true;
-      toggleBtn.setAttribute('aria-expanded', 'false');
-    }
-    toggleBtn.addEventListener('click', function(){
-      if (sidebar.classList.contains('open')) closeSidebar();
-      else openSidebar();
-    });
-    backdrop.addEventListener('click', closeSidebar);
-    // Cerrar al seleccionar una farmacia en mobile (mejor UX: el usuario
-    // hace tap en la card y queremos que vea el mapa con el popup abierto,
-    // no la sidebar tapando.)
-    list.addEventListener('click', function(ev){
-      if (window.matchMedia('(max-width: 1023px)').matches){
-        if (ev.target.closest('.card-select')) closeSidebar();
-      }
+    // Cerrar al hacer clic fuera.
+    document.addEventListener('click', function (e) {
+      if (e.target !== input && !box.contains(e.target)) cerrar();
     });
   })();
   </script>
@@ -1152,15 +259,15 @@ export function buildFarmaciasPage(
 </html>`
 }
 
-// Headers HTTP para /farmacias/. Similar a la landing pero permitimos
-// los CDN de tiles (cartocdn) en img-src. Leaflet es 'self' porque lo
-// servimos desde /static/vendor/map/.
+// Headers HTTP para /farmacias/. CSP estricta: sin mapa ni CDN de tiles, solo
+// mismo origen + nonce. La unica llamada de red del cliente es a
+// /api/guardias/municipios (mismo origen -> connect-src 'self').
 export function farmaciasHeaders(nonce: string): Record<string, string> {
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'nonce-" + nonce + "'",
-    "style-src 'self' 'nonce-" + nonce + "' 'unsafe-inline'", // Leaflet inyecta styles inline en sus popups
-    "img-src 'self' data: https://*.basemaps.cartocdn.com",
+    "style-src 'self' 'nonce-" + nonce + "'",
+    "img-src 'self' data:",
     "font-src 'self'",
     "connect-src 'self'",
     "frame-ancestors 'none'",
@@ -1181,14 +288,8 @@ export function farmaciasHeaders(nonce: string): Record<string, string> {
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
-    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
+    'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // Cache corto: snapshot puede cambiar con el cron mensual. 5 min edge
-    // + SWR para que si Pages empuja una version nueva se vea en menos de
-    // 1h sin golpear el origen.
     'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
-    'Link': [
-      '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
-    ].join(', '),
   }
 }

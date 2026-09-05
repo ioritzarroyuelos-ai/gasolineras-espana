@@ -172,12 +172,12 @@ async function main() {
       saveCache(cache)
     }
   }
-  if (!coord) throw new Error(`Geocoding falló para ${f.direccion}`)
-
+  // Mapa retirado: guardamos aunque falle el geocoding (Nominatim bloquea las
+  // IPs de CI); la pagina usa municipio/direccion, no coordenadas (0,0 si no).
   const nombreLimpio = f.nombre.replace(/^Lcd[oa]\.\s+/i, '').trim()
   const guardias = [[
-    coord[0],
-    coord[1],
+    coord ? coord[0] : 0,
+    coord ? coord[1] : 0,
     `Farmacia ${titleCase(nombreLimpio)} · ${titleCase(f.direccion)}`.slice(0, 140),
     MUNICIPIO,
     f.telefono,

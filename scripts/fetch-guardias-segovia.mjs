@@ -203,13 +203,14 @@ async function main() {
   }
   if (nuevas > 0) saveCache(cache)
 
+  // Mapa retirado: guardamos aunque falle el geocoding (Nominatim bloquea las
+  // IPs de CI); la pagina usa municipio/direccion, no coordenadas (0,0 si no).
   const guardias = []
   for (const f of dedupe) {
-    if (!f.coord) continue
     const dirFinal = f.nombre ? `${titleCase(f.nombre.replace(/^FARMACIA\s+/i, 'Farmacia '))} · ${titleCase(f.direccion)}` : titleCase(f.direccion)
     guardias.push([
-      f.coord[0],
-      f.coord[1],
+      f.coord ? f.coord[0] : 0,
+      f.coord ? f.coord[1] : 0,
       dirFinal.slice(0, 140),
       'Segovia',
       f.telefono,
@@ -219,7 +220,7 @@ async function main() {
     ])
   }
 
-  if (guardias.length < 1) throw new Error('Cero con coord. Abortamos.')
+  if (guardias.length < 1) throw new Error('Cero farmacias tras parsear. Abortamos.')
 
   const out = {
     ts: new Date().toISOString(),

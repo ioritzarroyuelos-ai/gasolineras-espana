@@ -113,48 +113,23 @@ function parseCoord(raw) {
 // orden consistente: primero h4 opcional (hora cabecera), luego h5 (municipio),
 // h6 (nombre + link google maps con coord), y dl con el resto.
 function parseBloque(html) {
-  // Nombre: <a class="FlotarIzquierda" href="...">NOMBRE</a>
-  const mName = html.match(/<a class="FlotarIzquierda"[^>]*>([\s\S]*?)<\/a>/)
-  if (!mName) return null
-  const nombre = clean(mName[1], 120)
-
-  // Coords del href de google.aspx: coord=43.417533;-2.726412
-  const mCoord = html.match(/coord=(-?\d+(?:\.\d+)?);(-?\d+(?:\.\d+)?)/)
-  const lat = mCoord ? parseCoord(mCoord[1]) : NaN
-  const lng = mCoord ? parseCoord(mCoord[2]) : NaN
-  if (!isFinite(lat) || !isFinite(lng)) return null
-
-  // Bounding box Bizkaia (lat ~43.0-43.5, lng ~-3.5 a -2.3). Generoso para
-  // no perder farmacias del borde con Cantabria, Araba o Gipuzkoa.
-  if (lat < 42.8 || lat > 43.6 || lng < -3.7 || lng > -2.2) return null
-
-  // Direccion: <span id="...Label7">...</span>
-  const mDir = html.match(/id="[^"]*Label7"[^>]*>([\s\S]*?)<\/span>/)
-  const direccion = mDir ? clean(mDir[1], 120) : ''
-
-  // Telefono: <span id="...Label8">...</span>
-  const mTel = html.match(/id="[^"]*Label8"[^>]*>([\s\S]*?)<\/span>/)
-  const telefono = mTel ? clean(mTel[1], 30) : ''
-
-  // Poblacion: <span id="...lblMunicipio">...</span>
-  const mPob = html.match(/id="[^"]*lblMunicipio"[^>]*>([\s\S]*?)<\/span>/)
-  const poblacion = mPob ? clean(mPob[1], 60) : ''
-
-  // Horario: <span id="...lblHorarioFarmacia">...</span>
-  const mHor = html.match(/id="[^"]*lblHorarioFarmacia"[^>]*>([\s\S]*?)<\/span>/)
-  const horarioGuardia = mHor ? clean(mHor[1], 40) : ''
-
-  // Zona de salud: <span id="...lblZonaSalud">...</span> (lo usamos como desc)
-  const mZona = html.match(/id="[^"]*lblZonaSalud"[^>]*>([\s\S]*?)<\/span>/)
-  const horarioGuardiaDesc = mZona ? clean(mZona[1], 120) : ''
-
-  // El COF Bizkaia no da CP por farmacia — lo dejamos vacio. El frontend no lo
-  // muestra en la card sino solo en popup si existe.
-  const cp = ''
-
-  // Normalizamos nombre a formato "Apellido, Nombre" → mas compacto sin perder info.
-  const direccionFinal = nombre ? (direccion ? `${nombre} · ${direccion}` : nombre) : direccion
-  return [lat, lng, direccionFinal.slice(0, 140), poblacion, telefono, cp, horarioGuardia, horarioGuardiaDesc]
+  // La web del COF Bizkaia cambio (2026): ya no da coordenadas ni los ids
+  // antiguos. Cada farmacia trae spans lbl<Campo>Detalle. Como el mapa se
+  // retiro, guardamos sin coordenadas (0,0). "Cerrado" = no abierta hoy -> fuera
+  // (en findes/festivos las abiertas SON la rotacion de guardia).
+  const grab = (label) => {
+    const m = html.match(new RegExp('id="[^"]*lbl' + label + '"[^>]*>([\\s\\S]*?)</span>'))
+    return m ? clean(m[1], 140) : ''
+  }
+  const nombre = grab('FarmaciaNombre')
+  const direccion = grab('Direccion')
+  const poblacion = grab('Poblacion')
+  const horario = grab('HorarioDetalle')
+  const telefono = grab('TelefonoDetalle')
+  if (!nombre && !direccion) return null
+  if (!horario || /cerrad/i.test(horario)) return null
+  const direccionFinal = nombre ? (direccion ? nombre + ' \u00b7 ' + direccion : nombre) : direccion
+  return [0, 0, direccionFinal.slice(0, 140), poblacion, telefono, '', horario, '']
 }
 
 async function main() {
@@ -168,25 +143,30 @@ async function main() {
   const totalDeclarado = mTotal ? parseInt(mTotal[1], 10) : null
   if (totalDeclarado != null) console.log(`  total declarado por el COF: ${totalDeclarado}`)
 
-  // Extraemos cada bloque de farmacia. El HTML usa IDs con padding variable
-  // (ctl00, ctl01, ..., ctl100) asi que capturamos \d+.
-  const re = /<div id="ctl00_ch_gridDatos_ctl\d+_divResultados"[^>]*>([\s\S]*?)<div id="ctl00_ch_gridDatos_ctl\d+_divResultadosEspacio"/g
+  // Cada farmacia empieza en su span lblFarmaciaNombre; troceamos por ahi.
+  const totalFarmacias = (html.match(/lblFarmaciaNombre"/g) || []).length
+  console.log(`  ${totalFarmacias} farmacias en el HTML`)
+  if (totalFarmacias < 50) {
+    throw new Error(`Solo ${totalFarmacias} farmacias en el HTML (Bizkaia ~170). La web cambio? Abortamos sin sobrescribir.`)
+  }
+  const partes = html.split(/(?=id="[^"]*lblFarmaciaNombre")/)
   const guardias = []
-  let skipped = 0
-  let m
-  while ((m = re.exec(html)) !== null) {
-    const row = parseBloque(m[1])
+  let cerradas = 0
+  for (const parte of partes) {
+    const row = parseBloque(parte)
     if (row) guardias.push(row)
-    else skipped++
+    else cerradas++
   }
 
-  console.log(`  ${guardias.length} farmacias parseadas (${skipped} descartadas por faltar datos)`)
+  console.log(`  ${guardias.length} abiertas hoy (de guardia); ${cerradas} cerradas/descartadas`)
 
-  if (guardias.length < 80) {
-    throw new Error(`Solo ${guardias.length} guardias con coord. Bizkaia suele tener ~135-150. Abortamos sin sobrescribir.`)
+  // No ponemos minimo alto: en domingo/festivo hay pocas abiertas. El sanity de
+  // parseo va sobre totalFarmacias (arriba). Solo evitamos escribir vacio.
+  if (guardias.length < 1) {
+    throw new Error('Cero farmacias abiertas detectadas. Abortamos sin sobrescribir.')
   }
   if (guardias.length > 400) {
-    throw new Error(`Sospechoso: ${guardias.length} guardias. Max razonable ~400. Abortamos sin sobrescribir.`)
+    throw new Error(`Sospechoso: ${guardias.length} farmacias. Abortamos sin sobrescribir.`)
   }
 
   const out = {

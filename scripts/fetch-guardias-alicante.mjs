@@ -104,6 +104,7 @@ function parseHorario(schedule) {
 }
 
 async function geocode(address, location, pc) {
+  if (process.env.GITHUB_ACTIONS) return null   // CI: sin geocoding en vivo (Nominatim ralentiza/bloquea las IPs del runner); se guarda sin coordenadas
   const q = `${address}, ${pc} ${location}, Alicante, España`
   const url = `${NOMINATIM}?format=json&limit=1&addressdetails=0&countrycodes=es&q=${encodeURIComponent(q)}`
   try {

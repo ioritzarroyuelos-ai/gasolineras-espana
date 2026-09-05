@@ -90,6 +90,7 @@ async function descubrePdfUrl() {
 }
 
 async function geocode(direccion) {
+  if (process.env.GITHUB_ACTIONS) return null   // CI: sin geocoding en vivo (Nominatim ralentiza/bloquea las IPs del runner); se guarda sin coordenadas
   const q = `${direccion}, Segovia, España`
   const url = `${NOMINATIM_URL}?format=json&limit=1&countrycodes=es&q=${encodeURIComponent(q)}`
   try {

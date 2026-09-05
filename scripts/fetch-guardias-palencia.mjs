@@ -196,6 +196,7 @@ async function geocodeOne(q) {
 }
 
 async function geocode(direccion, pueblo) {
+  if (process.env.GITHUB_ACTIONS) return null   // CI: sin geocoding en vivo (Nominatim ralentiza/bloquea las IPs del runner); se guarda sin coordenadas
   const variants = []
   const sinParens = direccion.replace(/\s*\([^)]*\)/g, '').trim()
   if (sinParens) variants.push(sinParens)

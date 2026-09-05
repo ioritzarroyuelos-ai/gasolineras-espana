@@ -132,6 +132,7 @@ async function geocodeOne(q) {
 }
 
 async function geocode(direccion, municipio) {
+  if (process.env.GITHUB_ACTIONS) return null   // CI: sin geocoding en vivo (Nominatim ralentiza/bloquea las IPs del runner); se guarda sin coordenadas
   // Limpiar la direccion: quitar parentesis (telefonos) y "(A partir 8:00 h)"-
   // tipo prefijos que confunden a Nominatim.
   const clean = direccion
@@ -476,24 +477,33 @@ async function main() {
     const muniEscaneado = ZONAS_ESCANEADAS[zona]
     let diurnas = []
     let nocturnas = []
-    if (zona === ZONA_CAPITAL) {
-      // Sevilla capital — formato semanal por zonas (CENTRO, NERVIÓN...).
-      const parser = new PDFParse({ data: result.value })
-      const r = await parser.getText()
-      ;({ diurnas, nocturnas } = parseDiaCapital(r.text, d))
-    } else if (muniEscaneado) {
-      // PDF escaneado — pipeline OCR + parser secuencial por dia.
-      const text = await ocrPdf(result.value, zona)
-      ;({ diurnas, nocturnas } = parseDiaScanned(text, d, muniEscaneado))
-    } else if (muniUnico) {
-      // Formato simple — un solo municipio con bullets Ŀ.
-      const parser = new PDFParse({ data: result.value })
-      const r = await parser.getText()
-      ;({ diurnas, nocturnas } = parseDiaSimple(r.text, target, year, muniUnico))
-    } else {
-      const parser = new PDFParse({ data: result.value })
-      const r = await parser.getText({ itemJoiner: '@@@' })
-      ;({ diurnas, nocturnas } = parseDia(r.text, target, mes, year))
+    // Cada zona en su propio try: un fallo (p.ej. el OCR de una zona escaneada)
+    // NO debe tirar el resto. Antes, un throw aqui abortaba TODO Sevilla y no se
+    // guardaba nada, aunque las zonas de texto (capital incluida) hubieran ido
+    // bien.
+    try {
+      if (zona === ZONA_CAPITAL) {
+        // Sevilla capital — formato semanal por zonas (CENTRO, NERVIÓN...).
+        const parser = new PDFParse({ data: result.value })
+        const r = await parser.getText()
+        ;({ diurnas, nocturnas } = parseDiaCapital(r.text, d))
+      } else if (muniEscaneado) {
+        // PDF escaneado — pipeline OCR + parser secuencial por dia.
+        const text = await ocrPdf(result.value, zona)
+        ;({ diurnas, nocturnas } = parseDiaScanned(text, d, muniEscaneado))
+      } else if (muniUnico) {
+        // Formato simple — un solo municipio con bullets Ŀ.
+        const parser = new PDFParse({ data: result.value })
+        const r = await parser.getText()
+        ;({ diurnas, nocturnas } = parseDiaSimple(r.text, target, year, muniUnico))
+      } else {
+        const parser = new PDFParse({ data: result.value })
+        const r = await parser.getText({ itemJoiner: '@@@' })
+        ;({ diurnas, nocturnas } = parseDia(r.text, target, mes, year))
+      }
+    } catch (err) {
+      console.log(`  ${zona}: FAIL parseo ${String(err && err.message || err).slice(0, 100)}`)
+      continue
     }
     console.log(`  ${zona}: ${diurnas.length} diurnas, ${nocturnas.length} nocturnas`)
     for (const f of diurnas) farmacias.push({ ...f, zona, horario: 'Diurna 9:30-22:00' })
@@ -526,7 +536,6 @@ async function main() {
   // nocturno (24h), combinamos los horarios.
   const seen = new Map()
   for (const f of farmacias) {
-    if (!f.coord) continue
     const dirLimpia = limpiarDireccion(f.direccion)
     const tel = f.telefono || extraerTelefono(f.direccion)
     const k = `${dirLimpia.toLowerCase()} | ${f.municipio.toLowerCase()}`
@@ -540,8 +549,8 @@ async function main() {
     }
     seen.set(k, guardias.length)
     guardias.push([
-      f.coord[0],
-      f.coord[1],
+      f.coord ? f.coord[0] : 0,
+      f.coord ? f.coord[1] : 0,
       `Farmacia de guardia · ${titleCase(dirLimpia)}`.slice(0, 140),
       f.municipio,
       tel,
@@ -551,7 +560,9 @@ async function main() {
     ])
   }
 
-  if (guardias.length < 5) throw new Error(`Solo ${guardias.length} con coord. Abortamos.`)
+  // Mapa retirado: guardamos aunque falle el geocoding (Nominatim bloquea CI).
+  // El guard de parseo de arriba (farmacias.length < 5) protege lo demas.
+  if (guardias.length < 1) throw new Error('Cero farmacias tras parsear. Abortamos.')
 
   const out = {
     ts: new Date().toISOString(),

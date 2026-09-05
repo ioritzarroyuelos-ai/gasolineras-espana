@@ -132,6 +132,14 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+          cache: 'npm'
+
+      # Instala dependencias ANTES de los scrapers. Sin esto, los scrapers que
+      # importan paquetes (pdf-parse en granada/huelva/jaen/leon/palencia/
+      # segovia/sevilla, pdfjs-dist en jaen) fallaban con ERR_MODULE_NOT_FOUND
+      # y sus territorios quedaban sin refrescar (aviso de caducado en la web).
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
 
       # Los scrapers se ejecutan en serie para que un fallo de uno no
       # bloquee a los otros. `continue-on-error` + `if: always()` en el step

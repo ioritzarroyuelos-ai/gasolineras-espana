@@ -257,11 +257,10 @@ async function main() {
 
   const guardias = []
   for (const f of dedupe.values()) {
-    if (!f.coord) continue
     const dirFinal = `${f.nombre} · ${f.direccion}`
     guardias.push([
-      f.coord[0],
-      f.coord[1],
+      f.coord ? f.coord[0] : 0,
+      f.coord ? f.coord[1] : 0,
       dirFinal.slice(0, 140),
       f.municipio,
       f.telefono,
@@ -271,8 +270,11 @@ async function main() {
     ])
   }
 
-  if (guardias.length < 10) {
-    throw new Error(`Solo ${guardias.length} farmacias con coord. Abortamos.`)
+  // Mapa retirado: guardamos aunque falle el geocoding (Nominatim bloquea las
+  // IPs de CI). El guard de parseo de arriba (farmacias.length < 20) protege
+  // contra un HTML roto.
+  if (guardias.length < 1) {
+    throw new Error('Cero farmacias tras parsear. Abortamos.')
   }
 
   const out = {

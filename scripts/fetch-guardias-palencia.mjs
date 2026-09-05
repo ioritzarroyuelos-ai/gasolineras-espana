@@ -710,7 +710,6 @@ async function main() {
   const guardias = []
   const seen = new Set()
   for (const f of farmaciasAll) {
-    if (!f.coord) continue
     const dirLimpia = limpiarDireccion(f.direccion)
     const tel = extraerTelefono(f.direccion)
     const k = `${normalize(dirLimpia)}|${normalize(f.pueblo || f.zona || '')}`
@@ -744,8 +743,8 @@ async function main() {
     if (zonaTitle && normalize(nombreLimpio) === normalize(zonaTitle)) nombreLimpio = ''
     const nom = nombreLimpio ? `Farmacia ${titleCase(nombreLimpio)}` : 'Farmacia de guardia'
     guardias.push([
-      f.coord[0],
-      f.coord[1],
+      f.coord ? f.coord[0] : 0,
+      f.coord ? f.coord[1] : 0,
       `${nom} · ${titleCase(dirLimpia)}`.slice(0, 140),
       pueblo,
       tel,
@@ -755,7 +754,10 @@ async function main() {
     ])
   }
 
-  if (guardias.length < 3) throw new Error(`Solo ${guardias.length} guardias geocodificadas. Abortamos.`)
+  // Mapa retirado: guardamos aunque falle el geocoding (Nominatim bloquea las
+  // IPs de CI). El guard de parseo de arriba (farmaciasAll.length < 3) protege
+  // contra un PDF ilegible.
+  if (guardias.length < 1) throw new Error('Cero farmacias tras parsear. Abortamos.')
 
   const out = {
     ts: new Date().toISOString(),

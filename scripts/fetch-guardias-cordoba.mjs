@@ -270,7 +270,9 @@ async function main() {
     done++
     const coord = await geocode(f.calle)
     if (done % 10 === 0) console.log(`  ${done}/${dedupe.size} procesadas, ${guardias.length} OK, ${sinCoord} sin coord`)
-    if (!coord) { sinCoord++; continue }
+    // Mapa retirado: guardamos aunque el geocoding falle (Nominatim bloquea CI);
+    // la pagina usa municipio/direccion, no coordenadas (0,0 si no hay).
+    if (!coord) sinCoord++
 
     const calleTitle = titleCase(f.calle)
     const dirFinal = f.referencia
@@ -279,8 +281,8 @@ async function main() {
     const horarioGuardia = Array.from(f.slots).sort().join(' / ')
 
     guardias.push([
-      coord[0],
-      coord[1],
+      coord ? coord[0] : 0,
+      coord ? coord[1] : 0,
       dirFinal.slice(0, 140),
       'Córdoba',
       '',
@@ -292,8 +294,8 @@ async function main() {
 
   console.log(`  ${guardias.length} guardias con coord (${sinCoord} sin resultado en Nominatim)`)
 
-  if (guardias.length < 15) {
-    throw new Error(`Solo ${guardias.length} guardias geocodeadas. Nominatim bloqueado o respuesta cambio. Abortamos.`)
+  if (guardias.length < 1) {
+    throw new Error('Cero farmacias tras parsear. Abortamos.')
   }
 
   const out = {

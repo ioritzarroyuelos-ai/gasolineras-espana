@@ -248,12 +248,16 @@ async function main() {
   if (nuevas > 0) saveCache(cache)
   if (descartadas > 0) console.log(`  ${descartadas} sin coord`)
 
+  // El mapa se retiro: la pagina usa municipio/direccion, no coordenadas. Por
+  // eso ya NO descartamos ni abortamos por fallo de geocodificacion (Nominatim
+  // bloquea las IPs de CI): guardamos TODAS las farmacias parseadas, con coord
+  // donde la haya (0,0 si no). El guard de parseo de arriba (farmacias.length
+  // < 3) sigue protegiendo contra un PDF ilegible.
   const guardias = []
   for (const f of farmacias) {
-    if (!f.coord) continue
     guardias.push([
-      f.coord[0],
-      f.coord[1],
+      f.coord ? f.coord[0] : 0,
+      f.coord ? f.coord[1] : 0,
       `Farmacia de guardia · ${titleCase(f.direccion)}`.slice(0, 140),
       'Granada',
       f.telefono,
@@ -263,7 +267,7 @@ async function main() {
     ])
   }
 
-  if (guardias.length < 1) throw new Error('Cero con coord. Abortamos.')
+  if (guardias.length < 1) throw new Error('Cero farmacias tras parsear. Abortamos.')
 
   const out = {
     ts: new Date().toISOString(),

@@ -194,22 +194,20 @@ async function main() {
   for (const f of dedupe.values()) {
     i++
     const coord = await geocode(f.direccionRaw, f.municipioRaw, f.cp)
-    if (coord) {
-      const dirFinal = `${f.nombre} · ${f.direccion}`
-      guardias.push([
-        coord[0],
-        coord[1],
-        dirFinal.slice(0, 140),
-        f.municipio,
-        f.telefono,
-        f.cp,
-        f.horario,
-        '',
-      ])
-      okCount++
-    } else {
-      failCount++
-    }
+    // Mapa retirado: guardamos aunque el geocoding falle (Nominatim bloquea CI);
+    // la pagina usa municipio/direccion, no coordenadas (0,0 si no hay).
+    const dirFinal = `${f.nombre} · ${f.direccion}`
+    guardias.push([
+      coord ? coord[0] : 0,
+      coord ? coord[1] : 0,
+      dirFinal.slice(0, 140),
+      f.municipio,
+      f.telefono,
+      f.cp,
+      f.horario,
+      '',
+    ])
+    if (coord) okCount++; else failCount++
     if (i % 10 === 0) {
       console.log(`  ${i}/${dedupe.size} procesadas, ${okCount} OK, ${failCount} sin coord`)
     }
@@ -218,8 +216,8 @@ async function main() {
 
   console.log(`  ${guardias.length} guardias con coord (${failCount} sin resultado en Nominatim)`)
 
-  if (guardias.length < 5) {
-    throw new Error(`Solo ${guardias.length} guardias geocodeadas. Nominatim bloqueado o respuesta cambio. Abortamos.`)
+  if (guardias.length < 1) {
+    throw new Error('Cero farmacias tras parsear. Abortamos.')
   }
 
   const out = {

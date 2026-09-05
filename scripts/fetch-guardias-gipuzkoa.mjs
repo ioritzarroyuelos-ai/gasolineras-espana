@@ -97,6 +97,7 @@ const BBOX_GI = { minLat: 42.9, maxLat: 43.5, minLng: -2.6, maxLng: -1.7 }
 // dedupe entre tipos (misma farmacia de Dia y de 13h).
 const geoCache = new Map()
 async function geocode(nombre, direccion, poblacion) {
+  if (process.env.GITHUB_ACTIONS) return [0, 0]   // CI: sin geocoding en vivo (Nominatim ralentiza el pase); centinela para no abortar (coords no se usan sin mapa)
   const key = `${nombre}||${direccion}||${poblacion}`.toLowerCase()
   if (geoCache.has(key)) return geoCache.get(key)
 

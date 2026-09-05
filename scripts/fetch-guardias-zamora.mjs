@@ -141,6 +141,7 @@ function parseFicha(html) {
 }
 
 async function geocodeNominatim(direccion, municipio) {
+  if (process.env.GITHUB_ACTIONS) return [0, 0]   // CI: sin geocoding en vivo (Nominatim ralentiza el pase); centinela para no abortar (coords no se usan sin mapa)
   const q = `${direccion}, ${municipio}, Zamora, España`
   const url = `${NOMINATIM_URL}?format=json&limit=1&countrycodes=es&q=${encodeURIComponent(q)}`
   try {

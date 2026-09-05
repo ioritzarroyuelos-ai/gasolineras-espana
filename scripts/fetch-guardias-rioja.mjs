@@ -154,6 +154,7 @@ function parseRiojaForDate(html, fecha) {
 }
 
 async function geocodeNominatim(direccion, localidad) {
+  if (process.env.GITHUB_ACTIONS) return [0, 0]   // CI: sin geocoding en vivo (Nominatim ralentiza el pase); centinela para no abortar (coords no se usan sin mapa)
   const q = `${direccion}, ${localidad}, La Rioja, España`
   const url = `${NOMINATIM_URL}?format=json&limit=1&countrycodes=es&q=${encodeURIComponent(q)}`
   try {

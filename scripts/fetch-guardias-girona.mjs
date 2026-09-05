@@ -150,6 +150,7 @@ const BBOX_GI = { minLat: 41.5, maxLat: 42.6, minLng: 1.5, maxLng: 3.4 }
 
 const geoCache = new Map()
 async function geocode(nombre, direccion, poblacion) {
+  if (process.env.GITHUB_ACTIONS) return [0, 0]   // CI: sin geocoding en vivo (Nominatim ralentiza el pase); centinela para no abortar (coords no se usan sin mapa)
   const key = `${direccion}||${poblacion}`.toLowerCase()
   if (geoCache.has(key)) return geoCache.get(key)
 

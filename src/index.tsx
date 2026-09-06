@@ -968,9 +968,10 @@ app.get('/farmacias', c => {
   return c.redirect('/farmacias/' + (url.search || ''), 301)
 })
 
-// `/farmacias/` — MVP nacional con snapshot OSM de ~18k farmacias.
-// Pagina autocontenida (HTML+CSS+JS inline con nonce). Datos via fetch a
-// /data/farmacias.json, servido por el binding ASSETS de Pages con ETag.
+// `/farmacias/` — buscador de farmacia de guardia por texto (autocompletado).
+// Pagina autocontenida (HTML+CSS+JS inline con nonce). Ya no hay mapa ni
+// snapshot OSM: consume /api/guardias/municipios y lleva a la pagina SEO del
+// municipio elegido. (El antiguo farmacias.json y su cron se retiraron.)
 app.get('/farmacias/', c => {
   const nonce = genNonce()
   return new Response(buildFarmaciasPage(nonce, c.req.url), { headers: farmaciasHeaders(nonce) })

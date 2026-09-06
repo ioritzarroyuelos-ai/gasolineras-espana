@@ -625,7 +625,7 @@ jobs:
           echo "::error::Los 47 scrapers de guardias fallaron. Revisar los logs."
           exit 1
 
-  # Auto-deploy si hay commits nuevos (mismo patron que fetch-farmacias.yml).
+  # Auto-deploy si hay commits nuevos (mismo patron que fetch-prices.yml).
   deploy:
     needs: fetch
     if: needs.fetch.outputs.changed == 'true' || github.event.inputs.force_deploy == 'true'

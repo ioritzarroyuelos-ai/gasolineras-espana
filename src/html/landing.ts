@@ -40,7 +40,7 @@ export function buildLandingPage(
 
   const canonical = origin + '/'
   const title = 'CercaYa · Info útil de España al instante'
-  const desc = 'Portal con servicios esenciales en España: gasolineras con precios oficiales en tiempo real, farmacias de guardia y estaciones de ITV. Todo con tu ubicación, sin registro y gratis.'
+  const desc = 'Portal con servicios esenciales en España: gasolineras con precios oficiales en tiempo real, farmacias de guardia, estaciones de ITV y el tiempo por municipio. Sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
   // JSON-LD: declaramos el sitio como WebSite + ItemList de servicios. Google
@@ -375,6 +375,13 @@ export function buildLandingPage(
         <p>Todas las estaciones de Inspección Técnica de Vehículos de España, con dirección, teléfono y cómo llegar.</p>
         <span class="badge badge-active">Disponible</span>
       </a>
+
+      <a href="/tiempo/" class="tile tile-active" aria-label="Abrir El tiempo por municipios">
+        <div class="tile-icon" aria-hidden="true">&#x26C5;</div>
+        <h2>El tiempo</h2>
+        <p>Predicción por municipio con datos oficiales de AEMET: hoy y los próximos días, con temperatura, cielo, lluvia y viento.</p>
+        <span class="badge badge-active">Disponible</span>
+      </a>
     </section>
 
     <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
@@ -387,6 +394,7 @@ export function buildLandingPage(
       <ul>
         <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
         <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
+        <li><a href="/tiempo/">El tiempo por municipio (predicción de AEMET)</a></li>
         <li><a href="/precios-carburantes">Observatorio de precios de los carburantes</a></li>
       </ul>
     </nav>
@@ -398,6 +406,7 @@ export function buildLandingPage(
       <a href="/farmacias/">Farmacias</a>·
       <a href="/farmacias/guardia">Farmacias de guardia</a>·
       <a href="/itv/">ITV</a>·
+      <a href="/tiempo/">El tiempo</a>·
       <a href="/precios-carburantes">Precios</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>

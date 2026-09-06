@@ -119,12 +119,13 @@ test.describe('Encuadre por zona (SEO)', () => {
     await expect(page.locator('#app-header')).toBeVisible()
     // Esperar a que carguen las estaciones de la provincia.
     await expect
-      .poll(async () => page.evaluate(() => { try { return (window.allStations || []).length } catch { return 0 } }), { timeout: 20_000 })
+      .poll(async () => page.evaluate(() => { try { return ((window as unknown as { allStations?: unknown[] }).allStations || []).length } catch { return 0 } }), { timeout: 20_000 })
       .toBeGreaterThan(100)
     await page.waitForTimeout(1500)  // margen para el fitBounds tras la carga
     const view = await page.evaluate(() => {
-      const c = map.getCenter()
-      return { zoom: map.getZoom(), lat: c.lat, lng: c.lng }
+      const m = (window as unknown as { map: { getCenter(): { lat: number; lng: number }; getZoom(): number } }).map
+      const c = m.getCenter()
+      return { zoom: m.getZoom(), lat: c.lat, lng: c.lng }
     })
     // Centrado en Madrid (~40.4,-3.7) y con zoom de provincia (>=7), no a nivel
     // pais (zoom 5-6 centrado en ~39.7,-2.6). Regresion del bug del fitBounds
@@ -141,7 +142,7 @@ test.describe('Encuadre por zona (SEO)', () => {
     await expect(page.locator('#app-header')).toBeVisible()
     await expect(page.locator('#radius-group')).toBeVisible({ timeout: 20_000 })
     await expect
-      .poll(async () => page.evaluate(() => { try { return (window.filteredStations || []).length } catch { return 0 } }), { timeout: 20_000 })
+      .poll(async () => page.evaluate(() => { try { return ((window as unknown as { filteredStations?: unknown[] }).filteredStations || []).length } catch { return 0 } }), { timeout: 20_000 })
       .toBeGreaterThan(40)  // Alcorcon solo tiene ~25; con 10 km hay muchas mas
     await expect(page.locator('#in-radius')).toHaveValue('10')
   })

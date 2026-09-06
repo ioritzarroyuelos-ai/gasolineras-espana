@@ -22,3 +22,123 @@ export function frescuraTiempo(ts, ahora = Date.now()) {
   const horas = Number.isFinite(t) ? (ahora - t) / 3600000 : Infinity
   return { fiable: horas <= TIEMPO_STALE_HORAS, horas }
 }
+
+// ---- Adaptadores: respuesta cruda -> modelo normalizado comun -------------
+// Ambas fuentes se traducen a la MISMA forma { ine, nombre, provincia,
+// elaborado, fuente, dias:[{fecha,tmin,tmax,cielo,probLluvia,viento}] } para que
+// la pagina renderice igual venga de donde venga (solo cambia la etiqueta).
+
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null }
+
+// AEMET da los valores por PERIODOS del dia (00-24, 00-12, 12-24, ...). El
+// "00-24" es el del dia entero; en el dia de HOY suele venir vacio (ya pasado),
+// asi que caemos al primer periodo con dato.
+function periodoDia(arr, campo) {
+  if (!Array.isArray(arr)) return null
+  const full = arr.find(x => x && x.periodo === '00-24')
+  const val = (x) => (x == null || x[campo] === '' || x[campo] == null) ? null : x[campo]
+  if (full && val(full) != null) return val(full)
+  for (const x of arr) { const v = val(x); if (v != null) return v }
+  return null
+}
+function maxVelocidad(arr) {
+  if (!Array.isArray(arr)) return null
+  let m = null
+  for (const x of arr) { const v = num(x?.velocidad); if (v != null) m = m == null ? v : Math.max(m, v) }
+  return m
+}
+
+/** Predicción diaria de AEMET (respuesta del segundo paso) -> normalizada. */
+export function normalizaAemet(raw, meta) {
+  const root = Array.isArray(raw) ? raw[0] : raw
+  const dias = ((root && root.prediccion && root.prediccion.dia) || []).map(d => ({
+    fecha: d.fecha,
+    tmax: num(d.temperatura?.maxima),
+    tmin: num(d.temperatura?.minima),
+    cielo: String(periodoDia(d.estadoCielo, 'descripcion') || '').trim(),
+    probLluvia: num(periodoDia(d.probPrecipitacion, 'value')),
+    viento: maxVelocidad(d.viento),
+  }))
+  return {
+    ine: meta.ine, nombre: meta.nombre, provincia: meta.provincia,
+    elaborado: (root && root.elaborado) || new Date().toISOString(),
+    fuente: 'AEMET', dias,
+  }
+}
+
+// Tabla de códigos WMO (Open-Meteo) -> texto en castellano, alineada con AEMET.
+const WMO = {
+  0: 'Despejado', 1: 'Poco nuboso', 2: 'Parcialmente nuboso', 3: 'Nuboso',
+  45: 'Niebla', 48: 'Niebla', 51: 'Llovizna', 53: 'Llovizna', 55: 'Llovizna',
+  56: 'Llovizna helada', 57: 'Llovizna helada',
+  61: 'Lluvia', 63: 'Lluvia', 65: 'Lluvia fuerte',
+  66: 'Lluvia helada', 67: 'Lluvia helada',
+  71: 'Nieve', 73: 'Nieve', 75: 'Nieve fuerte', 77: 'Granizo',
+  80: 'Chubascos', 81: 'Chubascos', 82: 'Chubascos fuertes',
+  85: 'Chubascos de nieve', 86: 'Chubascos de nieve',
+  95: 'Tormenta', 96: 'Tormenta con granizo', 99: 'Tormenta con granizo',
+}
+
+/** Predicción diaria de Open-Meteo -> normalizada (misma forma). */
+export function normalizaOpenMeteo(raw, meta) {
+  const d = (raw && raw.daily) || {}
+  const t = Array.isArray(d.time) ? d.time : []
+  const dias = t.map((fecha, i) => ({
+    fecha: fecha + 'T00:00:00',
+    tmax: num(d.temperature_2m_max?.[i]),
+    tmin: num(d.temperature_2m_min?.[i]),
+    cielo: WMO[d.weathercode?.[i]] || 'No disponible',
+    probLluvia: num(d.precipitation_probability_max?.[i]),
+    viento: num(d.wind_speed_10m_max?.[i]),
+  }))
+  return {
+    ine: meta.ine, nombre: meta.nombre, provincia: meta.provincia,
+    elaborado: new Date().toISOString(), fuente: 'Open-Meteo', dias,
+  }
+}
+
+// ---- Descarga real (usa fetch global: vale en Node 22 y en Workers) --------
+const UA_TIEMPO = 'cercaya-tiempo/1.0 (+https://webapp-3ft.pages.dev)'
+
+/** AEMET en dos pasos: la 1a llamada devuelve { datos: <url> } con el JSON real. */
+export async function bajaAemet(ine, key) {
+  const r1 = await fetch(
+    'https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/diaria/' + ine,
+    { headers: { 'api_key': key, 'User-Agent': UA_TIEMPO, 'Accept': 'application/json' } },
+  )
+  if (!r1.ok) throw new Error('AEMET paso1 HTTP ' + r1.status)
+  const j1 = await r1.json()
+  if (!j1 || !j1.datos) throw new Error('AEMET sin datos (estado ' + (j1 && j1.estado) + ')')
+  const r2 = await fetch(j1.datos, { headers: { 'User-Agent': UA_TIEMPO } })
+  if (!r2.ok) throw new Error('AEMET paso2 HTTP ' + r2.status)
+  const buf = await r2.arrayBuffer()
+  return JSON.parse(new TextDecoder('iso-8859-1').decode(buf))
+}
+
+export async function bajaOpenMeteo(lat, lng) {
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng
+    + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,wind_speed_10m_max'
+    + '&timezone=Europe%2FMadrid'
+  const r = await fetch(url, { headers: { 'User-Agent': UA_TIEMPO } })
+  if (!r.ok) throw new Error('Open-Meteo HTTP ' + r.status)
+  return r.json()
+}
+
+/**
+ * Devuelve la predicción normalizada de un municipio: AEMET primero, y si falla
+ * (tras reintentos), Open-Meteo. `deps` inyectable para tests. `key` = AEMET_API_KEY.
+ */
+export async function resuelvePrediccion(muni, deps = {}) {
+  const meta = { ine: muni.ine, nombre: muni.nombre, provincia: muni.provincia }
+  const bajaA = deps.bajaAemet || ((ine) => bajaAemet(ine, deps.key || muni.key))
+  const bajaO = deps.bajaOpenMeteo || (() => bajaOpenMeteo(muni.lat, muni.lng))
+  const intentos = deps.intentos ?? 2
+  let ultimoError
+  for (let i = 0; i < intentos; i++) {
+    try { return normalizaAemet(await bajaA(muni.ine), meta) }
+    catch (e) { ultimoError = e }
+  }
+  // AEMET no responde: suplente Open-Meteo (etiquetado como tal).
+  try { return normalizaOpenMeteo(await bajaO(muni.lat, muni.lng), meta) }
+  catch (e) { throw new Error('AEMET y Open-Meteo fallaron: ' + (ultimoError && ultimoError.message) + ' / ' + e.message) }
+}

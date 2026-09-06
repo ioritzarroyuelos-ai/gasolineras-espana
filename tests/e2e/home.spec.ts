@@ -112,3 +112,37 @@ test.describe('Portada gasolineras (/gasolineras/)', () => {
     expect(severe).toEqual([])
   })
 })
+
+test.describe('Encuadre por zona (SEO)', () => {
+  test('la pagina de provincia encuadra la provincia, no todo el pais', async ({ page }) => {
+    await page.goto('/gasolineras/madrid')
+    await expect(page.locator('#app-header')).toBeVisible()
+    // Esperar a que carguen las estaciones de la provincia.
+    await expect
+      .poll(async () => page.evaluate(() => { try { return (window.allStations || []).length } catch { return 0 } }), { timeout: 20_000 })
+      .toBeGreaterThan(100)
+    await page.waitForTimeout(1500)  // margen para el fitBounds tras la carga
+    const view = await page.evaluate(() => {
+      const c = map.getCenter()
+      return { zoom: map.getZoom(), lat: c.lat, lng: c.lng }
+    })
+    // Centrado en Madrid (~40.4,-3.7) y con zoom de provincia (>=7), no a nivel
+    // pais (zoom 5-6 centrado en ~39.7,-2.6). Regresion del bug del fitBounds
+    // animado con maxBounds.
+    expect(view.zoom).toBeGreaterThanOrEqual(7)
+    expect(view.lat).toBeGreaterThan(39.5)
+    expect(view.lat).toBeLessThan(41.5)
+    expect(view.lng).toBeGreaterThan(-4.6)
+    expect(view.lng).toBeLessThan(-3.0)
+  })
+
+  test('la pagina de municipio muestra un radio (mas que solo el municipio)', async ({ page }) => {
+    await page.goto('/gasolineras/madrid/alcorcon')
+    await expect(page.locator('#app-header')).toBeVisible()
+    await expect(page.locator('#radius-group')).toBeVisible({ timeout: 20_000 })
+    await expect
+      .poll(async () => page.evaluate(() => { try { return (window.filteredStations || []).length } catch { return 0 } }), { timeout: 20_000 })
+      .toBeGreaterThan(40)  // Alcorcon solo tiene ~25; con 10 km hay muchas mas
+    await expect(page.locator('#in-radius')).toHaveValue('10')
+  })
+})

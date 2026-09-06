@@ -161,21 +161,28 @@ function initMap() {
 
   setTimeout(function() {
     map.invalidateSize(true);
-    // Encuadre fijo definitivo (ya con el contenedor a su tamano real): Espana
-    // llena la pantalla y setMinZoom impide alejarse mas alla de sus limites.
-    map.fitBounds(ESPANA_BOUNDS, { padding: [6, 6], animate: false });
-    map.setMinZoom(map.getZoom());
-    // En rutas SEO (provincia/municipio) las estaciones se cargan durante el
-    // arranque. Cuando vienen de cache, loadStations encuadra su zona ANTES de
-    // este setTimeout y el fitBounds de arriba lo pisaba, dejando el mapa a nivel
-    // pais. Si ya hay estaciones cargadas, re-encuadramos su zona (el radio del
-    // municipio, o la provincia). Si aun no han llegado, loadStations encuadrara
-    // despues (ya sin carrera, porque este fit ya paso).
     var hasSeo = false;
     try { hasSeo = !!(window.__SEO__ && window.__SEO__.provinciaId); } catch(_) {}
-    if (hasSeo && typeof applyFilters === 'function' && allStations && allStations.length) {
-      applyFilters();
+    // En rutas SEO (provincia/municipio) el encuadre a su zona lo hace
+    // loadStations. NO encuadramos Espana aqui: por su setTimeout, este fit
+    // pisaba el de la provincia/municipio y la pagina se quedaba a nivel pais.
+    // Si las estaciones ya estan (datos en cache), re-encuadramos su zona ya;
+    // si no, loadStations lo hara (sin carrera, porque no hay fit de Espana).
+    if (hasSeo) {
+      if (typeof applyFilters === 'function' && allStations && allStations.length) applyFilters();
+    } else {
+      map.fitBounds(ESPANA_BOUNDS, { padding: [6, 6], animate: false });
     }
+    // minZoom = nivel al que Espana llena la pantalla (no dejar alejarse mas).
+    // Se calcula con getBoundsZoom, NO con map.getZoom(): si el contenedor midio
+    // 0 en algun frame, getZoom() seria maxZoom (19) y bloquearia el mapa a nivel
+    // calle (minZoom=maxZoom). Acotado a [4,6] por si getBoundsZoom tambien
+    // devuelve un valor raro con el contenedor sin medir.
+    var z = 5;
+    try { z = Math.floor(map.getBoundsZoom(ESPANA_BOUNDS, false, L.point(6, 6))); } catch(_) {}
+    if (!isFinite(z) || z < 4) z = 4;
+    if (z > 6) z = 6;
+    map.setMinZoom(z);
   }, 100);
 }
 
@@ -1769,7 +1776,11 @@ function renderMarkers(stations) {
 
   if (bounds.length > 0) {
     lastFitBounds = bounds;
-    try { map.fitBounds(bounds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 })); }
+    // animate:false a proposito: un fitBounds ANIMADO a un area grande (una
+    // provincia entera) con maxBounds activo acaba en el minZoom (nivel pais) en
+    // vez del zoom correcto — bug de Leaflet con maxBoundsViscosity. El encuadre
+    // de resultados es un "salto" a lo cargado; instantaneo es correcto y natural.
+    try { map.fitBounds(bounds, Object.assign({}, mapFitPadding(), { maxZoom: 14, animate: false })); }
     catch(e) {}
   }
 }
@@ -1780,7 +1791,7 @@ function renderMarkers(stations) {
 // bbox, dejando las gasolineras desencajadas cuando se abre/cierra el sidebar).
 function refitLastBounds() {
   if (!map || !lastFitBounds || !lastFitBounds.length) return;
-  try { map.fitBounds(lastFitBounds, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 })); }
+  try { map.fitBounds(lastFitBounds, Object.assign({}, mapFitPadding(), { maxZoom: 14, animate: false })); }
   catch(e) {}
 }
 

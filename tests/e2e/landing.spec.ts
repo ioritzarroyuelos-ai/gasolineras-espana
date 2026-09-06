@@ -1,66 +1,63 @@
-// Landing del portal CercaYa en `/`. Tests sencillos — es HTML estatico sin
-// JS. Comprobamos: renderiza los 3 tiles, los tres (Gasolineras, Farmacias e
-// ITV) son clickables, los shortcuts PWA viejos (?action=) siguen redirigiendo
-// al mapa, sin axe violations y sin fetch de red raros.
+// Portada del portal CercaYa en `/` — diseño "periódico" (Ship 28). HTML
+// estatico sin JS. Comprobamos: cabecera de marca, menú de secciones con enlace
+// a cada vertical (El tiempo, Gasolineras, Farmacias, ITV), navegación al
+// clicar, los shortcuts PWA viejos (?action=) siguen redirigiendo al mapa, sin
+// axe violations y con meta description + canonical.
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-test.describe('Landing CercaYa (/)', () => {
-  test('renderiza los 3 tiles activos (Gasolineras, Farmacias e ITV)', async ({ page }) => {
+test.describe('Portada CercaYa (/)', () => {
+  test('cabecera de marca + menú con las 4 secciones', async ({ page }) => {
     await page.goto('/')
     await expect(page).toHaveTitle(/CercaYa/i)
 
-    // H1 de la marca
+    // Cabecera de periódico: H1 de la marca.
     await expect(page.getByRole('heading', { level: 1, name: /cercaya/i })).toBeVisible()
 
-    // 3 tiles, cada uno con su h2
-    await expect(page.getByRole('heading', { level: 2, name: /gasolineras/i })).toBeVisible()
+    // Menú de secciones con enlace a cada vertical.
+    await expect(page.locator('.mh-nav a[href="/tiempo/"]')).toBeVisible()
+    await expect(page.locator('.mh-nav a[href="/gasolineras/"]')).toBeVisible()
+    await expect(page.locator('.mh-nav a[href="/farmacias/"]')).toBeVisible()
+    await expect(page.locator('.mh-nav a[href="/itv/"]')).toBeVisible()
+
+    // Bloques de portada (cada uno con su h2).
+    await expect(page.getByRole('heading', { level: 2, name: /el tiempo hoy/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: /^gasolineras$/i })).toBeVisible()
     await expect(page.getByRole('heading', { level: 2, name: /farmacias/i })).toBeVisible()
-    await expect(page.getByRole('heading', { level: 2, name: /itv/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 2, name: /^itv$/i })).toBeVisible()
 
-    // Gasolineras tile tiene link al mapa.
-    const gasTile = page.getByRole('link', { name: /abrir gasolineras/i })
-    await expect(gasTile).toBeVisible()
-    await expect(gasTile).toHaveAttribute('href', '/gasolineras/')
-
-    // Farmacias tile tiene link a /farmacias/.
-    const farmTile = page.getByRole('link', { name: /abrir farmacias/i })
-    await expect(farmTile).toBeVisible()
-    await expect(farmTile).toHaveAttribute('href', '/farmacias/')
-
-    // ITV tile tiene link a /itv/ (activo desde la fase 3 del roadmap).
-    const itvTile = page.getByRole('link', { name: /abrir estaciones de itv/i })
-    await expect(itvTile).toBeVisible()
-    await expect(itvTile).toHaveAttribute('href', '/itv/')
-
-    // Los tres tiles estan activos: 3 badges "Disponible" y ninguno "Proximamente".
-    await expect(page.locator('.badge-active')).toHaveCount(3)
-    await expect(page.locator('.badge-coming')).toHaveCount(0)
+    // El bloque del tiempo siempre lleva un enlace a /tiempo/ (haya o no franja
+    // de ciudades: si el snapshot no está fresco, degrada al gancho de búsqueda).
+    await expect(page.locator('.lead a.more[href="/tiempo/"]')).toBeVisible()
   })
 
-  test('clicar el tile Gasolineras navega a /gasolineras/', async ({ page }) => {
+  test('clicar Gasolineras en el menú navega a /gasolineras/', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /abrir gasolineras/i }).click()
+    await page.locator('.mh-nav a[href="/gasolineras/"]').click()
     await expect(page).toHaveURL(/\/gasolineras\/?$/)
   })
 
-  test('clicar el tile Farmacias navega a /farmacias/', async ({ page }) => {
+  test('clicar Farmacias en el menú navega a /farmacias/', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('link', { name: /abrir farmacias/i }).click()
+    await page.locator('.mh-nav a[href="/farmacias/"]').click()
     await expect(page).toHaveURL(/\/farmacias\/?$/)
   })
 
-  test('shortcut PWA viejo (/?action=cheapest) redirige a /gasolineras/?action=cheapest', async ({ page }) => {
-    // El 301 lo sigue el navegador automáticamente. Comprobamos la URL final
-    // y que cargue el shell del mapa.
-    const res = await page.goto('/?action=cheapest')
-    expect(res?.status()).toBe(200) // 200 tras seguir el 301
-    await expect(page).toHaveURL(/\/gasolineras\/?\?action=cheapest$/)
-    await expect(page).toHaveTitle(/gasolineras/i)
+  test('clicar El tiempo en el menú navega a /tiempo/', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('.mh-nav a[href="/tiempo/"]').click()
+    await expect(page).toHaveURL(/\/tiempo\/?$/)
   })
 
-  test('landing sin violaciones graves de axe', async ({ page }) => {
+  test('shortcut PWA viejo (/?action=cheapest) redirige a /gasolineras/mapa', async ({ page }) => {
+    // El 301 lo sigue el navegador automáticamente. Comprobamos la URL final.
+    const res = await page.goto('/?action=cheapest')
+    expect(res?.status()).toBe(200) // 200 tras seguir el 301
+    await expect(page).toHaveURL(/\/gasolineras\/mapa\?action=cheapest$/)
+  })
+
+  test('portada sin violaciones graves de axe', async ({ page }) => {
     await page.goto('/')
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
@@ -68,7 +65,7 @@ test.describe('Landing CercaYa (/)', () => {
     const severe = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
     if (severe.length) {
       // eslint-disable-next-line no-console
-      console.log('axe violations landing:', JSON.stringify(severe, null, 2))
+      console.log('axe violations portada:', JSON.stringify(severe, null, 2))
     }
     expect(severe).toEqual([])
   })

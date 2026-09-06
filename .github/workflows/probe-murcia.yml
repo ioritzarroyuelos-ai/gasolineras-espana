@@ -1,0 +1,34 @@
+name: Probe murcia (temporal)
+
+# SONDEO TEMPORAL — NO escribe datos ni despliega.
+#
+# Corre cada hora para ver a que franja horaria responde bien la API del COF
+# Region de Murcia (que ahora da 500/504 en el pase diario). Cada ejecucion
+# imprime una linea "PROBE-MURCIA ..." en su log. Se leen con:
+#   gh run list --workflow=probe-murcia.yml
+#   gh run view <id> --log | grep PROBE-MURCIA
+#
+# QUITAR cuando tengamos la mejor hora: borrar este fichero y scripts/probe-murcia.mjs.
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # cada hora en punto (UTC). Espana = UTC+2 en verano.
+  workflow_dispatch:
+
+concurrency:
+  group: probe-murcia
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Sondear API de Murcia
+        run: node scripts/probe-murcia.mjs

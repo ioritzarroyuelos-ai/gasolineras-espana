@@ -1343,7 +1343,9 @@ app.get('/tiempo/:prov/:mun', async c => {
   const snap = await loadSnapshot<{ predicciones: Record<string, Prediccion> }>(
     c.req.url, 'tiempo/snapshot/' + provSlug + '.json', c.env.ASSETS)
   const desdeSnap = snap && snap.predicciones && snap.predicciones[m.ine]
-  if (desdeSnap && frescuraTiempo(desdeSnap.elaborado).fiable) pred = desdeSnap
+  // Solo servimos el snapshot si es AEMET y fresco: nunca degradamos por debajo
+  // del bajo-demanda (que consigue AEMET de uno en uno sin tocar el limite).
+  if (desdeSnap && desdeSnap.fuente === 'AEMET' && frescuraTiempo(desdeSnap.elaborado).fiable) pred = desdeSnap
   if (!pred) pred = await resuelveTiempo(c, m)
   const nonce = genNonce()
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/tiempo/' + provSlug + '/' + munSlug

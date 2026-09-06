@@ -1,51 +1,97 @@
 // Landing del portal CercaYa — home pública en `/`.
 //
-// Ship 26: hasta ahora `/` redirigía 301 al mapa de gasolineras. Con la
-// transformación del proyecto a portal multi-servicio, la raíz pasa a ser
-// una home con tiles hacia los distintos servicios.
+// Diseño "periódico web" (Ship 28): en vez de una rejilla de tiles/cuadrados,
+// una portada tipo diario — cabecera con fecha + cabecera de marca, un menú de
+// secciones, y bloques con DATO REAL Y FRESCO (el tiempo de hoy de las ciudades
+// grandes y la media nacional de carburantes), más el acceso a cada sección.
 //
-// Diseño intencionalmente minimalista y sin JS:
-//   - Es HTML estático puro → render instantáneo, perfecto para SEO y LCP.
-//   - Sin bundle, sin fetch, sin service worker. El único coste de red es la
-//     propia página + favicon + logo (todo ya cacheado por el SW para otras
-//     rutas).
-//   - CSP sigue siendo estricta (nonce en el <style>). No hay scripts.
+// Sigue siendo HTML estático SIN JavaScript:
+//   - Render instantáneo, ideal para SEO y LCP.
+//   - Sin bundle, sin fetch, sin service worker. CSP estricta (nonce en <style>
+//     y en el JSON-LD; no hay <script> ejecutable).
+//   - Los datos (fecha, carburantes, tiempo) los calcula el servidor en el
+//     handler de `/` (src/index.tsx) y se inyectan aquí ya listos. Si un dato no
+//     está disponible, su bloque degrada con elegancia (no se rompe la página).
 //
 // Compatibilidad:
-//   - Los bookmarks viejos a `/` ya no entran directo al mapa, pero el tile
-//     de "Gasolineras" es el primero y más visible → 1 click extra.
-//   - Los shortcuts del PWA (`/?action=...`) se manejan en el handler de
-//     index.tsx ANTES de llegar aquí: si hay `action`, redirect a
-//     `/gasolineras/?action=...` para no romper instalaciones viejas.
-//
-// Tiles:
-//   1. Gasolineras — activo, link a /gasolineras/.
-//   2. Farmacias — activo, link a /farmacias/ (MVP nacional con OSM).
-//   3. ITV — próximamente (Fase 3 del roadmap).
-//
-// SEO:
-//   - Title y description propios de portal, no de gasolineras.
-//   - Canonical = origin + '/'.
-//   - JSON-LD WebSite + ItemList con los servicios.
-//   - OG tags para compartir en redes.
+//   - `/?action=...` (shortcuts PWA viejos) se maneja en index.tsx ANTES de
+//     llegar aquí (redirect a /gasolineras/mapa).
+//   - Se conserva el meta google-site-verification (Google lo lee SOLO en `/`),
+//     el canonical, OG y el JSON-LD (WebSite + ItemList de servicios).
 
 import { APP_VERSION } from '../lib/version'
+
+/** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
+export interface LandingTiempo {
+  nombre: string
+  provincia: string
+  url: string          // /tiempo/<prov>/<mun>
+  tmax: number | null
+  tmin: number | null
+  cielo: string
+}
+
+/** Datos frescos que el handler de `/` inyecta en la portada. Todo opcional:
+ *  si falta algo, ese bloque degrada sin romper la página. */
+export interface LandingData {
+  fecha?: string                               // "sábado, 6 de septiembre de 2026"
+  gasolina?: { g95?: number; diesel?: number } // media nacional €/L
+  tiempo?: LandingTiempo[]                      // ciudades grandes con dato fresco
+}
+
+// Escape HTML para cualquier string dinámico (nombres de municipio, cielo…).
+function esc(s: unknown): string {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+// Precio €/L con coma decimal (1.529 -> "1,529").
+function precio(n: number): string {
+  return n.toFixed(3).replace('.', ',') + '&nbsp;€/L'
+}
+
+// Emoji orientativo del estado del cielo (decorativo). Se decide por palabra
+// clave sobre el texto de AEMET ("Despejado", "Intervalos nubosos con lluvia"…).
+function emojiCielo(cielo: string): string {
+  const s = String(cielo || '').toLowerCase()
+  if (/tormenta/.test(s)) return '⛈️'
+  if (/nieve|nevad/.test(s)) return '🌨️'
+  if (/lluvia|chubasc|precipit|aguacero/.test(s)) return '🌧️'
+  if (/niebla|bruma|calima/.test(s)) return '🌫️'
+  if (/cubierto/.test(s)) return '☁️'
+  if (/muy nuboso/.test(s)) return '🌥️'
+  if (/nubos|nube|intervalos|nuboso/.test(s)) return '⛅'
+  if (/despejado|sol/.test(s)) return '☀️'
+  return '🌡️'
+}
+
+// Una celda de ciudad en la franja del tiempo.
+function celdaTiempo(t: LandingTiempo): string {
+  const mx = t.tmax != null ? t.tmax + '°' : '--'
+  const mn = t.tmin != null ? t.tmin + '°' : '--'
+  return '<a class="wx" href="' + esc(t.url) + '">'
+    + '<span class="wx-city">' + esc(t.nombre) + '</span>'
+    + '<span class="wx-emoji" aria-hidden="true">' + emojiCielo(t.cielo) + '</span>'
+    + '<span class="wx-temp"><span class="mx">' + esc(mx) + '</span> <span class="mn">' + esc(mn) + '</span></span>'
+    + (t.cielo ? '<span class="wx-sky">' + esc(t.cielo) + '</span>' : '')
+    + '</a>'
+}
 
 export function buildLandingPage(
   nonce: string = '',
   reqUrl: string = 'https://webapp-3ft.pages.dev/',
+  data: LandingData = {},
 ): string {
   let origin = 'https://webapp-3ft.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/'
   const title = 'CercaYa · Info útil de España al instante'
-  const desc = 'Portal con servicios esenciales en España: gasolineras con precios oficiales en tiempo real, farmacias de guardia, estaciones de ITV y el tiempo por municipio. Sin registro y gratis.'
+  const desc = 'Portal con servicios esenciales en España: el tiempo por municipio (AEMET), gasolineras con precios oficiales en tiempo real, farmacias de guardia y estaciones de ITV. Sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
-  // JSON-LD: declaramos el sitio como WebSite + ItemList de servicios. Google
-  // usa esto para rich snippets y sitelinks. Cuando Farmacias/ITV estén
-  // activas, habrá que bajarle el `isAccessibleForFree` a cada Service.
+  // JSON-LD: WebSite + ItemList de servicios (Google lo usa para sitelinks).
   const jsonLd = {
     '@context': 'https://schema.org',
     '@graph': [
@@ -72,6 +118,18 @@ export function buildLandingPage(
             position: 1,
             item: {
               '@type': 'Service',
+              name: 'El tiempo por municipio',
+              description: 'Predicción del tiempo por municipio en España con datos oficiales de AEMET.',
+              url: origin + '/tiempo/',
+              serviceType: 'Predicción meteorológica',
+              areaServed: { '@type': 'Country', name: 'España' },
+            },
+          },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            item: {
+              '@type': 'Service',
               name: 'Gasolineras España',
               description: 'Precios oficiales de carburantes en tiempo real en toda España.',
               url: origin + '/gasolineras/',
@@ -81,7 +139,7 @@ export function buildLandingPage(
           },
           {
             '@type': 'ListItem',
-            position: 2,
+            position: 3,
             item: {
               '@type': 'Service',
               name: 'Farmacias España',
@@ -93,11 +151,12 @@ export function buildLandingPage(
           },
           {
             '@type': 'ListItem',
-            position: 3,
+            position: 4,
             item: {
               '@type': 'Service',
               name: 'Estaciones de ITV',
-              description: 'Estaciones de ITV cercanas con horarios y precios.',
+              description: 'Estaciones de ITV cercanas con dirección, teléfono y precios.',
+              url: origin + '/itv/',
               serviceType: 'Localización de estaciones de ITV',
               areaServed: { '@type': 'Country', name: 'España' },
             },
@@ -107,12 +166,28 @@ export function buildLandingPage(
     ],
   }
 
-  // Esc HTML básico para cualquier string externo que llegue aquí. Hoy no hay
-  // ninguno (todo es literal), pero dejamos el helper por si se añaden tiles
-  // dinámicos más adelante.
-  const esc = (s: string): string => s
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  // --- Bloque "El tiempo hoy" (franja de ciudades o gancho si no hay dato) ---
+  const tiempo = Array.isArray(data.tiempo) ? data.tiempo : []
+  const bloqueTiempo = tiempo.length
+    ? '<div class="strip">' + tiempo.map(celdaTiempo).join('') + '</div>'
+      + '<a class="more" href="/tiempo/">El tiempo de tu municipio &rarr;</a>'
+    : '<p class="lead-note">Consulta la predicción de tu municipio con datos oficiales de AEMET.</p>'
+      + '<a class="more" href="/tiempo/">Buscar el tiempo de tu municipio &rarr;</a>'
+
+  // --- Bloque carburantes (media nacional o línea genérica) ---
+  const g = data.gasolina || {}
+  const bloqueGas = (g.g95 != null || g.diesel != null)
+    ? (g.g95 != null ? '<p class="dato"><span class="d-label">Gasolina 95</span> <span class="price">' + precio(g.g95) + '</span></p>' : '')
+      + (g.diesel != null ? '<p class="dato"><span class="d-label">Gasóleo A</span> <span class="price">' + precio(g.diesel) + '</span></p>' : '')
+      + '<p class="d-note">media nacional de hoy · precios oficiales del Ministerio</p>'
+    : '<p>Precios oficiales de carburantes en tiempo real, mapa y comparador por combustible.</p>'
+
+  // Esc HTML de la fecha (viene del servidor, pero por higiene) + capitaliza.
+  let fechaTxt = ''
+  if (data.fecha) {
+    const f = esc(data.fecha)
+    fechaTxt = f.charAt(0).toUpperCase() + f.slice(1)
+  }
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -120,7 +195,7 @@ export function buildLandingPage(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#14532d" />
+  <meta name="theme-color" content="#166534" />
 
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(desc)}" />
@@ -155,246 +230,198 @@ export function buildLandingPage(
 
   <style nonce="${nonce}">
     :root {
-      --c-bg: #f8fafc;
-      --c-surface: #ffffff;
-      --c-text: #0f172a;
-      --c-muted: #64748b;
-      --c-brand-dark: #14532d;
-      --c-brand: #16a34a;
-      --c-brand-soft: #dcfce7;
-      --c-border: #e2e8f0;
-      --c-coming-bg: #fef3c7;
-      --c-coming-text: #92400e;
-      --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
-      --c-shadow-hover: 0 8px 24px rgba(22,163,74,0.18);
+      --paper: #faf8f4;
+      --surface: #ffffff;
+      --ink: #1a1a1a;
+      --muted: #5b6470;
+      --brand: #16a34a;
+      --brand-dark: #166534;
+      --brand-soft: #dcfce7;
+      --rule: #d9d4c9;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --c-bg: #0f172a;
-        --c-surface: #1e293b;
-        --c-text: #f1f5f9;
-        --c-muted: #94a3b8;
-        --c-brand-dark: #064e3b;
-        --c-brand: #4ade80;
-        --c-brand-soft: #064e3b;
-        --c-border: #334155;
-        --c-coming-bg: #422006;
-        --c-coming-text: #fcd34d;
-        --c-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        --c-shadow-hover: 0 8px 24px rgba(74,222,128,0.25);
+        --paper: #0f172a;
+        --surface: #1e293b;
+        --ink: #f1f5f9;
+        --muted: #94a3b8;
+        --brand: #4ade80;
+        --brand-dark: #86efac;
+        --brand-soft: #064e3b;
+        --rule: #334155;
       }
     }
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
     body {
       font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      background: var(--c-bg);
-      color: var(--c-text);
+      background: var(--paper);
+      color: var(--ink);
       line-height: 1.55;
       min-height: 100vh;
       display: flex;
       flex-direction: column;
     }
-    /* ---- Hero ---- */
-    .hero {
-      background: linear-gradient(135deg, var(--c-brand-dark) 0%, var(--c-brand) 100%);
-      color: #ffffff;
-      padding: 56px 24px 48px;
-      text-align: center;
+    .serif { }
+    /* ---- Cabecera de periódico ---- */
+    .masthead { background: var(--paper); text-align: center; padding: 22px 20px 0; }
+    .mh-inner { max-width: 1080px; margin: 0 auto; }
+    .mh-date {
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--muted); padding-bottom: 10px; margin: 0 0 14px;
+      border-bottom: 1px solid var(--rule);
     }
-    .hero-logo {
-      width: 64px; height: 64px;
-      margin: 0 auto 16px;
-      display: block;
+    .mh-logo { width: 44px; height: 44px; display: block; margin: 0 auto 4px; }
+    .mh-title {
+      font-family: Georgia, 'Times New Roman', 'Nimbus Roman', serif;
+      font-size: clamp(40px, 8vw, 68px); font-weight: 800; letter-spacing: -0.02em;
+      margin: 0; color: var(--ink); line-height: 1;
     }
-    .hero-title {
-      font-size: clamp(28px, 5vw, 40px);
-      font-weight: 800;
-      margin: 0 0 8px;
-      letter-spacing: -0.02em;
+    .mh-tag {
+      font-family: Georgia, 'Times New Roman', serif; font-style: italic;
+      color: var(--muted); margin: 8px 0 16px; font-size: clamp(14px, 2vw, 17px);
     }
-    .hero-sub {
-      font-size: clamp(15px, 2vw, 18px);
+    .mh-nav {
+      max-width: 1080px; margin: 0 auto; display: flex; flex-wrap: wrap;
+      justify-content: center; border-top: 3px double var(--ink);
+      border-bottom: 1px solid var(--rule);
+    }
+    .mh-nav a {
+      padding: 12px 18px; font-size: 13px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--brand-dark); text-decoration: none;
+    }
+    .mh-nav a:hover { background: var(--brand-soft); }
+    .mh-nav a:focus-visible { background: var(--brand-soft); outline: 3px solid var(--brand-dark); outline-offset: -3px; }
+    /* ---- Cuerpo ---- */
+    main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 26px 20px 12px; }
+    .kicker {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--brand-dark); margin: 0 0 2px;
+    }
+    h2 {
+      font-family: Georgia, 'Times New Roman', serif; color: var(--ink);
       margin: 0;
-      opacity: 0.92;
-      max-width: 640px;
-      margin: 0 auto;
     }
-    /* ---- Tiles ---- */
-    main {
-      flex: 1;
-      width: 100%;
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 48px 24px 32px;
+    /* Lead: El tiempo hoy */
+    .lead h2 {
+      font-size: clamp(22px, 4vw, 30px); margin: 0 0 12px;
+      border-bottom: 2px solid var(--ink); padding-bottom: 8px;
     }
-    .tiles {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 20px;
+    .lead-note { color: var(--muted); margin: 0 0 8px; }
+    .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
+    .wx {
+      display: flex; flex-direction: column; gap: 2px; padding: 12px;
+      border: 1px solid var(--rule); border-radius: 10px; background: var(--surface);
+      text-decoration: none; color: var(--ink);
+      transition: border-color 0.15s ease, transform 0.15s ease;
     }
-    .tile {
-      background: var(--c-surface);
-      border: 1px solid var(--c-border);
-      border-radius: 16px;
-      padding: 28px 24px;
-      box-shadow: var(--c-shadow);
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      text-decoration: none;
-      color: inherit;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
-      position: relative;
-      min-height: 200px;
+    .wx:hover { border-color: var(--brand); transform: translateY(-2px); }
+    .wx:focus-visible { border-color: var(--brand); outline: 2px solid var(--brand-dark); outline-offset: 2px; }
+    .wx-city { font-weight: 700; font-size: 14px; }
+    .wx-emoji { font-size: 24px; line-height: 1; }
+    .wx-temp .mx { font-weight: 800; color: var(--brand-dark); font-size: 18px; }
+    .wx-temp .mn { color: var(--muted); font-size: 14px; }
+    .wx-sky { font-size: 12px; color: var(--muted); }
+    .more {
+      display: inline-block; margin-top: 12px; font-weight: 700;
+      color: var(--brand-dark); text-decoration: none;
     }
-    .tile-active { cursor: pointer; }
-    .tile-active:hover,
-    .tile-active:focus-visible {
-      transform: translateY(-4px);
-      box-shadow: var(--c-shadow-hover);
-      border-color: var(--c-brand);
-      outline: none;
+    .more:hover { text-decoration: underline; }
+    /* Columnas de secciones (periódico) */
+    .cols {
+      display: grid; grid-template-columns: 1fr; gap: 0;
+      margin: 24px 0 4px; border-top: 1px solid var(--rule);
     }
-    /* Los tiles "proximamente" no llevan opacity — bajaba el contraste
-       por debajo de WCAG AA (4.5:1) tanto en el parrafo muted como en
-       el badge. La combinacion cursor:default + badge amarillo ya
-       comunica el estado sin necesidad de difuminado. */
-    .tile-coming { cursor: default; }
-    .tile-icon {
-      font-size: 40px;
-      line-height: 1;
-      width: 56px; height: 56px;
-      background: var(--c-brand-soft);
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
+    .col { padding: 18px 0; border-top: 1px solid var(--rule); }
+    .col:first-child { border-top: none; }
+    .col h2 { font-size: 20px; margin: 0 0 8px; }
+    .col p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+    .dato { margin: 0 0 4px; font-size: 15px; color: var(--ink); display: flex; justify-content: space-between; gap: 12px; max-width: 320px; }
+    .d-label { color: var(--ink); }
+    .price { font-weight: 800; color: var(--brand-dark); white-space: nowrap; }
+    .d-note { color: var(--muted); font-size: 13px; margin: 6px 0 10px; }
+    .sub-link { display: block; font-size: 14px; color: var(--brand-dark); text-decoration: underline; margin-top: 4px; }
+    .sub-link:hover { text-decoration: none; }
+    @media (min-width: 720px) {
+      .cols { grid-template-columns: repeat(3, 1fr); }
+      .col { padding: 18px 22px; border-top: none; border-left: 1px solid var(--rule); }
+      .col:first-child { padding-left: 0; border-left: none; }
     }
-    .tile h2 {
-      font-size: 20px;
-      font-weight: 700;
-      margin: 0;
-      color: var(--c-brand-dark);
+    /* Más: consulta por municipio (enlazado interno para SEO) */
+    .mas { margin: 22px 0 4px; border-top: 3px double var(--ink); padding-top: 14px; }
+    .mas h2 { font-size: 16px; margin: 0 0 10px; }
+    .mas ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; grid-template-columns: 1fr; }
+    .mas li a {
+      display: block; padding: 11px 14px; border: 1px solid var(--rule);
+      border-radius: 8px; background: var(--surface); color: var(--ink);
+      text-decoration: none; font-size: 14px;
     }
-    @media (prefers-color-scheme: dark) {
-      .tile h2 { color: var(--c-brand); }
-    }
-    .tile p {
-      margin: 0;
-      font-size: 14px;
-      color: var(--c-muted);
-      flex: 1;
-    }
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 600;
-      width: fit-content;
-    }
-    .badge-active {
-      background: var(--c-brand-soft);
-      color: var(--c-brand-dark);
-    }
-    @media (prefers-color-scheme: dark) {
-      .badge-active { color: var(--c-brand); }
-    }
-    .badge-coming {
-      background: var(--c-coming-bg);
-      color: var(--c-coming-text);
-    }
+    .mas li a:hover { border-color: var(--brand); }
+    @media (min-width: 720px) { .mas ul { grid-template-columns: 1fr 1fr; } }
     /* ---- Footer ---- */
     footer {
-      padding: 32px 24px;
-      text-align: center;
-      font-size: 13px;
-      color: var(--c-muted);
-      border-top: 1px solid var(--c-border);
+      padding: 26px 20px; text-align: center; font-size: 13px;
+      color: var(--muted); border-top: 1px solid var(--rule); margin-top: 18px;
     }
-    /* WCAG AA contraste 4.5:1 → usamos el verde oscuro en light y el claro
-       en dark. Subrayado permanente: es mejor practica de accesibilidad y
-       ademas diferencia claramente los enlaces del texto circundante. */
-    footer a { color: var(--c-brand-dark); text-decoration: underline; }
+    footer a { color: var(--brand-dark); text-decoration: underline; }
     footer a:hover { text-decoration: none; }
-    @media (prefers-color-scheme: dark) {
-      footer a { color: var(--c-brand); }
-    }
     footer .foot-links { margin-bottom: 8px; }
     footer .foot-links a { margin: 0 8px; }
-    .mas-links { margin-top: 34px; }
-    .mas-links h2 { font-size: 17px; margin: 0 0 12px; color: var(--c-text); }
-    .mas-links ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-    .mas-links li a {
-      display: block;
-      padding: 12px 16px;
-      border: 1px solid var(--c-border);
-      border-radius: 10px;
-      background: var(--c-surface);
-      color: var(--c-text);
-      text-decoration: none;
-      font-size: 15px;
-    }
-    .mas-links li a:hover { border-color: var(--c-brand); }
-    @media (max-width: 520px) {
-      .hero { padding: 40px 20px 36px; }
-      main { padding: 32px 20px 24px; }
-      .tile { min-height: auto; }
-    }
   </style>
 </head>
 <body>
-  <header class="hero">
-    <img src="/static/logo.svg" alt="" class="hero-logo" width="64" height="64" />
-    <h1 class="hero-title">CercaYa</h1>
-    <p class="hero-sub">Info útil de España al instante. Con tu ubicación, sin registro y gratis.</p>
+  <header class="masthead">
+    <div class="mh-inner">
+      ${fechaTxt ? `<p class="mh-date">${fechaTxt} · España</p>` : ''}
+      <img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" />
+      <h1 class="mh-title">CercaYa</h1>
+      <p class="mh-tag">Info útil de España al instante · sin registro y gratis</p>
+    </div>
+    <nav class="mh-nav" aria-label="Secciones">
+      <a href="/tiempo/">El tiempo</a>
+      <a href="/gasolineras/">Gasolineras</a>
+      <a href="/farmacias/">Farmacias</a>
+      <a href="/itv/">ITV</a>
+    </nav>
   </header>
 
   <main>
-    <section class="tiles" aria-label="Servicios disponibles">
-      <a href="/gasolineras/" class="tile tile-active" aria-label="Abrir Gasolineras España">
-        <div class="tile-icon" aria-hidden="true">&#x26FD;</div>
-        <h2>Gasolineras</h2>
-        <p>Precios oficiales del Ministerio en tiempo real. Mapa, comparador por combustible, favoritos y rutas óptimas.</p>
-        <span class="badge badge-active">Disponible</span>
-      </a>
-
-      <a href="/farmacias/" class="tile tile-active" aria-label="Abrir Farmacias en España">
-        <div class="tile-icon" aria-hidden="true">&#x1F48A;</div>
-        <h2>Farmacias</h2>
-        <p>Farmacias cercanas con dirección, teléfono, horario y distancia GPS. Usa tu ubicación para ordenarlas por proximidad.</p>
-        <span class="badge badge-active">Disponible</span>
-      </a>
-
-      <a href="/itv/" class="tile tile-active" aria-label="Abrir Estaciones de ITV">
-        <div class="tile-icon" aria-hidden="true">&#x1F527;</div>
-        <h2>ITV</h2>
-        <p>Todas las estaciones de Inspección Técnica de Vehículos de España, con dirección, teléfono y cómo llegar.</p>
-        <span class="badge badge-active">Disponible</span>
-      </a>
-
-      <a href="/tiempo/" class="tile tile-active" aria-label="Abrir El tiempo por municipios">
-        <div class="tile-icon" aria-hidden="true">&#x26C5;</div>
-        <h2>El tiempo</h2>
-        <p>Predicción por municipio con datos oficiales de AEMET: hoy y los próximos días, con temperatura, cielo, lluvia y viento.</p>
-        <span class="badge badge-active">Disponible</span>
-      </a>
+    <section class="lead" aria-labelledby="t-tiempo">
+      <p class="kicker">Hoy en España</p>
+      <h2 id="t-tiempo">El tiempo hoy</h2>
+      ${bloqueTiempo}
     </section>
 
+    <div class="cols">
+      <section class="col" aria-labelledby="t-gas">
+        <h2 id="t-gas">Gasolineras</h2>
+        ${bloqueGas}
+        <a class="more" href="/gasolineras/">Precios y mapa cerca de ti &rarr;</a>
+      </section>
+
+      <section class="col" aria-labelledby="t-farm">
+        <h2 id="t-farm">Farmacias de guardia</h2>
+        <p>Qué farmacia está de guardia hoy, provincia por provincia, y farmacias por municipio.</p>
+        <a class="more" href="/farmacias/guardia">Ver farmacias de guardia &rarr;</a>
+        <a class="sub-link" href="/farmacias/">Buscar farmacia por municipio</a>
+      </section>
+
+      <section class="col" aria-labelledby="t-itv">
+        <h2 id="t-itv">ITV</h2>
+        <p>Estaciones de ITV de toda España con dirección, teléfono, precios y cómo llegar.</p>
+        <a class="more" href="/itv/">Buscar estación de ITV &rarr;</a>
+      </section>
+    </div>
+
     <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
-         una isla. Verificado en Search Console sobre /farmacias/madrid/madrid:
-         "No se ha detectado ninguna pagina de referencia" y "Google no reconoce
-         esta URL". Googlebot entra por aqui y recorre enlaces; si no hay camino,
-         no llega, y el sitemap por si solo tarda mucho mas en descubrirlas. -->
-    <nav class="mas-links" aria-label="Secciones con datos por municipio">
+         una isla. Verificado en Search Console: Googlebot entra por aqui y
+         recorre enlaces; si no hay camino, tarda mucho mas en descubrirlas. -->
+    <nav class="mas" aria-label="Consulta por municipio">
       <h2>Consulta por municipio</h2>
       <ul>
+        <li><a href="/tiempo/">El tiempo por municipio (predicción de AEMET)</a></li>
         <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
         <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
-        <li><a href="/tiempo/">El tiempo por municipio (predicción de AEMET)</a></li>
         <li><a href="/precios-carburantes">Observatorio de precios de los carburantes</a></li>
       </ul>
     </nav>
@@ -402,11 +429,11 @@ export function buildLandingPage(
 
   <footer>
     <div class="foot-links">
+      <a href="/tiempo/">El tiempo</a>·
       <a href="/gasolineras/">Gasolineras</a>·
       <a href="/farmacias/">Farmacias</a>·
       <a href="/farmacias/guardia">Farmacias de guardia</a>·
       <a href="/itv/">ITV</a>·
-      <a href="/tiempo/">El tiempo</a>·
       <a href="/precios-carburantes">Precios</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>
@@ -417,9 +444,9 @@ export function buildLandingPage(
 </html>`
 }
 
-// Headers HTTP para la landing. Más ligeros que los del mapa: no hace falta
-// Turnstile, Google Identity, ni los preconnects a basemaps/unpkg. Mantiene
-// CSP estricta con nonce para el JSON-LD y el <style> inline.
+// Headers HTTP para la landing. CSP estricta con nonce para el JSON-LD y el
+// <style> inline; no hay <script> ejecutable, ni CDNs, ni fetch (connect-src
+// 'self' basta). Sin cambios respecto al diseño anterior (sigue sin JS).
 export function landingHeaders(nonce: string): Record<string, string> {
   const csp = [
     "default-src 'self'",
@@ -448,8 +475,7 @@ export function landingHeaders(nonce: string): Record<string, string> {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // Cache corto: la landing es estática pero queremos poder cambiar copy
-    // sin esperar 24h. 5 min en CDN, revalidación en cliente.
+    // Cache corto: la portada lleva dato del día (tiempo/precios). 5 min en CDN.
     'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
   }
 }

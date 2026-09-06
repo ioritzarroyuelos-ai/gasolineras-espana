@@ -65,10 +65,27 @@ const CSS =
   + '.precio-desg{margin:8px 0 0;font-size:13px;color:var(--mu)}'
   + '.precio-nota{margin:8px 0 0;font-size:13px;color:var(--mu)}'
   + '.precio-fuente{margin:8px 0 0;font-size:12px;color:var(--mu);opacity:.85}'
+  // Buscador de municipio (mismo patron que /farmacias/, en azul ITV).
+  + '.buscador{margin:0 0 22px}'
+  + '.buscador label{display:block;font-weight:600;margin:0 0 6px;font-size:15px}'
+  + '.buscador .campo{position:relative}'
+  + '.buscador input{width:100%;padding:13px 15px;font-size:16px;border:2px solid var(--bd);border-radius:10px;background:#fff;color:var(--tx)}'
+  + '.buscador input:focus{outline:none;border-color:var(--v)}'
+  + '.sugs{list-style:none;margin:6px 0 0;padding:6px;position:absolute;left:0;right:0;background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 4px 12px rgba(15,23,42,.08);max-height:300px;overflow-y:auto;z-index:10}'
+  + '.sugs li{margin:0}'
+  + '.sugs a,.sugs .sug-msg{display:block;padding:9px 11px;border-radius:7px;text-decoration:none;color:var(--tx);font-size:15px}'
+  + '.sugs a small{display:block;color:var(--mu);font-size:12px}'
+  + '.sugs a:hover,.sugs a.active{background:#dbeafe}'
+  + '.sug-msg{color:var(--mu);font-size:14px}'
+  + '.hint{font-size:13px;color:var(--mu);margin:8px 0 18px}'
   + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
   + '.card,.aviso,.precio-box{background:#1e293b;border-color:#334155}'
   + '.btn{background:#0f172a;color:#93c5fd;border-color:#334155}'
   + '.precio-linea b,.fuentes a{color:#93c5fd}'
+  + '.buscador input{background:#0f172a;color:#e2e8f0;border-color:#334155}'
+  + '.sugs{background:#1e293b;border-color:#334155}'
+  + '.sugs a,.sugs .sug-msg{color:#e2e8f0}'
+  + '.sugs a:hover,.sugs a.active{background:#1e3a8a}'
   + '.lista li a{background:#0f172a;color:#93c5fd;border-color:#334155}}'
 
 interface Meta {
@@ -160,12 +177,84 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
   const lista = provincias.map(p =>
     '<li><a href="/itv/' + esc(p.slug) + '">' + esc(p.name) + ' <b>' + p.count + '</b></a></li>'
   ).join('')
+  const buscador =
+    '<div class="buscador">'
+    + '<label for="q">Busca tu municipio</label>'
+    + '<div class="campo">'
+    + '<input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" '
+    + 'placeholder="Escribe tu municipio…" '
+    + 'role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugs" />'
+    + '<ul id="sugs" class="sugs" role="listbox" aria-label="Municipios con ITV" hidden></ul>'
+    + '</div>'
+    + '<p class="hint">Escribe tu municipio y te llevamos a su ITV. O mira la lista por provincia más abajo.</p>'
+    + '</div>'
+  // Autocompletado: misma logica que /farmacias/, contra /api/itv/municipios.
+  const script = `<script nonce="${esc(nonce)}">
+  (function () {
+    var input = document.getElementById('q');
+    var box = document.getElementById('sugs');
+    var muni = [];
+    var loaded = false;
+    var active = -1;
+    var shown = [];
+    function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
+    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    function cerrar() { box.hidden = true; box.innerHTML = ''; active = -1; shown = []; input.setAttribute('aria-expanded', 'false'); }
+    function msg(t) { box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>'; box.hidden = false; shown = []; active = -1; input.setAttribute('aria-expanded', 'true'); }
+    function render(q) {
+      var nq = norm(q);
+      if (nq.length < 2) { cerrar(); return; }
+      if (!loaded) { msg('Cargando municipios\\u2026'); return; }
+      var res = [];
+      for (var i = 0; i < muni.length && res.length < 12; i++) {
+        if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
+      }
+      shown = res; active = -1;
+      if (res.length === 0) { msg('No encontramos ITV en ese municipio. Prueba con otro o mira por provincia.'); return; }
+      var html = '';
+      for (var j = 0; j < res.length; j++) {
+        html += '<li role="option"><a href="' + esc(res[j].u) + '">' + esc(res[j].n) + '<small>' + esc(res[j].p) + '</small></a></li>';
+      }
+      box.innerHTML = html; box.hidden = false; input.setAttribute('aria-expanded', 'true');
+    }
+    function marcar(idx) {
+      var links = box.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) links[i].classList.toggle('active', i === idx);
+      if (idx >= 0 && links[idx]) links[idx].scrollIntoView({ block: 'nearest' });
+    }
+    function ir(idx) { if (idx >= 0 && shown[idx]) { window.location.href = shown[idx].u; return true; } return false; }
+    function cargar() {
+      if (loaded) return;
+      fetch('/api/itv/municipios', { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (data) {
+          muni = Array.isArray(data) ? data : (data && data.municipios) || [];
+          loaded = true;
+          if (norm(input.value).length >= 2) render(input.value);
+        })
+        .catch(function () { loaded = true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
+    }
+    input.addEventListener('focus', cargar);
+    input.addEventListener('input', function () { cargar(); render(input.value); });
+    input.addEventListener('keydown', function (e) {
+      if (box.hidden || shown.length === 0) { if (e.key === 'Enter') { e.preventDefault(); } return; }
+      if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, shown.length - 1); marcar(active); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); marcar(active); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (!ir(active)) ir(0); }
+      else if (e.key === 'Escape') { cerrar(); }
+    });
+    document.addEventListener('click', function (e) { if (e.target !== input && !box.contains(e.target)) cerrar(); });
+  })();
+  </script>`
   return envoltorio({ title, desc, canonical, nonce },
     '<h1>Estaciones de ITV en España</h1>'
     + '<p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
+    + buscador
     + '<p><a class="btn" href="/itv/precios">Cuánto cuesta la ITV en cada comunidad</a></p>'
+    + '<h2>Todas las provincias</h2>'
     + '<nav class="lista"><ul>' + lista + '</ul></nav>'
     + AVISO
+    + script
   )
 }
 

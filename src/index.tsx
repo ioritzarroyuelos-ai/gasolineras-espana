@@ -1131,6 +1131,32 @@ async function cargaItv(c: { req: { url: string }; env: Env }): Promise<Estacion
   return parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
 }
 
+// Indice ligero de municipios con ITV para el autocompletado de /itv/.
+// Mismo patron que /api/guardias/municipios: [{n: municipio, p: provincia,
+// u: /itv/<prov>/<mun>}], cacheado en memoria (los datos ITV son estaticos).
+let itvMuniIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
+
+app.get('/api/itv/municipios', async c => {
+  const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
+  if (itvMuniIndex && Date.now() - itvMuniIndex.ts < MUNI_INDEX_TTL) {
+    return c.json(itvMuniIndex.data, 200, CACHE)
+  }
+  const todas = await cargaItv(c)
+  const out: Array<{ n: string; p: string; u: string }> = []
+  const seen = new Set<string>()
+  for (const prov of provinciasConItv(todas)) {
+    for (const m of municipiosConItv(estacionesDeProvincia(todas, prov.id))) {
+      const u = '/itv/' + prov.slug + '/' + m.slug
+      if (seen.has(u)) continue
+      seen.add(u)
+      out.push({ n: m.name, p: prov.name, u })
+    }
+  }
+  out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
+  itvMuniIndex = { ts: Date.now(), data: out }
+  return c.json(out, 200, CACHE)
+})
+
 app.get('/itv/', async c => {
   const todas = await cargaItv(c)
   if (!todas.length) return c.notFound()

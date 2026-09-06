@@ -50,14 +50,38 @@ Todo lo anterior son mejoras posteriores, fuera de este spec.
 
 AEMET indexa por **código INE**; los datos actuales (gasolineras) usan IDs del
 Ministerio, que NO coinciden. Por tanto el tiempo se apoya en una **lista oficial
-del INE** empaquetada en el repo (una sola vez), con: código INE, nombre, provincia
-y población. Esa lista sirve para tres cosas a la vez:
+del INE** empaquetada en el repo (una sola vez), con: código INE, nombre, provincia,
+población y **coordenadas (lat/lng)**. Esa lista sirve para cuatro cosas a la vez:
 1. Índice de municipios del autocompletado (`/api/tiempo/municipios`).
 2. Selección de municipios "importantes" para el snapshot (por población).
 3. Código INE con el que consultar AEMET.
+4. Coordenadas para consultar la fuente secundaria (Open-Meteo), que trabaja por
+   lat/lng (ver "Tolerancia a fallos").
 
 Cubre los ~8.100 municipios (no solo los que tienen gasolinera), así que el vertical
 del tiempo es más completo que los otros.
+
+## Tolerancia a fallos: fuente secundaria (Open-Meteo)
+
+Para no dejar a la gente sin información si AEMET cae, hay una **fuente secundaria**:
+**Open-Meteo** (gratis, sin clave, por lat/lng, cubre España).
+
+Reglas:
+- **AEMET es la principal.** Se usa siempre que responde bien.
+- Si AEMET falla (caído, error, límite, respuesta inválida) tras sus reintentos, se
+  sirve la predicción de **Open-Meteo** para ese municipio, para que la página nunca
+  quede sin dato.
+- Se **sigue reintentando AEMET**; en cuanto vuelve a responder, **se sustituye** el
+  dato de Open-Meteo por el de AEMET (auto-recuperación).
+- **Etiquetado honesto:** cada predicción lleva su `fuente`. Si el dato es de la
+  secundaria, la página lo dice ("Datos de Open-Meteo · AEMET no disponible
+  temporalmente"). Nunca se etiqueta Open-Meteo como AEMET.
+- **Diseño por adaptadores:** un adaptador AEMET y un adaptador Open-Meteo, cada uno
+  convierte su respuesta cruda al **mismo modelo normalizado**; la página renderiza
+  igual venga de donde venga. Añadir/quitar una fuente no toca la página.
+- En bajo-demanda, una entrada cacheada servida por la secundaria lleva **TTL más
+  corto** que una de AEMET, para reintentar AEMET antes y volver a la principal
+  cuanto antes.
 
 ## Arquitectura de datos — híbrido
 
@@ -78,9 +102,11 @@ durante el día.
 Por municipio, se normaliza la respuesta de AEMET a una forma estable e independiente
 de su formato crudo (que es incómodo). Forma prevista por día:
 `{ fecha, tmin, tmax, cielo (código+texto), probLluvia, viento }`, más metadatos:
-`{ ine, nombre, provincia, elaborado (timestamp AEMET), fuente: 'AEMET' }`. Se
-muestran **hoy + 6-7 días**. (Los campos exactos se cierran contra la respuesta real
-de AEMET al implementar.)
+`{ ine, nombre, provincia, elaborado (timestamp), fuente: 'AEMET' | 'Open-Meteo' }`.
+Ambas fuentes (AEMET y Open-Meteo) se normalizan a **esta misma forma** vía sus
+adaptadores (ver "Tolerancia a fallos"), así la página no distingue el origen salvo
+para el etiquetado. Se muestran **hoy + 6-7 días**. (Los campos exactos se cierran
+contra las respuestas reales al implementar.)
 
 ## Rutas / páginas (mismo patrón existente)
 
@@ -97,7 +123,8 @@ de AEMET al implementar.)
 ## Frescura / red de seguridad
 
 Igual filosofía que guardias: nunca mostrar una predicción vieja como la de hoy.
-- Sello visible "Datos de AEMET · actualizado a las HH:MM".
+- Sello visible con la **fuente real**: "Datos de AEMET · actualizado a las HH:MM"
+  (o "Datos de Open-Meteo · AEMET no disponible" si se sirvió la secundaria).
 - Si el dato (snapshot o caché) supera un umbral de antigüedad, aviso claro de que
   puede no estar actualizado, en vez de presentarlo como vigente.
 
@@ -106,21 +133,26 @@ Igual filosofía que guardias: nunca mostrar una predicción vieja como la de ho
 - Refresca el snapshot de los ~150 "importantes" **3-4 veces al día**, con throttle
   para respetar los límites de AEMET y reintentos suaves ante fallos transitorios.
 - Sube con el **push resistente** (`git merge -X ours` + reintento) ya implantado.
-- Si AEMET falla en un municipio, se conserva su dato anterior (no se sobrescribe con
-  vacío) y el sello de frescura lo refleja.
+- Si AEMET falla en un municipio tras sus reintentos, cae a **Open-Meteo** para ese
+  municipio (marcado con su `fuente`), en vez de dejarlo vacío o con dato viejo.
+- Los municipios que quedaron en la secundaria se **reintentan con prioridad** en el
+  siguiente pase y, al responder AEMET, se **sustituyen** por el dato de AEMET.
 
 ## Errores / degradación
 
-- AEMET caído o clave inválida: la página del municipio degrada con un aviso ("no se
-  pudo obtener la predicción, inténtalo más tarde"), sin romper el resto del sitio.
+- AEMET caído o clave inválida: se sirve **Open-Meteo** (etiquetado) — ver
+  "Tolerancia a fallos". El sitio no se queda sin dato del tiempo.
+- Solo si **AEMET y Open-Meteo fallan a la vez**: servir la última cacheada aunque
+  esté algo vieja (con aviso); y si tampoco hay, degradar con un aviso ("no se pudo
+  obtener la predicción, inténtalo más tarde"), sin romper el resto del sitio.
 - Municipio inexistente / slug inválido: 404 (no meter páginas vacías en el índice).
-- Caché: ante fallo de AEMET en bajo-demanda, servir la última cacheada aunque esté
-  algo vieja (con aviso), mejor que nada.
 
 ## Pruebas
 
-- Unitarias: parser de AEMET (dos pasos → predicción normalizada), construcción del
-  índice de municipios, selección de "importantes" por población.
+- Unitarias: adaptador de AEMET (dos pasos → predicción normalizada), adaptador de
+  Open-Meteo (→ la misma forma normalizada), lógica de fallback (AEMET falla →
+  Open-Meteo, con `fuente` correcta) y de auto-recuperación (vuelve a AEMET),
+  construcción del índice de municipios y selección de "importantes" por población.
 - e2e: portada `/tiempo/` (buscador + navegación) y una página de municipio (render,
   sello de frescura); axe de accesibilidad.
 - Como siempre: `tsc` + tests en verde antes de subir, y verificación en producción.
@@ -128,11 +160,14 @@ Igual filosofía que guardias: nunca mostrar una predicción vieja como la de ho
 ## Riesgos / puntos abiertos
 
 - **Límites de AEMET**: confirmar el ritmo real y ajustar throttle/cadencia.
-- **Formato AEMET**: cerrar el mapeo de campos contra la respuesta real (cielo,
-  viento…).
-- **Lista INE**: elegir la fuente concreta del padrón y empaquetarla; fijar el umbral
-  de "importantes" (50.000 hab es la propuesta inicial).
-- **Caché en el borde**: decidir Cache API vs KV para el bajo-demanda.
+- **Formato AEMET / Open-Meteo**: cerrar el mapeo de campos de AMBAS contra sus
+  respuestas reales (cielo, viento…) al modelo normalizado común.
+- **Criterio de "AEMET caído"**: definir cuándo se decide caer a la secundaria (p. ej.
+  N reintentos fallidos / timeout) para no cambiar de fuente por un fallo puntual.
+- **Lista INE**: elegir la fuente concreta del padrón (con coordenadas) y empaquetarla;
+  fijar el umbral de "importantes" (50.000 hab es la propuesta inicial).
+- **Caché en el borde**: decidir Cache API vs KV para el bajo-demanda (con TTL más
+  corto para las entradas servidas por la secundaria).
 
 ## Fuera de alcance / siguiente paso
 

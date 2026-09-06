@@ -801,6 +801,29 @@ app.get('/gasolineras/', async c => {
   }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
 })
 
+// `/gasolineras/mapa` — el mapa interactivo completo (la SPA de siempre). La
+// portada /gasolineras/ paso a ser un buscador; esta ruta conserva el mapa con
+// filtros, ubicacion (?cerca=1) y rutas (?desde=&hasta=). Va ANTES de
+// `/gasolineras/:slug` o "mapa" se interpretaria como slug de provincia. Es la
+// misma pagina que la home de mapa, con noindex (herramienta, no contenido SEO).
+app.get('/gasolineras/mapa', async c => {
+  const nonce = genNonce()
+  const turnstile = !!c.env.TURNSTILE_SITE_KEY
+  const googleAuth = !!c.env.GOOGLE_CLIENT_ID
+  let snapshotDate: string | undefined
+  try {
+    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+    if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
+  } catch { /* degradacion silenciosa */ }
+  return new Response(buildPage(nonce, c.req.url, {
+    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+    snapshotDate,
+    supportUrl: c.env.SUPPORT_URL,
+    googleClientId: c.env.GOOGLE_CLIENT_ID,
+    mapTool: true,
+  }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+})
+
 // ---- Rutas SEO por provincia ----
 // /gasolineras/madrid, /gasolineras/barcelona, ... → pre-renderizamos la app
 // con meta tags especificos y el cliente auto-selecciona esa provincia via

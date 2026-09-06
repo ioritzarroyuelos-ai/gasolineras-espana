@@ -70,6 +70,13 @@ export interface BuildPageOpts {
   // presente, se inicializa Google Identity Services y se pinta el boton
   // "Entrar". Si no, el panel de login se oculta y /api/auth/* responde 503.
   googleClientId?: string
+  // Herramienta de mapa a pantalla completa en /gasolineras/mapa. La portada
+  // /gasolineras/ paso a ser un buscador (buildGasolinerasLanding); el mapa
+  // interactivo completo vive ahora aqui. Cuando es true: canonica
+  // /gasolineras/mapa y noindex (la SPA es una herramienta, no contenido que
+  // indexar; el SEO lo llevan la portada y las paginas provincia/municipio).
+  // No afecta a las rutas SEO (provincia/municipio), que no pasan este flag.
+  mapTool?: boolean
 }
 
 export function buildPage(
@@ -85,7 +92,7 @@ export function buildPage(
   // La URL canonica siempre refleja el nivel mas fino disponible.
   // Ship 26: la raíz del mapa pasó de `/` a `/gasolineras/` — `/` redirige 301
   // al portal CercaYa (aún futuro), así que la canónica apunta al nuevo root.
-  let pathname = '/gasolineras/'
+  let pathname = opts.mapTool ? '/gasolineras/mapa' : '/gasolineras/'
   if (seo?.provinciaSlug) pathname = '/gasolineras/' + seo.provinciaSlug
   if (seo?.provinciaSlug && seo?.municipioSlug) pathname = '/gasolineras/' + seo.provinciaSlug + '/' + seo.municipioSlug
   const canonical = origin + pathname
@@ -350,7 +357,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Gasolineras" />
-  <meta name="robots" content="index,follow,max-image-preview:large" />
+  <meta name="robots" content="${opts.mapTool ? 'noindex,follow' : 'index,follow,max-image-preview:large'}" />
   <meta name="application-name" content="Gasolineras España" />
   <meta name="author" content="Gasolineras España" />
   <meta name="generator" content="Hono + Cloudflare Pages" />

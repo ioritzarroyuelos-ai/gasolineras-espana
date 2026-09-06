@@ -19,10 +19,10 @@ function esc(s: unknown): string {
 }
 
 const CSS =
-  ':root{--v:#1d4ed8;--vd:#1e3a8a;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+  ':root{--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'header{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:14px 18px}'
+  + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
   + 'header a{color:#fff;text-decoration:none;font-weight:600}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
   + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
@@ -34,7 +34,9 @@ const CSS =
   + '.acciones{display:flex;gap:8px;flex-wrap:wrap}'
   + '.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
   + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
-  + '.btn--tel{background:var(--v);border-color:var(--v);color:#fff}'
+  /* Verde mas oscuro que --v (#16a34a): texto blanco sobre #16a34a da 3.29:1
+     (falla WCAG AA). #15803d con blanco da ~5:1. */
+  + '.btn--tel{background:#15803d;border-color:#15803d;color:#fff}'
   + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
   + '.lista ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
   + '.lista li a{display:inline-block;padding:5px 10px;border:1px solid var(--bd);border-radius:999px;'
@@ -65,7 +67,7 @@ const CSS =
   + '.precio-desg{margin:8px 0 0;font-size:13px;color:var(--mu)}'
   + '.precio-nota{margin:8px 0 0;font-size:13px;color:var(--mu)}'
   + '.precio-fuente{margin:8px 0 0;font-size:12px;color:var(--mu);opacity:.85}'
-  // Buscador de municipio (mismo patron que /farmacias/, en azul ITV).
+  // Buscador de municipio (mismo patron que /farmacias/, en verde de marca).
   + '.buscador{margin:0 0 22px}'
   + '.buscador label{display:block;font-weight:600;margin:0 0 6px;font-size:15px}'
   + '.buscador .campo{position:relative}'
@@ -75,18 +77,18 @@ const CSS =
   + '.sugs li{margin:0}'
   + '.sugs a,.sugs .sug-msg{display:block;padding:9px 11px;border-radius:7px;text-decoration:none;color:var(--tx);font-size:15px}'
   + '.sugs a small{display:block;color:var(--mu);font-size:12px}'
-  + '.sugs a:hover,.sugs a.active{background:#dbeafe}'
+  + '.sugs a:hover,.sugs a.active{background:#dcfce7}'
   + '.sug-msg{color:var(--mu);font-size:14px}'
   + '.hint{font-size:13px;color:var(--mu);margin:8px 0 18px}'
   + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
   + '.card,.aviso,.precio-box{background:#1e293b;border-color:#334155}'
-  + '.btn{background:#0f172a;color:#93c5fd;border-color:#334155}'
-  + '.precio-linea b,.fuentes a{color:#93c5fd}'
+  + '.btn{background:#0f172a;color:#86efac;border-color:#334155}'
+  + '.precio-linea b,.fuentes a{color:#86efac}'
   + '.buscador input{background:#0f172a;color:#e2e8f0;border-color:#334155}'
   + '.sugs{background:#1e293b;border-color:#334155}'
   + '.sugs a,.sugs .sug-msg{color:#e2e8f0}'
-  + '.sugs a:hover,.sugs a.active{background:#1e3a8a}'
-  + '.lista li a{background:#0f172a;color:#93c5fd;border-color:#334155}}'
+  + '.sugs a:hover,.sugs a.active{background:#166534}'
+  + '.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
 
 interface Meta {
   title: string
@@ -103,7 +105,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<title>' + esc(m.title) + '</title>'
     + '<meta name="description" content="' + esc(m.desc) + '" />'
     + '<link rel="canonical" href="' + esc(m.canonical) + '" />'
-    + '<meta name="theme-color" content="#1d4ed8" />'
+    + '<meta name="theme-color" content="#16a34a" />'
     + '<meta property="og:title" content="' + esc(m.title) + '" />'
     + '<meta property="og:description" content="' + esc(m.desc) + '" />'
     + '<meta property="og:type" content="website" />'

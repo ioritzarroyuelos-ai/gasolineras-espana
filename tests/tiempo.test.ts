@@ -114,4 +114,14 @@ describe('maestroAMunicipios (muestra real del maestro AEMET)', () => {
     expect(ab!.n).toBe('Ababuj')
     expect(ab!.p).toBe('Teruel')
   })
+  it('marca importante (imp) por poblacion >= 50.000, no por destacada', () => {
+    const grande = maestroAMunicipios(
+      [{ id: 'id28079', nombre: 'Madrid', latitud_dec: '40.4', longitud_dec: '-3.7', num_hab: '3300000', destacada: '0' }],
+      PROVINCIAS_INE)
+    expect(grande[0].imp).toBe(true)
+    const peque = maestroAMunicipios(
+      [{ id: 'id44001', nombre: 'Ababuj', latitud_dec: '40.5', longitud_dec: '-0.8', num_hab: '65', destacada: '1' }],
+      PROVINCIAS_INE)
+    expect(peque[0].imp).toBe(false)  // destacada ya no cuenta
+  })
 })

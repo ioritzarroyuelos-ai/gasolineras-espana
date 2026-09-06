@@ -182,7 +182,10 @@ export function maestroAMunicipios(maestro, provincias) {
       slug: slugTiempo(nombre),
       lat: num(e.latitud_dec), lng: num(e.longitud_dec),
       pob,
-      imp: e.destacada === '1' || pob >= IMPORTANTE_MIN_HAB,
+      // "Importante" = va al snapshot estatico (robot). Solo por poblacion
+      // (>=50.000, ~145 municipios). NO usamos `destacada` de AEMET: marca ~1.000,
+      // demasiados para el robot y sus limites.
+      imp: pob >= IMPORTANTE_MIN_HAB,
     })
   }
   return out

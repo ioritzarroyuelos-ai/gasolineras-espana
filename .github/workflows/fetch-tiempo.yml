@@ -1,0 +1,56 @@
+name: Fetch snapshot del tiempo
+
+# Precachea la predicción de los municipios "importantes" (población >= 50.000,
+# ~145) desde AEMET, para servir sus páginas al instante. El resto va bajo demanda
+# + caché en el borde. 4 veces al día (el tiempo cambia durante el día).
+#
+# Fuente AEMET (secreto AEMET_API_KEY), con Open-Meteo de suplente. Ver
+# scripts/fetch-tiempo.mjs. El push dispara CI -> deploy (como fetch-itv).
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # cada 6 h (00, 06, 12, 18 UTC)
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-tiempo
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Precachear el tiempo de los municipios importantes
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: node scripts/fetch-tiempo.mjs
+
+      - name: Commit si hay cambios
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/tiempo/snapshot
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el snapshot del tiempo"
+          else
+            git commit -m "chore(data): actualizar snapshot del tiempo $(date -u +%Y-%m-%dT%H:%MZ)"
+            # Push resistente a carreras con otros robots (ver fetch-prices.yml):
+            # fusiona lo remoto con -X ours y reintenta ante "fetch first".
+            pushed=0
+            for i in 1 2 3; do
+              git fetch origin main || true
+              if git merge -X ours --no-edit origin/main && git push; then pushed=1; break; fi
+              echo "push intento $i fallo; reintento en 5s"
+              git merge --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then echo "::error::no se pudo pushear el snapshot del tiempo"; exit 1; fi
+          fi

@@ -1336,7 +1336,15 @@ app.get('/tiempo/:prov/:mun', async c => {
   if (!munis) return c.notFound()
   const m = munis.find(x => x.slug === munSlug)
   if (!m) return c.notFound()
-  const pred = await resuelveTiempo(c, m)
+  // Snapshot primero (municipios importantes precacheados por el robot): fichero
+  // por provincia con las predicciones por código INE. Si está y es fresca, se usa
+  // sin llamar a AEMET. Si no (municipio pequeño o snapshot viejo), bajo demanda.
+  let pred: Prediccion | null = null
+  const snap = await loadSnapshot<{ predicciones: Record<string, Prediccion> }>(
+    c.req.url, 'tiempo/snapshot/' + provSlug + '.json', c.env.ASSETS)
+  const desdeSnap = snap && snap.predicciones && snap.predicciones[m.ine]
+  if (desdeSnap && frescuraTiempo(desdeSnap.elaborado).fiable) pred = desdeSnap
+  if (!pred) pred = await resuelveTiempo(c, m)
   const nonce = genNonce()
   const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/tiempo/' + provSlug + '/' + munSlug
   if (!pred) {

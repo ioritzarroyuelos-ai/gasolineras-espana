@@ -28,7 +28,8 @@ document.getElementById('sel-orden').addEventListener('change', function(e) {
   // Mostrar slider de radio solo cuando tiene sentido (cerca / distancia).
   var needsRadius = (e.target.value === 'cerca' || e.target.value === 'dist');
   var rg = document.getElementById('radius-group');
-  if (needsRadius && userPos) rg.style.display = 'block';
+  // munCenter (municipio elegido) mantiene la barra visible sea cual sea el orden.
+  if ((needsRadius && userPos) || munCenter) rg.style.display = 'block';
   else if (!needsRadius) rg.style.display = 'none';
   else if (needsRadius && !userPos) {
     showToast('Pulsa el boton de ubicacion para usar esta ordenacion', 'warning');
@@ -1551,7 +1552,8 @@ function updateMonthlyWidget() {
   var lblRad = document.getElementById('lbl-radius');
   inRad.addEventListener('input', function() {
     lblRad.textContent = inRad.value + ' km';
-    if (userPos && allStations.length) applyFilters();
+    // Re-aplica en vivo tanto en modo GPS (userPos) como en modo municipio (munCenter).
+    if ((userPos || munCenter) && allStations.length) applyFilters();
   });
 })();
 

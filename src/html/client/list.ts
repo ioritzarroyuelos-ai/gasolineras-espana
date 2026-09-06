@@ -288,10 +288,12 @@ function cardHTML(s, i, fuel, fuelLabel) {
   // coste del desvio ida-vuelta).
   var distHtml = '';
   var extraKmCard = null;
-  if (userPos) {
+  // Centro para la distancia: userPos (GPS) o munCenter (municipio elegido).
+  var centerCard = userPos || munCenter;
+  if (centerCard) {
     var posC = stationLatLng(s);
     if (posC) {
-      var kmC = distanceKm(userPos.lat, userPos.lng, posC.lat, posC.lng);
+      var kmC = distanceKm(centerCard.lat, centerCard.lng, posC.lat, posC.lng);
       extraKmCard = kmC * 2;
       if (kmC < 1) distHtml = '<span class="distance-chip" aria-label="Distancia">' + Math.round(kmC*1000) + ' m</span>';
       else distHtml = '<span class="distance-chip" aria-label="Distancia">' + kmC.toFixed(1) + ' km</span>';
@@ -530,6 +532,32 @@ var KNOWN_BRANDS = {
   ENI:1, GASEXPRESS:1, BEROIL:1, HAM:1, AGLA:1
 };
 
+// Centro del municipio elegido (media de sus gasolineras). Es el equivalente a
+// userPos (GPS) pero para el modo "radio alrededor del municipio": cuando el
+// usuario elige un municipio, mostramos las gasolineras en un radio (10 km por
+// defecto, ajustable con la barra) alrededor de este punto. null = modo inactivo.
+var munCenter = null;
+
+// Calcula munCenter (centroide de las estaciones del municipio dentro de
+// allStations, que en este modo trae la provincia entera) y muestra u oculta el
+// slider de radio. Si no hay municipio o no se puede centrar, desactiva el modo.
+function setupMunicipioRadio(munMode, idMun) {
+  var rg = document.getElementById('radius-group');
+  if (!munMode || !idMun) {
+    munCenter = null;
+    if (rg && !userPos) rg.style.display = 'none';
+    return;
+  }
+  var sumLat = 0, sumLng = 0, n = 0;
+  for (var i = 0; i < allStations.length; i++) {
+    if (String(allStations[i]['IDMunicipio']) !== String(idMun)) continue;
+    var pos = stationLatLng(allStations[i]);
+    if (pos) { sumLat += pos.lat; sumLng += pos.lng; n++; }
+  }
+  munCenter = n > 0 ? { lat: sumLat / n, lng: sumLng / n } : null;
+  if (munCenter && rg) rg.style.display = 'block';
+}
+
 function applyFilters() {
   var fuel  = document.getElementById('sel-combustible').value;
   var text  = document.getElementById('search-text').value.trim().toLowerCase();
@@ -554,13 +582,18 @@ function applyFilters() {
     stations = stations.filter(function(s) { return parsePrice(s[fuel]); });
   }
 
-  // Filtro por radio (solo si hay userPos y el sel-orden indica cerca/dist)
-  var usingNearby = userPos && (orden === 'cerca' || orden === 'dist');
-  if (usingNearby && radius) {
+  // Filtro por radio. Centro efectivo:
+  //  - userPos (GPS): radio solo cuando el orden es cerca/dist (comportamiento
+  //    de siempre — el resto de ordenes no recorta por distancia).
+  //  - munCenter (municipio elegido, sin GPS): radio SIEMPRE (es justo lo que
+  //    pidio el usuario: al elegir municipio, ver las de un radio de N km).
+  var center = userPos || munCenter;
+  var radiusActive = userPos ? (orden === 'cerca' || orden === 'dist') : !!munCenter;
+  if (center && radiusActive && radius) {
     stations = stations.filter(function(s) {
       var pos = stationLatLng(s);
       if (!pos) return false;
-      return distanceKm(userPos.lat, userPos.lng, pos.lat, pos.lng) <= radius;
+      return distanceKm(center.lat, center.lng, pos.lat, pos.lng) <= radius;
     });
   }
 
@@ -606,19 +639,20 @@ function applyFilters() {
       var pa = parsePrice(a[fuel]), pb = parsePrice(b[fuel]);
       if (!pa && !pb) return 0; if (!pa) return 1; if (!pb) return -1;
       return orden === 'asc' ? pa - pb : pb - pa;
-    } else if (orden === 'cerca' && userPos) {
+    } else if (orden === 'cerca' && center) {
       // Score: penalizar distancia (0.02 €/km equivale a compensar ~1km por cada cent.)
+      // "center" es userPos (GPS) o munCenter (municipio elegido).
       var pa2 = parsePrice(a[fuel]), pb2 = parsePrice(b[fuel]);
       var posA = stationLatLng(a), posB = stationLatLng(b);
-      var dA = posA ? distanceKm(userPos.lat, userPos.lng, posA.lat, posA.lng) : 9999;
-      var dB = posB ? distanceKm(userPos.lat, userPos.lng, posB.lat, posB.lng) : 9999;
+      var dA = posA ? distanceKm(center.lat, center.lng, posA.lat, posA.lng) : 9999;
+      var dB = posB ? distanceKm(center.lat, center.lng, posB.lat, posB.lng) : 9999;
       var sa = (pa2 || 99) + dA * 0.02;
       var sb = (pb2 || 99) + dB * 0.02;
       return sa - sb;
-    } else if (orden === 'dist' && userPos) {
+    } else if (orden === 'dist' && center) {
       var posA2 = stationLatLng(a), posB2 = stationLatLng(b);
-      var dA2 = posA2 ? distanceKm(userPos.lat, userPos.lng, posA2.lat, posA2.lng) : 9999;
-      var dB2 = posB2 ? distanceKm(userPos.lat, userPos.lng, posB2.lat, posB2.lng) : 9999;
+      var dA2 = posA2 ? distanceKm(center.lat, center.lng, posA2.lat, posA2.lng) : 9999;
+      var dB2 = posB2 ? distanceKm(center.lat, center.lng, posB2.lat, posB2.lng) : 9999;
       return dA2 - dB2;
     }
     return (a['Rotulo'] || '').localeCompare(b['Rotulo'] || '');
@@ -898,7 +932,12 @@ async function loadStations() {
   // que el filtro sea un no-op. A nivel provincia (~150 estaciones en Bizkaia)
   // el radio de 20km devuelve decenas.
   var usingNearby = userPos && (orden === 'cerca' || orden === 'dist');
-  var idMun = usingNearby ? '' : idMunSel;
+  // Modo "radio alrededor del municipio": si el usuario elige un municipio (y no
+  // esta en modo GPS), cargamos la PROVINCIA entera como pool y luego, en
+  // applyFilters, recortamos a un radio (10 km por defecto, ajustable con la
+  // barra) centrado en ese municipio. Asi ve tambien las de pueblos vecinos.
+  var munMode = !usingNearby && !!idMunSel;
+  var idMun = (usingNearby || munMode) ? '' : idMunSel;
 
   document.getElementById('stats-bar').style.display = 'none';
   renderSkeletons(6);
@@ -910,6 +949,7 @@ async function loadStations() {
     allStations = cached.data;
     var stale = Date.now() - cached.ts > 2 * 60 * 60 * 1000;
     showCacheIndicator(cached.ts, stale);
+    setupMunicipioRadio(munMode, idMunSel);
     applyFilters();
     if (stale) refreshInBackground(key, idProv, idMun);
     return;
@@ -932,6 +972,7 @@ async function loadStations() {
     }
 
     setCache(key, allStations, data.Fecha || '');
+    setupMunicipioRadio(munMode, idMunSel);
     applyFilters();
   } catch(err) {
     console.error(err);
@@ -940,6 +981,7 @@ async function loadStations() {
     if (stale) {
       allStations = stale.data;
       showCacheIndicator(stale.ts, true);
+      setupMunicipioRadio(munMode, idMunSel);
       applyFilters();
       showToast('El Ministerio no responde. Mostrando datos guardados (' + formatAge(stale.ts) + ').', 'warning');
     } else {

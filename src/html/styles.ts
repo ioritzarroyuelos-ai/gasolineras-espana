@@ -621,7 +621,10 @@ export function getStyles(nonce: string = ''): string {
     }
     .stats-nacional-footer {
       font-size: 10px;
-      color: #9ca3af;
+      /* #9ca3af sobre el fondo blanco del widget daba 2.53:1 (falla WCAG AA).
+         #6b7280 (el mismo gris del titulo) da 4.83:1. El widget es siempre
+         blanco (sin variante oscura), asi que vale en ambos temas. */
+      color: #6b7280;
       margin-top: 2px;
     }
     /* Delta % del widget (↑ rojo sube, ↓ verde baja, = gris). Clases

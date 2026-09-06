@@ -165,6 +165,17 @@ function initMap() {
     // llena la pantalla y setMinZoom impide alejarse mas alla de sus limites.
     map.fitBounds(ESPANA_BOUNDS, { padding: [6, 6], animate: false });
     map.setMinZoom(map.getZoom());
+    // En rutas SEO (provincia/municipio) las estaciones se cargan durante el
+    // arranque. Cuando vienen de cache, loadStations encuadra su zona ANTES de
+    // este setTimeout y el fitBounds de arriba lo pisaba, dejando el mapa a nivel
+    // pais. Si ya hay estaciones cargadas, re-encuadramos su zona (el radio del
+    // municipio, o la provincia). Si aun no han llegado, loadStations encuadrara
+    // despues (ya sin carrera, porque este fit ya paso).
+    var hasSeo = false;
+    try { hasSeo = !!(window.__SEO__ && window.__SEO__.provinciaId); } catch(_) {}
+    if (hasSeo && typeof applyFilters === 'function' && allStations && allStations.length) {
+      applyFilters();
+    }
   }, 100);
 }
 

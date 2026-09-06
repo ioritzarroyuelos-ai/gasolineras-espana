@@ -11,9 +11,9 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-test.describe('Home (/gasolineras/)', () => {
+test.describe('Mapa (/gasolineras/mapa)', () => {
   test('carga el shell y muestra la barra superior', async ({ page }) => {
-    await page.goto('/gasolineras/')
+    await page.goto('/gasolineras/mapa')
     await expect(page).toHaveTitle(/Gasolineras España/i)
 
     // Cabecera principal presente
@@ -31,7 +31,7 @@ test.describe('Home (/gasolineras/)', () => {
   })
 
   test('seleccionar provincia activa el municipio', async ({ page }) => {
-    await page.goto('/gasolineras/')
+    await page.goto('/gasolineras/mapa')
     // Esperamos a que cargue el listado de provincias.
     await expect
       .poll(async () => (await page.locator('#sel-provincia option').count()), { timeout: 15_000 })
@@ -48,7 +48,7 @@ test.describe('Home (/gasolineras/)', () => {
   })
 
   test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {
-    await page.goto('/gasolineras/')
+    await page.goto('/gasolineras/mapa')
     // Esperamos al bootstrap para auditar el DOM "real", no el esqueleto inicial.
     await expect(page.locator('#app-header')).toBeVisible()
 
@@ -68,6 +68,46 @@ test.describe('Home (/gasolineras/)', () => {
       // Log amigable en output para CI
       // eslint-disable-next-line no-console
       console.log('axe violations:', JSON.stringify(severe, null, 2))
+    }
+    expect(severe).toEqual([])
+  })
+})
+
+test.describe('Portada gasolineras (/gasolineras/)', () => {
+  test('muestra el buscador y los accesos al mapa', async ({ page }) => {
+    await page.goto('/gasolineras/')
+    await expect(page).toHaveTitle(/Gasolineras baratas en España/i)
+
+    // Buscador de municipio presente (no hay mapa aqui).
+    await expect(page.locator('#q')).toBeVisible()
+    await expect(page.locator('#map')).toHaveCount(0)
+
+    // Accesos: ubicacion, ruta y mapa completo apuntan a /gasolineras/mapa.
+    await expect(page.locator('a[href="/gasolineras/mapa?action=geolocate"]')).toBeVisible()
+    await expect(page.locator('a[href="/gasolineras/mapa?action=route"]')).toBeVisible()
+    await expect(page.locator('a[href="/gasolineras/mapa"]')).toBeVisible()
+  })
+
+  test('el autocompletado lleva a la pagina del municipio', async ({ page }) => {
+    await page.goto('/gasolineras/')
+    await page.locator('#q').click()
+    await page.locator('#q').fill('alcorcon')
+    // La primera sugerencia debe enlazar a /gasolineras/<prov>/<municipio>.
+    const primera = page.locator('#sugs a').first()
+    await expect(primera).toBeVisible({ timeout: 15_000 })
+    await expect(primera).toHaveAttribute('href', /^\/gasolineras\/[a-z-]+\/[a-z0-9-]+$/)
+  })
+
+  test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {
+    await page.goto('/gasolineras/')
+    await expect(page.locator('#q')).toBeVisible()
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa'])
+      .analyze()
+    const severe = results.violations.filter(v => v.impact === 'serious' || v.impact === 'critical')
+    if (severe.length) {
+      // eslint-disable-next-line no-console
+      console.log('axe violations (portada):', JSON.stringify(severe, null, 2))
     }
     expect(severe).toEqual([])
   })

@@ -271,3 +271,49 @@ export function statsForMunicipio(
   }
   return { stats, stationCount }
 }
+
+/**
+ * Stats de precios de TODA España (sin filtro geografico). Misma forma que
+ * statsForMunicipio; se usa en la portada /gasolineras/ para el bloque de
+ * contenido SEO ("gasolina 95 desde X hasta Y, media Z"). Una sola pasada al
+ * snapshot ya cacheado en memoria; usa reduce en vez de Math.min(...arr) para
+ * no reventar la pila con ~11k elementos por combustible.
+ */
+export function statsNacional(
+  snap: SnapshotLike | null | undefined,
+): {
+  stats: Record<string, { min: number; avg: number; max: number; count: number }>
+  stationCount: number
+} {
+  const stats: Record<string, { min: number; avg: number; max: number; count: number }> = {}
+  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) return { stats, stationCount: 0 }
+  const FIELD: Record<string, string> = {
+    '95':          'Precio Gasolina 95 E5',
+    '98':          'Precio Gasolina 98 E5',
+    'diesel':      'Precio Gasoleo A',
+    'diesel_plus': 'Precio Gasoleo Premium',
+  }
+  const agg: Record<string, { min: number; max: number; sum: number; n: number }> = {}
+  for (const k of Object.keys(FIELD)) agg[k] = { min: Infinity, max: -Infinity, sum: 0, n: 0 }
+  let stationCount = 0
+  for (const s of snap.ListaEESSPrecio) {
+    stationCount++
+    for (const fuelCode of Object.keys(FIELD)) {
+      const raw = (s as Record<string, unknown>)[FIELD[fuelCode]]
+      if (!raw) continue
+      const n = parseFloat(String(raw).replace(',', '.'))
+      if (!Number.isFinite(n) || n <= 0) continue
+      const a = agg[fuelCode]
+      if (n < a.min) a.min = n
+      if (n > a.max) a.max = n
+      a.sum += n
+      a.n++
+    }
+  }
+  for (const fuelCode of Object.keys(agg)) {
+    const a = agg[fuelCode]
+    if (a.n === 0) continue
+    stats[fuelCode] = { min: a.min, max: a.max, avg: a.sum / a.n, count: a.n }
+  }
+  return { stats, stationCount }
+}

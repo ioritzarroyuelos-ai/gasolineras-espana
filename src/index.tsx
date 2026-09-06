@@ -2,6 +2,8 @@ import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
+import { buildGasolinerasLanding, gasolinerasLandingHeaders } from './html/gasolineras'
+import type { GasLandingProvincia } from './html/gasolineras'
 import {
   buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage,
   buildGuardiaProvinciaFlatPage, guardiaHeaders,
@@ -53,7 +55,7 @@ import {
   safeValidate,
 } from './lib/schemas'
 import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
-import { topMunicipiosInProvincia, findMunicipioBySlug, statsForMunicipio, topCheapestStationsIn } from './lib/municipios'
+import { topMunicipiosInProvincia, municipiosInProvincia, findMunicipioBySlug, statsForMunicipio, statsNacional, topCheapestStationsIn } from './lib/municipios'
 import type { StationLite } from './lib/municipios'
 import {
   snapshotToRows,
@@ -760,15 +762,15 @@ function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Rec
 // CercaYa con tiles hacia cada servicio (gasolineras activo, farmacias e
 // ITV próximamente).
 //
-// Compatibilidad con shortcuts PWA viejos: los manifests anteriores al
-// Ship 26 tenían shortcuts como `/?action=cheapest` que esperaban entrar
-// al mapa. Para no romper esas instalaciones, seguimos detectando `?action=`
-// y redirigimos a `/gasolineras/?action=...`. Los manifests actualizados
-// ya apuntan directamente a `/gasolineras/?action=...` y no pasan por aquí.
+// Compatibilidad con shortcuts PWA viejos: los manifests anteriores tenían
+// shortcuts como `/?action=cheapest` (y luego `/gasolineras/?action=...`) que
+// esperaban entrar al mapa. Ahora el mapa vive en `/gasolineras/mapa` y la
+// portada `/gasolineras/` es un buscador que NO procesa `?action=`. Para no
+// romper instalaciones viejas, cualquier `?action=` en `/` se redirige al mapa.
 app.get('/', c => {
   const url = new URL(c.req.url)
   if (url.searchParams.has('action')) {
-    return c.redirect('/gasolineras/' + url.search, 301)
+    return c.redirect('/gasolineras/mapa' + url.search, 301)
   }
   const nonce = genNonce()
   return new Response(buildLandingPage(nonce, c.req.url), { headers: landingHeaders(nonce) })
@@ -781,24 +783,67 @@ app.get('/gasolineras', c => {
   return c.redirect('/gasolineras/' + (url.search || ''), 301)
 })
 
-// `/gasolineras/` — home del mapa nacional (antes vivía en `/`).
+// Indice ligero de municipios con gasolinera para el autocompletado de la
+// portada. Mismo patron que /api/guardias/municipios: [{n,p,u}] con
+// u=/gasolineras/<prov>/<mun>. ~3.250 entradas; cache en memoria (TTL 30 min)
+// y CDN. Solo se descarga cuando el usuario empieza a buscar.
+let muniGasIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
+
+app.get('/api/gasolineras/municipios', async c => {
+  const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
+  if (muniGasIndex && Date.now() - muniGasIndex.ts < MUNI_INDEX_TTL) {
+    return c.json(muniGasIndex.data, 200, CACHE)
+  }
+  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+  const out: Array<{ n: string; p: string; u: string }> = []
+  const seen = new Set<string>()
+  for (const prov of PROVINCIAS) {
+    for (const m of municipiosInProvincia(snap, prov.id)) {
+      const u = '/gasolineras/' + prov.slug + '/' + m.slug
+      if (seen.has(u)) continue
+      seen.add(u)
+      out.push({ n: m.name, p: prov.name, u })
+    }
+  }
+  out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
+  muniGasIndex = { ts: Date.now(), data: out }
+  return c.json(out, 200, CACHE)
+})
+
+// `/gasolineras/` — portada: buscador de municipio + "usar mi ubicacion" +
+// "planificar ruta" + contenido SEO (precios medios nacionales y enlaces por
+// provincia). El mapa interactivo completo vive en /gasolineras/mapa. Ver
+// src/html/gasolineras.ts.
 app.get('/gasolineras/', async c => {
+  // Transicion PWA: apps con el manifest viejo aun apuntan a
+  // /gasolineras/?action=... (esperando el mapa). La portada no procesa
+  // acciones -> las reenviamos al mapa para no romper esos accesos directos.
+  const reqUrl = new URL(c.req.url)
+  if (reqUrl.searchParams.has('action')) {
+    return c.redirect('/gasolineras/mapa' + reqUrl.search, 301)
+  }
   const nonce = genNonce()
-  const turnstile = !!c.env.TURNSTILE_SITE_KEY
-  const googleAuth = !!c.env.GOOGLE_CLIENT_ID
-  // Ship 15: exponer Fecha del snapshot para que el cliente pinte badge
-  // "Precios de hace Xm". Si falla la carga, seguimos sin badge.
-  let snapshotDate: string | undefined
+  let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
+  let provincias: GasLandingProvincia[] = []
   try {
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
-  } catch { /* degradacion silenciosa */ }
-  return new Response(buildPage(nonce, c.req.url, {
-    turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
-    snapshotDate,
-    supportUrl: c.env.SUPPORT_URL,
-    googleClientId: c.env.GOOGLE_CLIENT_ID,
-  }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+    const r = statsNacional(snap)
+    stats = Object.keys(r.stats).length ? r.stats : undefined
+    if (snap && Array.isArray(snap.ListaEESSPrecio)) {
+      const counts = new Map<string, number>()
+      for (const s of snap.ListaEESSPrecio) {
+        if (s.IDProvincia) counts.set(s.IDProvincia, (counts.get(s.IDProvincia) || 0) + 1)
+      }
+      provincias = PROVINCIAS
+        .map(p => ({ slug: p.slug, name: p.name, count: counts.get(p.id) || 0 }))
+        .filter(p => p.count > 0)
+        .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    }
+  } catch { /* degradacion: portada sin bloque de precios/provincias */ }
+  return new Response(
+    buildGasolinerasLanding(nonce, c.req.url, { stats, provincias }),
+    { headers: gasolinerasLandingHeaders(nonce) },
+  )
 })
 
 // `/gasolineras/mapa` — el mapa interactivo completo (la SPA de siempre). La

@@ -55,7 +55,18 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "chore(data): actualizar snapshot de recargadores $(date -u +%Y-%m-%dT%H:%MZ)"
-            git push
+            # Push resistente a carreras con otros robots (ver fetch-prices.yml):
+            # fusiona lo remoto con -X ours y reintenta para que un rechazo por
+            # "fetch first" no tumbe el job y salte el deploy.
+            pushed=0
+            for i in 1 2 3; do
+              git fetch origin main || true
+              if git merge -X ours --no-edit origin/main && git push; then pushed=1; break; fi
+              echo "push intento $i fallo; reintento en 5s"
+              git merge --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then echo "::error::no se pudo pushear el snapshot de recargadores tras 3 intentos"; exit 1; fi
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 

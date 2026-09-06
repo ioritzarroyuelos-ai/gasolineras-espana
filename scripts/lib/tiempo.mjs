@@ -142,3 +142,62 @@ export async function resuelvePrediccion(muni, deps = {}) {
   try { return normalizaOpenMeteo(await bajaO(muni.lat, muni.lng), meta) }
   catch (e) { throw new Error('AEMET y Open-Meteo fallaron: ' + (ultimoError && ultimoError.message) + ' / ' + e.message) }
 }
+
+// ---- Maestro de municipios (AEMET) -> lista propia -------------------------
+// Umbral de población para el snapshot estático ("importantes").
+export const IMPORTANTE_MIN_HAB = 50000
+
+/** slug URL-safe (minúsculas, sin acentos ni signos). Autoconsistente con las
+ *  rutas /tiempo/<prov>/<mun> (gen y router usan el mismo municipios.json). */
+export function slugTiempo(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/**
+ * Convierte el maestro de municipios de AEMET en nuestra lista normalizada.
+ * @param {unknown[]} maestro  respuesta de /maestro/municipios (id "id28079",
+ *   nombre, latitud_dec, longitud_dec, num_hab, destacada, ...)
+ * @param {Array<{id:string,slug:string,name:string}>} provincias  INE 2 díg -> slug/nombre
+ * @returns municipios [{ine,nombre,provinciaId,provinciaSlug,provinciaNombre,slug,lat,lng,pob,imp}]
+ */
+export function maestroAMunicipios(maestro, provincias) {
+  const byProv = new Map((provincias || []).map(p => [p.id, p]))
+  const out = []
+  for (const e of (Array.isArray(maestro) ? maestro : [])) {
+    const ine = String((e && e.id) || '').replace(/^id/, '')
+    if (ine.length !== 5) continue
+    const provinciaId = ine.slice(0, 2)
+    const prov = byProv.get(provinciaId)
+    if (!prov) continue
+    const nombre = String((e.nombre || e.capital || '')).trim()
+    if (!nombre) continue
+    const pob = parseInt(e.num_hab, 10) || 0
+    out.push({
+      ine, nombre,
+      provinciaId, provinciaSlug: prov.slug, provinciaNombre: prov.name,
+      slug: slugTiempo(nombre),
+      lat: num(e.latitud_dec), lng: num(e.longitud_dec),
+      pob,
+      imp: e.destacada === '1' || pob >= IMPORTANTE_MIN_HAB,
+    })
+  }
+  return out
+}
+
+/** municipios normalizados -> índice ligero para el autocompletado del buscador. */
+export function construyeIndiceMunicipios(municipios) {
+  const out = []
+  const seen = new Set()
+  for (const m of (Array.isArray(municipios) ? municipios : [])) {
+    const u = '/tiempo/' + m.provinciaSlug + '/' + m.slug
+    if (seen.has(u)) continue
+    seen.add(u)
+    out.push({ n: m.nombre, p: m.provinciaNombre, u })
+  }
+  out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
+  return out
+}

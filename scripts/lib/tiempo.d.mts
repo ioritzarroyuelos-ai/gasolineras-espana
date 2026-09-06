@@ -42,3 +42,22 @@ export interface ResuelveDeps {
   intentos?: number
 }
 export function resuelvePrediccion(muni: Municipio, deps?: ResuelveDeps): Promise<Prediccion>
+
+export const IMPORTANTE_MIN_HAB: number
+export function slugTiempo(s: string | null | undefined): string
+
+export interface MunicipioLista {
+  ine: string
+  nombre: string
+  provinciaId: string
+  provinciaSlug: string
+  provinciaNombre: string
+  slug: string
+  lat: number | null
+  lng: number | null
+  pob: number
+  imp: boolean
+}
+export interface ProvinciaIne { id: string; slug: string; name: string }
+export function maestroAMunicipios(maestro: unknown[], provincias: ProvinciaIne[]): MunicipioLista[]
+export function construyeIndiceMunicipios(municipios: MunicipioLista[]): Array<{ n: string; p: string; u: string }>

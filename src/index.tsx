@@ -4,6 +4,9 @@ import { buildLandingPage, landingHeaders } from './html/landing'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import { buildGasolinerasLanding, gasolinerasLandingHeaders } from './html/gasolineras'
 import type { GasLandingProvincia } from './html/gasolineras'
+// Lógica del tiempo compartida con el robot/tests (scripts/lib/tiempo.mjs + .d.mts).
+import { construyeIndiceMunicipios } from '../scripts/lib/tiempo.mjs'
+import type { MunicipioLista } from '../scripts/lib/tiempo.mjs'
 import {
   buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage,
   buildGuardiaProvinciaFlatPage, guardiaHeaders,
@@ -1223,6 +1226,22 @@ app.get('/api/itv/municipios', async c => {
   out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
   itvMuniIndex = { ts: Date.now(), data: out }
   return c.json(out, 200, CACHE)
+})
+
+// Indice de municipios con predicción para el autocompletado de /tiempo/.
+// Lee public/data/tiempo/municipios.json (generado desde el maestro de AEMET) y
+// devuelve [{n,p,u}]. Cache en memoria (mismo patrón que guardias/itv).
+let muniTiempoIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
+
+app.get('/api/tiempo/municipios', async c => {
+  const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
+  if (muniTiempoIndex && Date.now() - muniTiempoIndex.ts < MUNI_INDEX_TTL) {
+    return c.json(muniTiempoIndex.data, 200, CACHE)
+  }
+  const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
+  const data = construyeIndiceMunicipios((raw && raw.municipios) || [])
+  muniTiempoIndex = { ts: Date.now(), data }
+  return c.json(data, 200, CACHE)
 })
 
 app.get('/itv/', async c => {

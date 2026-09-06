@@ -2,9 +2,12 @@ import { describe, it, expect } from 'vitest'
 // Lib .mjs con tipos en scripts/lib/tiempo.d.mts (mismo patron que historico-estatico).
 import {
   frescuraTiempo, TIEMPO_STALE_HORAS, normalizaAemet, normalizaOpenMeteo, resuelvePrediccion,
+  maestroAMunicipios, construyeIndiceMunicipios,
 } from '../scripts/lib/tiempo.mjs'
+import { PROVINCIAS_INE } from '../scripts/lib/provincias-ine.mjs'
 import rawAemet from './fixtures/tiempo/aemet-diaria-28079.json'
 import rawOM from './fixtures/tiempo/openmeteo-madrid.json'
+import maestroSample from './fixtures/tiempo/aemet-maestro-sample.json'
 
 const meta = { ine: '28079', nombre: 'Madrid', provincia: 'Madrid' }
 
@@ -84,5 +87,31 @@ describe('resuelvePrediccion (fallback y auto-recuperacion)', () => {
       bajaAemet: async () => { throw new Error('AEMET down') },
       bajaOpenMeteo: async () => { throw new Error('OM down') },
     })).rejects.toThrow()
+  })
+})
+
+describe('maestroAMunicipios (muestra real del maestro AEMET)', () => {
+  const munis = maestroAMunicipios(maestroSample, PROVINCIAS_INE)
+
+  it('convierte cada entrada del maestro', () => {
+    expect(munis.length).toBe(maestroSample.length)
+  })
+  it('mapea código, provincia, slug y coordenadas (Ababuj, Teruel)', () => {
+    const ababuj = munis.find(m => m.ine === '44001')
+    expect(ababuj).toBeTruthy()
+    expect(ababuj!.provinciaId).toBe('44')
+    expect(ababuj!.provinciaSlug).toBe('teruel')
+    expect(ababuj!.slug).toBe('ababuj')
+    expect(ababuj!.lat).toBeCloseTo(40.548, 2)
+    expect(ababuj!.lng).toBeCloseTo(-0.808, 2)
+    expect(ababuj!.pob).toBe(65)
+    expect(ababuj!.imp).toBe(false) // pueblo pequeño
+  })
+  it('construyeIndiceMunicipios da {n,p,u} con la URL /tiempo/<prov>/<mun>', () => {
+    const idx = construyeIndiceMunicipios(munis)
+    const ab = idx.find(x => x.u === '/tiempo/teruel/ababuj')
+    expect(ab).toBeTruthy()
+    expect(ab!.n).toBe('Ababuj')
+    expect(ab!.p).toBe('Teruel')
   })
 })

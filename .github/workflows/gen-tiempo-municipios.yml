@@ -1,0 +1,46 @@
+name: Gen tiempo municipios
+
+# Regenera public/data/tiempo/municipios.json desde el maestro de AEMET.
+# Manual (workflow_dispatch): se lanza cuando cambia el maestro (casi nunca).
+# Usa el secreto AEMET_API_KEY y sube el fichero con push resistente.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: gen-tiempo-municipios
+  cancel-in-progress: false
+
+jobs:
+  gen:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Generar municipios.json
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: node scripts/gen-tiempo-municipios.mjs
+      - name: Commit si hay cambios
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/tiempo/municipios.json
+          if git diff --cached --quiet; then
+            echo "Sin cambios en municipios.json"
+          else
+            git commit -m "chore(tiempo): regenerar municipios.json desde el maestro de AEMET"
+            pushed=0
+            for i in 1 2 3; do
+              git fetch origin main || true
+              if git merge -X ours --no-edit origin/main && git push; then pushed=1; break; fi
+              echo "push intento $i fallo; reintento en 5s"
+              git merge --abort 2>/dev/null || true
+              sleep 5
+            done
+            if [ "$pushed" != "1" ]; then echo "::error::no se pudo pushear municipios.json"; exit 1; fi
+          fi

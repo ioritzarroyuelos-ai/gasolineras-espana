@@ -131,6 +131,7 @@ test.describe('Encuadre por zona (SEO)', () => {
     // pais (zoom 5-6 centrado en ~39.7,-2.6). Regresion del bug del fitBounds
     // animado con maxBounds.
     expect(view.zoom).toBeGreaterThanOrEqual(7)
+    expect(view.zoom).toBeLessThanOrEqual(11)  // no demasiado cerca (14=nivel calle)
     expect(view.lat).toBeGreaterThan(39.5)
     expect(view.lat).toBeLessThan(41.5)
     expect(view.lng).toBeGreaterThan(-4.6)

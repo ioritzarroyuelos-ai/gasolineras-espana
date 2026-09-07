@@ -3018,51 +3018,6 @@ async function authorizeCron(c: { req: { header: (h: string) => string | undefin
   return { ok: true }
 }
 
-// GET /api/guardias/source-proxy?url=<https://www.farmasturias.org/...> — proxy
-// de descarga para el robot de CI. Algunas fuentes de guardia (farmasturias.org)
-// bloquean las IPs de datacenter de GitHub Actions con "fetch failed", pero el
-// egress de Cloudflare (este Worker) SI llega. El scraper, en CI, pide la fuente
-// a traves de aqui. Anti-SSRF: exige CRON_TOKEN (solo el robot), solo https y
-// solo hosts de la allowlist; devuelve el body tal cual (o 502 si la fuente
-// falla, para que el `!res.ok` del scraper lo trate igual que un fetch directo).
-const GUARDIAS_PROXY_HOSTS = new Set(['www.farmasturias.org', 'farmasturias.org'])
-app.get('/api/guardias/source-proxy', async c => {
-  const authz = await authorizeCron(c)
-  if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
-  const target = c.req.query('url') || ''
-  let u: URL
-  try { u = new URL(target) } catch { return c.json({ ok: false, error: 'invalid_url' }, 400, { 'Cache-Control': 'no-store' }) }
-  if (u.protocol !== 'https:' || !GUARDIAS_PROXY_HOSTS.has(u.hostname)) {
-    return c.json({ ok: false, error: 'host_not_allowed' }, 403, { 'Cache-Control': 'no-store' })
-  }
-  try {
-    const upstream = await fetch(u.toString(), {
-      headers: {
-        'User-Agent': 'cercaya-guardias-proxy/1.0 (+https://webapp-3ft.pages.dev)',
-        'Accept': 'text/html',
-      },
-      signal: AbortSignal.timeout(25000),
-    })
-    if (!upstream.ok) {
-      return c.json({ ok: false, error: 'upstream_status', status: upstream.status }, 502, { 'Cache-Control': 'no-store' })
-    }
-    const body = await upstream.text()
-    if (body.length > 4_000_000) {
-      return c.json({ ok: false, error: 'too_large', bytes: body.length }, 502, { 'Cache-Control': 'no-store' })
-    }
-    return new Response(body, {
-      status: 200,
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'X-Upstream-Status': String(upstream.status),
-        'Cache-Control': 'no-store',
-      },
-    })
-  } catch (e) {
-    return c.json({ ok: false, error: 'upstream_fetch_failed', message: (e as Error).message }, 502, { 'Cache-Control': 'no-store' })
-  }
-})
-
 // POST /api/cron/ingest — ingesta diaria del snapshot a D1.
 // Idempotente via INSERT OR REPLACE: si GHA hace retry no duplica datos.
 app.post('/api/cron/ingest', async c => {

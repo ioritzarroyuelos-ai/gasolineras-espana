@@ -145,3 +145,92 @@ export function generateLinkToken(): string {
   crypto.getRandomValues(bytes)
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
 }
+
+// ============================================================
+// Ship 27: RESUMEN DIARIO DE PRECIOS ("/precios" + cron 8:00)
+// ============================================================
+// La alerta dejo de ser "te aviso cuando baje 1 centimo" y paso a ser un
+// resumen diario: cada manana a las 8:00 (Europe/Madrid) el cron manda UN
+// mensaje por chat listando todas las gasolineras que el usuario activo, con
+// el precio ACTUAL del combustible que eligio al activarla. El comando
+// /precios devuelve ese mismo listado bajo demanda. Ambos comparten la misma
+// logica de formato — vive aqui para poder testearla en unidad.
+
+/** Etiquetas legibles de cada codigo de combustible. */
+export const FUEL_LABEL: Record<string, string> = {
+  '95': 'Gasolina 95',
+  '98': 'Gasolina 98',
+  'diesel': 'Diesel',
+  'diesel_plus': 'Diesel Premium',
+}
+
+/** Columna del snapshot /data/stations.json para cada codigo de combustible. */
+export const FUEL_COL: Record<string, string> = {
+  '95': 'Precio Gasolina 95 E5',
+  '98': 'Precio Gasolina 98 E5',
+  'diesel': 'Precio Gasoleo A',
+  'diesel_plus': 'Precio Gasoleo Premium',
+}
+
+/** Parsea un precio del snapshot ("1,459") a numero (1.459). null si invalido. */
+export function tgParsePrice(s: string | undefined): number | null {
+  if (!s) return null
+  const n = parseFloat(String(s).replace(',', '.'))
+  return Number.isFinite(n) && n > 0 ? n : null
+}
+
+// Margen por debajo del tope de 4096 chars de Telegram para el troceo.
+const DIGEST_CHUNK_LIMIT = 3500
+
+/**
+ * Construye el/los mensaje(s) del resumen "/precios" para un chat: una linea
+ * por gasolinera suscrita con el precio ACTUAL del combustible elegido.
+ *
+ * @param subs      filas de telegram_subscriptions del chat (station_id + fuel_code)
+ * @param byStation indice del snapshot por IDEESS
+ * @param fecha     fecha legible en espanol (p.ej. "domingo, 7 de septiembre")
+ * @returns  array de mensajes HTML listos para tgSendMessage. Vacio ([]) si
+ *           ninguna estacion es resoluble (no mandamos un mensaje vacio).
+ *           Trocea en varios mensajes si el total supera el limite de Telegram.
+ */
+export function buildPreciosMessages(
+  subs: Array<{ station_id: string; fuel_code: string }>,
+  byStation: Map<string, Record<string, string>>,
+  fecha: string,
+): string[] {
+  const lines: string[] = []
+  for (const sub of subs) {
+    const st = byStation.get(sub.station_id)
+    if (!st) continue  // la estacion ya no existe en el snapshot -> se omite
+    const rotulo = tgEscapeHtml(String(st['Rotulo'] || 'Gasolinera'))
+    const municipio = tgEscapeHtml(String(st['Municipio'] || ''))
+    const lbl = FUEL_LABEL[sub.fuel_code] || sub.fuel_code
+    const col = FUEL_COL[sub.fuel_code]
+    const price = col ? tgParsePrice(st[col]) : null
+    const priceStr = price != null ? `<b>${price.toFixed(3)} €/L</b>` : '<i>sin dato hoy</i>'
+    lines.push(`⛽ <b>${rotulo}</b>${municipio ? ' — ' + municipio : ''}\n   ${lbl}: ${priceStr}`)
+  }
+  if (!lines.length) return []
+  const header = `📋 <b>Tus gasolineras</b> · ${tgEscapeHtml(fecha)}\n\n`
+  const footer = `\n\n<i>Pide este listado cuando quieras con /precios · /stop para darte de baja</i>`
+  // Troceo greedy: acumula lineas hasta ~3500 chars. El header solo en el
+  // primer mensaje y el footer solo en el ultimo (se anaden despues).
+  const chunks: string[] = []
+  let cur = ''
+  for (const line of lines) {
+    const candidate = cur ? cur + '\n\n' + line : line
+    if (candidate.length > DIGEST_CHUNK_LIMIT && cur) {
+      chunks.push(cur)
+      cur = line
+    } else {
+      cur = candidate
+    }
+  }
+  if (cur) chunks.push(cur)
+  return chunks.map((m, i) => {
+    let out = m
+    if (i === 0) out = header + out
+    if (i === chunks.length - 1) out = out + footer
+    return out
+  })
+}

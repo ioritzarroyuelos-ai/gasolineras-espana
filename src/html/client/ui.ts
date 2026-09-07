@@ -345,6 +345,67 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
   });
 })();
 
+// Ship 27: refleja el estado (activa/no) del boton "Activar alerta" del popup.
+function setPopupAlertBtnState(btn, on) {
+  if (!btn) return;
+  btn.textContent = on ? '\u{1F514} Alerta activa' : '\u{1F514} Activar alerta';
+  btn.setAttribute('aria-pressed', String(!!on));
+  btn.setAttribute('aria-label', on ? 'Quitar alerta de precio' : 'Activar alerta de precio por Telegram');
+}
+
+// Ship 27: click en "Activar alerta" del popup del mapa. Dos caminos:
+//   - bot NO vinculado (primer uso): flow de deep-link sembrando ESTA
+//     gasolinera (sin exigir favoritas). Al confirmar, queda vigilada.
+//   - bot ya vinculado: toggle directo de la suscripcion (station+combustible).
+// El combustible es el que estaba seleccionado en el mapa al construir el popup.
+async function handlePopupAlertClick(btn) {
+  if (!btn || btn.disabled) return;
+  var stId = btn.getAttribute('data-pop-alert');
+  var fcode = btn.getAttribute('data-pop-alert-fuel') || fuelSelectorToCode();
+  if (!stId) return;
+  var currentlyOn = (typeof isTelegramFavActive === 'function') && isTelegramFavActive(stId, fcode);
+  btn.disabled = true;
+  try {
+    if (!telegramAlertsActive()) {
+      // Primer uso: vincular el bot sembrando esta gasolinera.
+      showToast('Abriendo Telegram — pulsa START para activar', 'info');
+      var res = await enableTelegramAlerts(function(deepLink) {
+        try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
+      }, [{ id: stId }]);
+      if (res && res.ok) {
+        setPopupAlertBtnState(btn, true);
+        showToast('✅ Alerta activada — te aviso cada mañana a las 8:00', 'success');
+      } else if (res && res.error === 'telegram_no_configurado') {
+        showToast('Las alertas por Telegram no estan disponibles ahora', 'warning');
+      } else if (res && res.error === 'timeout') {
+        showToast('Se agoto el tiempo para pulsar START en Telegram', 'warning');
+      } else if (res && res.error === 'token_caducado') {
+        showToast('El enlace caduco (>10 min). Prueba otra vez', 'warning');
+      } else {
+        showToast('No se pudo activar — intentalo mas tarde', 'error');
+      }
+    } else {
+      // Ya vinculado: toggle directo.
+      var want = !currentlyOn;
+      var r = await toggleTelegramFav(stId, fcode, want);
+      if (r && r.ok) {
+        setPopupAlertBtnState(btn, want);
+        showToast(want
+          ? '\u{1F514} Alerta activada — aviso diario a las 8:00'
+          : '\u{1F515} Alerta quitada', want ? 'success' : 'info');
+      } else if (r && r.error === 'telegram_no_configurado') {
+        showToast('Las alertas por Telegram no estan disponibles ahora', 'warning');
+      } else {
+        showToast('No se pudo cambiar la alerta — intentalo mas tarde', 'error');
+      }
+    }
+  } catch (_) {
+    showToast('No se pudo cambiar la alerta — intentalo mas tarde', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ---- DELEGACION DE ACCIONES EN POPUPS (fav/share/copy) ----
 document.addEventListener('click', function(e) {
   var t = e.target;
@@ -369,6 +430,13 @@ document.addEventListener('click', function(e) {
     }
     // Refrescar lista para actualizar icono tambien alli
     applyFilters();
+    return;
+  }
+
+  // Ship 27: Activar/quitar alerta Telegram desde el popup del mapa.
+  var alertBtn = t.closest('[data-pop-alert]');
+  if (alertBtn) {
+    handlePopupAlertClick(alertBtn);
     return;
   }
 
@@ -1142,11 +1210,11 @@ function hideTelegramLinkPromptDialog() {
     if (active) {
       panel.classList.add('active');
       btn.textContent = 'Desactivar';
-      if (statusEl) statusEl.textContent = 'Alertas activas en Telegram. Te avisamos cuando alguna favorita baje 1 centimo por litro o mas.';
+      if (statusEl) statusEl.textContent = 'Alertas activas en Telegram. Cada manana a las 8:00 te mandamos el precio de tus gasolineras (o pidelo cuando quieras con /precios).';
     } else {
       panel.classList.remove('active');
       btn.textContent = 'Activar alertas en Telegram';
-      if (statusEl) statusEl.textContent = 'Recibe un aviso por Telegram cuando baje una de tus favoritas. Funciona tambien con la app cerrada.';
+      if (statusEl) statusEl.textContent = 'Cada manana a las 8:00 recibe por Telegram el precio de las gasolineras que actives. Funciona tambien con la app cerrada.';
     }
   }
 
@@ -1168,7 +1236,7 @@ function hideTelegramLinkPromptDialog() {
           try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
         });
         if (res2.ok) {
-          showToast('\u2705 Alertas Telegram activas \u2014 te avisaremos (' + (res2.subscribed || 0) + ')', 'success');
+          showToast('\u2705 Alertas Telegram activas \u2014 resumen diario a las 8:00', 'success');
         } else if (res2.error === 'sin_favoritos') {
           showToast('A\u00F1ade al menos una favorita antes de activar alertas', 'info');
         } else if (res2.error === 'telegram_no_configurado') {

@@ -3163,10 +3163,11 @@ app.post('/api/telegram/webhook', async c => {
   }
   const chatId = Number(msg.chat.id)
   const text = String(msg.text).trim()
-  const { tgSendMessage, tgEscapeHtml } = await import('./lib/telegram')
+  const { tgSendMessage, tgEscapeHtml, buildPreciosMessages } = await import('./lib/telegram')
   // Comandos soportados:
   //   /start <token> — vincula la web con este chat_id
   //   /start (sin token) — welcome con link a la web
+  //   /precios — lista bajo demanda de las gasolineras activadas + precio actual
   //   /help — ayuda
   //   /stop — el user pide baja voluntaria (borramos todas sus subs)
   //   cualquier otra cosa — echo con ayuda basica
@@ -3253,29 +3254,74 @@ app.post('/api/telegram/webhook', async c => {
     const reply = inserted > 0
       ? `🔔 <b>¡Listo! Alertas activadas</b>\n\n` +
         `${inserted === 1 ? 'Vigilo esta gasolinera' : `Vigilo estas <b>${inserted}</b> gasolineras`} para ti:\n${favsListHtml}\n\n` +
-        `💰 Te avisare en cuanto el precio baje <b>1 centimo por litro</b> o mas.\n` +
-        `😎 Tu a lo tuyo — yo me ocupo de mirar los precios.\n\n` +
+        `📅 Cada manana a las 8:00 te mando su precio actual.\n` +
+        `⚡ Escribe /precios cuando quieras el listado al momento.\n\n` +
         `<i>Para pararlas en cualquier momento: /stop</i>`
-      : `✅ <b>Vinculado</b>, pero no habia gasolineras marcadas como favoritas.\n\n` +
-        `Vuelve a la web, marca alguna con la estrella, y pulsa "Activar alertas" de nuevo.`
+      : `✅ <b>Vinculado</b>, pero no llego ninguna gasolinera.\n\n` +
+        `Vuelve a la web, toca una gasolinera en el mapa y pulsa "Activar alerta" de nuevo.`
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
     slog('info', 'telegram_bind', { ok: true, chat_id: chatId, subscribed: inserted })
     return c.json({ ok: true }, 200)
   }
   if (text === '/start') {
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
-      `👋 ¡Hola! Este bot te avisa cuando baja el precio de tus gasolineras favoritas.\n\n` +
+      `👋 ¡Hola! Te mando cada manana el precio de las gasolineras que elijas.\n\n` +
       `Para activarlo:\n` +
       `1. Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}\n` +
-      `2. Marca como favoritas las estaciones que quieras vigilar\n` +
-      `3. En el panel de favoritos, pulsa "Activar alertas por Telegram"\n\n` +
-      `Yo te avisare cuando alguna baje ≥1.5 ct/L (configurable).`,
+      `2. Toca una gasolinera en el mapa\n` +
+      `3. Pulsa "Activar alerta"\n\n` +
+      `Cada dia a las 8:00 te llega el precio actual. Escribe /precios para pedirlo cuando quieras.`,
     )
+    return c.json({ ok: true }, 200)
+  }
+  if (text === '/precios') {
+    // Listado bajo demanda: mismas gasolineras del resumen diario, precio de ahora.
+    const subsR = await c.env.DB.prepare(
+      'SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ?'
+    ).bind(chatId).all<{ station_id: string; fuel_code: string }>()
+    const chatSubs = subsR.results || []
+    if (!chatSubs.length) {
+      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+        `Todavia no vigilas ninguna gasolinera.\n\n` +
+        `Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}, toca una gasolinera en el mapa y pulsa <b>Activar alerta</b>.`)
+      return c.json({ ok: true }, 200)
+    }
+    const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
+    let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
+    try {
+      const rs = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
+      if (rs.ok) snap = await rs.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
+    } catch {/* no-op */}
+    const snapLoaded = !!snap?.ListaEESSPrecio
+    const byStation = new Map<string, Record<string, string>>()
+    if (snap?.ListaEESSPrecio) {
+      for (const st of snap.ListaEESSPrecio) {
+        const id = st['IDEESS'] || st['IDEESS_'] || ''
+        if (id) byStation.set(String(id), st)
+      }
+    }
+    const { fecha } = spainDateParts(Date.now())
+    const messages = buildPreciosMessages(chatSubs, byStation, fecha)
+    if (!messages.length) {
+      // Dos causas distintas de lista vacia: (a) el snapshot no cargo (fallo
+      // transitorio -> reintentar sirve); (b) cargo bien pero ninguna de tus
+      // gasolineras sigue en los datos (cerraron / las quito el Ministerio ->
+      // reintentar no arregla nada, hay que activar otra).
+      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+        snapLoaded
+          ? `Ninguna de tus gasolineras aparece ya en los datos oficiales (puede que hayan cerrado).\n\n` +
+            `Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}, toca otra en el mapa y pulsa <b>Activar alerta</b>.`
+          : `No he podido leer los precios ahora mismo. Intentalo en un rato.`)
+      return c.json({ ok: true }, 200)
+    }
+    for (const m of messages) await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, m)
+    slog('info', 'telegram_precios', { chat_id: chatId, stations: chatSubs.length, msgs: messages.length })
     return c.json({ ok: true }, 200)
   }
   if (text === '/help') {
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
       `<b>Comandos:</b>\n` +
+      `/precios — el precio de ahora de tus gasolineras\n` +
       `/start — volver a empezar\n` +
       `/stop — darte de baja (borra todas tus alertas)\n` +
       `/help — esta ayuda`,
@@ -3461,9 +3507,9 @@ app.post('/api/telegram/toggle-fav', async c => {
          VALUES (?, ?, ?, ?, NULL, ?)`
       ).bind(chatId, stationId, fuelCode, threshold, Date.now()).run()
       const reply =
-        `🔔 <b>Alerta añadida</b>\n\n` +
+        `🔔 <b>Alerta activada</b>\n\n` +
         `Vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
-        `💰 Te avisare en cuanto el precio baje <b>1 centimo por litro</b> o mas.`
+        `📅 Cada manana a las 8:00 te mando su precio. Pidelo cuando quieras con /precios.`
       await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
       slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: true, station_id: stationId })
       return c.json({ ok: true, status: 'enabled' }, 200, { 'Cache-Control': 'no-store' })
@@ -3486,24 +3532,67 @@ app.post('/api/telegram/toggle-fav', async c => {
   }
 })
 
-// POST /api/cron/telegram-check — iterador server-side.
-// Mismo patron que el antiguo /api/cron/push-check: lee snapshot, compara
-// precio actual vs baseline, envia sendMessage si la caida supera threshold.
-// Requiere CRON_TOKEN. Se invoca desde GHA cada 2h (cron-telegram-check.yml).
+// Hora + fecha local de Espana (Europe/Madrid), robusto a DST via Intl.
+// El cron dispara a dos horas UTC (06:00 y 07:00) y solo enviamos cuando en
+// Espana son las 8:xx — asi acertamos las 8:00 tanto en horario de verano
+// (UTC+2) como de invierno (UTC+1) sin depender del offset fijo.
+function spainDateParts(nowMs: number): { hour: number; fecha: string } {
+  const d = new Date(nowMs)
+  let hour = 8
+  try {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Madrid', hour: '2-digit', hour12: false,
+    }).formatToParts(d)
+    const h = parts.find(p => p.type === 'hour')?.value
+    if (h != null) {
+      const n = parseInt(h, 10)
+      if (Number.isFinite(n)) hour = n
+    }
+  } catch { /* fallback hour=8 */ }
+  let fecha = ''
+  try {
+    fecha = new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long',
+    }).format(d)
+  } catch { /* fecha vacia: buildPreciosMessages la omite del header */ }
+  return { hour, fecha }
+}
+
+// POST /api/cron/telegram-check — RESUMEN DIARIO (Ship 27).
+// Ya no compara precios contra baseline: cada manana a las 8:00 (Europe/Madrid)
+// manda UN mensaje por chat listando todas las gasolineras que el usuario
+// activo, con el precio ACTUAL del combustible elegido. Requiere CRON_TOKEN.
+// El workflow (cron-telegram-check.yml) dispara a 06:00 y 07:00 UTC; la guarda
+// por hora hace no-op la que no cae en las 8:00 de Espana. ?force=1 salta la
+// guarda y el dedup (para pruebas manuales).
 app.post('/api/cron/telegram-check', async c => {
   const authz = await authorizeCron(c)
   if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-  // Housekeeping: purga pending_tokens caducados (con 1h de colchon). El
-  // webhook ya no los borra (ver nota en /start) — este cron cada 2h es el
-  // sitio natural para hacerlo.
+
+  const now = Date.now()
+  const force = c.req.query('force') === '1'
+  const { hour: spainHour, fecha } = spainDateParts(now)
+
+  // Housekeeping: purga pending_tokens caducados (1h de colchon). Se hace
+  // siempre, aunque hoy no toque mandar el resumen.
   try {
-    const cutoff = Date.now() - 60 * 60 * 1000
-    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?').bind(cutoff).run()
-  } catch { /* no-op: un fallo aqui no debe bloquear la comprobacion */ }
+    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?')
+      .bind(now - 60 * 60 * 1000).run()
+  } catch { /* no-op: un fallo aqui no debe bloquear el resto */ }
+
+  // Guarda por VENTANA matinal (8:00-11:59 Espana), no por hora exacta. El
+  // workflow dispara a varias horas UTC (06/07/08/09) para cubrir el DST y dar
+  // redundancia: si GitHub Actions se retrasa o se salta un disparo, otro de la
+  // misma manana lo cubre. El dedup por chat (DIGEST_DEDUP_MS, mas abajo) evita
+  // que se envie mas de una vez al dia aunque disparen varias ejecuciones.
+  if (!force && (spainHour < 8 || spainHour > 11)) {
+    return c.json({ ok: true, skipped: 'not_digest_window', spainHour }, 200, { 'Cache-Control': 'no-store' })
+  }
+
+  // Snapshot actual de precios.
   const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-  // Snapshot actual
   let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
   try {
     const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
@@ -3517,99 +3606,89 @@ app.post('/api/cron/telegram-check', async c => {
     const id = st['IDEESS'] || st['IDEESS_'] || ''
     if (id) byStation.set(String(id), st)
   }
-  const fuelCol: Record<string, string> = {
-    '95':          'Precio Gasolina 95 E5',
-    '98':          'Precio Gasolina 98 E5',
-    'diesel':      'Precio Gasoleo A',
-    'diesel_plus': 'Precio Gasoleo Premium',
-  }
-  const fuelLabel: Record<string, string> = {
-    '95':          'Gasolina 95',
-    '98':          'Gasolina 98',
-    'diesel':      'Diesel',
-    'diesel_plus': 'Diesel Premium',
-  }
-  function parsePrice(s: string | undefined): number | null {
-    if (!s) return null
-    const n = parseFloat(String(s).replace(',', '.'))
-    return Number.isFinite(n) && n > 0 ? n : null
-  }
-  const COOLDOWN_MS = 12 * 60 * 60 * 1000
-  const now = Date.now()
+
+  // Todas las subs, agrupadas por chat. ORDER BY last_notified_at ASC (NULLS
+  // primero en SQLite) -> los chats menos atendidos van al frente, para el
+  // reparto justo cuando el presupuesto de subrequests no llega a todos.
   const all = await c.env.DB.prepare(
-    'SELECT chat_id, station_id, fuel_code, threshold_cents, baseline_cents, last_notified_at FROM telegram_subscriptions'
-  ).all<{
-    chat_id: number; station_id: string; fuel_code: string;
-    threshold_cents: number; baseline_cents: number | null; last_notified_at: number | null
-  }>()
+    'SELECT chat_id, station_id, fuel_code, last_notified_at FROM telegram_subscriptions ORDER BY last_notified_at ASC'
+  ).all<{ chat_id: number; station_id: string; fuel_code: string; last_notified_at: number | null }>()
   const subs = all.results || []
-  const { tgSendMessage, tgEscapeHtml } = await import('./lib/telegram')
-  let sent = 0, purged = 0, skipped = 0, errors = 0
-  for (const sub of subs) {
-    const st = byStation.get(sub.station_id)
-    if (!st) { skipped++; continue }
-    const col = fuelCol[sub.fuel_code]
-    if (!col) { skipped++; continue }
-    const p = parsePrice(st[col])
-    if (!p) { skipped++; continue }
-    const pCents = Math.round(p * 1000)
-    if (sub.baseline_cents == null) {
-      await c.env.DB.prepare(
-        'UPDATE telegram_subscriptions SET baseline_cents = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
-      ).bind(pCents, sub.chat_id, sub.station_id, sub.fuel_code).run()
-      skipped++; continue
+  const byChat = new Map<number, Array<{ station_id: string; fuel_code: string }>>()
+  const lastByChat = new Map<number, number>()
+  for (const s of subs) {
+    let arr = byChat.get(s.chat_id)
+    if (!arr) { arr = []; byChat.set(s.chat_id, arr) }
+    arr.push({ station_id: s.station_id, fuel_code: s.fuel_code })
+    const prev = lastByChat.get(s.chat_id) || 0
+    if ((s.last_notified_at || 0) > prev) lastByChat.set(s.chat_id, s.last_notified_at || 0)
+  }
+
+  // Dedup: no repetir el resumen dentro de la misma manana (o en reruns
+  // manuales del workflow). last_notified_at pasa a significar "ultimo resumen".
+  // 20h < 24h: bloquea repeticiones entre los disparos de una misma manana pero
+  // deja elegible al chat al dia siguiente.
+  const DIGEST_DEDUP_MS = 20 * 60 * 60 * 1000
+  // Tope de subrequests por invocacion. El plan gratis de Cloudflare limita a
+  // ~50 (cada envio a Telegram y cada query D1 cuenta); si lo agotamos, el
+  // siguiente fetch revienta y la cola de chats se queda sin resumen. Cortamos
+  // con margen: los chats que no entren quedan sin sellar y los recoge otro
+  // disparo de la misma manana (por eso ORDER BY last_notified_at ASC arriba).
+  const SUBREQ_BUDGET = 40
+  let subreq = 3  // ya gastados: DELETE pending + fetch stations.json + SELECT subs
+  const { tgSendMessage, buildPreciosMessages } = await import('./lib/telegram')
+  const chatEntries = [...byChat.entries()]
+  let sentChats = 0, sentMsgs = 0, purged = 0, skipped = 0, errors = 0, deferred = 0
+  for (let ci = 0; ci < chatEntries.length; ci++) {
+    const [chatId, chatSubs] = chatEntries[ci]
+    if (!force) {
+      const last = lastByChat.get(chatId) || 0
+      if (last && (now - last) < DIGEST_DEDUP_MS) { skipped++; continue }
     }
-    const dropCents = sub.baseline_cents - pCents
-    if (dropCents < sub.threshold_cents) {
-      if (pCents > sub.baseline_cents) {
-        await c.env.DB.prepare(
-          'UPDATE telegram_subscriptions SET baseline_cents = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
-        ).bind(pCents, sub.chat_id, sub.station_id, sub.fuel_code).run()
+    const messages = buildPreciosMessages(chatSubs, byStation, fecha)
+    if (!messages.length) { skipped++; continue }  // ninguna estacion resoluble
+    // Presupuesto: coste del chat = envios (messages) + 1 UPDATE del sello. Si
+    // no cabe, paramos aqui en vez de reventar por "Too many subrequests".
+    if (subreq + messages.length + 1 > SUBREQ_BUDGET) {
+      deferred = chatEntries.length - ci
+      slog('info', 'telegram_digest_budget_hit', { deferred, subreq })
+      break
+    }
+    let ok = true
+    for (const m of messages) {
+      try {
+        const res = await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, m)
+        subreq++
+        if (res.ok) {
+          sentMsgs++
+        } else if (res.gone) {
+          // User bloqueo al bot o borro el chat — purgar todas sus subs.
+          await c.env.DB.prepare('DELETE FROM telegram_subscriptions WHERE chat_id = ?').bind(chatId).run()
+          subreq++; purged++; ok = false; break
+        } else {
+          errors++; ok = false
+          slog('warn', 'telegram_digest_send_failed', { status: res.status, description: res.description })
+          break
+        }
+      } catch (e) {
+        errors++; ok = false
+        slog('error', 'telegram_digest_send_exception', { message: (e as Error).message })
+        break
       }
-      skipped++; continue
     }
-    if (sub.last_notified_at && (now - sub.last_notified_at) < COOLDOWN_MS) {
-      skipped++; continue
-    }
-    // Construir el mensaje
-    const rotulo = tgEscapeHtml(String(st['Rotulo'] || 'Gasolinera'))
-    const direccion = tgEscapeHtml(String(st['Direccion'] || ''))
-    const municipio = tgEscapeHtml(String(st['Municipio'] || ''))
-    const fuelLbl = fuelLabel[sub.fuel_code] || sub.fuel_code
-    const deltaEur = (dropCents / 1000).toFixed(3)
-    const priceEur = (pCents / 1000).toFixed(3)
-    const mapsUrl = `${origin}/?station=${encodeURIComponent(sub.station_id)}`
-    const text = `⛽ <b>${rotulo}</b>\n` +
-      `<i>${direccion}, ${municipio}</i>\n\n` +
-      `<b>${fuelLbl}</b> ha bajado a <b>${priceEur} €/L</b>\n` +
-      `(−${deltaEur} €/L desde la ultima referencia)\n\n` +
-      `<a href="${tgEscapeHtml(mapsUrl)}">Ver en el mapa</a>`
-    try {
-      const result = await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, sub.chat_id, text)
-      if (result.ok) {
-        sent++
-        await c.env.DB.prepare(
-          'UPDATE telegram_subscriptions SET baseline_cents = ?, last_notified_at = ? WHERE chat_id = ? AND station_id = ? AND fuel_code = ?'
-        ).bind(pCents, now, sub.chat_id, sub.station_id, sub.fuel_code).run()
-      } else if (result.gone) {
-        // User bloqueo al bot o borro el chat — purgar todas sus subs.
-        await c.env.DB.prepare('DELETE FROM telegram_subscriptions WHERE chat_id = ?').bind(sub.chat_id).run()
-        purged++
-      } else {
-        errors++
-        slog('warn', 'telegram_send_failed', { status: result.status, description: result.description })
+    if (ok) {
+      sentChats++
+      try {
+        await c.env.DB.prepare('UPDATE telegram_subscriptions SET last_notified_at = ? WHERE chat_id = ?')
+          .bind(now, chatId).run()
+        subreq++
+      } catch (e) {
+        slog('error', 'telegram_digest_stamp_error', { message: (e as Error).message })
       }
-    } catch (e) {
-      errors++
-      slog('error', 'telegram_send_exception', { message: (e as Error).message })
     }
   }
-  // Purga de tokens pendientes caducados — oportunistico.
-  try {
-    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?').bind(now).run()
-  } catch {}
-  slog('info', 'telegram_check_done', { total: subs.length, sent, purged, skipped, errors })
-  return c.json({ ok: true, total: subs.length, sent, purged, skipped, errors },
+  slog('info', 'telegram_digest_done', { chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred, spainHour })
+  return c.json({ ok: true, chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred },
     200, { 'Cache-Control': 'no-store' })
 })
 

@@ -1325,6 +1325,20 @@ export function getStyles(nonce: string = ''): string {
     body.dark .popup-actions button { background:#1e293b; border-color:#334155; color:#cbd5e1; }
     body.dark .popup-actions button:hover { background:#14532d; }
 
+    /* ---- Popup: boton "Activar alerta" (Ship 27) ---- */
+    .popup-alert-row { margin-top:8px; }
+    .popup-alert-btn {
+      display:block; width:100%; box-sizing:border-box;
+      padding:9px 12px; border-radius:8px; line-height:1.2;
+      border:1px solid #16a34a; background:#16a34a; color:#fff;
+      font-size:13px; font-weight:700; cursor:pointer;
+    }
+    .popup-alert-btn:hover { background:#15803d; border-color:#15803d; }
+    /* Estado activo: invertido (fondo blanco, texto verde) para que se note. */
+    .popup-alert-btn[aria-pressed="true"] { background:#fff; color:#16a34a; }
+    .popup-alert-btn[aria-pressed="true"]:hover { background:#f0fdf4; }
+    .popup-alert-btn:disabled { opacity:.6; cursor:default; }
+
     /* ---- prefers-reduced-motion ---- */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {

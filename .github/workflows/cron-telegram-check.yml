@@ -1,9 +1,18 @@
-name: Telegram cron — comprobador de bajadas de precio (cada 2h)
+name: Telegram cron — resumen diario de precios (8:00 España)
 
-# Ship 25: sustituye cron-push-check.yml (Ship 23). Cada 2h (:30 para no pisarse
-# con cron-ingest :20 ni cron-purge) invoca /api/cron/telegram-check, que itera
-# las suscripciones en telegram_subscriptions, compara precios contra baseline y
-# manda mensajes via bot de Telegram cuando la bajada supera el umbral.
+# Ship 27: el aviso dejo de ser "cuando baja el precio" y paso a ser un RESUMEN
+# DIARIO. Cada manana a las 8:00 (Europe/Madrid) invoca /api/cron/telegram-check,
+# que agrupa las suscripciones de telegram_subscriptions por chat y manda UN
+# mensaje por chat con el precio ACTUAL del combustible que el usuario eligio.
+#
+# DST + robustez: disparamos a CUATRO horas UTC (06/07/08/09). El Worker calcula
+# la hora local de Espana y envia dentro de la ventana matinal 8:00-11:59 (guarda
+# `spainHour`), con dedup por chat (20h) para no repetir. Asi:
+#   - Acertamos ~8:00 en verano (UTC+2: 06 UTC=08h) y en invierno (UTC+1: 07 UTC=08h).
+#   - Si GitHub Actions retrasa o SALTA un disparo (documentado bajo carga), otro
+#     de la misma manana cubre el envio; el dedup evita duplicados.
+# El disparo manual (workflow_dispatch) manda ?force=1 para poder reenviar un dia
+# perdido a cualquier hora, saltando la guarda y el dedup.
 #
 # Ventajas sobre Web Push:
 #   - Funciona en iOS Safari y cualquier navegador.
@@ -21,7 +30,10 @@ name: Telegram cron — comprobador de bajadas de precio (cada 2h)
 
 on:
   schedule:
-    - cron: '30 */2 * * *'
+    - cron: '0 6 * * *'   # 08:00 España en verano (CEST, UTC+2)
+    - cron: '0 7 * * *'   # 08:00 España en invierno (CET, UTC+1)
+    - cron: '0 8 * * *'   # redundancia (09:00-10:00 España): cubre retraso/omisión del disparo de las 8
+    - cron: '0 9 * * *'   # redundancia (10:00-11:00 España): último dentro de la ventana matinal
   workflow_dispatch:
 
 concurrency:
@@ -38,17 +50,22 @@ jobs:
         env:
           CRON_TOKEN:    ${{ secrets.CRON_TOKEN }}
           PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+          EVENT_NAME:    ${{ github.event_name }}
         run: |
           if [ -z "$CRON_TOKEN" ]; then
             echo "::error::CRON_TOKEN secret no configurado — abortando."
             exit 1
           fi
           ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
-          echo "Invocando ${ORIGIN}/api/cron/telegram-check"
+          # En disparo manual forzamos el envio (salta guarda horaria + dedup)
+          # para poder reenviar un dia perdido. En schedule, sin force.
+          FORCE=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then FORCE="?force=1"; fi
+          echo "Invocando ${ORIGIN}/api/cron/telegram-check${FORCE}"
           # --fail-with-body: sigue siendo curl-fail pero nos deja ver el body
           # en 503 (util para diagnosticar "telegram_not_configured" en prod).
           curl -fsS --retry 2 --retry-delay 10 --max-time 120 \
-            -X POST "$ORIGIN/api/cron/telegram-check" \
+            -X POST "${ORIGIN}/api/cron/telegram-check${FORCE}" \
             -H "Authorization: Bearer $CRON_TOKEN" \
             -H "Accept: application/json" \
             -w "\nHTTP %{http_code} in %{time_total}s\n"

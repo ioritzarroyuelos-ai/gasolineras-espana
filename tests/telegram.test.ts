@@ -16,6 +16,8 @@ import {
   tgSendMessage,
   tgEscapeHtml,
   generateLinkToken,
+  tgParsePrice,
+  buildPreciosMessages,
 } from '../src/lib/telegram'
 
 describe('telegram helper (Ship 25)', () => {
@@ -153,5 +155,119 @@ describe('telegram helper (Ship 25)', () => {
       const b = generateLinkToken()
       expect(a).not.toEqual(b)
     })
+  })
+})
+
+// ============================================================
+// Ship 27: resumen diario de precios (/precios + cron 8:00)
+// ============================================================
+describe('tgParsePrice (Ship 27)', () => {
+  it('parsea decimal con coma española', () => {
+    expect(tgParsePrice('1,459')).toBeCloseTo(1.459, 3)
+  })
+  it('parsea decimal con punto', () => {
+    expect(tgParsePrice('1.459')).toBeCloseTo(1.459, 3)
+  })
+  it('null para vacio / undefined', () => {
+    expect(tgParsePrice('')).toBeNull()
+    expect(tgParsePrice(undefined)).toBeNull()
+  })
+  it('null para cero o negativo (estacion no distribuye)', () => {
+    expect(tgParsePrice('0')).toBeNull()
+    expect(tgParsePrice('0,000')).toBeNull()
+  })
+  it('null para texto no numerico', () => {
+    expect(tgParsePrice('abc')).toBeNull()
+  })
+})
+
+describe('buildPreciosMessages (Ship 27)', () => {
+  // Fabrica un registro de estacion estilo snapshot del Ministerio.
+  function st(rotulo: string, municipio: string, cols: Record<string, string> = {}) {
+    return { Rotulo: rotulo, Municipio: municipio, ...cols }
+  }
+  const FECHA = 'domingo, 7 de septiembre'
+
+  it('lista una linea por estacion con el precio del combustible elegido', () => {
+    const by = new Map<string, Record<string, string>>([
+      ['1', st('Repsol', 'Madrid', { 'Precio Gasolina 95 E5': '1,459' })],
+      ['2', st('Cepsa', 'Bilbao', { 'Precio Gasoleo A': '1,389' })],
+    ])
+    const msgs = buildPreciosMessages(
+      [{ station_id: '1', fuel_code: '95' }, { station_id: '2', fuel_code: 'diesel' }],
+      by, FECHA,
+    )
+    expect(msgs).toHaveLength(1)
+    const m = msgs[0]
+    expect(m).toContain('Tus gasolineras')
+    expect(m).toContain(FECHA)
+    expect(m).toContain('Repsol')
+    expect(m).toContain('Madrid')
+    expect(m).toContain('Gasolina 95')
+    expect(m).toContain('1.459 €/L')
+    expect(m).toContain('Cepsa')
+    expect(m).toContain('Diesel')
+    expect(m).toContain('1.389 €/L')
+    // footer con los comandos
+    expect(m).toContain('/precios')
+    expect(m).toContain('/stop')
+  })
+
+  it('omite estaciones que ya no estan en el snapshot', () => {
+    const by = new Map<string, Record<string, string>>([
+      ['1', st('Repsol', 'Madrid', { 'Precio Gasolina 95 E5': '1,459' })],
+    ])
+    const msgs = buildPreciosMessages(
+      [{ station_id: '1', fuel_code: '95' }, { station_id: '999', fuel_code: '95' }],
+      by, FECHA,
+    )
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]).toContain('Repsol')
+    expect(msgs[0]).not.toContain('999')
+  })
+
+  it('devuelve [] si ninguna estacion es resoluble (no manda mensaje vacio)', () => {
+    const by = new Map<string, Record<string, string>>()
+    const msgs = buildPreciosMessages([{ station_id: '1', fuel_code: '95' }], by, FECHA)
+    expect(msgs).toEqual([])
+  })
+
+  it('muestra "sin dato hoy" cuando la estacion no publica ese combustible', () => {
+    const by = new Map<string, Record<string, string>>([
+      ['1', st('Repsol', 'Madrid', { 'Precio Gasolina 95 E5': '' })],
+    ])
+    const msgs = buildPreciosMessages([{ station_id: '1', fuel_code: '95' }], by, FECHA)
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0]).toContain('sin dato hoy')
+    expect(msgs[0]).not.toContain('€/L')
+  })
+
+  it('escapa HTML en rotulo y municipio', () => {
+    const by = new Map<string, Record<string, string>>([
+      ['1', st('Gas & <b>Go</b>', 'Villa <script>', { 'Precio Gasolina 95 E5': '1,200' })],
+    ])
+    const msgs = buildPreciosMessages([{ station_id: '1', fuel_code: '95' }], by, FECHA)
+    expect(msgs[0]).toContain('Gas &amp; &lt;b&gt;Go&lt;/b&gt;')
+    expect(msgs[0]).toContain('Villa &lt;script&gt;')
+  })
+
+  it('trocea en varios mensajes si supera el limite de Telegram', () => {
+    const by = new Map<string, Record<string, string>>()
+    const subs: Array<{ station_id: string; fuel_code: string }> = []
+    // 200 estaciones con nombre largo -> obliga a trocear.
+    for (let i = 0; i < 200; i++) {
+      const id = String(i)
+      by.set(id, st('Estacion de servicio numero ' + i + ' con nombre largo', 'Municipio ' + i, { 'Precio Gasolina 95 E5': '1,459' }))
+      subs.push({ station_id: id, fuel_code: '95' })
+    }
+    const msgs = buildPreciosMessages(subs, by, FECHA)
+    expect(msgs.length).toBeGreaterThan(1)
+    // Ningun mensaje supera el tope de 4096 chars de Telegram.
+    for (const m of msgs) expect(m.length).toBeLessThanOrEqual(4096)
+    // Header solo en el primero, footer solo en el ultimo.
+    expect(msgs[0]).toContain('Tus gasolineras')
+    expect(msgs[msgs.length - 1]).toContain('/precios')
+    // El resto no repite header.
+    for (let i = 1; i < msgs.length; i++) expect(msgs[i]).not.toContain('Tus gasolineras')
   })
 })

@@ -1524,6 +1524,24 @@ function buildPopup(s) {
     + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">\u{1F4CB} Copiar</button>'
     + '</div>';
 
+  // Ship 27: boton "Activar alerta" por Telegram. Usa el combustible
+  // seleccionado en el mapa. Solo si la estacion vende ese combustible
+  // (mainPrice) y el codigo es conocido. El estado inicial (activa/no) se lee
+  // del cache local de suscripciones; el toggle lo maneja el delegado en ui.ts
+  // (data-pop-alert). El resumen se manda cada manana a las 8:00.
+  var alertRow = '';
+  var alertFuelCode = FUEL_CODES_BY_LABEL[fuel];
+  if (mainPrice && alertFuelCode) {
+    var alertOn = (typeof isTelegramFavActive === 'function') && isTelegramFavActive(id, alertFuelCode);
+    alertRow =
+        '<div class="popup-alert-row">'
+      + '<button class="popup-alert-btn" data-pop-alert="' + esc(id) + '" data-pop-alert-fuel="' + esc(alertFuelCode) + '"'
+      + ' aria-pressed="' + alertOn + '" aria-label="' + (alertOn ? 'Quitar alerta de precio' : 'Activar alerta de precio por Telegram') + '">'
+      + (alertOn ? '\u{1F514} Alerta activa' : '\u{1F514} Activar alerta')
+      + '</button>'
+      + '</div>';
+  }
+
   // priceColor() ya devuelve uno de {green,yellow,red,gray}; lo usamos como
   // sufijo de clase (.popup-price-main--green, .popup-header--green, etc.).
   // Asi evitamos style inline con color calculado en tiempo real sin tener
@@ -1579,6 +1597,7 @@ function buildPopup(s) {
     + reportLink
     + predictPlaceholder
     + savingsHtml
+    + alertRow
     // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia
     // de la de Evolucion, que es mb:2 por defecto)
     + '<div class="popup-trend-top">'
@@ -1695,6 +1714,17 @@ function renderMarkers(stations) {
             if (!pred) { predSlot.innerHTML = ''; return; }
             predSlot.innerHTML = predictBadgeHTML(pred);
           });
+        }
+        // Ship 27: re-sincroniza el boton "Activar alerta" con el estado REAL
+        // de la suscripcion al abrir el popup. Necesario porque buildPopup
+        // congela el estado al construir el marcador y el auto-sync de favoritas
+        // (toggleTelegramFav) es asincrono: sin esto el boton podria quedar
+        // invertido y un click "Activar" acabaria desactivando la alerta.
+        var alertNode = node.querySelector('[data-pop-alert]');
+        if (alertNode && typeof setPopupAlertBtnState === 'function' && typeof isTelegramFavActive === 'function') {
+          var afc = alertNode.getAttribute('data-pop-alert-fuel')
+            || (typeof fuelSelectorToCode === 'function' ? fuelSelectorToCode() : '95');
+          setPopupAlertBtnState(alertNode, isTelegramFavActive(stId, afc));
         }
       } catch (_) {}
     });

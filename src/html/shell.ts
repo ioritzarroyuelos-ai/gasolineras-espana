@@ -690,7 +690,7 @@ ${gClientId ? `
           <span class="tg-alerts-icon" aria-hidden="true">&#x2708;&#xFE0F;</span>
           <div class="tg-alerts-text">
             <strong>Alertas por Telegram</strong>
-            <small id="tg-alerts-status">Recibe un aviso por Telegram cuando baje una de tus favoritas. Funciona tambien con la app cerrada.</small>
+            <small id="tg-alerts-status">Cada manana a las 8:00 recibe por Telegram el precio de las gasolineras que actives. Funciona tambien con la app cerrada.</small>
           </div>
         </div>
         <button id="btn-tg-toggle" class="btn-primary tg-alerts-btn">Activar alertas en Telegram</button>

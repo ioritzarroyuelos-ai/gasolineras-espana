@@ -795,8 +795,14 @@ async function waitTelegramConfirm(token, maxAttempts) {
 //     ok=true en la primera mitad (no esperamos al confirm para abrir)
 //   - mostrar "esperando confirmacion en Telegram..." mientras hace polling
 //   - mostrar exito/error al resolver
-async function enableTelegramAlerts(onDeepLink) {
-  var favs = (typeof getFavs === 'function') ? getFavs() : [];
+// seedFavs (opcional): lista [{id}] con la que sembrar la vinculacion. La usa
+// el boton "Activar alerta" del popup del mapa para vincular el bot con ESA
+// gasolinera sin exigir que el usuario la haya marcado antes como favorita.
+// Si no se pasa, cae a getFavs() (panel de favoritas, comportamiento clasico).
+async function enableTelegramAlerts(onDeepLink, seedFavs) {
+  var favs = (seedFavs && seedFavs.length)
+    ? seedFavs
+    : ((typeof getFavs === 'function') ? getFavs() : []);
   if (!favs.length) return { ok: false, error: 'sin_favoritos' };
   var link = await startTelegramLink(favs);
   if (!link.ok) return link;

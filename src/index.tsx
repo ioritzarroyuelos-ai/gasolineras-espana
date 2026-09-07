@@ -1548,6 +1548,7 @@ app.get('/robots.txt', c => {
     '',
     'Sitemap: ' + scheme + '://' + host + '/sitemap.xml',
     'Sitemap: ' + scheme + '://' + host + '/sitemap-guardias.xml',
+    'Sitemap: ' + scheme + '://' + host + '/sitemap-tiempo.xml',
     '',
   ].join('\n')
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
@@ -1639,6 +1640,10 @@ app.get('/sitemap.xml', async c => {
     slog('warn', 'sitemap.itv_failed', { err: String(err).slice(0, 200) })
   }
 
+  // Tiempo: el hub va aqui (junto al resto de verticales); las ~8k paginas de
+  // municipio viven en sitemap-tiempo.xml aparte (carga tiempo/municipios.json,
+  // 1,5 MB — no queremos ese peso en el sitemap principal).
+  entries.push(`  <url><loc>${base}/tiempo/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)
   const body = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1685,6 +1690,50 @@ app.get('/sitemap-guardias.xml', async c => {
     }
   }
 
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${entries.join('\n')}
+</urlset>`
+  return c.text(body, 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public, max-age=3600' })
+})
+
+// ---- SEO: sitemap del tiempo (aparte) ----
+// La vertical del tiempo tiene ~8.100 municipios en 52 provincias. Van en su
+// propio sitemap para no lastrar el principal con la carga de
+// tiempo/municipios.json (~1,5 MB). Declarado en robots.txt junto a los otros.
+// changefreq=daily: la prediccion se refresca a diario. El pronostico existe
+// para CUALQUIER municipio (AEMET precacheado en los importantes, y AEMET
+// bajo-demanda / Open-Meteo de reserva en el resto), asi que no filtramos.
+app.get('/sitemap-tiempo.xml', async c => {
+  const host = resolveHost(c)
+  const scheme = resolveScheme(c)
+  const base = scheme + '://' + host
+  const today = new Date().toISOString().slice(0, 10)
+  const entries: string[] = []
+  let raw: { generado?: string; municipios?: MunicipioLista[] } | null = null
+  try {
+    raw = await loadSnapshot<{ generado?: string; municipios: MunicipioLista[] }>(
+      c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
+  } catch (err) {
+    slog('warn', 'sitemap_tiempo.snapshot_failed', { err: String(err).slice(0, 200) })
+  }
+  const munis = (raw && raw.municipios) || []
+  // lastmod: fecha de generacion del maestro (fallback hoy).
+  const lastmod = raw && typeof raw.generado === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw.generado)
+    ? raw.generado.slice(0, 10)
+    : today
+  // Paginas de provincia (una por provinciaSlug distinto).
+  const provSeen = new Set<string>()
+  for (const m of munis) {
+    if (!m.provinciaSlug || provSeen.has(m.provinciaSlug)) continue
+    provSeen.add(m.provinciaSlug)
+    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`)
+  }
+  // Paginas de municipio (todas).
+  for (const m of munis) {
+    if (!m.provinciaSlug || !m.slug) continue
+    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}/${m.slug}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.5</priority></url>`)
+  }
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entries.join('\n')}

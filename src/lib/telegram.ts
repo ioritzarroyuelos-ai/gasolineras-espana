@@ -126,6 +126,27 @@ export async function tgGetMe(botToken: string): Promise<{
 }
 
 /**
+ * Registra el menu de comandos del bot (la lista azul de sugerencias que
+ * Telegram muestra al escribir "/"). Idempotente: llamarlo de nuevo reemplaza
+ * la lista. Scope por defecto (todos los chats). Ver setMyCommands en la API.
+ */
+export async function tgSetMyCommands(
+  botToken: string,
+  commands: Array<{ command: string; description: string }>,
+): Promise<{ ok: boolean; description?: string }> {
+  const res = await fetch(
+    `https://api.telegram.org/bot${encodeURIComponent(botToken)}/setMyCommands`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ commands }),
+    },
+  )
+  const j: any = await res.json().catch(() => ({}))
+  return { ok: !!j?.ok, description: j?.description }
+}
+
+/**
  * Escapa texto para uso dentro de `<b>`, `<i>`, etc. con `parse_mode=HTML`.
  * Solo 3 chars necesarios segun docs de Telegram.
  */

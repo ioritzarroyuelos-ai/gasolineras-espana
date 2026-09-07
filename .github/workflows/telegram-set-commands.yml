@@ -1,0 +1,45 @@
+name: Telegram — registrar menú de comandos
+
+# Ship 27: registra el menú de comandos del bot (la lista azul de sugerencias
+# que Telegram muestra al escribir "/"). La lista vive en el código
+# (TELEGRAM_BOT_COMMANDS en src/index.tsx) y se aplica llamando a
+# /api/telegram/set-commands, que usa el TELEGRAM_BOT_TOKEN ya guardado en
+# Cloudflare (no hay que volver a pasar el token). Idempotente: re-ejecutarlo
+# reemplaza la lista. Correr manualmente cuando cambien los comandos, o tras
+# reconfigurar el bot (configure-telegram.yml).
+#
+# Requisitos: secrets.CRON_TOKEN (mismo que cron-ingest/cron-telegram-check) y
+# el bot ya configurado en CF Pages (TELEGRAM_BOT_TOKEN/USERNAME/WEBHOOK_SECRET).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-set-commands
+  cancel-in-progress: false
+
+jobs:
+  set-commands:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/telegram/set-commands
+        env:
+          CRON_TOKEN:    ${{ secrets.CRON_TOKEN }}
+          PUBLIC_ORIGIN: ${{ vars.PUBLIC_ORIGIN }}
+        run: |
+          if [ -z "$CRON_TOKEN" ]; then
+            echo "::error::CRON_TOKEN secret no configurado — abortando."
+            exit 1
+          fi
+          ORIGIN="${PUBLIC_ORIGIN:-https://webapp-3ft.pages.dev}"
+          echo "Invocando ${ORIGIN}/api/telegram/set-commands"
+          # --fail-with-body no: usamos -f para fallar en !2xx pero mostramos el
+          # body con -w para diagnosticar (503 telegram_not_configured, etc.).
+          curl -fsS --retry 2 --retry-delay 10 --max-time 60 \
+            -X POST "$ORIGIN/api/telegram/set-commands" \
+            -H "Authorization: Bearer $CRON_TOKEN" \
+            -H "Accept: application/json" \
+            -w "\nHTTP %{http_code} in %{time_total}s\n"

@@ -18,6 +18,7 @@ import {
   generateLinkToken,
   tgParsePrice,
   buildPreciosMessages,
+  tgSetMyCommands,
 } from '../src/lib/telegram'
 
 describe('telegram helper (Ship 25)', () => {
@@ -154,6 +155,31 @@ describe('telegram helper (Ship 25)', () => {
       const a = generateLinkToken()
       const b = generateLinkToken()
       expect(a).not.toEqual(b)
+    })
+  })
+
+  describe('tgSetMyCommands', () => {
+    it('hace POST a /bot<token>/setMyCommands con la lista en el body', async () => {
+      let captured: { url: string; init: RequestInit } | null = null
+      globalThis.fetch = vi.fn(async (url: any, init: any) => {
+        captured = { url: String(url), init }
+        return new Response('{"ok":true,"result":true}', { status: 200 })
+      }) as any
+      const cmds = [{ command: 'precios', description: 'Precios de ahora' }]
+      const r = await tgSetMyCommands('123:ABC', cmds)
+      expect(r.ok).toBe(true)
+      expect(captured!.url).toContain('/bot123%3AABC/setMyCommands')
+      expect(captured!.init.method).toBe('POST')
+      const body = JSON.parse(captured!.init.body as string)
+      expect(body.commands).toEqual(cmds)
+    })
+    it('ok=false + description cuando Telegram rechaza', async () => {
+      globalThis.fetch = vi.fn(async () =>
+        new Response('{"ok":false,"description":"Bad Request: command is invalid"}', { status: 400 }),
+      ) as any
+      const r = await tgSetMyCommands('T', [{ command: 'MAL', description: 'x' }])
+      expect(r.ok).toBe(false)
+      expect(r.description).toContain('invalid')
     })
   })
 })

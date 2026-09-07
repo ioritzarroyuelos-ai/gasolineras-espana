@@ -3088,6 +3088,33 @@ app.get('/api/telegram/config', c => {
   })
 })
 
+// Menu de comandos del bot (la lista azul de sugerencias en Telegram). Unica
+// fuente de verdad, en codigo. Se aplica con /api/telegram/set-commands.
+const TELEGRAM_BOT_COMMANDS: Array<{ command: string; description: string }> = [
+  { command: 'precios', description: 'Precios de ahora de tus gasolineras' },
+  { command: 'start',   description: 'Empezar / volver a empezar' },
+  { command: 'help',    description: 'Ayuda y comandos' },
+  { command: 'stop',    description: 'Darte de baja (borra tus alertas)' },
+]
+
+// POST /api/telegram/set-commands — registra el menu de comandos del bot con el
+// token ya guardado en CF (no hay que volver a pasarlo). Idempotente. Protegido
+// con CRON_TOKEN, igual que los /api/cron/*. Se dispara desde el workflow
+// telegram-set-commands.yml (o con un curl manual autenticado).
+app.post('/api/telegram/set-commands', async c => {
+  const authz = await authorizeCron(c)
+  if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
+  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
+  const { tgSetMyCommands } = await import('./lib/telegram')
+  const r = await tgSetMyCommands(c.env.TELEGRAM_BOT_TOKEN!, TELEGRAM_BOT_COMMANDS)
+  if (!r.ok) {
+    slog('warn', 'telegram_set_commands_failed', { description: r.description })
+    return c.json({ ok: false, error: 'set_commands_failed', description: r.description }, 502, { 'Cache-Control': 'no-store' })
+  }
+  slog('info', 'telegram_set_commands_ok', { count: TELEGRAM_BOT_COMMANDS.length })
+  return c.json({ ok: true, count: TELEGRAM_BOT_COMMANDS.length }, 200, { 'Cache-Control': 'no-store' })
+})
+
 const PENDING_TOKEN_TTL_MS = 10 * 60 * 1000  // 10 min
 
 // POST /api/telegram/start-link — genera token + deepLink para iniciar el flow.

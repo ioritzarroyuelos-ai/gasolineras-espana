@@ -75,16 +75,10 @@ export function buildFarmaciasPage(
 
   <style nonce="${nonce}">
     :root {
+      color-scheme: light;
       --c-bg: #f8fafc; --c-surface: #ffffff; --c-text: #0f172a; --c-muted: #64748b;
       --c-brand-dark: #14532d; --c-brand: #16a34a; --c-brand-soft: #dcfce7;
       --c-border: #e2e8f0; --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --c-bg: #0f172a; --c-surface: #1e293b; --c-text: #e2e8f0; --c-muted: #94a3b8;
-        --c-brand-dark: #16a34a; --c-brand: #22c55e; --c-brand-soft: #052e16;
-        --c-border: #334155; --c-shadow: 0 4px 12px rgba(0,0,0,0.4);
-      }
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;

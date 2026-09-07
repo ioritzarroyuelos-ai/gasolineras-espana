@@ -69,8 +69,6 @@ export const MASTHEAD_CSS =
   + '--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9;'
   + 'background:var(--mh-paper);color:var(--mh-ink);text-align:center;padding:22px 20px 0;'
   + "font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif}"
-  + '@media(prefers-color-scheme:dark){.masthead{--mh-paper:#0f172a;--mh-ink:#f1f5f9;--mh-muted:#94a3b8;'
-  + '--mh-brand:#4ade80;--mh-brand-dark:#86efac;--mh-brand-soft:#064e3b;--mh-rule:#334155}}'
   + '.masthead .mh-inner{max-width:1080px;margin:0 auto}'
   + '.masthead .mh-date{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mh-muted);'
   + 'padding-bottom:10px;margin:0 0 14px;border-bottom:1px solid var(--mh-rule)}'

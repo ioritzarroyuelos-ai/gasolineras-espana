@@ -134,7 +134,7 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd + '</script>'
     + '<style nonce="' + esc(nonce) + '">'
-    + ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc;--rd:#dc2626}'
+    + ':root{color-scheme:light;--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc;--rd:#dc2626}'
     + '*{box-sizing:border-box}'
     + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.55}'
     + 'main{max-width:880px;margin:0 auto;padding:18px}'
@@ -157,9 +157,6 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + '.o-metodo{font-size:13px;color:var(--mu);background:var(--bg);border-radius:8px;padding:12px 14px;margin-top:26px}'
     + 'footer{border-top:1px solid var(--bd);margin-top:26px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
     + 'footer a{color:var(--vd)}'
-    + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-    + '.o-destacado,.o-metodo{background:#1e293b}.o-tabla a,footer a{color:#86efac}'
-    + '.o-precio{color:#86efac}.o-tabla th,.o-tabla td{border-color:#334155}}'
     + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml(null)
     + '<main>'

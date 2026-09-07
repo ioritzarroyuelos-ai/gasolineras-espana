@@ -20,7 +20,7 @@ function esc(s: unknown): string {
 }
 
 const CSS =
-  ':root{--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+  ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
@@ -79,15 +79,6 @@ const CSS =
   + '.sugs a:hover,.sugs a.active{background:#dcfce7}'
   + '.sug-msg{color:var(--mu);font-size:14px}'
   + '.hint{font-size:13px;color:var(--mu);margin:8px 0 18px}'
-  + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-  + '.card,.aviso,.precio-box{background:#1e293b;border-color:#334155}'
-  + '.btn{background:#0f172a;color:#86efac;border-color:#334155}'
-  + '.precio-linea b,.fuentes a{color:#86efac}'
-  + '.buscador input{background:#0f172a;color:#e2e8f0;border-color:#334155}'
-  + '.sugs{background:#1e293b;border-color:#334155}'
-  + '.sugs a,.sugs .sug-msg{color:#e2e8f0}'
-  + '.sugs a:hover,.sugs a.active{background:#166534}'
-  + '.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
 
 interface Meta {
   title: string

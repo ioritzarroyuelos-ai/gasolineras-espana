@@ -1704,7 +1704,7 @@ function legalPage(title: string, bodyHtml: string, nonce: string): string {
 <meta name="description" content="${title} de Gasolineras España"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26FD;</text></svg>"/>
 <style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
   .legal-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
   h2{color:#15803d;margin-top:28px}
@@ -1765,7 +1765,7 @@ app.get('/status', async c => {
 
   const bodyHtml = `
 <style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
   .status-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:8px}
   h2{color:#15803d;margin-top:28px;font-size:18px}

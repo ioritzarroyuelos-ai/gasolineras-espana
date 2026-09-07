@@ -221,7 +221,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (p.mostrarCards && d.guardias.length ? '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd(d) + '</script>' : '')
     + '<style nonce="' + esc(nonce) + '">'
-    + ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+    + ':root{color-scheme:light;--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
     + '*{box-sizing:border-box}'
     + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
     + 'main{max-width:760px;margin:0 auto;padding:18px}'
@@ -245,12 +245,6 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + 'font-size:13px;color:var(--vd);text-decoration:none;background:#fff}'
     + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
     + 'footer a{color:var(--vd)}'
-    + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-    + '.g-card,.g-vacio,.g-aviso{background:#1e293b;border-color:#334155}'
-    + '.g-caducado{background:#450a0a;border-color:#7f1d1d;color:#fecaca}'
-    + '.g-nota{background:#1e293b;border-color:#f59e0b;color:#fcd34d}'
-    + '.g-btn{background:#0f172a;color:#86efac;border-color:#334155}'
-    + '.g-otros li a{background:#0f172a;color:#86efac;border-color:#334155}}'
     + MASTHEAD_CSS
     + '</style></head><body>'
     + mastheadHtml('farmacias')
@@ -285,7 +279,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
 // Estas dos paginas construyen ese camino: portada -> indice -> provincia -> municipio.
 
 const CSS_INDICE =
-  ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+  ':root{color-scheme:light;--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
@@ -303,11 +297,6 @@ const CSS_INDICE =
   + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
   + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + 'footer a{color:var(--vd)}'
-  + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-  + '.aviso{background:#1e293b;border-color:#334155}'
-  + '.g-caducado{background:#450a0a;border-color:#7f1d1d;color:#fecaca}'
-  + '.g-nota{background:#1e293b;border-color:#f59e0b;color:#fcd34d}'
-  + '.btn,.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
 
 function envoltorioIndice(nonce: string, title: string, desc: string, canonical: string, cuerpo: string, noindex = false): string {
   return '<!DOCTYPE html><html lang="es"><head>'

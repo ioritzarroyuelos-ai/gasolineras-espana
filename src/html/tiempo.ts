@@ -16,7 +16,7 @@ function esc(s: unknown): string {
 
 // Verde de marca CercaYa (mismo que gasolineras/farmacias/ITV).
 const CSS =
-  ':root{--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
+  ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
@@ -53,15 +53,6 @@ const CSS =
   + '.dia-extra{font-size:12.5px;color:var(--mu);margin-top:6px}'
   + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + 'footer a{color:var(--vd)}'
-  + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
-  + '.dia,.aviso{background:#1e293b;border-color:#334155}'
-  + '.aviso--warn{background:#3a2a0a;border-left-color:#f59e0b;color:#fcd34d}'
-  + '.buscador input{background:#0f172a;color:#e2e8f0;border-color:#334155}'
-  + '.sugs{background:#1e293b;border-color:#334155}'
-  + '.sugs a,.sugs .sug-msg{color:#e2e8f0}'
-  + '.sugs a:hover,.sugs a.active{background:#166534}'
-  + '.dia-temp .max{color:#86efac}'
-  + '.lista li a{background:#0f172a;color:#86efac;border-color:#334155}}'
 
 interface Meta { title: string; desc: string; canonical: string; nonce: string; noindex?: boolean; jsonLd?: string }
 

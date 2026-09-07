@@ -187,7 +187,7 @@ export function buildLandingPage(
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="color-scheme" content="light dark" />
+  <meta name="color-scheme" content="light" />
   <meta name="theme-color" content="#166534" />
 
   <title>${esc(title)}</title>
@@ -223,6 +223,7 @@ export function buildLandingPage(
 
   <style nonce="${nonce}">
     :root {
+      color-scheme: light;
       --paper: #faf8f4;
       --surface: #ffffff;
       --ink: #1a1a1a;
@@ -231,18 +232,6 @@ export function buildLandingPage(
       --brand-dark: #166534;
       --brand-soft: #dcfce7;
       --rule: #d9d4c9;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --paper: #0f172a;
-        --surface: #1e293b;
-        --ink: #f1f5f9;
-        --muted: #94a3b8;
-        --brand: #4ade80;
-        --brand-dark: #86efac;
-        --brand-soft: #064e3b;
-        --rule: #334155;
-      }
     }
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }

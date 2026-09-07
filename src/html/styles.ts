@@ -18,6 +18,7 @@ export function getStyles(nonce: string = ''): string {
        accidental por algun elemento que rebase (leaflet tile buffer, etc.). */
     html { height: 100%; }
     body {
+      color-scheme: light;
       min-height: 100%;
       width: 100%;
       overflow-x: hidden;

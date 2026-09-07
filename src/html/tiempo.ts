@@ -85,15 +85,43 @@ function scriptBuscador(nonce: string): string {
   return `<script nonce="${esc(nonce)}">
   (function () {
     var input = document.getElementById('q'); var box = document.getElementById('sugs');
-    var muni = [], loaded = false, active = -1, shown = [];
+    var muni = [], loaded = false, active = -1, shown = [], provs = null;
     function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,''); }
     function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
     function cerrar(){ box.hidden=true; box.innerHTML=''; active=-1; shown=[]; input.setAttribute('aria-expanded','false'); }
     function msg(t){ box.innerHTML='<li><span class="sug-msg">'+esc(t)+'</span></li>'; box.hidden=false; shown=[]; active=-1; input.setAttribute('aria-expanded','true'); }
+    // Nombres cooficiales/alternativos de provincia: se buscan ADEMAS del nombre
+    // canonico (que en el sitio es el castellano/INE), para que 'gipuzkoa',
+    // 'araba', 'gerona'... encuentren su provincia.
+    var PROV_ALIAS = {
+      'guipuzcoa':'gipuzkoa', 'alava':'araba', 'bizkaia':'vizcaya',
+      'girona':'gerona', 'lleida':'lerida', 'ourense':'orense',
+      'a coruna':'la coruna coruna', 'islas baleares':'illes balears baleares',
+      'santa cruz de tenerife':'tenerife', 'navarra':'nafarroa',
+      'alicante':'alacant', 'castellon':'castello'
+    };
+    // Indice de provincias (una por slug), derivado de las URLs de municipio
+    // (/tiempo/<prov>/<mun>). Cada una guarda su cadena de busqueda (nombre + alias).
+    function buildProvs(){
+      if(provs) return provs;
+      provs=[]; var seen={};
+      for(var i=0;i<muni.length;i++){
+        var parts=String(muni[i].u||'').split('/'); var slug=parts[2]||'';
+        if(!slug||seen[slug]) continue; seen[slug]=1;
+        var nombre=muni[i].p||'', np=norm(nombre);
+        provs.push({ n:nombre, u:'/tiempo/'+slug, s:np+' '+(PROV_ALIAS[np]||'') });
+      }
+      return provs;
+    }
     function render(q){
       var nq=norm(q); if(nq.length<2){cerrar();return;}
       if(!loaded){msg('Cargando municipios\\u2026');return;}
-      var res=[]; for(var i=0;i<muni.length&&res.length<12;i++){ if(norm(muni[i].n).indexOf(nq)>=0) res.push(muni[i]); }
+      var res=[];
+      // 1) Provincias que casan por nombre canonico o cooficial -> enlace a la provincia.
+      var pv=buildProvs();
+      for(var k=0;k<pv.length&&res.length<3;k++){ if(pv[k].s.indexOf(nq)>=0) res.push({ n:'Toda la provincia: '+pv[k].n, p:'Ver municipios', u:pv[k].u }); }
+      // 2) Municipios por nombre.
+      for(var i=0;i<muni.length&&res.length<12;i++){ if(norm(muni[i].n).indexOf(nq)>=0) res.push(muni[i]); }
       shown=res; active=-1;
       if(res.length===0){msg('No encontramos ese municipio. Prueba con otro o mira por provincia.');return;}
       var html=''; for(var j=0;j<res.length;j++){ html+='<li role="option"><a href="'+esc(res[j].u)+'">'+esc(res[j].n)+'<small>'+esc(res[j].p)+'</small></a></li>'; }

@@ -246,16 +246,10 @@ if ($r -and ($r.StatusCode -eq 400 -or $r.StatusCode -eq 404)) { Ok "path traver
 else { Bad "path traversal devolvio $($r.StatusCode)" }
 
 # ---- 8. Geocoding proxy ----
+# /api/geocode/search se elimino al simplificar el mapa (planificar ruta fuera);
+# solo queda /api/geocode/reverse (lo usa favoritas). Ver Ship 29.
 Write-Host ""
-Write-Host "[8] Geocoding proxy (Nominatim via /api/geocode/*)" -ForegroundColor Cyan
-$r = Get-Resp -Url "$BaseUrl/api/geocode/search?q=Madrid"
-if ($r -and $r.StatusCode -eq 200) { Ok "/api/geocode/search?q=Madrid OK" }
-else { Bad "/api/geocode/search status $($r.StatusCode)" }
-
-$r = Get-Resp -Url "$BaseUrl/api/geocode/search?q=" # query invalida
-if ($r -and $r.StatusCode -eq 400) { Ok "query vacia rechazada con 400" }
-else { Bad "query vacia devolvio $($r.StatusCode)" }
-
+Write-Host "[8] Geocoding proxy (Nominatim via /api/geocode/reverse)" -ForegroundColor Cyan
 $r = Get-Resp -Url "$BaseUrl/api/geocode/reverse?lat=999&lon=0" # lat fuera de rango
 if ($r -and $r.StatusCode -eq 400) { Ok "lat fuera de rango rechazada con 400" }
 else { Bad "lat invalida devolvio $($r.StatusCode)" }

@@ -288,8 +288,8 @@ function cardHTML(s, i, fuel, fuelLabel) {
   // coste del desvio ida-vuelta).
   var distHtml = '';
   var extraKmCard = null;
-  // Centro para la distancia: userPos (GPS) o munCenter (municipio elegido).
-  var centerCard = userPos || munCenter;
+  // Centro para la distancia: munCenter (centro del municipio elegido).
+  var centerCard = munCenter;
   if (centerCard) {
     var posC = stationLatLng(s);
     if (posC) {
@@ -532,9 +532,8 @@ var KNOWN_BRANDS = {
   ENI:1, GASEXPRESS:1, BEROIL:1, HAM:1, AGLA:1
 };
 
-// Centro del municipio elegido (media de sus gasolineras). Es el equivalente a
-// userPos (GPS) pero para el modo "radio alrededor del municipio": cuando el
-// usuario elige un municipio, mostramos las gasolineras en un radio (10 km por
+// Centro del municipio elegido (media de sus gasolineras): cuando el usuario
+// elige un municipio, mostramos las gasolineras en un radio (10 km por
 // defecto, ajustable con la barra) alrededor de este punto. null = modo inactivo.
 var munCenter = null;
 
@@ -545,7 +544,7 @@ function setupMunicipioRadio(munMode, idMun) {
   var rg = document.getElementById('radius-group');
   if (!munMode || !idMun) {
     munCenter = null;
-    if (rg && !userPos) rg.style.display = 'none';
+    if (rg) rg.style.display = 'none';
     return;
   }
   var sumLat = 0, sumLng = 0, n = 0;
@@ -560,35 +559,24 @@ function setupMunicipioRadio(munMode, idMun) {
 
 function applyFilters() {
   var fuel  = document.getElementById('sel-combustible').value;
-  var text  = document.getElementById('search-text').value.trim().toLowerCase();
-  var orden = document.getElementById('sel-orden').value;
+  // El orden es siempre por precio (mas barato primero). Los selectores de
+  // orden, busqueda por texto y filtros avanzados se retiraron del sidebar.
   var radius = parseInt(document.getElementById('in-radius').value, 10);
-
-  // Filtros avanzados (operan sobre resultados ya cargados, aplican en vivo)
-  var fltAbierto = document.getElementById('flt-abierto');
-  var flt24h     = document.getElementById('flt-24h');
-  var selMarca   = document.getElementById('sel-marca');
-  var onlyOpen  = fltAbierto ? fltAbierto.checked : false;
-  var only24h   = flt24h ? flt24h.checked : false;
-  var brand     = selMarca ? selMarca.value : '';
 
   var stations = allStations.slice();
 
-  // Filtro por combustible: si el usuario eligio perfil estricto, quitar estaciones sin precio en ese combustible
-  // Solo cuando hay un perfil y el orden es por precio o cerca
+  // Filtro por combustible: si el perfil es estricto, quitamos estaciones sin
+  // precio en ese combustible (el listado se ordena siempre por precio).
   var profile = getProfile();
   var strictFuel = profile && profile.strictFuel;
-  if (strictFuel && (orden === 'asc' || orden === 'desc' || orden === 'cerca')) {
+  if (strictFuel) {
     stations = stations.filter(function(s) { return parsePrice(s[fuel]); });
   }
 
-  // Filtro por radio. Centro efectivo:
-  //  - userPos (GPS): radio solo cuando el orden es cerca/dist (comportamiento
-  //    de siempre — el resto de ordenes no recorta por distancia).
-  //  - munCenter (municipio elegido, sin GPS): radio SIEMPRE (es justo lo que
-  //    pidio el usuario: al elegir municipio, ver las de un radio de N km).
-  var center = userPos || munCenter;
-  var radiusActive = userPos ? (orden === 'cerca' || orden === 'dist') : !!munCenter;
+  // Filtro por radio centrado en el municipio elegido (munCenter): al elegir
+  // un municipio, mostramos las gasolineras en un radio de N km a su alrededor.
+  var center = munCenter;
+  var radiusActive = !!munCenter;
   if (center && radiusActive && radius) {
     stations = stations.filter(function(s) {
       var pos = stationLatLng(s);
@@ -597,65 +585,15 @@ function applyFilters() {
     });
   }
 
-  // Filtros avanzados — se aplican entre radio y texto para minimizar el set
-  // antes del filtro mas caro (text, que hace normalize NFD por estacion).
-  if (only24h) {
-    stations = stations.filter(function(s) { return is24H(s['Horario']); });
-  } else if (onlyOpen) {
-    // 24h ⊂ abierto-ahora, por eso el else (evita double-filter cuando ambos on).
-    stations = stations.filter(function(s) {
-      var st = isOpenNow(s['Horario']);
-      return st && st.open;
-    });
-  }
-  if (brand) {
-    stations = stations.filter(function(s) {
-      var r = (s['Rotulo'] || '').toUpperCase().trim();
-      if (brand === '__LOWCOST__') {
-        // Low-cost: cualquier cosa que no matchee una marca conocida. Incluye
-        // rotulos vacios, regionales desconocidos y cadenas independientes.
-        // Hacemos indexOf en vez de match exacto por variantes "REPSOL EESS S.A."
-        for (var key in KNOWN_BRANDS) { if (r.indexOf(key) >= 0) return false; }
-        return true;
-      }
-      return r.indexOf(brand) >= 0;
-    });
-  }
-
-  if (text) {
-    var normText = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    stations = stations.filter(function(s) {
-      return (s['Rotulo'] || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').includes(normText);
-    });
-  }
-
   // Mediana para calculo de ahorro
   var prices = stations.map(function(s) { return parsePrice(s[fuel]); });
   currentMedianPrice = median(prices);
 
-  // Ordenaciones
+  // Orden: mas barato primero (las estaciones sin precio, al final).
   stations.sort(function(a, b) {
-    if (orden === 'asc' || orden === 'desc') {
-      var pa = parsePrice(a[fuel]), pb = parsePrice(b[fuel]);
-      if (!pa && !pb) return 0; if (!pa) return 1; if (!pb) return -1;
-      return orden === 'asc' ? pa - pb : pb - pa;
-    } else if (orden === 'cerca' && center) {
-      // Score: penalizar distancia (0.02 €/km equivale a compensar ~1km por cada cent.)
-      // "center" es userPos (GPS) o munCenter (municipio elegido).
-      var pa2 = parsePrice(a[fuel]), pb2 = parsePrice(b[fuel]);
-      var posA = stationLatLng(a), posB = stationLatLng(b);
-      var dA = posA ? distanceKm(center.lat, center.lng, posA.lat, posA.lng) : 9999;
-      var dB = posB ? distanceKm(center.lat, center.lng, posB.lat, posB.lng) : 9999;
-      var sa = (pa2 || 99) + dA * 0.02;
-      var sb = (pb2 || 99) + dB * 0.02;
-      return sa - sb;
-    } else if (orden === 'dist' && center) {
-      var posA2 = stationLatLng(a), posB2 = stationLatLng(b);
-      var dA2 = posA2 ? distanceKm(center.lat, center.lng, posA2.lat, posA2.lng) : 9999;
-      var dB2 = posB2 ? distanceKm(center.lat, center.lng, posB2.lat, posB2.lng) : 9999;
-      return dA2 - dB2;
-    }
-    return (a['Rotulo'] || '').localeCompare(b['Rotulo'] || '');
+    var pa = parsePrice(a[fuel]), pb = parsePrice(b[fuel]);
+    if (!pa && !pb) return 0; if (!pa) return 1; if (!pb) return -1;
+    return pa - pb;
   });
 
   // Top 3 mas baratas (para medallas)
@@ -697,8 +635,7 @@ function applyFilters() {
   // favoritos. checkPriceDropsAndUpdateBaselines aisla el estado en
   // localStorage y respeta el cooldown/consentimiento.
   try { checkPriceDropsAndUpdateBaselines(stations, fuel); } catch(_) {}
-  // Actualizar gasto mensual + panel favoritos
-  updateMonthlyWidget();
+  // Refrescar el panel de favoritas (si el modal esta abierto).
   renderFavsPanel();
 }
 
@@ -922,22 +859,17 @@ function renderSkeletons(count) {
 async function loadStations() {
   var idProv = document.getElementById('sel-provincia').value;
   var idMunSel = document.getElementById('sel-municipio').value;
-  var orden = document.getElementById('sel-orden').value;
 
   if (!idProv) { showToast('Selecciona una provincia primero', 'warning'); return; }
 
-  // Modo radio (cerca / distancia) con userPos: cargar SIEMPRE a nivel provincial
-  // para que el filtro haversine posterior tenga un pool grande. Si el usuario
-  // selecciono "Durango" (1 estacion) + radio 20km, cargar solo Durango hacia
-  // que el filtro sea un no-op. A nivel provincia (~150 estaciones en Bizkaia)
-  // el radio de 20km devuelve decenas.
-  var usingNearby = userPos && (orden === 'cerca' || orden === 'dist');
-  // Modo "radio alrededor del municipio": si el usuario elige un municipio (y no
-  // esta en modo GPS), cargamos la PROVINCIA entera como pool y luego, en
-  // applyFilters, recortamos a un radio (10 km por defecto, ajustable con la
-  // barra) centrado en ese municipio. Asi ve tambien las de pueblos vecinos.
-  var munMode = !usingNearby && !!idMunSel;
-  var idMun = (usingNearby || munMode) ? '' : idMunSel;
+  // Modo "radio alrededor del municipio": si el usuario elige un municipio,
+  // cargamos la PROVINCIA entera como pool y luego, en applyFilters, recortamos
+  // a un radio (10 km por defecto, ajustable con la barra) centrado en ese
+  // municipio. Asi ve tambien las de pueblos vecinos. Sin municipio, mostramos
+  // la provincia entera sin recorte. Siempre cargamos a nivel provincia (idMun
+  // vacio); el municipio solo fija el centro del radio (setupMunicipioRadio).
+  var munMode = !!idMunSel;
+  var idMun = '';
 
   document.getElementById('stats-bar').style.display = 'none';
   renderSkeletons(6);
@@ -993,180 +925,11 @@ async function loadStations() {
   }
 }
 
-// ---- GEOLOCALIZACION -> carga gasolineras del municipio ----
+// ---- NORMALIZACION DE CADENAS (compartida con favoritas: provinciaIdByName) ----
 function normStr(s) {
   return (s || '').toLowerCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-// Alias: nombre que devuelve Nominatim -> fragmento que aparece en el selector del Ministerio
-var PROV_ALIAS = {
-  'vizcaya'    : 'bizkaia',
-  'guipuzcoa'  : 'gipuzkoa',
-  'alava'      : 'araba',
-  'gerona'     : 'girona',
-  'lerida'     : 'lleida',
-  'la coruna'  : 'coruna',
-  'orense'     : 'ourense',
-  'la rioja'   : 'rioja',
-  'islas baleares' : 'balears',
-  'islas canarias' : 'palmas',
-  'gran canaria'   : 'palmas',
-  'tenerife'       : 'santa cruz de tenerife',
-};
-
-function matchProv(raw) {
-  var n = normStr(raw);
-  return PROV_ALIAS[n] || n;
-}
-
-document.getElementById('btn-geolocate').addEventListener('click', async function() {
-  if (!navigator.geolocation) { showToast('Tu navegador no soporta geolocalizacion', 'warning'); return; }
-
-  var btn  = document.getElementById('btn-geolocate');
-  var icon = btn.querySelector('i');
-  icon.className = 'fas fa-spinner fa-spin';
-  btn.disabled   = true;
-
-  // 1. Coordenadas GPS — try/catch aislado para diferenciar fallos de
-  //    geolocalizacion (permiso, GPS, timeout) de fallos posteriores de red o
-  //    carga de datos. Antes todo iba en un unico try/catch y cualquier fallo
-  //    post-GPS (p.ej. /api/geocode/reverse caido, loadStations() lanza) daba
-  //    el mensaje generico "No se pudo obtener la ubicacion (error ?)", que es
-  //    mentira: la ubicacion SI se obtuvo, lo que fallaba era lo demas.
-  var lat, lng;
-  try {
-    var pos = await new Promise(function(res, rej) {
-      navigator.geolocation.getCurrentPosition(res, rej, {
-        enableHighAccuracy: false,
-        timeout: 15000,
-        maximumAge: 60000
-      });
-    });
-    lat = pos.coords.latitude;
-    lng = pos.coords.longitude;
-  } catch(e) {
-    console.error('[geo] GPS error:', e);
-    if (e && e.code === 1)      showToast('Permiso de ubicacion denegado.\\nActiva la ubicacion en el icono del candado (barra de direcciones).', 'error');
-    else if (e && e.code === 2) showToast('Ubicacion no disponible. Asegurate de tener WiFi o datos activos.', 'error');
-    else if (e && e.code === 3) showToast('Tiempo de espera agotado. Comprueba que el navegador tiene permiso de ubicacion e intentalo de nuevo.', 'error');
-    else                        showToast('No se pudo obtener la ubicacion. Intentalo de nuevo.', 'error');
-    icon.className = 'fas fa-crosshairs';
-    btn.disabled   = false;
-    return;
-  }
-
-  // A partir de aqui la ubicacion SI existe. Cualquier fallo en reverse
-  // geocode / loadMunicipios / loadStations se reporta con un mensaje
-  // distinto que no culpa falsamente al GPS.
-  try {
-    userPos = { lat: lat, lng: lng };
-    // Mostrar slider de radio y cambiar orden automaticamente a "cerca"
-    document.getElementById('radius-group').style.display = 'block';
-    var selOrden = document.getElementById('sel-orden');
-    if (selOrden.value !== 'cerca' && selOrden.value !== 'dist') selOrden.value = 'cerca';
-
-    map.setView([lat, lng], 13);
-    // Limpia cualquier marker previo antes de agregar el nuevo (re-click en geolocate).
-    if (userPosMarker) { try { map.removeLayer(userPosMarker); } catch(_) {} userPosMarker = null; }
-    userPosMarker = L.circleMarker([lat, lng], {
-      radius: 11, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 0.55, weight: 2
-    }).addTo(map).bindPopup('<b>&#x1F4CD; Tu ubicacion</b>').openPopup();
-
-    // 2. Geocodificacion inversa via nuestro proxy /api/geocode/reverse.
-    //    Ventaja: la IP del usuario no llega a OpenStreetMap (privacy) y el
-    //    servidor cachea + rate-limitea. Si el proxy falla, 'addr' queda {}.
-    var revRes = await fetch(
-      '/api/geocode/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng)
-    );
-    var addr = (revRes.ok ? (await revRes.json()).address : null) || {};
-
-    // Candidatos de provincia en orden de fiabilidad
-    var provCandidates = [
-      addr.state_district, addr.county, addr.province, addr.state
-    ].filter(Boolean);
-
-    // Candidato de municipio
-    var munRaw = addr.city || addr.town || addr.village || addr.municipality || addr.suburb || '';
-
-    // 3. Buscar provincia: probar cada candidato con alias
-    var selProv   = document.getElementById('sel-provincia');
-    var foundProvId = null;
-
-    outer: for (var ci = 0; ci < provCandidates.length; ci++) {
-      var raw = provCandidates[ci];
-      var needle = matchProv(raw);
-      var words  = needle.split(' ').filter(function(w) { return w.length > 2; });
-      for (var oi = 0; oi < selProv.options.length; oi++) {
-        var opt = selProv.options[oi];
-        if (!opt.value) continue;
-        var optN = normStr(opt.textContent);
-        if (words.some(function(w) { return optN.includes(w); })) {
-          foundProvId   = opt.value;
-          selProv.value = opt.value;
-          // No logueamos el match porque contiene datos de ubicacion; ver /privacidad.
-          break outer;
-        }
-      }
-    }
-
-    if (!foundProvId) {
-      showToast('No se pudo identificar tu provincia. Seleccionala manualmente.', 'warning');
-      return;
-    }
-
-    // 4. Cargar municipios
-    await loadMunicipios(foundProvId);
-
-    // 5. Buscar municipio (matching flexible)
-    if (munRaw) {
-      var selMun  = document.getElementById('sel-municipio');
-      var normMun = normStr(munRaw);
-      var bestOpt   = null, bestScore = 0;
-      for (var mi = 0; mi < selMun.options.length; mi++) {
-        var mopt = selMun.options[mi];
-        if (!mopt.value) continue;
-        var moptN = normStr(mopt.textContent);
-        var score = moptN === normMun ? 3 : normMun.startsWith(moptN) || moptN.startsWith(normMun) ? 2 : moptN.includes(normMun) || normMun.includes(moptN) ? 1 : 0;
-        if (score > bestScore) { bestScore = score; bestOpt = mopt; }
-      }
-      if (bestOpt && bestScore > 0) {
-        selMun.value = bestOpt.value;
-        // No logueamos el municipio: lo mismo, rastro de ubicacion del usuario.
-      }
-    }
-
-    // 6. Cargar gasolineras
-    await loadStations();
-
-  } catch(e) {
-    console.error('[geo] post-GPS error:', e);
-    showToast('Tu ubicacion se obtuvo, pero fallo la carga de gasolineras. Comprueba tu conexion e intentalo de nuevo.', 'error');
-  } finally {
-    icon.className = 'fas fa-crosshairs';
-    btn.disabled   = false;
-  }
-});
-
-// Sale del "modo geolocalizacion": limpia userPos, oculta el slider de radio,
-// quita el marker del mapa y resetea orden si estaba en 'cerca'/'dist'.
-// Se invoca cuando el usuario cambia manualmente provincia o municipio DESPUES
-// de haber pulsado "Mi ubicacion": la señal clara de que ya no quiere ver
-// resultados relativos a su posicion GPS anterior.
-// NOTA: asignaciones programaticas a selProv.value/selMun.value (las que hace
-// el propio btn-geolocate) NO disparan el evento 'change', asi que este helper
-// solo se ejecuta en interacciones reales del usuario.
-function clearGeolocationMode() {
-  if (!userPos) return; // ya estaba limpio: no-op
-  userPos = null;
-  if (userPosMarker) { try { map.removeLayer(userPosMarker); } catch(_) {} userPosMarker = null; }
-  var rg = document.getElementById('radius-group');
-  if (rg) rg.style.display = 'none';
-  var selOrden = document.getElementById('sel-orden');
-  if (selOrden && (selOrden.value === 'cerca' || selOrden.value === 'dist')) {
-    selOrden.value = 'precio';
-  }
 }
 
 // ============================================================

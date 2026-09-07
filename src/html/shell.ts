@@ -1,6 +1,7 @@
 import { getStyles } from './styles'
 import { getClientScript } from './client'
 import { APP_VERSION } from '../lib/version'
+import { mastheadHtml } from './masthead'
 
 export interface SeoContext {
   // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
@@ -321,30 +322,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
       : []),
   ])
 
-  // Ship 25.2: boton de donacion opcional. Solo pintamos el <a> si la env var
-  // SUPPORT_URL esta definida y es un URL http(s) — evita XSS por javascript:
-  // o data: URIs si alguien en el futuro se confunde con el origen de la var.
-  // Sanitizamos tambien con replace de comillas por si la URL contiene chars
-  // raros (aunque validamos el schema, defensa en profundidad).
-  const supportUrlRaw = (opts.supportUrl || '').trim()
-  const supportUrlValid = /^https?:\/\/[^\s"'<>]+$/i.test(supportUrlRaw)
-  const supportUrlSafe = supportUrlValid
-    ? supportUrlRaw.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    : ''
-  // rel="noopener noreferrer sponsored": sponsored es la convencion para
-  // botones de donacion/afiliacion — evita que Google los trate como
-  // backlinks de SEO. noopener previene window.opener hijacking.
-  const supportBlockHtml = supportUrlSafe
-    ? `<a href="${supportUrlSafe}"
-         class="kofi-support"
-         target="_blank"
-         rel="noopener noreferrer sponsored"
-         aria-label="Invitame a un cafe">
-        <span aria-hidden="true">&#x2615;</span>
-        <span>Inv&iacute;tame a un caf&eacute;</span>
-      </a>`
-    : ''
-
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -430,11 +407,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <link rel="stylesheet" href="/static/vendor/map/leaflet.markercluster/MarkerCluster.Default.css" />
   <script defer src="/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js"></script>
 
-  <!-- Leaflet.heat: capa de heatmap como vista alternativa al cluster. El
-       peso de cada punto es proporcional al precio (mas caro = mas
-       caliente) en renderMarkers. -->
-  <script defer src="/static/vendor/map/leaflet.heat/leaflet-heat.js"></script>
-
   <!-- MapLibre GL + bridge leaflet — render vectorial con estilo Liberty de
        OpenFreeMap parcheado en runtime para priorizar name:es (toponimia en
        castellano aunque existan etiquetas en otros idiomas en el dataset OSM).
@@ -464,6 +436,12 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 </head>
 <body>
 
+<!-- Cabecera de periódico común a todo el portal (misma que el resto de
+     secciones). Va en flujo normal encima de la app y se desplaza con la
+     página; la barra de herramientas del mapa (#app-header) queda sticky justo
+     debajo. -->
+${mastheadHtml('gasolineras')}
+
 <!-- H1 semantico. En SEO pages (provincia/municipio) el <section class="seo-summary">
      duplica un H1 visible con el mismo texto — acceptable para SEO moderno y da
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
@@ -488,9 +466,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <div class="header-actions">
     <span id="lbl-update" class="header-update u-hide"></span>
     <span id="lbl-count" class="header-badge u-hide"></span>
-    <!-- Acceso a favoritas, rutas y diario vive dentro del desplegable del
-         usuario (#user-dropdown) — no hay botones de cabecera duplicados. -->
-    <button id="btn-dark" title="Modo oscuro / claro" aria-label="Alternar tema claro u oscuro"><i class="fas fa-moon" aria-hidden="true"></i></button>
+    <!-- Acceso a favoritas vive dentro del desplegable del usuario
+         (#user-dropdown) — no hay botones de cabecera duplicados. -->
     ${gClientId ? `
     <!-- Login Google: visible solo si hay GOOGLE_CLIENT_ID configurado. El
          boton abre el modal de login cuando no hay sesion; cuando la hay,
@@ -512,15 +489,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <div class="user-dropdown-sep"></div>
         <button id="btn-user-favs" class="user-dropdown-item" role="menuitem" type="button">
           <i class="fas fa-star" aria-hidden="true"></i> Favoritas
-        </button>
-        <button id="btn-user-route" class="user-dropdown-item" role="menuitem" type="button">
-          <i class="fas fa-route" aria-hidden="true"></i> Rutas
-        </button>
-        <button id="btn-user-diary" class="user-dropdown-item" role="menuitem" type="button">
-          <i class="fas fa-book" aria-hidden="true"></i> Repostajes
-        </button>
-        <button id="btn-user-profile" class="user-dropdown-item" role="menuitem" type="button">
-          <i class="fas fa-user-cog" aria-hidden="true"></i> Mi vehículo
         </button>
         <div class="user-dropdown-sep"></div>
         <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sincronizado</div>
@@ -567,14 +535,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         <span class="search-heading">
           <i class="fas fa-sliders-h u-c-green" aria-hidden="true"></i> Búsqueda
         </span>
-        <div class="search-actions">
-          <button id="btn-share" class="btn-icon" title="Compartir búsqueda" aria-label="Compartir búsqueda actual">
-            <i class="fas fa-share-alt" aria-hidden="true"></i>
-          </button>
-          <button id="btn-geolocate" class="btn-icon" title="Usar mi ubicación" aria-label="Usar mi ubicación">
-            <i class="fas fa-crosshairs" aria-hidden="true"></i>
-          </button>
-        </div>
       </div>
 
       <div class="form-group">
@@ -606,82 +566,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
         </select>
       </div>
 
-      <div class="form-group u-pos-rel">
-        <label class="form-label" for="search-text">Buscar gasolinera</label>
-        <div class="input-icon-wrap">
-          <i class="fas fa-search icon" aria-hidden="true"></i>
-          <input id="search-text" class="form-input" type="text" placeholder="Repsol, BP, Cepsa..." autocomplete="off" />
-        </div>
-        <div id="search-suggestions" role="listbox"></div>
-      </div>
-
-      <div class="row">
-        <div class="flex-1">
-          <label class="form-label" for="sel-orden">Ordenar</label>
-          <select id="sel-orden" class="form-select">
-            <option value="asc">Precio &#x2191; (más barato)</option>
-            <option value="desc">Precio &#x2193; (más caro)</option>
-            <option value="cerca">Cerca + barato (mixto)</option>
-            <option value="dist">Distancia</option>
-            <option value="az">Nombre A&#x2192;Z</option>
-          </select>
-        </div>
-        <button id="btn-buscar" class="btn-primary" aria-label="Buscar gasolineras">
-          <i class="fas fa-search" aria-hidden="true"></i> Buscar
-        </button>
-      </div>
-
-      <!-- Filtros avanzados: operan sobre resultados ya cargados, por eso se
-           aplican en vivo (no requieren "Buscar" de nuevo). Van en una caja
-           colapsable para no saturar al usuario que no los necesita. -->
-      <details class="adv-filters" id="adv-filters">
-        <summary class="adv-filters-summary">
-          <i class="fas fa-filter" aria-hidden="true"></i>
-          <span>Filtros avanzados</span>
-          <span class="adv-filters-count" id="adv-filters-count" aria-hidden="true"></span>
-        </summary>
-        <div class="adv-filters-body">
-          <div class="chip-row">
-            <label class="chip-check">
-              <input type="checkbox" id="flt-abierto" />
-              <span>&#x1F7E2; Abierto ahora</span>
-            </label>
-            <label class="chip-check">
-              <input type="checkbox" id="flt-24h" />
-              <span>&#x1F319; 24 horas</span>
-            </label>
-          </div>
-          <div class="form-group u-mt-10 u-mb-0">
-            <label class="form-label" for="sel-marca">Marca</label>
-            <select id="sel-marca" class="form-select">
-              <option value="">-- Cualquiera --</option>
-              <option value="REPSOL">Repsol</option>
-              <option value="CEPSA">Cepsa</option>
-              <option value="MOEVE">Moeve</option>
-              <option value="GALP">Galp</option>
-              <option value="BALLENOIL">Ballenoil</option>
-              <option value="PLENERGY">Plenergy</option>
-              <option value="SHELL">Shell</option>
-              <option value="PETROPRIX">Petroprix</option>
-              <option value="PETRONOR">Petronor</option>
-              <option value="CARREFOUR">Carrefour</option>
-              <option value="BP">BP</option>
-              <option value="AVIA">Avia</option>
-              <option value="Q8">Q8</option>
-              <option value="CAMPSA">Campsa</option>
-              <option value="ESCLATOIL">Esclatoil</option>
-              <option value="ALCAMPO">Alcampo</option>
-              <option value="EROSKI">Eroski</option>
-              <option value="BONAREA">BonÀrea</option>
-              <option value="MEROIL">Meroil</option>
-              <option value="COSTCO">Costco (solo socios)</option>
-              <option value="__LOWCOST__">Low-cost (sin marca conocida)</option>
-            </select>
-          </div>
-        </div>
-      </details>
-
-      <!-- Radio de busqueda (cerca-de-mi) -->
+      <!-- Radio de busqueda (centrado en el municipio elegido) -->
       <div class="form-group u-hide" id="radius-group">
         <label class="form-label" for="in-radius">Radio de búsqueda</label>
         <div class="range-group">
@@ -689,36 +574,8 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
           <span class="range-val" id="lbl-radius">10 km</span>
         </div>
       </div>
-      <!-- Slider de deposito eliminado: la capacidad se configura una sola
-           vez en el modal "Personaliza tu experiencia" y se lee desde
-           localStorage.gs_tank para calcular el ahorro. Tenerlo duplicado
-           aqui confundia al usuario. -->
-
-
-      <!-- Widget de gasto mensual (se activa tras onboarding) -->
-      <div id="monthly-widget" role="region" aria-label="Gasto estimado mensual">
-        <div class="mw-title">&#x1F4CA; Gasto estimado mensual</div>
-        <div class="mw-cost" id="mw-cost">--</div>
-        <div class="mw-sub" id="mw-sub">--</div>
-      </div>
-
-      <!-- Ship 25.2: boton "Invitame a un cafe" renderizado condicionalmente
-           desde env.SUPPORT_URL. Si no hay SUPPORT_URL, este slot queda vacio
-           (no hay DOM ni espacio reservado — sin layout shift). -->
-      ${supportBlockHtml}
-
-      <!-- Ship 25.5: instalar como PWA. Oculto por defecto; JS le quita
-           'hidden' cuando el navegador dispara 'beforeinstallprompt'.
-           Antes vivia como FAB flotante (bottom:140px, z-index:9998) pero
-           tapaba los modales y competia con los controles de zoom. Aqui
-           es discreto, no solapa con nada, y lo ven tanto usuarios
-           anonimos como logueados (el dropdown de usuario solo aparece
-           con sesion). Ver core.ts initPWAUX. -->
-      <div id="install-app-row" class="form-group" hidden>
-        <button type="button" id="btn-install-pwa" class="install-app-btn" aria-label="Instalar aplicacion">
-          <span aria-hidden="true">&#x2B07;</span> Instalar app
-        </button>
-      </div>
+      <!-- La capacidad del deposito se lee desde localStorage.gs_tank para
+           calcular el ahorro (default 50 L si no esta configurado). -->
     </div>
 
     <!-- STATS -->
@@ -763,34 +620,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
          por su ID para que el stacking sea explícito (en vez de depender del
          orden DOM o de un flex wrapper que complicaría el layout mobile). -->
 
-    <!-- Ship 6: toggle heatmap. Cambia la vista de cluster a mapa de calor
-         donde el color indica donde estan las gasolineras mas caras (rojo)
-         o mas baratas (azul). Util para decidir zonas en viajes largos sin
-         tener que revisar 400 pins. El boton va flotante sobre el mapa,
-         junto al control de zoom de Leaflet, con aria-pressed. -->
-    <button id="btn-heatmap"
-            class="map-floating-btn"
-            type="button"
-            aria-pressed="false"
-            aria-label="Activar mapa de calor de precios"
-            title="Mapa por colores: rojo = caro, azul = barato">
-      <i class="fa-solid fa-fire" aria-hidden="true"></i>
-    </button>
-
-    <!-- Ship 25.5: toggle de puntos de recarga eléctrica (OpenStreetMap).
-         Lazy-load: el snapshot JSON (~400KB gzip, ~20k puntos en España) solo
-         se fetchea la primera vez que el usuario pulsa el botón — los usuarios
-         con coche de combustión nunca lo descargan. Capa separada del cluster
-         de gasolineras con icono ⚡ azul para distinción visual inmediata. -->
-    <button id="btn-chargers"
-            class="map-floating-btn map-floating-btn--chargers"
-            type="button"
-            aria-pressed="false"
-            aria-label="Mostrar puntos de recarga para coche eléctrico"
-            title="Ver recargadores eléctricos (OpenStreetMap)">
-      <i class="fa-solid fa-bolt" aria-hidden="true"></i>
-    </button>
-
     <!-- Toggle basemap satelite: alterna entre mapa (Voyager/Liberty) y
          ortofoto (Esri World Imagery + etiquetas CARTO). Recuerda la
          preferencia en localStorage (gs_basemap). Icono globo con puntos
@@ -804,30 +633,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
             title="Vista satélite (ortofoto + etiquetas)">
       <i class="fa-solid fa-satellite" aria-hidden="true"></i>
     </button>
-
-    <!-- Banner "modo ruta" flotante sobre el mapa. Se activa al planificar
-         una ruta y se oculta al cerrar el modo. -->
-    <div id="route-mode-bar" class="route-mode-bar" role="status" aria-live="polite">
-      <span class="route-mode-bar-text" id="route-mode-bar-text">Modo ruta activo</span>
-      <span class="route-mode-bar-nav" id="route-mode-bar-nav" aria-label="Abrir ruta en">
-        <a id="nav-gmaps" href="#" target="_blank" rel="noopener" title="Abrir ruta en Google Maps">Google</a>
-        <a id="nav-amaps" href="#" target="_blank" rel="noopener" title="Abrir ruta en Apple Maps">Apple</a>
-        <a id="nav-waze"  href="#" target="_blank" rel="noopener" title="Abrir destino en Waze (no admite paradas)">Waze</a>
-      </span>
-      <!-- Toggle para mostrar TODAS las gasolineras del corredor, no solo las
-           paradas recomendadas. Util cuando el plan propuesto no cuadra (ej.
-           el usuario ya sabe que quiere una marca concreta o una estacion
-           con aseos). aria-pressed refleja el estado; se hidrata desde JS. -->
-      <button id="route-mode-bar-corridor"
-              class="route-mode-bar-corridor"
-              type="button"
-              aria-pressed="false"
-              aria-label="Mostrar todas las gasolineras del corredor de la ruta"
-              title="Ver todas las gasolineras en el trayecto (no solo las paradas recomendadas)">
-        <span id="route-mode-bar-corridor-label">Ver todas en ruta</span>
-      </button>
-      <button id="route-mode-bar-exit" class="route-mode-bar-exit" type="button">Salir de la ruta</button>
-    </div>
 
     <!-- Loading -->
     <div id="loading" role="status" aria-live="polite">
@@ -860,86 +665,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
 </div><!-- end app-body -->
 
-<!-- ============ MODAL ONBOARDING / PERFIL ============ -->
-<div id="modal-profile" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-  <div class="modal">
-    <div class="modal-header">
-      <h2 id="profile-title">&#x26FD; Personaliza tu experiencia</h2>
-      <p>Se guarda en tu cuenta y se sincroniza en todos tus dispositivos. Puedes cambiarlo cuando quieras.</p>
-    </div>
-    <div class="modal-body">
-      <!-- Ship 25.4: Tipo de coche (combustion / electrico). Condiciona las
-           unidades del resto de inputs: L vs kWh para capacidad y L/100km
-           vs kWh/100km para consumo. La formula de autonomia es la misma en
-           ambos casos porque las unidades cancelan:
-              autonomia_km = (capacidad / consumo) * 100
-           es valida tanto con (L, L/100km) como con (kWh, kWh/100km).
-           Las etiquetas de los sliders se actualizan en JS (ui.ts) al
-           cambiar el tipo; los valores numericos se preservan. -->
-      <div class="form-group">
-        <label class="form-label">&#x1F697; Tipo de coche</label>
-        <div id="chips-cartype" class="chip-group" role="radiogroup" aria-label="Tipo de coche">
-          <button class="chip" data-cartype="combustion" role="radio">&#x26FD; Combusti&oacute;n</button>
-          <button class="chip" data-cartype="electrico"  role="radio">&#x26A1; El&eacute;ctrico</button>
-        </div>
-      </div>
-      <div class="form-group" id="profile-fuel-group">
-        <label class="form-label">&#x26FD; Qué combustible usas</label>
-        <div id="chips-fuel" class="chip-group" role="radiogroup" aria-label="Combustible">
-          <button class="chip" data-fuel="Precio Gasolina 95 E5"   role="radio">Gasolina 95</button>
-          <button class="chip" data-fuel="Precio Gasolina 98 E5"   role="radio">Gasolina 98</button>
-          <button class="chip" data-fuel="Precio Gasoleo A"        role="radio">Diesel</button>
-          <button class="chip" data-fuel="Precio Gasoleo Premium"  role="radio">Diesel Premium</button>
-          <button class="chip" data-fuel="Precio Gases licuados del petroleo" role="radio">GLP</button>
-          <button class="chip" data-fuel="Precio Hidrogeno"        role="radio">Hidrogeno</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">&#x1F6E3;&#xFE0F; Kilómetros que haces al mes</label>
-        <div id="chips-km" class="chip-group" role="radiogroup" aria-label="Kilómetros al mes">
-          <button class="chip" data-km="500"   role="radio">~500 km</button>
-          <button class="chip" data-km="1000"  role="radio">~1.000 km</button>
-          <button class="chip" data-km="1500"  role="radio">~1.500 km</button>
-          <button class="chip" data-km="2500"  role="radio">~2.500 km</button>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="in-consumo" id="lbl-consumo-head">&#x1F4A7; Consumo medio (L/100km)</label>
-        <div class="range-group">
-          <input id="in-consumo" type="range" min="3" max="15" step="0.5" value="6.5" aria-label="Consumo en litros por 100 kilómetros" />
-          <span class="range-val" id="lbl-consumo">6,5 L</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="in-tank-modal" id="lbl-tank-head">&#x26FD; Capacidad del dep&oacute;sito</label>
-        <div class="range-group">
-          <input id="in-tank-modal" type="range" min="20" max="120" step="5" value="50" aria-label="Capacidad del depósito en litros" />
-          <span class="range-val" id="lbl-tank-modal">50 L</span>
-        </div>
-      </div>
-      <!-- Ship 25.4: Autonomia 100% auto-calculada desde la formula
-              autonomia_km = (capacidad / consumo) * 100
-           No es editable (readonly) — se actualiza en vivo al mover los
-           sliders de capacidad/consumo o al cambiar el tipo de coche.
-           Antes era un campo editable con lapiz; lo hemos simplificado
-           porque no tiene sentido declarar autonomia a mano si ya tenemos
-           capacidad + consumo y la relacion es exacta. -->
-      <div class="form-group" id="profile-autonomy-box">
-        <label class="form-label">&#x1F6E3;&#xFE0F; Autonom&iacute;a estimada</label>
-        <div class="profile-autonomy profile-autonomy--readonly">
-          <span id="out-autonomy" class="profile-autonomy-value" aria-live="polite">769</span>
-          <span class="profile-autonomy-unit">km</span>
-        </div>
-        <small class="profile-autonomy-hint">Se calcula autom&aacute;ticamente como <code>(capacidad / consumo) &times; 100</code></small>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button id="btn-profile-skip"  class="btn-ghost">Ahora no</button>
-      <button id="btn-profile-save"  class="btn-primary">Guardar</button>
-    </div>
-  </div>
-</div>
-
 <!-- ============ MODAL LOGIN (Google) ============ -->
 ${gClientId ? `
 <div id="login-modal" class="login-modal" hidden role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
@@ -947,7 +672,7 @@ ${gClientId ? `
   <div class="login-modal-card">
     <button id="login-modal-close" class="login-modal-close" data-close="1" aria-label="Cerrar">&times;</button>
     <h2 id="login-modal-title" class="login-modal-title">Inicia sesión con Google</h2>
-    <p class="login-modal-sub">Sincroniza tus favoritas, rutas y diario de repostajes entre dispositivos.</p>
+    <p class="login-modal-sub">Sincroniza tus favoritas entre dispositivos.</p>
     <div id="gsi-button-container" class="login-modal-btn"></div>
   </div>
 </div>` : ''}
@@ -1007,140 +732,6 @@ ${gClientId ? `
     <div class="tg-link-prompt-actions">
       <button type="button" class="tg-link-prompt-secondary" id="tg-link-prompt-cancel">Ahora no</button>
       <button type="button" class="tg-link-prompt-primary" id="tg-link-prompt-activate">Activar bot</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ MODAL RUTA A->B ============ -->
-<!-- Busca la TOP-N de gasolineras mas baratas dentro de un corredor a lo
-     largo del trayecto entre dos puntos (origen + destino). Reutiliza
-     /api/geocode/search (Nominatim proxy) para resolver los nombres a
-     coordenadas; el filtrado corredor + ranking es 100% cliente. -->
-<div id="modal-route" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="route-title">
-  <div class="modal">
-    <div class="modal-header modal-header-row">
-      <div>
-        <h2 id="route-title">&#x1F6E3;&#xFE0F; Ruta: d&oacute;nde repostar</h2>
-        <p>Te decimos en qu&eacute; gasolineras parar seg&uacute;n tu autonom&iacute;a y el precio.</p>
-      </div>
-      <button id="btn-route-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label" for="route-from">Origen</label>
-        <input id="route-from" class="form-input" type="text" placeholder="Madrid, Valencia, ..." autocomplete="off" />
-        <div id="route-from-sug" class="route-sug" role="listbox"></div>
-      </div>
-      <!-- Ship 7: paradas intermedias (waypoints). El planner soporta hasta 3
-           paradas entre origen y destino. Cada fila se genera via JS como
-           "chip + input + boton quitar" para mantener el markup limpio en
-           el estado por defecto (0 paradas). El boton "Anadir parada" anade
-           la primera; las adicionales aparecen al rellenar la anterior. -->
-      <div id="route-stops-wrap" class="route-stops-wrap" aria-live="polite"></div>
-      <button id="btn-route-add-stop" class="btn-ghost btn-route-add-stop" type="button">
-        <i class="fa-solid fa-plus" aria-hidden="true"></i> Anadir parada intermedia
-      </button>
-      <div class="form-group">
-        <label class="form-label" for="route-to">Destino</label>
-        <input id="route-to" class="form-input" type="text" placeholder="Barcelona, Sevilla, ..." autocomplete="off" />
-        <div id="route-to-sug" class="route-sug" role="listbox"></div>
-      </div>
-      <!-- Bloque informativo: la autonomia se deriva de tu perfil (deposito /
-           consumo x 100). Ya no pedimos al usuario el "ancho del corredor":
-           usamos 5 km por defecto y ampliamos automaticamente si no encontramos
-           suficientes gasolineras. Todo transparente. -->
-      <div class="form-group" id="route-profile-box">
-        <label class="form-label">&#x1F697; Tu coche (seg&uacute;n perfil)</label>
-        <div id="route-profile-info" class="route-profile-info">
-          <div class="route-profile-row">
-            <span class="route-profile-k">Dep&oacute;sito</span>
-            <span class="route-profile-v"><span id="route-profile-tank">50</span> L</span>
-          </div>
-          <div class="route-profile-row">
-            <span class="route-profile-k">Consumo</span>
-            <span class="route-profile-v"><span id="route-profile-cons">6,5</span> L/100km</span>
-          </div>
-          <div class="route-profile-row route-profile-hl">
-            <span class="route-profile-k">Autonom&iacute;a</span>
-            <span class="route-profile-v"><span id="route-profile-auto">769</span> km</span>
-          </div>
-        </div>
-        <p class="form-help">Usamos estos datos para decidir d&oacute;nde hay que repostar. Si no son correctos, abre tu perfil (bot&oacute;n &#x1F464; del header) para cambiarlos.</p>
-      </div>
-      <div id="route-status" class="route-status" aria-live="polite"></div>
-      <div id="route-plan" class="route-plan" aria-live="polite"></div>
-      <div id="route-results" class="route-results"></div>
-    </div>
-    <div class="modal-footer">
-      <button id="btn-route-go" class="btn-primary">Planificar</button>
-      <button id="btn-route-done" class="btn-ghost">Cerrar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ============ MODAL DIARIO DE REPOSTAJES ============ -->
-<!-- Registro local (localStorage) de cada repostaje: litros, €/L, km totales.
-     Calcula consumo real L/100km, gasto total, medias, y exporta CSV.
-     Privacidad total: nada sale del navegador. -->
-<div id="modal-diary" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="diary-title">
-  <div class="modal diary-modal">
-    <div class="modal-header modal-header-row">
-      <div>
-        <h2 id="diary-title">&#x1F4D6; Mi diario de repostajes</h2>
-        <p>Lleva la cuenta real de tu consumo y ahorro. Todo se guarda solo en tu navegador.</p>
-      </div>
-      <button id="btn-diary-close" class="modal-close-x" aria-label="Cerrar">&times;</button>
-    </div>
-    <div class="modal-body">
-      <div id="diary-stats" class="diary-stats" aria-live="polite">
-        <div class="diary-stat"><div class="ds-label">Entradas</div><div class="ds-value" id="ds-entries">0</div></div>
-        <div class="diary-stat"><div class="ds-label">Gasto total</div><div class="ds-value" id="ds-spent">0 &euro;</div></div>
-        <div class="diary-stat"><div class="ds-label">Media &euro;/L</div><div class="ds-value" id="ds-avg">--</div></div>
-        <div class="diary-stat"><div class="ds-label">Km recorridos</div><div class="ds-value" id="ds-km">0</div></div>
-        <div class="diary-stat diary-stat-cons">
-          <div class="ds-label">Consumo real</div>
-          <div class="ds-value" id="ds-cons">--</div>
-          <div class="ds-sub" id="ds-cons-sub"></div>
-        </div>
-        <div class="diary-stat"><div class="ds-label">&euro; por 100 km</div><div class="ds-value" id="ds-eurkm">--</div></div>
-        <div class="diary-stat"><div class="ds-label">Litros cargados</div><div class="ds-value" id="ds-liters">0 L</div></div>
-      </div>
-
-      <div class="diary-form">
-        <h3 class="diary-subtitle">&#x2795; Nuevo repostaje</h3>
-        <div class="diary-form-row">
-          <div class="form-group">
-            <label class="form-label" for="diary-litros">Litros</label>
-            <input id="diary-litros" class="form-input" type="number" step="0.01" min="0.1" placeholder="40.00" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="diary-price">&euro;/L</label>
-            <input id="diary-price" class="form-input" type="number" step="0.001" min="0.1" placeholder="1.529" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="diary-km">Km totales</label>
-            <input id="diary-km" class="form-input" type="number" step="1" min="0" placeholder="42850" />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="diary-date">Fecha</label>
-            <input id="diary-date" class="form-input" type="date" />
-          </div>
-        </div>
-        <button id="btn-diary-add" class="btn-primary">Guardar repostaje</button>
-      </div>
-
-      <div class="diary-list-wrap">
-        <h3 class="diary-subtitle">&#x1F5C3;&#xFE0F; Historial</h3>
-        <div id="diary-empty" class="favs-empty">
-          Aun no hay repostajes. Anade el primero arriba y cada vez que llenes.
-        </div>
-        <div id="diary-list" class="diary-list"></div>
-      </div>
-    </div>
-    <div class="modal-footer diary-footer">
-      <button id="btn-diary-export" class="btn-ghost" title="Exportar CSV">&#x2B07;&#xFE0F; Exportar CSV</button>
-      <button id="btn-diary-clear" class="btn-ghost" title="Borrar todo el diario">&#x1F5D1;&#xFE0F; Borrar todo</button>
-      <button id="btn-diary-done" class="btn-primary">Cerrar</button>
     </div>
   </div>
 </div>

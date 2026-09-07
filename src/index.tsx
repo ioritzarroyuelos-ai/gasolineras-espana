@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { buildPage } from './html/shell'
 import { buildLandingPage, landingHeaders, type LandingData, type LandingTiempo } from './html/landing'
+import { mastheadHtml, MASTHEAD_CSS } from './html/masthead'
 import { buildFarmaciasPage, farmaciasHeaders } from './html/farmacias'
 import { buildGasolinerasLanding, gasolinerasLandingHeaders } from './html/gasolineras'
 import type { GasLandingProvincia } from './html/gasolineras'
@@ -44,7 +45,6 @@ import {
   LRU,
   validateId,
   isValidProvinciaId,
-  sanitizeGeocodeQuery,
   sanitizeLatLng,
   originAllowed,
   SlidingWindowLimiter,
@@ -207,7 +207,6 @@ function slog(level: LogLevel, event: string, fields: Record<string, unknown> = 
 const srvCache      = new LRU<unknown>(200)
 const snapshotCache = new LRU<unknown>(10)
 const geoCache      = new LRU<unknown>(500)      // Nominatim: cache agresivo, las direcciones cambian poco
-const routeCache    = new LRU<unknown>(300)      // OSRM: cache muy agresivo, las carreteras no cambian
 const SRV_TTL_FRESH = 4 * 60 * 60 * 1000         // 4h: datos fresquisimos
 const SRV_TTL_STALE = 30 * 24 * 60 * 60 * 1000   // 30d: ultimo recurso en memoria
 const SNAP_TTL      = 10 * 60 * 1000             // 10 min en memoria, luego re-leer del asset
@@ -517,13 +516,6 @@ const errLimiter    = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min p
 // margen ancho y aun asi frena scrapers que intenten paginar todas las
 // gasolineras (11k estaciones / 60 req-min = 3 horas de scrapeo visible).
 const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por IP
-// Routing: OSRM demo server tiene policy propia (~1 req/s). Limitamos la
-// misma IP a 10/min de cache-miss. El cache global absorbe re-fetches del
-// mismo par origen/destino. Un atacante con muchas IPs podria convertirnos en
-// amplificador, pero el payload es pequeno (~1-5 KB) y la policy no castiga
-// volumen moderado.
-const routeLimiter  = new SlidingWindowLimiter(20,  60_000)  // 20 req/min por IP
-                                                              // (cada plan hace 2 llamadas: ruta directa + ruta con waypoints)
 // Export CSV: payload grande (hasta ~12k filas, varios MB sin filtros). Un
 // periodista / blogger / investigador lo descarga una vez al dia — 6/min es
 // generoso para uso legitimo y hace inviable el scraping continuo.
@@ -824,11 +816,6 @@ app.get('/', async c => {
   const nonce = genNonce()
   const data: LandingData = {}
   try {
-    try {
-      data.fecha = new Intl.DateTimeFormat('es-ES', {
-        weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid',
-      }).format(new Date())
-    } catch { /* sin fecha si Intl falla */ }
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
     const st = statsNacional(snap).stats
     if (st['95'] || st['diesel']) {
@@ -1717,18 +1704,23 @@ function legalPage(title: string, bodyHtml: string, nonce: string): string {
 <meta name="description" content="${title} de Gasolineras España"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26FD;</text></svg>"/>
 <style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:0 auto;padding:32px 20px;color:#1f2937;line-height:1.6}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6}
+  .legal-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
   h2{color:#15803d;margin-top:28px}
   a{color:#16a34a}
   code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
   .back{display:inline-block;margin-bottom:16px;color:#64748b;text-decoration:none}
   footer{margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:13px;color:#64748b}
+  ${MASTHEAD_CSS}
 </style>
 </head><body>
+${mastheadHtml()}
+<main class="legal-main">
 <a class="back" href="/gasolineras/">← Volver</a>
 ${bodyHtml}
 <footer>Gasolineras España · v${APP_VERSION} · Datos: Ministerio para la Transición Ecológica y el Reto Demográfico.</footer>
+</main>
 </body></html>`
 }
 
@@ -1773,7 +1765,8 @@ app.get('/status', async c => {
 
   const bodyHtml = `
 <style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;max-width:720px;margin:0 auto;padding:32px 20px;color:#1f2937;line-height:1.6}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6}
+  .status-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:8px}
   h2{color:#15803d;margin-top:28px;font-size:18px}
   a{color:#16a34a}
@@ -1792,7 +1785,10 @@ app.get('/status', async c => {
   td{font-family:ui-monospace,Consolas,Menlo,monospace;color:#0f172a}
   .foot{margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#64748b}
   .muted{color:#64748b;font-size:13px}
+  ${MASTHEAD_CSS}
 </style>
+${mastheadHtml()}
+<main class="status-main">
 <a class="back" href="/gasolineras/">← Volver</a>
 <h1>Estado del servicio</h1>
 <p class="muted">Esta pagina se actualiza automaticamente cada 60 segundos.</p>
@@ -1828,6 +1824,7 @@ app.get('/status', async c => {
 <p class="foot">Datos origen: <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help">API oficial del Ministerio</a>.
 El snapshot se re-ingesta 1 vez al dia (20:00 UTC) por cron en GitHub Actions.
 Si ves "DEGRADADO" mas de 48h seguidas, hay un problema — abre una issue.</p>
+</main>
 `
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
@@ -2046,71 +2043,6 @@ app.get('/api/estaciones/provincia/:idProv', async c => {
   }
 })
 
-// Bbox: devuelve todas las estaciones dentro de un rectangulo geografico.
-// Para la feature "ruta A->B", el cliente necesita estaciones de multiples
-// provincias simultaneamente (un Madrid->Barcelona cruza 5+ provincias). Ir
-// provincia por provincia seria lento y fragil; leemos directamente del
-// snapshot estatico (ya en memoria del Worker) y filtramos por lat/lng.
-//
-// Limites de seguridad:
-//   - bbox maxima 6°x6° (~660x660 km) — cubre con holgura la diagonal de
-//     Espana peninsular (Coruna-Cartagena ~950 km, pero en pedazos de 600 km
-//     podemos paginar si hiciera falta).
-//   - rechaza coordenadas fuera de Espana (bbox nominal 27-44N, -19 a 5E).
-//   - cap blando: si el filtro devuelve mas de MAX_STATIONS_PER_BBOX, truncamos.
-app.get('/api/estaciones/bbox', async c => {
-  const minLat = Number(c.req.query('minLat'))
-  const maxLat = Number(c.req.query('maxLat'))
-  const minLng = Number(c.req.query('minLng'))
-  const maxLng = Number(c.req.query('maxLng'))
-  if (![minLat, maxLat, minLng, maxLng].every(v => Number.isFinite(v))) {
-    return c.json({ error: 'bbox invalido' }, 400)
-  }
-  if (minLat >= maxLat || minLng >= maxLng) {
-    return c.json({ error: 'bbox invertido' }, 400)
-  }
-  // Spain nominal bbox (peninsula + Baleares + Canarias). Rechaza todo fuera
-  // con margen para evitar que un atacante fuerce filtros absurdos (N Pole, etc).
-  if (minLat < 26 || maxLat > 45 || minLng < -20 || maxLng > 6) {
-    return c.json({ error: 'bbox fuera de Espana' }, 400)
-  }
-  // Area maxima razonable: 10°x10° (cubre Peninsula Iberica completa). Un
-  // Durango-Cadiz (~7°x4°) cabe comodamente. Para queries absurdos (Canarias
-  // + Pirineos), 10° es el hard-cap. La proteccion real la da
-  // MAX_STATIONS_PER_BBOX sobre el payload.
-  if ((maxLat - minLat) > 10 || (maxLng - minLng) > 10) {
-    return c.json({ error: 'bbox demasiado grande (max 10 grados por lado)' }, 400)
-  }
-
-  const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-  if (!snap) return c.json({ error: 'snapshot no disponible' }, 503)
-
-  // Snapshot de Espana: ~12k estaciones totales. Con el cap a 12000 no hay
-  // truncado silencioso en rutas largas; 12000 * ~300 B = ~3.6 MB sin gzip
-  // (~500 KB con gzip). Aceptable para una feature deliberada (route planner).
-  const MAX_STATIONS_PER_BBOX = 12000
-  const filtered = filterStations(snap, s => {
-    // Ministerio devuelve lat/lng como string con coma decimal. Fail-safe:
-    // si no parsea, se descarta (no cuenta).
-    const lat = Number(String(s['Latitud'] ?? '').replace(',', '.'))
-    const lng = Number(String(s['Longitud (WGS84)'] ?? '').replace(',', '.'))
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false
-    return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng
-  })
-  if (!filtered) return c.json({ error: 'snapshot corrupto' }, 503)
-  if (Array.isArray(filtered.ListaEESSPrecio) && filtered.ListaEESSPrecio.length > MAX_STATIONS_PER_BBOX) {
-    filtered.ListaEESSPrecio = filtered.ListaEESSPrecio.slice(0, MAX_STATIONS_PER_BBOX)
-  }
-  // Cacheable 1h: el snapshot se regenera cada mananas, un bbox que devuelve
-  // las mismas estaciones durante todo el dia es razonable. Los precios
-  // dentro del snapshot pueden estar desactualizados pero esto es aceptable
-  // para una feature de planificacion de ruta (precios cambian pocas veces/dia).
-  return c.json(filtered, 200, {
-    'Cache-Control': 'public, max-age=3600',
-    'X-Data-Source': 'snapshot',
-  })
-})
-
 app.get('/api/estaciones/municipio/:idMun', async c => {
   const idMun = validateId(c.req.param('idMun'))
   if (!idMun) return c.json({ error: 'ID de municipio invalido' }, 400)
@@ -2129,31 +2061,12 @@ app.get('/api/estaciones/municipio/:idMun', async c => {
 // tres beneficios:
 //   1. Privacidad: la IP del usuario nunca llega a Nominatim (antes si llegaba).
 //   2. Cache: un fetch del servidor sirve muchas peticiones identicas desde
-//      distintos clientes (cada 'Madrid' buscado una vez y ya).
+//      distintos clientes.
 //   3. Hardening: saneamos la entrada, timeoutamos el upstream, y solo dejamos
 //      pasar un conjunto explicito de campos (pick-list) en la respuesta.
 // Nominatim Usage Policy (https://operations.osmfoundation.org/policies/nominatim/)
 // exige User-Agent identificable, bounded rate, y que cacheemos respuestas.
-function pickSearchItem(raw: unknown): Record<string, unknown> | null {
-  if (!raw || typeof raw !== 'object') return null
-  const r = raw as Record<string, unknown>
-  const lat = typeof r.lat === 'string' ? r.lat : typeof r.lat === 'number' ? String(r.lat) : null
-  const lon = typeof r.lon === 'string' ? r.lon : typeof r.lon === 'number' ? String(r.lon) : null
-  const displayName = typeof r.display_name === 'string' ? r.display_name : null
-  if (!lat || !lon || !displayName) return null
-  const out: Record<string, unknown> = {
-    lat, lon,
-    display_name: displayName.length > 300 ? displayName.slice(0, 300) : displayName,
-  }
-  if (typeof r.type === 'string')  out.type  = r.type
-  if (typeof r.class === 'string') out.class = r.class
-  if (Array.isArray(r.boundingbox) && r.boundingbox.length === 4
-      && r.boundingbox.every(v => typeof v === 'string')) {
-    out.boundingbox = r.boundingbox
-  }
-  return out
-}
-
+// Usado por /api/geocode/reverse (favoritas legacy → reverse geocode).
 async function upstreamGeo<T>(url: string, host: string): Promise<T | null> {
   try {
     const res = await fetch(url, {
@@ -2173,200 +2086,6 @@ async function upstreamGeo<T>(url: string, host: string): Promise<T | null> {
     return null
   }
 }
-
-app.get('/api/geocode/search', async c => {
-  const rl = geoLimiter.check(clientKey(c))
-  if (!rl.allowed) {
-    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
-  }
-  const q = sanitizeGeocodeQuery(c.req.query('q'))
-  if (!q) return c.json({ error: 'query invalida' }, 400)
-
-  const cacheKey = 's:' + q.toLowerCase()
-  const hit = geoCache.get(cacheKey)
-  if (hit && Date.now() - hit.ts < GEO_TTL_FRESH) {
-    return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'HIT' })
-  }
-
-  const host = c.req.header('host') || ''
-  // cachedJson wrappea el Cache API de Cloudflare: la siguiente peticion al
-  // mismo colo se resuelve sin volver a golpear Nominatim aunque el Worker se
-  // haya reiniciado. TTL 1h es suficiente para direcciones espanolas.
-  const safe = await cachedJson('geo-search-' + encodeURIComponent(cacheKey), 3600, async () => {
-    const url = 'https://nominatim.openstreetmap.org/search?'
-      + 'format=json&limit=5&countrycodes=es&q=' + encodeURIComponent(q)
-    const raw = await upstreamGeo<unknown>(url, host)
-    if (!Array.isArray(raw)) return null
-    return raw.map(pickSearchItem).filter(x => x !== null).slice(0, 5)
-  })
-
-  if (!safe) {
-    // Fallback stale: mejor una respuesta vieja que nada si Nominatim cae.
-    if (hit && Date.now() - hit.ts < GEO_TTL_STALE) {
-      return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
-    }
-    return c.json([], 200, { 'Cache-Control': 'no-store' })
-  }
-
-  geoCache.set(cacheKey, { data: safe, ts: Date.now() })
-  return c.json(safe, 200, { 'Cache-Control': 'public, max-age=3600', 'X-Cache': 'MISS' })
-})
-
-// ---- Routing proxy (OSRM public demo) ----
-// Feature "ruta A->B": el cliente necesita la geometria real por carretera
-// (no linea recta) para: (1) dibujarla en el mapa, (2) proyectar estaciones
-// sobre el trayecto real al planificar paradas.
-//
-// Usamos el demo publico de OSRM (router.project-osrm.org). Policy: "light
-// use"; tenemos rate limit (10/min por IP) + cache agresivo (24h en LRU + 30d
-// en Cache API). Las carreteras no cambian en 24h, asi que los TTL largos son
-// seguros.
-//
-// Seguridad:
-//   - Validacion estricta de lat/lng (sanitizeLatLng) para evitar
-//     inyectar '?foo=bar' o query strings en el URL de OSRM.
-//   - Timeout 8s al upstream.
-//   - Respuesta filtrada: solo exponemos distance/duration + coordinates
-//     simplificadas (nada de metadata de OSRM que pudiera cambiar).
-const ROUTE_TTL_FRESH = 24 * 60 * 60 * 1000       // 24h en memoria
-const ROUTE_TTL_STALE = 30 * 24 * 60 * 60 * 1000  // 30d fallback
-const ROUTE_UPSTREAM_TIMEOUT = 8000                // OSRM suele responder <2s
-
-interface RouteResponse {
-  distanceKm: number
-  durationSec: number
-  coordinates: [number, number][]  // [lng, lat]
-}
-
-async function upstreamRoute(url: string): Promise<RouteResponse | null> {
-  try {
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(ROUTE_UPSTREAM_TIMEOUT),
-      headers: { 'Accept': 'application/json' },
-    })
-    if (!res.ok) {
-      slog('warn', 'route.upstream_status', { status: res.status })
-      return null
-    }
-    const raw = await res.json() as Record<string, unknown>
-    if (raw.code !== 'Ok') return null
-    const routes = raw.routes as Array<Record<string, unknown>> | undefined
-    if (!Array.isArray(routes) || routes.length === 0) return null
-    const r = routes[0]
-    const distMeters = typeof r.distance === 'number' ? r.distance : 0
-    const durSeconds = typeof r.duration === 'number' ? r.duration : 0
-    const geom = r.geometry as Record<string, unknown> | undefined
-    if (!geom || geom.type !== 'LineString' || !Array.isArray(geom.coordinates)) return null
-    // Passthrough restrictivo: validamos cada coord. Capamos a 20000 puntos
-    // como safety net. Con overview=simplified una ruta peninsular completa
-    // (Durango-Cadiz ~1000 km) devuelve ~300-800 puntos; con overview=full
-    // puede superar 8000 y alcanzaba el cap anterior, truncando la ruta a
-    // medio camino. 20000 da margen amplio para cualquier caso.
-    const coords: [number, number][] = []
-    const raw_coords = geom.coordinates as unknown[]
-    for (let i = 0; i < raw_coords.length && i < 20000; i++) {
-      const p = raw_coords[i]
-      if (!Array.isArray(p) || p.length < 2) continue
-      const lng = Number(p[0])
-      const lat = Number(p[1])
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue
-      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue
-      coords.push([lng, lat])
-    }
-    if (coords.length < 2) return null
-    return {
-      distanceKm: distMeters / 1000,
-      durationSec: Math.round(durSeconds),
-      coordinates: coords,
-    }
-  } catch (e) {
-    slog('warn', 'route.upstream_err', { err: String(e).slice(0, 200) })
-    return null
-  }
-}
-
-// Parsea el parametro `stops` = "lat1,lng1;lat2,lng2;..." con validaciones.
-// Devuelve array de {lat,lng} formateados con sanitizeLatLng o null si el
-// input es invalido. Limita a MAX_STOPS puntos intermedios (rutas reales
-// nunca necesitan muchos; 8 cubre hasta 4000-5000 km peninsula con holgura).
-const MAX_ROUTE_STOPS = 8
-function parseStops(raw: string | undefined): { lat: string; lng: string }[] | null {
-  if (!raw) return []
-  if (raw.length > 400) return null  // limite duro al query string
-  const out: { lat: string; lng: string }[] = []
-  const parts = raw.split(';')
-  if (parts.length > MAX_ROUTE_STOPS) return null
-  for (const p of parts) {
-    const [latStr, lngStr] = p.split(',')
-    const ll = sanitizeLatLng(latStr, lngStr)
-    if (!ll) return null
-    out.push(ll)
-  }
-  return out
-}
-
-app.get('/api/route', async c => {
-  const rl = routeLimiter.check(clientKey(c))
-  if (!rl.allowed) {
-    return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
-  }
-  const from = sanitizeLatLng(c.req.query('fromLat'), c.req.query('fromLng'))
-  const to   = sanitizeLatLng(c.req.query('toLat'),   c.req.query('toLng'))
-  if (!from || !to) return c.json({ error: 'coordenadas invalidas' }, 400)
-  const stops = parseStops(c.req.query('stops'))
-  if (stops === null) return c.json({ error: 'parametro stops invalido' }, 400)
-  // Validacion extra: bounds de Espana (nominal con margen generoso). OSRM
-  // funciona globalmente pero aqui acotamos al caso de uso del producto.
-  const inSpain = (lat: number, lng: number) =>
-    lat >= 26 && lat <= 45 && lng >= -20 && lng <= 6
-  if (!inSpain(Number(from.lat), Number(from.lng))) return c.json({ error: 'origen fuera de Espana' }, 400)
-  if (!inSpain(Number(to.lat), Number(to.lng)))     return c.json({ error: 'destino fuera de Espana' }, 400)
-  for (const s of stops) {
-    if (!inSpain(Number(s.lat), Number(s.lng))) return c.json({ error: 'parada fuera de Espana' }, 400)
-  }
-  if (from.lat === to.lat && from.lng === to.lng)   return c.json({ error: 'origen = destino' }, 400)
-
-  // Clave de cache: incluye paradas para que rutas con distintos waypoints
-  // no colisionen con la ruta directa.
-  const stopsKey = stops.map(s => s.lat + ',' + s.lng).join(';')
-  const cacheKey = from.lat + ',' + from.lng + '-' + to.lat + ',' + to.lng + (stopsKey ? '|' + stopsKey : '')
-  const hit = routeCache.get(cacheKey)
-  if (hit && Date.now() - hit.ts < ROUTE_TTL_FRESH) {
-    return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'HIT' })
-  }
-
-  // v3 en la clave para invalidar rutas cacheadas con simplificacion agresiva
-  // (overview=simplified dibujaba lineas rectas que cortaban las curvas de la
-  // carretera). Con overview=full + cap 20k puntos, las rutas peninsulares
-  // renderizan a escala calle sin perder fidelidad.
-  const out = await cachedJson('route-v3-' + encodeURIComponent(cacheKey), 86400, async () => {
-    // OSRM: coordenadas en orden lng,lat (GeoJSON convention).
-    // Cadena de waypoints: from;stop1;stop2;...;to. OSRM devuelve una sola
-    // polilinea que pasa por todos ellos, con la distancia/duracion totales.
-    // overview=full: geometria sin simplificar. Para rutas peninsulares devuelve
-    // 3k-15k puntos que caben bajo el cap de 20k en upstreamRoute(). Necesario
-    // para que la polilinea siga las curvas reales de la carretera a cualquier
-    // zoom (con 'simplified' Leaflet conectaba puntos espaciados con rectas
-    // que cruzaban autovias en diagonal).
-    const waypoints: { lat: string; lng: string }[] = [from, ...stops, to]
-    const coordsStr = waypoints
-      .map(w => encodeURIComponent(w.lng) + ',' + encodeURIComponent(w.lat))
-      .join(';')
-    const url = 'https://router.project-osrm.org/route/v1/driving/' + coordsStr
-      + '?overview=full&geometries=geojson&alternatives=false&steps=false'
-    return await upstreamRoute(url)
-  })
-
-  if (!out) {
-    if (hit && Date.now() - hit.ts < ROUTE_TTL_STALE) {
-      return c.json(hit.data, 200, { 'Cache-Control': 'public, max-age=600', 'X-Cache': 'STALE' })
-    }
-    return c.json({ error: 'routing no disponible' }, 503)
-  }
-
-  routeCache.set(cacheKey, { data: out, ts: Date.now() })
-  return c.json(out, 200, { 'Cache-Control': 'public, max-age=86400', 'X-Cache': 'MISS' })
-})
 
 app.get('/api/geocode/reverse', async c => {
   const rl = geoLimiter.check(clientKey(c))

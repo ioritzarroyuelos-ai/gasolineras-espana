@@ -12,6 +12,7 @@
 
 import { frescuraGuardia } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 
 export interface GuardiaPageData {
   provinciaSlug: string
@@ -223,8 +224,6 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
     + '*{box-sizing:border-box}'
     + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-    + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
-    + 'header a{color:#fff;text-decoration:none;font-weight:600}'
     + 'main{max-width:760px;margin:0 auto;padding:18px}'
     + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
     + 'h2{font-size:17px;margin:26px 0 10px}'
@@ -252,8 +251,9 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '.g-nota{background:#1e293b;border-color:#f59e0b;color:#fcd34d}'
     + '.g-btn{background:#0f172a;color:#86efac;border-color:#334155}'
     + '.g-otros li a{background:#0f172a;color:#86efac;border-color:#334155}}'
+    + MASTHEAD_CSS
     + '</style></head><body>'
-    + '<header><a href="/">CercaYa</a></header>'
+    + mastheadHtml('farmacias')
     + '<main>'
     + '<h1>Farmacia de guardia en ' + esc(d.municipioName) + '</h1>'
     + '<p class="g-sub">' + esc(d.provinciaName)
@@ -288,8 +288,6 @@ const CSS_INDICE =
   ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
-  + 'header a{color:#fff;text-decoration:none;font-weight:600}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
   + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
   + 'h2{font-size:17px;margin:26px 0 10px}'
@@ -325,8 +323,8 @@ function envoltorioIndice(nonce: string, title: string, desc: string, canonical:
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(canonical) + '" />'
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + '</style></head><body>'
-    + '<header><a href="/">CercaYa</a></header><main>' + cuerpo + '</main>'
+    + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + '</style></head><body>'
+    + mastheadHtml('farmacias') + '<main>' + cuerpo + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmaceuticos. '
     + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'

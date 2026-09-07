@@ -9,7 +9,7 @@ var mapLayers = {};
 var lastFitBounds = null;
 
 function initMap() {
-  var isDarkStart = document.body.classList.contains('dark');
+  // El mapa arranca SIEMPRE en claro (modo oscuro retirado).
 
   // PAN_BOUNDS: donde el CENTRO del viewport puede moverse. Mismo enfoque
   // que con UK al norte: apretar el rectangulo para que el mapa NO se
@@ -85,14 +85,6 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 19, minZoom: 5, noWrap: true
   });
-  // Modo oscuro sin etiquetas — dark_nolabels es el gemelo nocturno de
-  // voyager_nolabels. Sobre el pintamos SPAIN_LABELS (solo CCAA + ciudades
-  // principales) en castellano: suficiente para orientarse en modo nocturno y
-  // mantenemos coherencia con "todo en castellano".
-  mapLayers.dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
-    subdomains: 'abcd', maxZoom: 19, minZoom: 5, noWrap: true
-  });
   // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key). SIN
   // overlay de etiquetas ajeno: el intento inicial con CARTO voyager_only_labels
   // trajo nombres en ingles ("SPAIN", "Seville", "Lisbon", "Morocco"...) y
@@ -113,7 +105,7 @@ function initMap() {
   if (savedBasemap === 'satellite') {
     mapLayers.satellite.addTo(map);
   } else {
-    (isDarkStart ? mapLayers.dark : mapLayers.light).addTo(map);
+    mapLayers.light.addTo(map);
   }
 
   // Controles: zoom y escala ambos en abajo-derecha, apilados. Leaflet inserta
@@ -908,28 +900,8 @@ var allStations = [];
 var filteredStations = [];
 var minP = 0, maxP = 0;
 
-// ---- MODO RUTA: estado del mapa cuando hay una ruta planificada ----
-// Al planificar A->B, dibujamos la polilinea real (OSRM) + marcadores de las
-// paradas recomendadas, y ocultamos el cluster general. Guardamos el layer
-// exacto para poder desmontarlo limpiamente al salir.
-var routeLayer = null;         // L.polyline con la ruta real
-var routeStopsLayer = null;    // L.layerGroup con los marcadores numerados de las paradas
-var routeCorridorLayer = null; // L.layerGroup con TODAS las gasolineras del corredor (toggle)
-var routeCorridor = [];        // array de { item, kmFromOrigin, offKm, priceEurL } del corredor
-var routeCorridorVisible = false;  // estado del toggle "ver todas en ruta"
-var routeModeActive = false;   // estado para evitar doble-entrada
-
-// Estado nuevo: posicion del usuario (tras geolocalizar), ahorro.
-var userPos = null;                         // { lat, lng } tras geolocate
-var userPosMarker = null;                   // circleMarker del usuario en el mapa (para removerlo al salir del modo geo)
 var currentMedianPrice = null;              // mediana del listado filtrado actual
 var topCheapIds = {};                       // ids de las 3 estaciones mas baratas (para medallas)
-
-// Ship 6: estado del heatmap. Se alterna desde el boton flotante
-// #btn-heatmap — renderMarkers inspecciona heatMode para decidir si pinta
-// la capa de calor o el cluster.
-var heatMode = false;
-var heatLayer = null;
 
 // Formatea precio en €/L (unica unidad soportada tras quitar el toggle).
 function fmtPriceUnit(price) {
@@ -1444,20 +1416,20 @@ function buildPopup(s) {
       + '<span class="status-chip status-members">\u{1F511} Solo socios Costco Club</span>';
   }
 
-  // Distancia (la calculamos antes del ahorro para que el ahorro neto pueda
-  // restar el coste del desvio).
+  // Distancia al centro del municipio elegido (munCenter). La calculamos
+  // antes del ahorro para que el ahorro neto pueda restar el coste del desvio.
   var distHtml = '';
   var extraKmPopup = null;
-  if (userPos && hasCoords) {
-    var kmPop = distanceKm(userPos.lat, userPos.lng, lat, lng);
+  if (munCenter && hasCoords) {
+    var kmPop = distanceKm(munCenter.lat, munCenter.lng, lat, lng);
     extraKmPopup = kmPop * 2;  // ida + vuelta, conservador
     var minsPop = Math.round(kmPop / 40 * 60); // 40 km/h urbano
     distHtml = '<span class="distance-chip u-ml-6">\u{1F9ED} ' + kmPop.toFixed(1) + ' km &middot; ~' + minsPop + ' min</span>';
   }
 
-  // Ahorro — ahora AHORRO NETO si tenemos userPos + perfil (resta el coste
-  // en gasolina del desvio ida-vuelta usando el consumo declarado). Si no
-  // hay datos, cae al bruto como antes.
+  // Ahorro — AHORRO NETO si tenemos centro de municipio + perfil (resta el
+  // coste en gasolina del desvio ida-vuelta usando el consumo declarado). Si
+  // no hay datos, cae al bruto como antes.
   var savingsHtml = '';
   if (mainPrice && currentMedianPrice && currentMedianPrice > mainPrice) {
     var tankP = parseInt(localStorage.getItem('gs_tank') || '50', 10);
@@ -1633,43 +1605,11 @@ function renderMarkers(stations) {
   if (typeof map === 'undefined' || !map) return;
   if (clusterGroup) map.removeLayer(clusterGroup);
   if (canariasCluster) canariasCluster.clearLayers();  // el recuadro se repuebla abajo
-  if (typeof heatLayer !== 'undefined' && heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
 
   var fuel = document.getElementById('sel-combustible').value;
   var prices = stations.map(function(s) { return parsePrice(s[fuel]); }).filter(function(p) { return p !== null; });
   minP = prices.length ? Math.min.apply(null, prices) : 0;
   maxP = prices.length ? Math.max.apply(null, prices) : 0;
-
-  // Ship 6: modo heatmap. Si el usuario tiene activa la vista de calor y
-  // leaflet.heat esta cargado, pintamos la capa de calor POR DEBAJO del
-  // cluster — asi el usuario ve las zonas caras/baratas y ademas puede
-  // clicar en gasolineras individuales. Cada punto lleva peso =
-  // (price - minP) / (maxP - minP): precio MAXIMO tiene peso 1 (mas
-  // caliente, rojo), MINIMO peso 0 (frio, azul). Coherente con la
-  // leyenda del cluster (rojo = caro).
-  // Fallback: si leaflet.heat no esta (red offline durante primera carga),
-  // simplemente no pintamos el heatmap y seguimos con el cluster.
-  if (heatMode && typeof L.heatLayer === 'function' && stations.length > 0) {
-    var heatPoints = [];
-    var range = maxP - minP || 1;
-    stations.forEach(function(s) {
-      var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
-      var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-      if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
-      var p = parsePrice(s[fuel]);
-      if (p === null) return;
-      var w = Math.max(0.05, (p - minP) / range);
-      heatPoints.push([lat, lng, w]);
-    });
-    if (heatPoints.length > 0) {
-      heatLayer = L.heatLayer(heatPoints, {
-        radius: 25, blur: 18, maxZoom: 13, minOpacity: 0.35,
-        // Gradient: valor alto (caro) = rojo; valor bajo (barato) = azul.
-        gradient: { 0.1: '#1e40af', 0.3: '#06b6d4', 0.5: '#84cc16', 0.7: '#facc15', 0.9: '#f97316', 1.0: '#dc2626' },
-      });
-      heatLayer.addTo(map);
-    }
-  }
 
   // Cluster personalizado: muestra precio minimo del grupo.
   // maxClusterRadius como funcion del zoom: a zoom 4-5 (pais entero) un radio
@@ -1804,279 +1744,6 @@ function highlightCard(idx) {
   }
 }
 
-// Ship 6: toggle del heatmap. Re-renderiza con las ultimas estaciones
-// cacheadas en renderMarkers — si el usuario tiene filtros aplicados, el
-// heatmap refleja SOLO esas estaciones (mas util que el agregado global).
-// Si al pulsar aun no hay estaciones cargadas (usuario entra a la app y
-// antes de elegir provincia toca el boton), descargamos el snapshot
-// nacional /data/stations.json una vez y pintamos el heatmap de toda
-// Espana — mismo patron lazy-load que btn-chargers. Al desactivar sin
-// provincia seleccionada, el mapa vuelve a quedar limpio (no se renderizan
-// 12k pins en cluster).
-(function() {
-  var btn = document.getElementById('btn-heatmap');
-  if (!btn) return;
-  // Snapshot nacional cacheado en memoria tras el primer fetch: si el usuario
-  // desactiva y reactiva el heatmap nacional, no re-descargamos.
-  var nationalSnapshot = null;
-
-  function setLoading(on) {
-    if (on) { btn.setAttribute('data-loading', '1'); btn.style.opacity = '0.6'; btn.style.cursor = 'wait'; }
-    else { btn.removeAttribute('data-loading'); btn.style.opacity = ''; btn.style.cursor = ''; }
-  }
-
-  function loadNationalSnapshot() {
-    if (nationalSnapshot) return Promise.resolve(nationalSnapshot);
-    return fetch('/data/stations.json', { cache: 'force-cache' })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(data) {
-        var raw = (data && data.ListaEESSPrecio) || [];
-        nationalSnapshot = raw.map(normalizeStation);
-        return nationalSnapshot;
-      });
-  }
-
-  btn.addEventListener('click', async function() {
-    // Defensive: si leaflet.heat no cargo (red caida, CSP, etc.), informa y
-    // no togglea. Asi el boton nunca da una experiencia silenciosa rota.
-    if (!heatMode && typeof L.heatLayer !== 'function') {
-      try { if (typeof showToast === 'function') showToast('El mapa de calor aun esta cargando, prueba en un segundo', 'warn'); } catch(_) {}
-      return;
-    }
-    var turningOn = !heatMode;
-
-    // Al activar sin provincia cargada, usamos el snapshot nacional (lazy
-    // fetch la primera vez, cacheado en memoria despues).
-    if (turningOn && lastRenderedStations.length === 0) {
-      setLoading(true);
-      try {
-        var snap = await loadNationalSnapshot();
-        lastRenderedStations = snap;
-      } catch (e) {
-        setLoading(false);
-        try { if (typeof showToast === 'function') showToast('No se pudo cargar el mapa de calor', 'warn'); } catch(_) {}
-        return;
-      }
-      setLoading(false);
-      if (!lastRenderedStations.length) {
-        try { if (typeof showToast === 'function') showToast('No hay datos de mapa de calor disponibles', 'warn'); } catch(_) {}
-        return;
-      }
-    }
-
-    heatMode = !heatMode;
-    btn.setAttribute('aria-pressed', heatMode ? 'true' : 'false');
-    btn.setAttribute('aria-label', heatMode ? 'Desactivar mapa de calor' : 'Activar mapa de calor de precios');
-
-    // Al desactivar sin provincia elegida, limpia el mapa en vez de renderizar
-    // 12k pins en cluster (seria lento y no es lo que el usuario espera).
-    // El snapshot sigue cacheado para reactivar sin re-fetch.
-    if (!heatMode && (typeof allStations === 'undefined' || allStations.length === 0)) {
-      if (clusterGroup) map.removeLayer(clusterGroup);
-      if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
-      lastRenderedStations = [];
-    } else if (lastRenderedStations.length) {
-      renderMarkers(lastRenderedStations);
-    }
-    try {
-      if (typeof showToast === 'function') {
-        showToast(heatMode
-          ? 'Mapa de calor: rojo = mas caro, azul = mas barato'
-          : 'Volviendo a vista de agrupaciones', 'info');
-      }
-    } catch (_) {}
-  });
-})();
-
-// ---- Ship 25.5: PUNTOS DE RECARGA ELECTRICA (OpenChargeMap) ----
-//
-// Lazy-load: el snapshot /data/chargers.json (~400KB gzip) solo se descarga
-// cuando el usuario toca el boton #btn-chargers. Los usuarios con coche de
-// combustion no pagan ese coste de red.
-//
-// Capa separada del clusterGroup de gasolineras: los precios y los
-// recargadores son dominios distintos y mezclarlos en un solo cluster
-// confundiria los iconos (precio €/L vs potencia kW). Toggle on/off añade/
-// quita la capa; los datos quedan cacheados en memoria hasta recarga de
-// pagina.
-var chargersLayer = null;        // L.markerClusterGroup (null = aun no se ha tocado el toggle)
-var chargersDataLoaded = false;  // evita re-fetch si el usuario abre/cierra varias veces
-var chargersVisible = false;
-
-// Normaliza kW a una clase de pin (afecta color y etiqueta):
-//   <50 kW  → normal (AC / slow DC)
-//   50-149  → fast   (DC rapido tipico CCS/CHAdeMO hasta 149)
-//   >=150   → ultra  (hipercargadores, Tesla V3, CCS 250+)
-function chargerClass(kw) {
-  if (kw >= 150) return 'ultra';
-  if (kw >= 50)  return 'fast';
-  return 'normal';
-}
-
-function chargerPinIcon(kw) {
-  var klass = chargerClass(kw);
-  var cls = 'charger-pin' + (klass === 'normal' ? '' : ' charger-pin--' + klass);
-  return L.divIcon({
-    html: '<div class="' + cls + '" aria-hidden="true">\u26A1</div>',
-    className: '',
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-    popupAnchor: [0, -13]
-  });
-}
-
-// Escapa HTML para el popup (no hay escapeHtml global accesible aqui, pero
-// sí existe esc() definida mas arriba en este mismo modulo).
-function chargerPopupHTML(entry) {
-  // entry = [lat, lng, title, operator, maxKw, connectors]
-  var title = esc(entry[2] || 'Recargador eléctrico');
-  var op    = entry[3] ? esc(entry[3]) : '';
-  var kw    = entry[4] || 0;
-  var conns = entry[5] || '';
-  var kwClass = chargerClass(kw);
-  var kwExtraCls = kwClass === 'normal' ? '' : ' charger-popup-kw--' + kwClass;
-  var kwLabel = kw > 0 ? kw + ' kW' : 'N/D';
-  var kwBadge = kwClass === 'ultra' ? ' (ultra)' : (kwClass === 'fast' ? ' (rápido)' : '');
-  return '<div class="charger-popup">'
-       +   '<div class="charger-popup-title">\u26A1 ' + title + '</div>'
-       +   (op ? '<div class="charger-popup-op">' + op + '</div>' : '')
-       +   '<div class="charger-popup-row">'
-       +     '<span class="charger-popup-label">Potencia</span>'
-       +     '<span class="charger-popup-value charger-popup-kw' + kwExtraCls + '">' + kwLabel + kwBadge + '</span>'
-       +   '</div>'
-       +   (conns
-            ? '<div class="charger-popup-row">'
-              + '<span class="charger-popup-label">Conectores</span>'
-              + '<span class="charger-popup-value">' + esc(conns) + '</span>'
-              + '</div>'
-            : '')
-       +   '<div class="charger-popup-row">'
-       +     '<span class="charger-popup-label">Fuente</span>'
-       +     '<span class="charger-popup-value charger-popup-source">OpenStreetMap</span>'
-       +   '</div>'
-       + '</div>';
-}
-
-function buildChargersLayer(chargers) {
-  // Cluster azul con contador de puntos — mismo patron visual que las
-  // gasolineras pero sin badge de precio.
-  var layer = L.markerClusterGroup({
-    maxClusterRadius: 60,
-    iconCreateFunction: function(cluster) {
-      var count = cluster.getChildCount();
-      // 3 buckets con size fijo — clases CSS en styles.ts (.charger-cluster--sm/md/lg).
-      // Antes era style="width:Xpx;height:Xpx" inline pero CSP lo bloquea.
-      var bucket = count > 200 ? 'lg' : count > 50 ? 'md' : 'sm';
-      var sz = bucket === 'lg' ? 52 : bucket === 'md' ? 44 : 36;
-      return L.divIcon({
-        html: '<div class="charger-cluster charger-cluster--' + bucket + '">' + count + '</div>',
-        className: '',
-        iconSize: [sz, sz],
-        iconAnchor: [sz / 2, sz / 2]
-      });
-    }
-  });
-
-  chargers.forEach(function(c) {
-    var lat = c[0], lng = c[1];
-    if (typeof lat !== 'number' || typeof lng !== 'number') return;
-    var kw = c[4] || 0;
-    var m = L.marker([lat, lng], { icon: chargerPinIcon(kw) });
-    // Bind popup lazy: solo construimos el HTML cuando se abre el popup, no
-    // al crear 18k markers. Ahorra mucho tiempo de render inicial.
-    m.bindPopup(function() { return chargerPopupHTML(c); }, {
-      maxWidth: 280,
-      className: 'charger-leaflet-popup'
-    });
-    layer.addLayer(m);
-  });
-
-  return layer;
-}
-
-// Fetch del snapshot (una sola vez por sesion) + toggle on/off.
-(function() {
-  var btn = document.getElementById('btn-chargers');
-  if (!btn) return;
-
-  function setLoading(isLoading) {
-    if (isLoading) {
-      btn.setAttribute('data-loading', '1');
-      btn.style.opacity = '0.6';
-      btn.style.cursor = 'wait';
-    } else {
-      btn.removeAttribute('data-loading');
-      btn.style.opacity = '';
-      btn.style.cursor = '';
-    }
-  }
-
-  function loadChargersOnce() {
-    if (chargersDataLoaded) return Promise.resolve(chargersLayer);
-    setLoading(true);
-    return fetch('/data/chargers.json', { cache: 'force-cache' })
-      .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(function(data) {
-        var arr = (data && Array.isArray(data.chargers)) ? data.chargers : [];
-        chargersLayer = buildChargersLayer(arr);
-        chargersDataLoaded = true;
-        setLoading(false);
-        try {
-          if (typeof showToast === 'function') {
-            if (arr.length) {
-              showToast('Cargados ' + arr.length + ' puntos de recarga', 'info');
-            } else {
-              showToast('Aun no hay snapshot de recargadores — vuelve en unos minutos', 'warn');
-            }
-          }
-        } catch (_) {}
-        return chargersLayer;
-      })
-      .catch(function(e) {
-        setLoading(false);
-        console.warn('[chargers] fetch fallo:', e && e.message);
-        try {
-          if (typeof showToast === 'function') {
-            showToast('No se pudo cargar el mapa de recargadores', 'warn');
-          }
-        } catch (_) {}
-        return null;
-      });
-  }
-
-  btn.addEventListener('click', function() {
-    // Caso 1: primer click, aun no hay datos → carga y muestra.
-    if (!chargersDataLoaded) {
-      loadChargersOnce().then(function(layer) {
-        if (!layer) return;  // error ya notificado
-        map.addLayer(layer);
-        chargersVisible = true;
-        btn.setAttribute('aria-pressed', 'true');
-        btn.setAttribute('aria-label', 'Ocultar puntos de recarga electrica');
-      });
-      return;
-    }
-    // Caso 2: datos ya en memoria, toggle rapido add/remove de capa.
-    if (chargersVisible) {
-      if (chargersLayer) map.removeLayer(chargersLayer);
-      chargersVisible = false;
-      btn.setAttribute('aria-pressed', 'false');
-      btn.setAttribute('aria-label', 'Mostrar puntos de recarga para coche electrico');
-    } else {
-      if (chargersLayer) map.addLayer(chargersLayer);
-      chargersVisible = true;
-      btn.setAttribute('aria-pressed', 'true');
-      btn.setAttribute('aria-label', 'Ocultar puntos de recarga electrica');
-    }
-  });
-})();
-
 // ---- TOGGLE VISTA SATELITE ----
 // Alterna entre basemap normal (Liberty vector con toda la toponimia de OSM,
 // en castellano y filtrada a Espana) y basemap satelite HIBRIDO (mismo
@@ -2133,16 +1800,14 @@ function buildChargersLayer(chargers) {
   btn.addEventListener('click', function() {
     var onSat = map.hasLayer(mapLayers.satellite);
     if (onSat) {
-      // Volver al basemap normal. El tema actual decide light vs dark.
+      // Volver al basemap normal (siempre claro).
       map.removeLayer(mapLayers.satellite);
-      var isDark = document.body.classList.contains('dark');
-      (isDark ? mapLayers.dark : mapLayers.light).addTo(map);
+      mapLayers.light.addTo(map);
 
       // Reglas de etiquetas al salir del satelite:
-      //   - dark o light-raster (Liberty no aplicado) -> SPAIN_LABELS ON.
+      //   - light-raster (Liberty no aplicado) -> SPAIN_LABELS ON.
       //   - light con Liberty -> SPAIN_LABELS OFF (Liberty trae la toponimia).
-      var lightIsRaster = mapLayers.light instanceof L.TileLayer;
-      var needLabels = isDark || lightIsRaster;
+      var needLabels = mapLayers.light instanceof L.TileLayer;
       if (needLabels) {
         ensureLabelLayer();
       } else {
@@ -2156,9 +1821,8 @@ function buildChargersLayer(chargers) {
       btn.setAttribute('aria-pressed', 'false');
       btn.setAttribute('aria-label', 'Ver mapa en vista satelite');
     } else {
-      // Cambiar a satelite — quitamos cualquier basemap previo.
+      // Cambiar a satelite — quitamos el basemap normal.
       if (map.hasLayer(mapLayers.light)) map.removeLayer(mapLayers.light);
-      if (map.hasLayer(mapLayers.dark)) map.removeLayer(mapLayers.dark);
       mapLayers.satellite.addTo(map);
 
       // Si el satelite es vector-hibrido, Liberty ya trae la toponimia

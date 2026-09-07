@@ -11,6 +11,7 @@
 // Se renderiza en servidor y se actualiza sola con cada snapshot.
 
 import type { Observatorio, ProvinciaPrecio, MarcaPrecio } from '../lib/observatorio'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 
 export interface Variacion {
   dias: number
@@ -136,8 +137,6 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + ':root{--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc;--rd:#dc2626}'
     + '*{box-sizing:border-box}'
     + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.55}'
-    + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
-    + 'header a{color:#fff;text-decoration:none;font-weight:600}'
     + 'main{max-width:880px;margin:0 auto;padding:18px}'
     + 'h1{font-size:26px;line-height:1.2;margin:0 0 4px}'
     + 'h2{font-size:20px;margin:30px 0 8px;padding-top:14px;border-top:1px solid var(--bd)}'
@@ -161,8 +160,8 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + '@media(prefers-color-scheme:dark){body{background:#0f172a;color:#e2e8f0}'
     + '.o-destacado,.o-metodo{background:#1e293b}.o-tabla a,footer a{color:#86efac}'
     + '.o-precio{color:#86efac}.o-tabla th,.o-tabla td{border-color:#334155}}'
-    + '</style></head><body>'
-    + '<header><a href="/">CercaYa</a></header>'
+    + MASTHEAD_CSS + '</style></head><body>'
+    + mastheadHtml(null)
     + '<main>'
     + '<h1>Precio de la gasolina y el di&eacute;sel en Espa&ntilde;a</h1>'
     + '<p class="o-sub">' + obs.totalEstaciones.toLocaleString('es-ES') + ' estaciones'

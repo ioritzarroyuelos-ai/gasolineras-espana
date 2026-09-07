@@ -10,6 +10,7 @@
 // municipio/provincia siguen siendo las que posicionan.
 
 import { APP_VERSION } from '../lib/version'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 
 export interface GasLandingProvincia { slug: string; name: string; count: number }
 
@@ -44,7 +45,6 @@ export function buildGasolinerasLanding(
       + 'Busca por municipio, usa tu ubicación o planifica una ruta. Datos oficiales del Ministerio.'
     : 'Encuentra la gasolinera más barata cerca de ti: busca por municipio, usa tu ubicación '
       + 'o planifica una ruta. Precios oficiales del Ministerio, actualizados a diario.'
-  const logoUrl = origin + '/static/logo.svg'
 
   const esc = (s: string): string => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -151,12 +151,7 @@ export function buildGasolinerasLanding(
     * { box-sizing:border-box; }
     body { margin:0; font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
       color:var(--c-text); background:var(--c-bg); line-height:1.5; }
-    header { background:linear-gradient(135deg,#166534,#16a34a); color:#fff; padding:14px 18px;
-      display:flex; align-items:center; gap:12px; }
-    header .brand { display:flex; align-items:center; gap:10px; text-decoration:none; color:#fff; }
-    header .brand-title { font-weight:700; font-size:17px; }
-    header .brand-sub { font-size:12px; opacity:.85; }
-    header .back { margin-left:auto; color:#fff; text-decoration:none; font-weight:600; font-size:14px; }
+    ${MASTHEAD_CSS}
     main { max-width:720px; margin:0 auto; padding:24px 18px 40px; }
     h1 { font-size:27px; line-height:1.2; margin:8px 0 6px; }
     h2 { font-size:19px; margin:30px 0 12px; }
@@ -201,16 +196,7 @@ export function buildGasolinerasLanding(
   </style>
 </head>
 <body>
-  <header>
-    <a href="/" class="brand" aria-label="Volver al portal CercaYa">
-      <img src="${esc(logoUrl)}" alt="" width="32" height="32" decoding="async" />
-      <span>
-        <span class="brand-title">Gasolineras España</span>
-        <span class="brand-sub">Precios oficiales · Ministerio</span>
-      </span>
-    </a>
-    <a href="/" class="back">CercaYa &rarr;</a>
-  </header>
+  ${mastheadHtml('gasolineras')}
 
   <main>
     <h1>Gasolineras baratas en España</h1>

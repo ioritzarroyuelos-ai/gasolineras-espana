@@ -3,6 +3,8 @@
 // 'unsafe-inline' en style-src. Si el caller pasa '' (p.ej. preview offline)
 // se omite el atributo — el bloque entonces solo cargara si la CSP aun
 // permite 'unsafe-inline', lo que no ocurre en el flujo normal de la app.
+import { MASTHEAD_CSS } from './masthead'
+
 export function getStyles(nonce: string = ''): string {
   const nonceAttr = nonce ? ` nonce="${nonce}"` : ''
   return `<style${nonceAttr}>
@@ -21,22 +23,26 @@ export function getStyles(nonce: string = ''): string {
       overflow-x: hidden;
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: #f8fafc;
-      /* padding-top reserva el espacio del header fijo para que el resto del
-         contenido (app-body + secciones SEO) no quede oculto debajo. */
-      padding-top: 60px;
     }
 
     /* ===== LAYOUT PRINCIPAL ===== */
+    /* La cabecera de periódico (.masthead) va en flujo normal encima y se
+       desplaza con la página; la barra de la app queda sticky para que sus
+       controles se peguen arriba al llegar a ella (antes era fixed + el body
+       reservaba padding-top:60px; ahora sticky ocupa su hueco en el flujo). */
     #app-header {
-      position: fixed; top: 0; left: 0; right: 0;
+      position: sticky; top: 0; left: 0; right: 0;
       height: 60px; z-index: 1000;
       background: linear-gradient(135deg, #14532d 0%, #166534 40%, #16a34a 100%);
       display: flex; align-items: center; padding: 0 16px;
       box-shadow: 0 2px 12px rgba(0,0,0,0.25);
     }
-    /* app-body ocupa exactamente 1 viewport menos el header => primera pantalla
-       = mapa + sidebar a pantalla completa. Al scrollear, el usuario ve el
-       contenido SEO debajo (FAQ, tabla de precios por ambito, municipios). */
+    /* app-body ocupa 1 viewport menos el header. Encima va la cabecera de
+       periodico (.masthead, en flujo) que se desplaza con la pagina; al bajar,
+       el header (sticky) se pega arriba y el mapa llena el viewport. Debajo del
+       app-body queda el contenido SEO (FAQ, tabla de precios, municipios).
+       app-body es el contexto de posicionamiento (relative) de los overlays del
+       mapa (banners, widget de media, sidebar movil) para que sigan al header. */
     #app-body {
       position: relative;
       height: calc(100vh - 60px);
@@ -53,21 +59,14 @@ export function getStyles(nonce: string = ''): string {
       box-shadow: 2px 0 8px rgba(0,0,0,0.06);
       z-index: 100;
     }
-    /* Ship 25.3 — Sidebar filters NO debe dominar el alto del sidebar.
-       Antes: flex-shrink:0 + overflow-y:auto hacia que cuando el usuario
-       abria "Filtros avanzados", tenia el deposito, el widget de gasto
-       mensual y el boton Ko-fi renderizados, sidebar-filters crecia a
-       ~600-700px y station-list se quedaba con ~85px (sin aire visible
-       para las gasolineras). Con max-height:60% + flex:0 1 auto, los
-       filtros se auto-limitan a 60% del alto del sidebar (scroll interno
-       si hace falta) y station-list siempre tiene al menos un 40% de
-       espacio vertical — minimo garantizado via min-height:180px. */
+    /* Sidebar filters: tras simplificar el mapa solo quedan 3 selects + la
+       barra de radio, asi que el panel es corto y toma su altura natural.
+       station-list (flex:1) ocupa todo el espacio vertical restante. */
     #sidebar-filters {
       padding: 12px; background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
       overflow-y: auto;
-      flex: 0 1 auto;
-      max-height: 60%;
+      flex: 0 0 auto;
     }
     #stats-bar {
       padding: 8px 12px; background: #f0fdf4;
@@ -170,33 +169,6 @@ export function getStyles(nonce: string = ''): string {
     /* Pequena anotacion junto al label (p.ej. "opcional"). Ship 8. */
     .form-hint { font-weight: 400; font-size: 10px; color: #94a3b8; text-transform: none; letter-spacing: 0; margin-left: 4px; }
     body.dark .form-hint { color: #64748b; }
-    .input-icon-wrap { position: relative; }
-    .input-icon-wrap .icon { position:absolute; left:9px; top:50%; transform:translateY(-50%); color:#94a3b8; font-size:11px; }
-    .input-icon-wrap .form-input { padding-left: 28px; }
-
-    /* ===== AUTOCOMPLETADO BÚSQUEDA ===== */
-    #search-suggestions {
-      display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px);
-      background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.12); z-index: 600;
-      max-height: 220px; overflow-y: auto;
-    }
-    #search-suggestions.show { display: block; }
-    .suggest-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9;
-      transition: background 0.1s;
-    }
-    .suggest-item:last-child { border-bottom: none; }
-    .suggest-item:hover { background: #f0fdf4; }
-    .suggest-name { font-size: 13px; font-weight: 600; color: #1e293b; }
-    .suggest-sub  { font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .suggest-price { flex-shrink: 0; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 20px; color: #fff; }
-    body.dark #search-suggestions { background: #1e293b; border-color: #334155; }
-    body.dark .suggest-item { border-bottom-color: #334155; }
-    body.dark .suggest-item:hover { background: #334155; }
-    body.dark .suggest-name { color: #f1f5f9; }
-    body.dark .suggest-sub { color: #64748b; }
 
     /* ===== BOTONES ===== */
     .btn-primary {
@@ -317,8 +289,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .empty-state p { color:#94a3b8; }
     body.dark .btn-icon { color:#4ade80; }
     body.dark .stat-chip { background:#14532d; color:#86efac; border-color:#166534; }
-    #btn-dark { background:none; border:none; cursor:pointer; padding:4px 8px; color:#fff; font-size:15px; flex-shrink:0; border-radius:6px; transition:background 0.15s; }
-    #btn-dark:hover { background:rgba(255,255,255,0.15); }
 
     /* Geocoder del header retirado: los estilos se limpiaron con el elemento. */
 
@@ -470,13 +440,14 @@ export function getStyles(nonce: string = ''): string {
     @media (max-width: 1023px) {
       #sidebar {
         position: fixed !important;
-        top: 60px; left: 0;
-        height: calc(100% - 60px);
+        top: 0; left: 0;
+        height: 100dvh;
         width: min(340px, 92vw) !important;
         min-width: 0 !important;
-        /* z-index 1100: por encima de controles Leaflet (1000) y del header (1000)
-           para el area de overlap. El hamburger sigue en el header y permanece
-           accesible porque el sidebar empieza en top:60px (no tapa el header). */
+        /* z-index 1100: por encima de controles Leaflet (1000) y del header (1000).
+           Cajon fixed a pantalla completa (top:0, 100dvh): siempre visible al
+           abrirlo, sin importar el scroll (la cabecera de periodico queda encima
+           en flujo). El backdrop cubre el resto y cierra al tocarlo. */
         z-index: 1100;
         transform: translateX(-110%);
         transition: transform 0.28s ease !important;
@@ -512,19 +483,6 @@ export function getStyles(nonce: string = ''): string {
         overflow: visible !important;
       }
 
-      /* Geolocate mas visible en movil: mini-boton con fondo, ya no se
-         confunde con un icono. Tap target >= 40x40 (recomendacion Apple HIG). */
-      #btn-geolocate {
-        background: #dcfce7;
-        border: 1px solid #86efac;
-        border-radius: 10px;
-        min-width: 40px; min-height: 40px;
-        padding: 8px 10px; font-size: 16px;
-        display: inline-flex; align-items: center; justify-content: center;
-      }
-      #btn-geolocate:hover, #btn-geolocate:active { background: #bbf7d0; color: #14532d; }
-      body.dark #btn-geolocate { background: #14532d; border-color: #166534; color: #86efac; }
-      body.dark #btn-geolocate:hover, body.dark #btn-geolocate:active { background: #166534; }
 
       /* NOTA: NO tocar el hamburger (#btn-toggle-sidebar) aqui. Crecerlo a
          40x40 comprime el resto del header (titulo + geocoder) en iPhone
@@ -567,9 +525,7 @@ export function getStyles(nonce: string = ''): string {
     /* ---- Header compacto < 640px ---- */
     @media (max-width: 639px) {
       #app-header { height: 50px; padding: 0 10px; }
-      body        { padding-top: 50px; }
       #app-body   { height: calc(100vh - 50px); }
-      #sidebar    { top: 50px !important; height: calc(100% - 50px) !important; }
       .header-logo  { font-size: 18px; margin-right: 5px; }
       .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .header-sub   { display: none; }
@@ -597,8 +553,8 @@ export function getStyles(nonce: string = ''): string {
        user-chip ("Entrar" / nombre usuario) — el usuario reporto solapamiento.
        Con 96px queda 36px por debajo del header y hay aire evidente. */
     .stats-nacional-widget {
-      position: fixed;
-      top: 96px;
+      position: absolute;
+      top: 44px;
       right: 16px;
       background: #ffffff;
       border: 1px solid #e5e7eb;
@@ -608,7 +564,9 @@ export function getStyles(nonce: string = ''): string {
       font-size: 12px;
       font-weight: 600;
       box-shadow: 0 4px 16px rgba(0,0,0,0.10);
-      z-index: 1005;
+      /* Por debajo del #app-header sticky (z-index:1000) para deslizarse por
+         detras de la barra al hacer scroll (sobre el mapa: ~400-800). */
+      z-index: 800;
       max-width: 320px;
       line-height: 1.5;
     }
@@ -663,34 +621,9 @@ export function getStyles(nonce: string = ''): string {
     .app-toast--success { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
     .app-toast--info    { background: #eff6ff; border-color: #93c5fd; color: #2563eb; }
 
-    /* ---- Boton PWA install (Ship 25.5) ----
-       Vive dentro del sidebar (#install-app-row), no flotante. El row
-       empieza con [hidden] y core.ts se lo quita cuando el navegador
-       dispara beforeinstallprompt. */
-    .install-app-btn {
-      width: 100%;
-      background: #16a34a;
-      color: #fff;
-      border: 0;
-      padding: 10px 14px;
-      border-radius: 10px;
-      font-size: 13px;
-      font-weight: 700;
-      box-shadow: 0 2px 8px rgba(22,163,74,0.25);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      transition: background 0.15s ease;
-    }
-    .install-app-btn:hover  { background: #15803d; }
-    .install-app-btn:active { background: #166534; }
-    body.dark .install-app-btn { box-shadow: 0 2px 8px rgba(22,163,74,0.45); }
-
     /* ---- Badge offline ---- */
     .offline-badge {
-      position: fixed;
+      position: absolute;
       top: 12px;
       left: 50%;
       transform: translateX(-50%);
@@ -702,13 +635,13 @@ export function getStyles(nonce: string = ''): string {
       font-size: 12px;
       font-weight: 700;
       box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-      z-index: 9997;
+      z-index: 800;
       pointer-events: none;
     }
 
     /* ---- Freshness badge (edad de datos) ---- */
     .freshness-badge {
-      position: fixed;
+      position: absolute;
       top: 12px;
       right: 12px;
       padding: 5px 10px;
@@ -716,7 +649,7 @@ export function getStyles(nonce: string = ''): string {
       font-size: 11px;
       font-weight: 700;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      z-index: 9996;
+      z-index: 800;
       pointer-events: auto;
       cursor: help;
       border: 1px solid transparent;
@@ -776,20 +709,6 @@ export function getStyles(nonce: string = ''): string {
       margin-left: 4px;
     }
 
-    /* ---- Popup de parada de ruta ---- */
-    .route-popup-title  { font-weight: 700; margin-bottom: 4px; }
-    .route-popup-addr   { font-size: 12px; color: #475569; margin-bottom: 4px; }
-    .route-popup-price  { font-size: 14px; font-weight: 800; color: #16a34a; margin-bottom: 4px; }
-    .route-popup-km     { font-size: 11px; color: #475569; }
-
-    /* ---- Popup de cargador: fuente de datos ---- */
-    .charger-popup-source { font-size: 11px; font-weight: 500; opacity: 0.7; }
-
-    /* ---- Clusters de cargadores (3 buckets por count) ---- */
-    .charger-cluster--sm { width: 36px; height: 36px; }
-    .charger-cluster--md { width: 44px; height: 44px; }
-    .charger-cluster--lg { width: 52px; height: 52px; }
-
     /* ---- Placeholder del modal comparar cuando solo hay 1 estacion ---- */
     .compare-col--empty {
       display: flex;
@@ -813,7 +732,7 @@ export function getStyles(nonce: string = ''): string {
          10px de aire. Tambien apretamos el padding y max-width para que no
          tape medio mapa en mobiles estrechos. */
       #stats-nacional {
-        top: 60px !important;
+        top: 12px !important;
         right: 8px !important;
         max-width: 180px !important;
         padding: 6px 10px !important;
@@ -830,7 +749,6 @@ export function getStyles(nonce: string = ''): string {
       .form-group { margin-bottom: 14px; }
       .form-label { font-size: 12px; margin-bottom: 6px; }
       .form-select, .form-input { font-size: 16px; padding: 11px 12px; }
-      .input-icon-wrap .form-input { padding-left: 34px; }
       .btn-primary { padding: 11px 16px; font-size: 14px; min-height: 44px; }
       .btn-ghost { padding: 10px 14px; font-size: 13px; min-height: 42px; }
       .station-card { padding: 14px 12px; }
@@ -906,215 +824,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .predict-badge--good    { background:#14532d; color:#86efac; border-color:#166534; }
     body.dark .predict-badge--neutral { background:#451a03; color:#fcd34d; border-color:#a16207; }
     body.dark .predict-badge--bad     { background:#450a0a; color:#fca5a5; border-color:#991b1b; }
-
-    /* ---- Modal ruta A->B ----
-       Reutiliza estilos de .modal/.modal-body pero anade layout especifico
-       para los sugerencias del geocoder y la tabla de resultados. ---- */
-    .route-sug {
-      display:none; margin-top:4px; border:1px solid #e2e8f0; border-radius:8px;
-      background:#fff; max-height:200px; overflow-y:auto; font-size:12px;
-    }
-    .route-sug.show { display:block; }
-    .route-sug-item {
-      padding:6px 10px; cursor:pointer; border-bottom:1px solid #f1f5f9;
-      color:#334155;
-    }
-    .route-sug-item:hover, .route-sug-item.active { background:#f0fdf4; color:#15803d; }
-    .route-sug-item:last-child { border-bottom:0; }
-    body.dark .route-sug { background:#1e293b; border-color:#334155; }
-    body.dark .route-sug-item { color:#cbd5e1; border-bottom-color:#334155; }
-    body.dark .route-sug-item:hover, body.dark .route-sug-item.active { background:#14532d; color:#86efac; }
-
-    .route-status { font-size:12px; color:#64748b; margin:8px 0; min-height:16px; }
-    .route-status.error { color:#dc2626; }
-    body.dark .route-status { color:#94a3b8; }
-    body.dark .route-status.error { color:#fca5a5; }
-
-    .route-results { display:flex; flex-direction:column; gap:8px; }
-    .route-card {
-      padding:10px 12px; background:#f8fafc; border:1px solid #e2e8f0;
-      border-radius:10px; display:flex; justify-content:space-between; gap:10px;
-      cursor:pointer; transition:background 0.1s, border-color 0.1s;
-    }
-    .route-card:hover { background:#f0fdf4; border-color:#86efac; }
-    .route-card-info { flex:1; min-width:0; }
-    .route-card-title { font-size:13px; font-weight:700; color:#0f172a; margin-bottom:3px; }
-    .route-card-sub { font-size:11px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .route-card-right { text-align:right; }
-    .route-card-price { font-size:14px; font-weight:800; color:#16a34a; }
-    .route-card-off { font-size:11px; color:#64748b; margin-top:2px; }
-    body.dark .route-card { background:#0f172a; border-color:#334155; }
-    body.dark .route-card:hover { background:#14532d; border-color:#166534; }
-    body.dark .route-card-title { color:#f1f5f9; }
-    body.dark .route-card-sub, body.dark .route-card-off { color:#94a3b8; }
-
-    /* ---- Plan de paradas (fuel stops) ----
-       Bloque destacado con las paradas RECOMENDADAS en orden. Cada parada
-       lleva numeracion (#1, #2...) y la distancia desde origen. ---- */
-    .route-plan { display:flex; flex-direction:column; gap:10px; margin:8px 0 16px 0; }
-    .route-plan-title {
-      font-size:12px; font-weight:700; color:#0f172a; text-transform:uppercase;
-      letter-spacing:0.5px; margin-bottom:4px;
-    }
-    .route-plan-subtitle {
-      font-size:12px; color:#16a34a; font-weight:600; margin-bottom:6px;
-    }
-    .route-plan-stop {
-      padding:12px 14px; background:#ecfdf5; border:2px solid #86efac;
-      border-radius:12px; display:flex; justify-content:space-between; gap:10px;
-      align-items:center;
-    }
-    .route-plan-badge {
-      display:inline-block; min-width:28px; height:28px; line-height:28px;
-      text-align:center; background:#16a34a; color:#fff; border-radius:50%;
-      font-weight:800; font-size:13px; margin-right:10px;
-    }
-    .route-plan-info { flex:1; min-width:0; display:flex; align-items:center; }
-    .route-plan-main { flex:1; min-width:0; }
-    .route-plan-title2 { font-size:14px; font-weight:700; color:#0f172a; margin-bottom:3px; }
-    .route-plan-sub { font-size:11px; color:#475569; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .route-plan-right { text-align:right; flex-shrink:0; }
-    .route-plan-price { font-size:16px; font-weight:800; color:#16a34a; }
-    .route-plan-km { font-size:11px; color:#475569; margin-top:2px; font-weight:600; }
-    .route-plan-warning {
-      padding:10px 12px; background:#fef2f2; border:1px solid #fca5a5;
-      border-radius:10px; color:#991b1b; font-size:13px;
-    }
-    .route-plan-success {
-      padding:10px 12px; background:#f0fdf4; border:1px solid #86efac;
-      border-radius:10px; color:#166534; font-size:13px; font-weight:600;
-    }
-    body.dark .route-plan-title { color:#f1f5f9; }
-    body.dark .route-plan-subtitle { color:#86efac; }
-    body.dark .route-plan-stop { background:#14532d; border-color:#166534; }
-    body.dark .route-plan-badge { background:#22c55e; color:#052e16; }
-    body.dark .route-plan-title2 { color:#f1f5f9; }
-    body.dark .route-plan-sub, body.dark .route-plan-km { color:#cbd5e1; }
-    body.dark .route-plan-price { color:#86efac; }
-    body.dark .route-plan-warning { background:#450a0a; border-color:#991b1b; color:#fca5a5; }
-    body.dark .route-plan-success { background:#14532d; border-color:#166534; color:#86efac; }
-
-    /* ---- Modo ruta: overlay flotante sobre el mapa ---- */
-    /* Cuando el usuario planifica una ruta, entramos en "modo ruta":
-       ocultamos el cluster de estaciones, dibujamos la polilinea + marcadores
-       grandes de las paradas recomendadas, y mostramos este banner flotante
-       para salir. */
-    .route-mode-bar {
-      position: fixed; z-index: 1200;
-      /* top:72px = 60px del header + 12px de margen. Antes estaba en 12px
-         y quedaba VISUALMENTE detras del header (aunque por z-index estaba
-         delante): el usuario no lo encontraba. */
-      top: 72px; left: 50%; transform: translateX(-50%);
-      display: none; align-items: center; gap: 10px;
-      padding: 8px 12px 8px 14px; border-radius: 999px;
-      background: rgba(15, 118, 110, 0.96); color: #ecfeff;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-      font-size: 13px; font-weight: 600;
-      backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-    .route-mode-bar.show { display: inline-flex; }
-    .route-mode-bar-text { white-space: nowrap; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; }
-    .route-mode-bar-exit {
-      cursor: pointer; background: #0f766e; color: #ecfeff;
-      border: 1px solid rgba(255,255,255,0.25); border-radius: 999px;
-      padding: 4px 12px; font-size: 12px; font-weight: 700;
-      transition: background .15s ease;
-    }
-    .route-mode-bar-exit:hover { background: #134e4a; }
-    body.dark .route-mode-bar { background: rgba(6, 95, 70, 0.95); }
-
-    /* Toggle "Ver todas en ruta" dentro del banner flotante. Mismo lenguaje
-       visual que el boton de salida, pero en tono claro (outline) cuando
-       esta off y tono solido cuando esta on (aria-pressed). Asi el usuario
-       ve de un vistazo si el mapa esta en "solo paradas" vs "todas". */
-    .route-mode-bar-corridor {
-      cursor: pointer; background: transparent; color: #ecfeff;
-      border: 1px solid rgba(255,255,255,0.45); border-radius: 999px;
-      padding: 4px 10px; font-size: 12px; font-weight: 700;
-      transition: background .15s ease, color .15s ease;
-      white-space: nowrap;
-    }
-    .route-mode-bar-corridor:hover { background: rgba(255,255,255,0.1); }
-    .route-mode-bar-corridor[aria-pressed="true"] {
-      background: #ecfeff; color: #0f766e; border-color: #ecfeff;
-    }
-    .route-mode-bar-corridor[aria-pressed="true"]:hover { background: #cffafe; }
-
-    /* Bloque de deep-links a apps de navegacion, en el banner flotante.
-       Se oculta si no hay origen/destino confirmado. Colores de marca para
-       que sean inmediatamente reconocibles sobre el banner teal. */
-    .route-mode-bar-nav { display: inline-flex; gap: 6px; align-items: center; }
-    .route-mode-bar-nav::before {
-      content: 'Abrir ruta:';
-      font-size: 11px; font-weight: 600; opacity: .85;
-      margin-right: 2px;
-    }
-    .route-mode-bar-nav a {
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 5px 10px; border-radius: 999px;
-      font-size: 12px; font-weight: 800;
-      text-decoration: none; color: white;
-      border: 1px solid rgba(255,255,255,0.25);
-      transition: filter .15s ease, transform .1s ease;
-      white-space: nowrap;
-    }
-    .route-mode-bar-nav a#nav-gmaps { background: #4285F4; }
-    .route-mode-bar-nav a#nav-amaps { background: #111827; }
-    .route-mode-bar-nav a#nav-waze  { background: #33ccff; color: #0b1220; }
-    .route-mode-bar-nav a:hover { filter: brightness(1.08); }
-    .route-mode-bar-nav a:active { transform: scale(.96); }
-
-    @media (max-width: 640px) {
-      .route-mode-bar {
-        font-size: 12px; padding: 6px 10px; gap: 6px;
-        flex-wrap: wrap; max-width: calc(100vw - 16px);
-      }
-      .route-mode-bar-text { max-width: 100%; flex: 1 0 100%; text-align: center; }
-      .route-mode-bar-nav { flex-wrap: wrap; justify-content: center; width: 100%; }
-      .route-mode-bar-nav a { padding: 4px 8px; font-size: 11px; }
-      .route-mode-bar-nav::before { display: none; }
-      .route-mode-bar-corridor { padding: 4px 8px; font-size: 11px; }
-    }
-
-    /* Ship 7: paradas intermedias en el planificador de ruta. Cada row se
-       pinta como input con un boton "x" para eliminar. Max 3 paradas
-       (limite de Google Maps URL encoding ~9 total, Apple tiene practico
-       de 2-3 antes de degradar). El boton "Anadir parada" va debajo del
-       stack y queda ghost. */
-    .route-stops-wrap:empty { display: none; }
-    .route-stops-wrap { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-    .route-stop-row {
-      display: flex; gap: 6px; align-items: stretch; position: relative;
-    }
-    .route-stop-row .form-input { flex: 1; }
-    .route-stop-row .btn-route-stop-remove {
-      flex: 0 0 auto; width: 38px;
-      background: transparent; border: 1px solid #e2e8f0; color: #94a3b8;
-      border-radius: 8px; font-size: 14px; cursor: pointer;
-      transition: background .15s ease, color .15s ease, border-color .15s ease;
-    }
-    .route-stop-row .btn-route-stop-remove:hover {
-      background: #fee2e2; border-color: #fecaca; color: #dc2626;
-    }
-    body.dark .route-stop-row .btn-route-stop-remove { border-color: #475569; color: #64748b; }
-    body.dark .route-stop-row .btn-route-stop-remove:hover { background: #451a03; border-color: #78350f; color: #f87171; }
-    .btn-route-add-stop {
-      margin-bottom: 14px; align-self: flex-start;
-      background: transparent; color: #16a34a; border: 1px dashed #86efac;
-      padding: 6px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
-      transition: background .15s ease, color .15s ease;
-    }
-    .btn-route-add-stop:hover { background: #ecfdf5; color: #047857; }
-    .btn-route-add-stop[disabled] {
-      opacity: 0.5; cursor: not-allowed; pointer-events: none;
-    }
-    body.dark .btn-route-add-stop { color: #4ade80; border-color: #14532d; }
-    body.dark .btn-route-add-stop:hover { background: #064e3b; color: #6ee7b7; }
-    /* sugerencias de los inputs de paradas — reuso de .route-sug */
-    .route-stop-row .route-sug {
-      position: absolute; top: 100%; left: 0; right: 44px; z-index: 20;
-    }
 
     /* ===== Ship 8: REPORTE DE PRECIO INCORRECTO ===== */
     /* Link discreto que aparece debajo del precio en el popup. Se ve como un
@@ -1212,10 +921,9 @@ export function getStyles(nonce: string = ''): string {
     body.dark .popup-percentile .ph-label--q0 { color: #86efac; }
     body.dark .popup-percentile .ph-label--q4 { color: #fca5a5; }
 
-    /* Ship 6: boton flotante de heatmap. Mismo lenguaje visual que los
-       controles de Leaflet (cuadro blanco, borde sutil) para que se integre.
-       Se posiciona debajo del zoom (arriba-izquierda) en desktop; abajo-
-       derecha en mobile. aria-pressed=true pinta el boton en rojo solido. */
+    /* Boton flotante sobre el mapa (base compartida). Mismo lenguaje visual
+       que los controles de Leaflet (cuadro blanco, borde sutil) para que se
+       integre. Lo usa #btn-satellite (--satellite define su posicion/color). */
     .map-floating-btn {
       position: absolute; top: 90px; left: 10px; z-index: 800;
       width: 34px; height: 34px; border-radius: 6px;
@@ -1237,31 +945,10 @@ export function getStyles(nonce: string = ''): string {
       background: #dc2626; color: #fff; border-color: #991b1b;
     }
 
-    /* Ship 25.5: segundo boton flotante (#btn-chargers) apilado debajo del de
-       heatmap. 34px alto + 8px gap = offset de 42px respecto a top:90px → 132px.
-       Color "activo" azul eléctrico (#2563eb) para diferenciar semanticamente
-       del rojo del heatmap (precios) — cuando ambos estan pulsados el usuario
-       ve dos estados distintos sin tener que leer el icono. */
-    .map-floating-btn--chargers {
-      top: 132px;
-    }
-    .map-floating-btn--chargers:hover { color: #2563eb; }
-    .map-floating-btn--chargers[aria-pressed="true"] {
-      background: #2563eb; color: #fff; border-color: #1d4ed8;
-    }
-    body.dark .map-floating-btn--chargers:hover { color: #60a5fa; }
-    body.dark .map-floating-btn--chargers[aria-pressed="true"] {
-      background: #2563eb; color: #fff; border-color: #1e40af;
-    }
 
-    /* Tercer boton flotante (#btn-satellite) apilado debajo de chargers.
-       132px + 42px = 174px. Color activo verde oscuro (#166534) para
-       distinguir de los otros dos (rojo heatmap, azul chargers): asi el
-       usuario ve de un vistazo cuantos overlays tiene encendidos y de
-       que tipo. */
-    .map-floating-btn--satellite {
-      top: 174px;
-    }
+    /* Boton flotante #btn-satellite. Es el unico boton flotante que queda
+       (heatmap y cargadores retirados), asi que usa la posicion base
+       (top:90px). Color activo verde oscuro (#166534). */
     .map-floating-btn--satellite:hover { color: #166534; }
     .map-floating-btn--satellite[aria-pressed="true"] {
       background: #166534; color: #fff; border-color: #14532d;
@@ -1325,268 +1012,10 @@ export function getStyles(nonce: string = ''): string {
       background: rgba(15,23,42,0.92); color: #86efac; border-color: #334155;
     }
 
-    /* Ship 25.5: pin de punto de recarga electrica. Circulo azul con icono de
-       rayo blanco. Tamaño compacto (26px) para que no compita visualmente con
-       los pins-precio de gasolineras — mismas convenciones de sombra/borde. */
-    .charger-pin {
-      width: 26px; height: 26px; border-radius: 50%;
-      background: #2563eb; color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700;
-      border: 2px solid #fff;
-      box-shadow: 0 2px 6px rgba(37,99,235,0.45), 0 0 0 1px rgba(0,0,0,0.08);
-    }
-    /* Fast DC (>=50kW) en verde azulado mas llamativo para señalar potencia. */
-    .charger-pin--fast {
-      background: #0891b2;
-      box-shadow: 0 2px 6px rgba(8,145,178,0.5), 0 0 0 1px rgba(0,0,0,0.08);
-    }
-    /* Ultra (>=150kW) en violeta — mismo lenguaje que Tesla/CCS ultra. */
-    .charger-pin--ultra {
-      background: #7c3aed;
-      box-shadow: 0 2px 6px rgba(124,58,237,0.5), 0 0 0 1px rgba(0,0,0,0.08);
-    }
-    body.dark .charger-pin { border-color: #0f172a; }
-
-    /* Cluster de recargadores: similar al de gasolineras pero en azul, sin
-       badge de precio (los puntos de recarga rara vez publican tarifa). */
-    .charger-cluster {
-      background: rgba(37,99,235,0.85); color: #fff;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 12px;
-      border: 3px solid rgba(255,255,255,0.9);
-      box-shadow: 0 4px 12px rgba(37,99,235,0.35);
-    }
-    body.dark .charger-cluster { border-color: rgba(15,23,42,0.9); }
-
-    /* Popup de recargador. Heredamos tipografia del popup de gasolineras pero
-       con cabecera en azul. Mantener compacto: titulo + operador + lista de
-       conectores con potencia. */
-    .charger-popup { min-width: 200px; font-size: 13px; line-height: 1.45; }
-    .charger-popup-title { font-weight: 700; font-size: 14px; color: #1e293b; margin-bottom: 4px; }
-    .charger-popup-op { color: #64748b; font-size: 12px; margin-bottom: 8px; }
-    .charger-popup-row {
-      display: flex; justify-content: space-between; gap: 10px;
-      padding: 4px 0; border-top: 1px solid #e2e8f0;
-    }
-    .charger-popup-row:first-of-type { border-top: none; }
-    .charger-popup-label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
-    .charger-popup-value { color: #0f172a; font-weight: 600; }
-    .charger-popup-kw { color: #2563eb; font-weight: 700; }
-    .charger-popup-kw--fast { color: #0891b2; }
-    .charger-popup-kw--ultra { color: #7c3aed; }
-    body.dark .charger-popup-title { color: #f1f5f9; }
-    body.dark .charger-popup-op { color: #94a3b8; }
-    body.dark .charger-popup-row { border-top-color: #334155; }
-    body.dark .charger-popup-label { color: #94a3b8; }
-    body.dark .charger-popup-value { color: #e2e8f0; }
-    body.dark .charger-popup-kw { color: #60a5fa; }
-    body.dark .charger-popup-kw--fast { color: #22d3ee; }
-    body.dark .charger-popup-kw--ultra { color: #a78bfa; }
-
-    /* Botonera "Abrir ruta en..." dentro del panel del plan. */
-    .route-nav-title {
-      margin-top: 14px; margin-bottom: 6px;
-      font-size: 12px; font-weight: 700; color: #334155;
-      text-transform: uppercase; letter-spacing: .04em;
-    }
-    body.dark .route-nav-title { color: #cbd5e1; }
-    .route-nav-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
-    .route-nav-btn {
-      flex: 1 1 110px;
-      display: inline-flex; align-items: center; justify-content: center;
-      padding: 10px 12px; border-radius: 8px;
-      font-size: 13px; font-weight: 700;
-      text-decoration: none; color: white;
-      transition: opacity .15s ease, transform .1s ease;
-    }
-    .route-nav-btn:hover { opacity: 0.92; }
-    .route-nav-btn:active { transform: scale(.98); }
-    .route-nav-google { background: #4285F4; }
-    .route-nav-apple  { background: #111827; }
-    .route-nav-waze   { background: #33ccff; color: #0b1220; }
-    .route-nav-note {
-      font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.4;
-    }
-    body.dark .route-nav-note { color: #94a3b8; }
-    /* Marcador grande de parada: numero + icono de gasolinera.
-       Se superpone al mapa, con el numero de orden de la parada. */
-    .route-stop-marker {
-      display: flex; align-items: center; justify-content: center;
-      width: 36px; height: 36px; border-radius: 50%;
-      background: #16a34a; color: white;
-      font-weight: 800; font-size: 15px;
-      border: 3px solid white;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.3);
-    }
-    body.dark .route-stop-marker { border-color: #0f172a; }
-
-    .form-help { font-size:11px; color:#64748b; margin-top:4px; }
+        .form-help { font-size:11px; color:#64748b; margin-top:4px; }
     body.dark .form-help { color:#94a3b8; }
 
-    /* ---- Autonomia EDITABLE en el modal de perfil ----
-       Input numerico grande + unidad pequena. Visualmente destaca porque es
-       el dato clave que el planificador de rutas usa. Al ser editable, el
-       usuario puede ajustar la autonomia real de su coche y el JS re-deriva
-       el consumo para mantener la ecuacion coherente. */
-    .profile-autonomy {
-      display: inline-flex; align-items: baseline; gap: 6px;
-      padding: 6px 14px; border-radius: 10px;
-      background: linear-gradient(135deg, #ecfdf5, #d1fae5);
-      border: 1px solid #bbf7d0;
-      transition: border-color 0.15s, box-shadow 0.15s;
-    }
-    .profile-autonomy:focus-within {
-      border-color: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
-    }
-    .profile-autonomy-input {
-      /* Hereda el look del numero grande pero sigue siendo un <input>. */
-      font-size: 28px; font-weight: 800; color: #065f46; letter-spacing: -0.02em;
-      background: transparent; border: none; outline: none; padding: 0;
-      width: 4ch; text-align: right; font-family: inherit;
-      -moz-appearance: textfield;
-    }
-    .profile-autonomy-input::-webkit-outer-spin-button,
-    .profile-autonomy-input::-webkit-inner-spin-button {
-      -webkit-appearance: none; margin: 0;
-    }
-    .profile-autonomy-unit { font-size: 13px; font-weight: 700; color: #047857; text-transform: uppercase; letter-spacing: 0.04em; }
-    /* Lapiz a la derecha para dejar claro que el numero se puede editar.
-       Sin el icono, el input numerico grande parece un valor estatico —
-       el lapiz + cursor texto del input son la senal de "editame". */
-    .profile-autonomy-pencil {
-      font-size: 14px; opacity: 0.7; margin-left: 4px;
-      transition: opacity 0.15s, transform 0.15s;
-    }
-    .profile-autonomy:hover .profile-autonomy-pencil,
-    .profile-autonomy:focus-within .profile-autonomy-pencil {
-      opacity: 1; transform: scale(1.15);
-    }
-    body.dark .profile-autonomy {
-      background: linear-gradient(135deg, #064e3b, #065f46);
-      border-color: #166534;
-    }
-    body.dark .profile-autonomy:focus-within {
-      border-color: #10b981;
-      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.35);
-    }
-    body.dark .profile-autonomy-input { color: #6ee7b7; }
-    body.dark .profile-autonomy-unit { color: #a7f3d0; }
-
-    /* Ship 25.4: variante readonly — mismo estilo visual que el input editable,
-       pero sin borde focus ni hover-pencil (no se puede editar; es un display).
-       El numero se actualiza en vivo desde JS. */
-    .profile-autonomy--readonly { cursor: default; }
-    .profile-autonomy--readonly:focus-within { box-shadow: none; border-color: #34d399; }
-    .profile-autonomy-value {
-      font-size: 28px; font-weight: 800; color: #065f46; letter-spacing: -0.02em;
-      line-height: 1; min-width: 3ch; text-align: right; font-variant-numeric: tabular-nums;
-    }
-    body.dark .profile-autonomy-value { color: #6ee7b7; }
-    .profile-autonomy-hint {
-      display: block; margin-top: 6px; font-size: 11px; color: #64748b;
-      font-weight: 400;
-    }
-    .profile-autonomy-hint code {
-      background: #f1f5f9; padding: 1px 6px; border-radius: 4px;
-      font-size: 11px; color: #0f172a; font-family: ui-monospace, SFMono-Regular, monospace;
-    }
-    body.dark .profile-autonomy-hint { color: #94a3b8; }
-    body.dark .profile-autonomy-hint code { background: #1e293b; color: #e2e8f0; }
-
-    /* ---- Bloque "Tu coche (segun perfil)" en modal ruta ----
-       Resumen read-only de tank + consumo + autonomia derivada. La fila
-       de autonomia se resalta porque es la que mas le importa al usuario
-       para interpretar el plan. */
-    .route-profile-info {
-      display: flex; flex-direction: column; gap: 4px;
-      padding: 10px 12px; border-radius: 10px;
-      background: #f8fafc; border: 1px solid #e2e8f0;
-    }
-    .route-profile-row {
-      display: flex; justify-content: space-between; align-items: baseline;
-      font-size: 13px;
-    }
-    .route-profile-k { color: #475569; }
-    .route-profile-v { font-weight: 700; color: #0f172a; }
-    .route-profile-hl {
-      margin-top: 4px; padding-top: 6px; border-top: 1px dashed #cbd5e1;
-    }
-    .route-profile-hl .route-profile-k { color: #047857; font-weight: 600; }
-    .route-profile-hl .route-profile-v { color: #047857; font-size: 15px; }
-    body.dark .route-profile-info { background: #0f172a; border-color: #334155; }
-    body.dark .route-profile-k { color: #94a3b8; }
-    body.dark .route-profile-v { color: #f1f5f9; }
-    body.dark .route-profile-hl { border-top-color: #475569; }
-    body.dark .route-profile-hl .route-profile-k { color: #6ee7b7; }
-    body.dark .route-profile-hl .route-profile-v { color: #6ee7b7; }
-    .route-profile-missing {
-      padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5;
-      background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
-    }
-    .route-profile-missing a { color: #92400e; font-weight: 700; text-decoration: underline; }
-    body.dark .route-profile-missing { background: #422006; border-color: #78350f; color: #fde68a; }
-    body.dark .route-profile-missing a { color: #fcd34d; }
-
-    /* ---- Modal diario de repostajes ---- */
-    .diary-modal { max-width: 560px; }
-    .diary-stats {
-      display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:14px;
-    }
-    .diary-stat {
-      padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px;
-      text-align:center;
-    }
-    .ds-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.04em; margin-bottom:2px; }
-    .ds-value { font-size:15px; font-weight:800; color:#15803d; }
-    /* Sub-texto opcional bajo el valor (ej: "calculado con tus repostajes") */
-    .ds-sub { font-size:9px; color:#64748b; margin-top:2px; line-height:1.2; font-weight:500; }
-    .ds-sub:empty { display:none; }
-    body.dark .diary-stat { background:#14532d; border-color:#166534; }
-    body.dark .ds-label { color:#94a3b8; }
-    body.dark .ds-value { color:#86efac; }
-    body.dark .ds-sub { color:#94a3b8; }
-
-    .diary-subtitle { font-size:12px; color:#334155; margin:10px 0 6px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
-    body.dark .diary-subtitle { color:#cbd5e1; }
-    .diary-form-row { display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px; }
-    .diary-form { padding:10px 0; border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0; margin:10px 0; }
-    body.dark .diary-form { border-color:#334155; }
-    .diary-list-wrap { margin-top:10px; }
-    .diary-list { display:flex; flex-direction:column; gap:6px; max-height:220px; overflow-y:auto; }
-    .diary-item {
-      padding:8px 10px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
-      display:flex; justify-content:space-between; align-items:center; gap:8px;
-      font-size:12px;
-    }
-    body.dark .diary-item { background:#0f172a; border-color:#334155; color:#e2e8f0; }
-    .diary-item-main { flex:1; min-width:0; }
-    .diary-item-date { font-weight:700; color:#0f172a; }
-    .diary-item-sub { font-size:10px; color:#64748b; margin-top:2px; }
-    body.dark .diary-item-date { color:#f1f5f9; }
-    body.dark .diary-item-sub { color:#94a3b8; }
-    /* L/100km por tramo: linea verde destacada bajo el odometro para que el
-       usuario vea el consumo de cada trayecto y entienda de donde sale la media. */
-    .diary-item-seg { font-size:11px; color:#15803d; margin-top:3px; font-weight:600; }
-    .diary-item-seg strong { color:#0f7a34; }
-    .diary-item-seg-muted { color:#94a3b8; font-weight:500; font-style:italic; }
-    body.dark .diary-item-seg { color:#86efac; }
-    body.dark .diary-item-seg strong { color:#bbf7d0; }
-    body.dark .diary-item-seg-muted { color:#64748b; }
-    .diary-item-del {
-      background:none; border:none; color:#dc2626; cursor:pointer; padding:4px 8px;
-      border-radius:6px; font-size:13px;
-    }
-    .diary-item-del:hover { background:#fef2f2; }
-    body.dark .diary-item-del:hover { background:#450a0a; }
-    .diary-footer { gap:6px; flex-wrap:wrap; }
-    @media (max-width: 480px) {
-      .diary-stats { grid-template-columns:repeat(2, 1fr); }
-      .diary-form-row { grid-template-columns:1fr; }
-    }
-    .distance-chip {
+        .distance-chip {
       display:inline-block; background:#eff6ff; color:#2563eb;
       border:1px solid #bfdbfe; border-radius:6px; padding:1px 7px;
       font-size:10px; font-weight:600; margin-left:4px; white-space:nowrap;
@@ -1654,7 +1083,7 @@ export function getStyles(nonce: string = ''): string {
 
     /* ---- Offline banner ---- */
     #offline-banner {
-      display:none; position:fixed; top:60px; left:0; right:0; z-index:900;
+      display:none; position:sticky; top:60px; left:0; right:0; z-index:900;
       background:linear-gradient(90deg,#f59e0b 0%,#d97706 100%); color:#fff;
       padding:6px 12px; font-size:12px; font-weight:600;
       text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.12);
@@ -1667,7 +1096,7 @@ export function getStyles(nonce: string = ''): string {
        puede estar online y con datos viejos simultaneamente. z-index 901 para
        que se apile encima del offline-banner si ambos estan activos. */
     #stale-banner {
-      display:none; position:fixed; top:60px; left:0; right:0; z-index:901;
+      display:none; position:sticky; top:60px; left:0; right:0; z-index:901;
       background:linear-gradient(90deg,#fbbf24 0%,#f59e0b 100%); color:#422006;
       padding:6px 12px; font-size:12px; font-weight:600;
       text-align:center; box-shadow:0 2px 8px rgba(0,0,0,0.12);
@@ -1906,34 +1335,6 @@ export function getStyles(nonce: string = ''): string {
     .btn-ghost:hover { background:#f8fafc; }
     body.dark .btn-ghost { border-color:#475569; color:#cbd5e1; }
     body.dark .btn-ghost:hover { background:#334155; }
-
-    /* Chips de seleccion (onboarding) */
-    .chip-group { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
-    .chip {
-      padding:8px 12px; border:1.5px solid #e2e8f0; border-radius:20px;
-      font-size:12px; font-weight:600; cursor:pointer; background:#fff; color:#475569;
-      transition:all 0.12s;
-    }
-    .chip:hover { border-color:#16a34a; color:#16a34a; }
-    /* WCAG AA: #16a34a/#fff da 3.29:1 (12px) — bajamos a #15803d (~4.82:1) */
-    .chip.selected { background:#15803d; color:#fff; border-color:#15803d; }
-    body.dark .chip { background:#0f172a; border-color:#334155; color:#cbd5e1; }
-    body.dark .chip:hover { border-color:#4ade80; color:#4ade80; }
-    body.dark .chip.selected { background:#15803d; color:#fff; border-color:#15803d; }
-
-    /* ---- Widget de gasto mensual ---- */
-    #monthly-widget {
-      display:none; background:linear-gradient(135deg,#f0fdf4 0%,#dcfce7 100%);
-      border:1px solid #bbf7d0; border-radius:10px; padding:10px 12px;
-      margin:10px 0; font-size:12px;
-    }
-    #monthly-widget.show { display:block; }
-    #monthly-widget .mw-title { font-size:10px; text-transform:uppercase; color:#15803d; font-weight:700; letter-spacing:0.05em; margin-bottom:4px; }
-    #monthly-widget .mw-cost  { font-size:18px; font-weight:800; color:#14532d; }
-    #monthly-widget .mw-sub   { font-size:11px; color:#15803d; margin-top:2px; }
-    body.dark #monthly-widget { background:linear-gradient(135deg,#052e16 0%,#14532d 100%); border-color:#166534; }
-    body.dark #monthly-widget .mw-title, body.dark #monthly-widget .mw-sub { color:#86efac; }
-    body.dark #monthly-widget .mw-cost { color:#bbf7d0; }
 
     /* Toggle €/centimos retirado: sus estilos se eliminaron con el boton. */
 
@@ -2257,80 +1658,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .map-label-ccaa { color: #94a3b8; }
     body.dark .map-label-city { color: #e2e8f0; }
 
-    /* ---- Filtros avanzados (details/summary) ----
-       Colapsado por defecto. Al abrirlo muestra los chips y el select de marca.
-       El chevron del details viene por defecto del navegador; lo ocultamos y
-       pintamos el nuestro para controlar el estilo. ---- */
-    details.adv-filters {
-      margin-top: 10px;
-      border: 1px solid #e2e8f0;
-      border-radius: 8px;
-      background: #fff;
-    }
-    details.adv-filters summary.adv-filters-summary {
-      list-style: none;
-      cursor: pointer;
-      padding: 8px 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #475569;
-      user-select: none;
-    }
-    details.adv-filters summary.adv-filters-summary::-webkit-details-marker { display: none; }
-    details.adv-filters summary.adv-filters-summary::after {
-      content: '\\25BE';
-      margin-left: auto;
-      font-size: 11px;
-      transition: transform 0.15s;
-    }
-    details.adv-filters[open] summary.adv-filters-summary::after { transform: rotate(180deg); }
-    details.adv-filters summary.adv-filters-summary i { color: #16a34a; }
-    .adv-filters-count {
-      background: #16a34a;
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 9999px;
-      display: none;
-    }
-    .adv-filters-count.show { display: inline-block; }
-    .adv-filters-body { padding: 0 12px 12px; }
-
-    /* Chips con checkbox: el input real va oculto y pintamos el label */
-    .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
-    .chip-check {
-      display: inline-flex;
-      align-items: center;
-      padding: 5px 10px;
-      border: 1px solid #cbd5e1;
-      border-radius: 9999px;
-      font-size: 12px;
-      font-weight: 500;
-      color: #475569;
-      cursor: pointer;
-      user-select: none;
-      background: #fff;
-      transition: all 0.12s;
-    }
-    .chip-check input[type="checkbox"] { display: none; }
-    .chip-check:hover { border-color: #16a34a; color: #16a34a; }
-    .chip-check:has(input:checked) {
-      background: #dcfce7;
-      border-color: #16a34a;
-      color: #15803d;
-      font-weight: 600;
-    }
-
-    body.dark details.adv-filters { background: #1e293b; border-color: #334155; }
-    body.dark details.adv-filters summary.adv-filters-summary { color: #cbd5e1; }
-    body.dark .chip-check { background: #0f172a; border-color: #334155; color: #cbd5e1; }
-    body.dark .chip-check:hover { border-color: #22c55e; color: #22c55e; }
-    body.dark .chip-check:has(input:checked) { background: #14532d; border-color: #22c55e; color: #86efac; }
-
     /* ============================================================
        UTILIDADES PARA CSP SIN 'unsafe-inline' EN style-src
        ------------------------------------------------------------
@@ -2381,14 +1708,6 @@ export function getStyles(nonce: string = ''): string {
     .dot-red                { background: #dc2626; }
     .dot-gray               { background: #9ca3af; }
 
-    /* sugerencias y autocomplete */
-    .suggest-highlight      { background: #bbf7d0; color: #15803d; border-radius: 2px; }
-    .suggest-row            { flex: 1; min-width: 0; }
-    /* Variantes de fondo para .suggest-price — antes iba inline con bg=CLRS[color]. */
-    .suggest-price--green   { background: #16a34a; }
-    .suggest-price--yellow  { background: #d97706; }
-    .suggest-price--red     { background: #dc2626; }
-    .suggest-price--gray    { background: #64748b; }
     .geocoder-empty         { color: #9ca3af; cursor: default; font-size: 12px; }
     .geocoder-sub           { font-size: 11px; color: #9ca3af; display: block; }
     .list-sentinel          { display: none; text-align: center; padding: 10px; font-size: 12px; color: #94a3b8; }
@@ -2476,16 +1795,6 @@ export function getStyles(nonce: string = ''): string {
        con el badge principal. En dark, sube el color para legibilidad sobre bg oscuro. */
     .row-tank-cost          { font-size: 11px; color: #64748b; font-weight: 600; margin-top: 2px; white-space: nowrap; }
     body.dark .row-tank-cost{ color: #94a3b8; }
-
-    /* Ko-fi support button — cabe discreto al pie del sidebar. Icono + texto,
-       sin colores de marca (para no pelear con el verde corporativo del header). */
-    .kofi-support           { display:flex; align-items:center; justify-content:center; gap:6px;
-                              margin: 10px 12px 14px; padding: 8px 12px; border-radius: 10px;
-                              background: #fef3c7; color: #92400e; font-size: 12px; font-weight: 600;
-                              text-decoration: none; border: 1px solid #fde68a; transition: background .15s; }
-    .kofi-support:hover     { background: #fde68a; text-decoration: none; }
-    body.dark .kofi-support { background: #422006; color: #fcd34d; border-color: #78350f; }
-    body.dark .kofi-support:hover { background: #78350f; }
 
     /* ===== COMPARADOR SIDE-BY-SIDE =====
        Layout de 2 columnas paralelas. En desktop van lado a lado; en movil
@@ -2579,5 +1888,13 @@ export function getStyles(nonce: string = ''): string {
                                       padding: 0 4px; font-weight: 700; }
     .compare-chip-x:hover           { opacity: 0.7; }
 
+    ${MASTHEAD_CSS}
+    /* El mapa gestiona el tema MANUALMENTE con body.dark (arranca siempre en
+       claro e ignora el modo del sistema). El @media(prefers-color-scheme) que
+       trae MASTHEAD_CSS descuadraría la cabecera (oscura) sobre un mapa claro si
+       el SO está en oscuro. Por eso fijamos los tokens según body.dark, con más
+       especificidad que la media query, para que la cabecera siga al botón. */
+    body:not(.dark) .masthead{--mh-paper:#faf8f4;--mh-ink:#1a1a1a;--mh-muted:#5b6470;--mh-brand:#16a34a;--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9}
+    body.dark .masthead{--mh-paper:#0f172a;--mh-ink:#f1f5f9;--mh-muted:#94a3b8;--mh-brand:#4ade80;--mh-brand-dark:#86efac;--mh-brand-soft:#064e3b;--mh-rule:#334155}
   </style>`
 }

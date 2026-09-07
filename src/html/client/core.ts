@@ -203,87 +203,13 @@ function showToast(msg, type) {
   setTimeout(function(){ if(t.parentNode) t.remove(); }, 5000);
 }
 
-// ---- PWA UX (Ship 14, rework Ship 25.5) ----
-// Capta beforeinstallprompt para ofrecer una entrada "Instalar app" discreta
-// en el sidebar (antes era un FAB flotante en la esquina, pero tapaba modales
-// y competia con los controles de zoom). Tambien pinta un badge cuando el
-// navegador esta offline para que el usuario sepa que la app sigue
-// funcionando desde cache en vez de creer que esta rota.
+// ---- PWA UX (Ship 14) ----
+// Pinta un badge cuando el navegador esta offline para que el usuario sepa que
+// la app sigue funcionando desde cache en vez de creer que esta rota, y muestra
+// el callout de bienvenida del mapa en el primer uso.
 //
 // No hacemos WebPush, no pedimos permisos — solo UI reactiva.
 (function initPWAUX() {
-  // ---- Install prompt ----
-  // Chrome/Edge emiten 'beforeinstallprompt' cuando creen que la PWA es
-  // instalable (cumple criterios: manifest, icons, HTTPS, engagement). Lo
-  // capturamos, lo guardamos y enseñamos la entrada del sidebar (ya existe
-  // en shell.ts con 'hidden'). Si el usuario ya instalo (evento
-  // 'appinstalled') o descarto, escondemos para siempre via localStorage
-  // para no volverse pesado.
-  var DISMISS_KEY = 'installPromptDismissedAt';
-  var deferred = null;
-  var wired = false;
-
-  function shouldHideInstallButton() {
-    try {
-      // Ya estamos en modo standalone? -> la app ya esta instalada en este
-      // perfil de navegador, nada que ofrecer.
-      if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
-      // iOS Safari reporta standalone via navigator.standalone.
-      if (navigator.standalone === true) return true;
-      var dismissed = localStorage.getItem(DISMISS_KEY);
-      if (!dismissed) return false;
-      var ts = parseInt(dismissed, 10);
-      if (!isFinite(ts)) return false;
-      // Respetamos el "no" del usuario 30 dias — despues volvemos a ofrecer.
-      var THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
-      return (Date.now() - ts) < THIRTY_DAYS;
-    } catch(_) { return false; }
-  }
-
-  function hideInstallRow() {
-    var row = document.getElementById('install-app-row');
-    if (row) row.hidden = true;
-  }
-
-  function renderInstallButton() {
-    var row = document.getElementById('install-app-row');
-    var b = document.getElementById('btn-install-pwa');
-    if (!row || !b) return;
-    if (shouldHideInstallButton()) return;
-    row.hidden = false;
-    if (wired) return;
-    wired = true;
-    b.addEventListener('click', function() {
-      if (!deferred) { hideInstallRow(); return; }
-      try {
-        deferred.prompt();
-        deferred.userChoice.then(function(choice) {
-          // choice.outcome: 'accepted' | 'dismissed'
-          if (choice && choice.outcome === 'dismissed') {
-            try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(_) {}
-          }
-          deferred = null;
-          hideInstallRow();
-        }).catch(function() { hideInstallRow(); });
-      } catch(_) { hideInstallRow(); }
-    });
-  }
-
-  window.addEventListener('beforeinstallprompt', function(ev) {
-    try { ev.preventDefault(); } catch(_) {}
-    deferred = ev;
-    // Retrasa el render para no pisar un primer paint — y da tiempo a que el
-    // usuario vea la app antes de ofrecerle instalarla.
-    setTimeout(renderInstallButton, 4000);
-  });
-
-  window.addEventListener('appinstalled', function() {
-    try { localStorage.removeItem(DISMISS_KEY); } catch(_) {}
-    deferred = null;
-    hideInstallRow();
-    try { showToast('App instalada correctamente', 'success'); } catch(_) {}
-  });
-
   // ---- Offline badge ----
   // Pinta pill fija cuando navigator.onLine === false. Esencial en contextos
   // movil-con-mala-cobertura: el usuario ve datos (desde cache del SW) pero
@@ -297,7 +223,9 @@ function showToast(msg, type) {
     b.textContent = '\u26A0 Sin conexion';
     // Estilos en styles.ts (.offline-badge).
     b.className = 'offline-badge';
-    document.body.appendChild(b);
+    // Colgado de #app-body (position:relative) para quedar sobre el mapa, bajo la
+    // barra, sin flotar sobre la cabecera de periódico. Fallback a body.
+    (document.getElementById('app-body') || document.body).appendChild(b);
   }
   function removeOfflineBadge() {
     var b = document.getElementById('offline-badge');
@@ -396,7 +324,9 @@ function showToast(msg, type) {
       b.textContent = '\u{1F55B} ' + label;
       // Estilos en styles.ts (.freshness-badge + variante).
       b.className = 'freshness-badge ' + (stale ? 'freshness-badge--stale' : 'freshness-badge--fresh');
-      document.body.appendChild(b);
+      // Colgado de #app-body (position:relative) para quedar sobre el mapa, bajo
+      // la barra, sin flotar sobre la cabecera de periódico. Fallback a body.
+      (document.getElementById('app-body') || document.body).appendChild(b);
     }
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', paint);
@@ -504,7 +434,10 @@ function showToast(msg, type) {
       // innerHTML seguro: los valores numericos vienen de /api/stats/national
       // (servidor) con rangos validados; no hay texto libre del usuario.
       w.innerHTML = parts.join('');
-      document.body.appendChild(w);
+      // Colgado de #app-body (position:relative) para que su position:absolute se
+      // ancle al área de la app y quede bajo la barra pase lo que pase con el
+      // scroll (la cabecera de periódico va encima, en flujo). Fallback a body.
+      (document.getElementById('app-body') || document.body).appendChild(w);
     }
 
     function load() {

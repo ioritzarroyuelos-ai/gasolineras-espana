@@ -11,6 +11,7 @@ import {
   TARIFAS, LIBERALIZADAS, SIN_DATO, TASA_DGT, NOMBRE_IMPUESTO, desglosa,
   type Tarifa,
 } from '../lib/itv-tarifas'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -22,8 +23,6 @@ const CSS =
   ':root{--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
   + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'header{background:linear-gradient(135deg,#166534,#16a34a);color:#fff;padding:14px 18px}'
-  + 'header a{color:#fff;text-decoration:none;font-weight:600}'
   + 'main{max-width:760px;margin:0 auto;padding:18px}'
   + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
   + 'h2{font-size:17px;margin:26px 0 10px}'
@@ -112,8 +111,8 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<meta property="og:url" content="' + esc(m.canonical) + '" />'
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + '</style></head><body>'
-    + '<header><a href="/">CercaYa</a></header><main>'
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
+    + mastheadHtml('itv') + '<main>'
     + cuerpo
     + '</main><footer>Datos de la DGT y de los portales de datos abiertos autonomicos. '
     + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'

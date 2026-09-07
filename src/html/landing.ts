@@ -20,6 +20,7 @@
 //     el canonical, OG y el JSON-LD (WebSite + ItemList de servicios).
 
 import { APP_VERSION } from '../lib/version'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 
 /** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
 export interface LandingTiempo {
@@ -34,7 +35,6 @@ export interface LandingTiempo {
 /** Datos frescos que el handler de `/` inyecta en la portada. Todo opcional:
  *  si falta algo, ese bloque degrada sin romper la página. */
 export interface LandingData {
-  fecha?: string                               // "sábado, 6 de septiembre de 2026"
   gasolina?: { g95?: number; diesel?: number } // media nacional €/L
   tiempo?: LandingTiempo[]                      // ciudades grandes con dato fresco
 }
@@ -182,13 +182,6 @@ export function buildLandingPage(
       + '<p class="d-note">media nacional de hoy · precios oficiales del Ministerio</p>'
     : '<p>Precios oficiales de carburantes en tiempo real, mapa y comparador por combustible.</p>'
 
-  // Esc HTML de la fecha (viene del servidor, pero por higiene) + capitaliza.
-  let fechaTxt = ''
-  if (data.fecha) {
-    const f = esc(data.fecha)
-    fechaTxt = f.charAt(0).toUpperCase() + f.slice(1)
-  }
-
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -262,36 +255,7 @@ export function buildLandingPage(
       display: flex;
       flex-direction: column;
     }
-    .serif { }
-    /* ---- Cabecera de periódico ---- */
-    .masthead { background: var(--paper); text-align: center; padding: 22px 20px 0; }
-    .mh-inner { max-width: 1080px; margin: 0 auto; }
-    .mh-date {
-      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
-      color: var(--muted); padding-bottom: 10px; margin: 0 0 14px;
-      border-bottom: 1px solid var(--rule);
-    }
-    .mh-logo { width: 44px; height: 44px; display: block; margin: 0 auto 4px; }
-    .mh-title {
-      font-family: Georgia, 'Times New Roman', 'Nimbus Roman', serif;
-      font-size: clamp(40px, 8vw, 68px); font-weight: 800; letter-spacing: -0.02em;
-      margin: 0; color: var(--ink); line-height: 1;
-    }
-    .mh-tag {
-      font-family: Georgia, 'Times New Roman', serif; font-style: italic;
-      color: var(--muted); margin: 8px 0 16px; font-size: clamp(14px, 2vw, 17px);
-    }
-    .mh-nav {
-      max-width: 1080px; margin: 0 auto; display: flex; flex-wrap: wrap;
-      justify-content: center; border-top: 3px double var(--ink);
-      border-bottom: 1px solid var(--rule);
-    }
-    .mh-nav a {
-      padding: 12px 18px; font-size: 13px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--brand-dark); text-decoration: none;
-    }
-    .mh-nav a:hover { background: var(--brand-soft); }
-    .mh-nav a:focus-visible { background: var(--brand-soft); outline: 3px solid var(--brand-dark); outline-offset: -3px; }
+    ${MASTHEAD_CSS}
     /* ---- Cuerpo ---- */
     main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 26px 20px 12px; }
     .kicker {
@@ -370,20 +334,7 @@ export function buildLandingPage(
   </style>
 </head>
 <body>
-  <header class="masthead">
-    <div class="mh-inner">
-      ${fechaTxt ? `<p class="mh-date">${fechaTxt} · España</p>` : ''}
-      <img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" />
-      <h1 class="mh-title">CercaYa</h1>
-      <p class="mh-tag">Info útil de España al instante · sin registro y gratis</p>
-    </div>
-    <nav class="mh-nav" aria-label="Secciones">
-      <a href="/tiempo/">El tiempo</a>
-      <a href="/gasolineras/">Gasolineras</a>
-      <a href="/farmacias/">Farmacias</a>
-      <a href="/itv/">ITV</a>
-    </nav>
-  </header>
+  ${mastheadHtml(null, { brandAsH1: true })}
 
   <main>
     <section class="lead" aria-labelledby="t-tiempo">

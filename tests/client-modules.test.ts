@@ -59,8 +59,8 @@ describe('cliente modulo por modulo', () => {
     expect(clientCoreScript.length).toBeGreaterThan(10000)     // ~20 KB
     expect(clientMapScript.length).toBeGreaterThan(20000)      // ~30 KB
     expect(clientListScript.length).toBeGreaterThan(20000)     // ~30 KB
-    expect(clientUiScript.length).toBeGreaterThan(30000)       // ~50 KB
-    expect(clientFeaturesScript.length).toBeGreaterThan(30000) // ~55 KB
+    expect(clientUiScript.length).toBeGreaterThan(20000)       // ~30 KB (tras simplificar el mapa)
+    expect(clientFeaturesScript.length).toBeGreaterThan(10000) // ~21 KB (sin ruta ni diario)
   })
 })
 
@@ -92,10 +92,9 @@ describe('features string (fuente del prebuild)', () => {
   // clientFeaturesScript. Aqui validamos que el string exportado tiene las
   // secciones esperadas — si alguien elimina una feature por error, el test
   // falla antes de llegar a prod.
-  it('contiene trend strip, comparador modal y diario', () => {
+  it('contiene trend strip y wiring del comparador modal', () => {
     expect(clientFeaturesScript).toContain('trend-strip')
     expect(clientFeaturesScript).toContain('openCompareModal')
-    expect(clientFeaturesScript).toContain('openDiary')
   })
 })
 
@@ -141,8 +140,6 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function disableTelegramAlerts',     in: ['core'] },
     { name: 'function telegramAlertsActive',      in: ['core'] },
     { name: 'function telegramServerConfigured',  in: ['core'] },
-    { name: 'function enterRouteMode',   in: ['features'] },
-    { name: 'function toggleRouteCorridor', in: ['features'] },
     { name: 'function prefersReducedMotion', in: ['core'] },
     { name: 'function scrollBehavior',  in: ['core'] },
     { name: 'function showToast',       in: ['core'] },

@@ -6,172 +6,25 @@ export const clientUiScript = `
 // Asi evitamos que un usuario indeciso vea la lista bailar mientras ajusta 4
 // controles — y ahorramos llamadas innecesarias al Ministerio.
 document.getElementById('sel-provincia').addEventListener('change', async function(e) {
-  // Cambio manual de provincia = el usuario quiere mirar otra region, asi que
-  // salimos del modo geolocalizacion (si estabamos dentro). Sin esto,
-  // loadStations() descartaba el municipio y ordenaba por distancia a la GPS
-  // vieja — bug reportado.
-  clearGeolocationMode();
-  // Unica excepcion: al cambiar provincia hay que refrescar el dropdown de
-  // municipios (es un selector dependiente). No carga estaciones.
+  // Al cambiar provincia refrescamos el dropdown de municipios (selector
+  // dependiente) y cargamos la provincia entera (sin "Buscar": el flujo es
+  // automatico). Elegir luego un municipio recorta por radio a su alrededor.
   await loadMunicipios(e.target.value);
+  if (e.target.value) { loadStations(); setTimeout(writeQueryState, 0); }
 });
 document.getElementById('sel-municipio').addEventListener('change', function() {
-  // Mismo razonamiento: si el usuario elige un municipio concreto, quiere ese
-  // municipio — no la provincia entera filtrada por distancia GPS.
-  clearGeolocationMode();
-  // No-op adicional: el render llega con "Buscar".
+  // Flujo automatico: al elegir municipio cargamos sus estaciones. La
+  // provincia ya esta elegida (loadStations la exige). El radio de busqueda
+  // se centra en el municipio (setupMunicipioRadio dentro de loadStations).
+  loadStations();
+  setTimeout(writeQueryState, 0);
 });
 document.getElementById('sel-combustible').addEventListener('change', function() {
-  // No-op: el render llega con "Buscar".
-});
-document.getElementById('sel-orden').addEventListener('change', function(e) {
-  // Mostrar slider de radio solo cuando tiene sentido (cerca / distancia).
-  var needsRadius = (e.target.value === 'cerca' || e.target.value === 'dist');
-  var rg = document.getElementById('radius-group');
-  // munCenter (municipio elegido) mantiene la barra visible sea cual sea el orden.
-  if ((needsRadius && userPos) || munCenter) rg.style.display = 'block';
-  else if (!needsRadius) rg.style.display = 'none';
-  else if (needsRadius && !userPos) {
-    showToast('Pulsa el boton de ubicacion para usar esta ordenacion', 'warning');
-  }
-  // Excepcion a la regla "nada hasta Buscar": el orden SI se reaplica en vivo
-  // si ya hay estaciones cargadas. Motivo: ordenar es una operacion puramente
-  // de cliente (reordenar un array en memoria) — no dispara fetch ni cambia
-  // el conjunto de resultados, solo el orden. Si el usuario va a la lista y
-  // quiere ver "mas barato primero" en lugar de "A-Z", forzarle un click de
-  // Buscar extra seria absurdo.
+  // El combustible re-filtra/re-colorea el pool ya cargado (operacion de
+  // cliente, sin fetch). Si aun no hay estaciones, no hace nada.
   if (allStations.length) applyFilters();
+  setTimeout(writeQueryState, 0);
 });
-
-// Filtros avanzados: tambien se aplican en vivo (operan sobre el pool ya
-// cargado, no disparan fetch). Actualizar tambien el contador-chip para que el
-// usuario vea "Filtros avanzados (2)" cuando tenga varios activos.
-function updateAdvCountBadge() {
-  var cnt = 0;
-  if (document.getElementById('flt-abierto').checked) cnt++;
-  if (document.getElementById('flt-24h').checked) cnt++;
-  if (document.getElementById('sel-marca').value) cnt++;
-  var badge = document.getElementById('adv-filters-count');
-  if (cnt > 0) { badge.textContent = String(cnt); badge.classList.add('show'); }
-  else { badge.textContent = ''; badge.classList.remove('show'); }
-}
-function advFilterChanged() {
-  updateAdvCountBadge();
-  if (allStations.length) applyFilters();
-}
-document.getElementById('flt-abierto').addEventListener('change', advFilterChanged);
-document.getElementById('flt-24h').addEventListener('change', advFilterChanged);
-document.getElementById('sel-marca').addEventListener('change', advFilterChanged);
-
-// ---- AUTOCOMPLETADO BUSQUEDA ----
-(function() {
-  var input  = document.getElementById('search-text');
-  var box    = document.getElementById('search-suggestions');
-  var selIdx   = -1;
-
-  function normQ(s) {
-    return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  }
-
-  function showSuggestions(q) {
-    if (!q || q.length < 2 || !allStations.length) { box.classList.remove('show'); return; }
-    var ql = normQ(q);
-    var fuel = document.getElementById('sel-combustible').value;
-
-    var seen = new Set();
-    var matches = [];
-    for (var i = 0; i < allStations.length; i++) {
-      var s = allStations[i];
-      var rotulo = normQ(s['Rotulo'] || '');
-      if (!rotulo.includes(ql)) continue;
-      if (seen.has(rotulo)) continue;
-      seen.add(rotulo);
-      matches.push(s);
-      if (matches.length >= 8) break;
-    }
-
-    if (!matches.length) { box.classList.remove('show'); return; }
-
-    selIdx = -1;
-    box.innerHTML = matches.map(function(s, i) {
-      var price = parsePrice(s[fuel]);
-      var color = price ? priceColor(price) : 'gray';
-      var nameSafe = esc(s['Rotulo'] || 'Gasolinera');
-      // Highlight sobre el texto ya escapado: $1 es siempre texto seguro
-      var hl    = nameSafe.replace(new RegExp('(' + q.replace(/[.*+?^{}$()|[\]\\]/g,'\\$&') + ')', 'gi'), '<mark class="suggest-highlight">$1</mark>');
-      return '<div class="suggest-item" data-idx="' + i + '">'
-        + '<div class="suggest-row">'
-        + '  <div class="suggest-name">&#x26FD; ' + hl + '</div>'
-        + '  <div class="suggest-sub">&#x1F4CD; ' + esc(s['Municipio']) + '</div>'
-        + '</div>'
-        + (price ? '<span class="suggest-price suggest-price--' + color + '">' + price.toFixed(3) + ' &#x20AC;</span>' : '')
-        + '</div>';
-    }).join('');
-
-    box._matches = matches;
-    box.classList.add('show');
-  }
-
-  function selectItem(s) {
-    input.value = s['Rotulo'] || '';
-    box.classList.remove('show');
-    applyFilters();
-    var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
-    var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-    if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
-      map.setView([lat, lng], 17);
-      if (clusterGroup) {
-        clusterGroup.eachLayer(function(layer) {
-          var lp = layer.getLatLng();
-          if (Math.abs(lp.lat - lat) < 0.0002 && Math.abs(lp.lng - lng) < 0.0002) layer.openPopup();
-        });
-      }
-    }
-  }
-
-  input.addEventListener('input', function() {
-    // El autocomplete (dropdown de sugerencias) sigue funcionando en vivo —
-    // es una ayuda visual, no cambia el mapa. Pero NO reaplicamos filtros al
-    // vuelo: el usuario vera la lista filtrada cuando pulse "Buscar".
-    showSuggestions(input.value.trim());
-  });
-
-  box.addEventListener('mousedown', function(e) {
-    var item = e.target.closest('.suggest-item');
-    if (!item) return;
-    e.preventDefault();
-    selectItem(box._matches[+item.dataset.idx]);
-  });
-
-  // Navegacion con teclado arriba abajo Enter Esc
-  input.addEventListener('keydown', function(e) {
-    var items = box.querySelectorAll('.suggest-item');
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      selIdx = Math.min(selIdx + 1, items.length - 1);
-      items.forEach(function(el, i) { el.style.background = i === selIdx ? '#f0fdf4' : ''; });
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      selIdx = Math.max(selIdx - 1, -1);
-      items.forEach(function(el, i) { el.style.background = i === selIdx ? '#f0fdf4' : ''; });
-    } else if (e.key === 'Enter') {
-      if (selIdx >= 0 && box._matches) { selectItem(box._matches[selIdx]); }
-      else loadStations();
-    } else if (e.key === 'Escape') {
-      box.classList.remove('show');
-    }
-  });
-
-  document.addEventListener('click', function(e) {
-    if (!e.target.closest('.form-group')) box.classList.remove('show');
-  });
-
-  input.addEventListener('focus', function() {
-    if (input.value.trim().length >= 2) showSuggestions(input.value.trim());
-  });
-})();
-
-document.getElementById('btn-buscar').addEventListener('click', loadStations);
 
 // ---- SIDEBAR TOGGLE ----
 var sidebar    = document.getElementById('sidebar');
@@ -253,49 +106,6 @@ window.addEventListener('resize', function() {
 // poco frente al filtro por provincia + geolocalizacion). El modal de ruta
 // sigue usando /api/geocode/search internamente para origen/destino.
 
-// ---- MODO OSCURO — siempre arranca en claro, sin persistencia ----
-(function() {
-  var btn = document.getElementById('btn-dark');
-  var icon = btn.querySelector('i');
-  function updateIcon() {
-    var dark = document.body.classList.contains('dark');
-    icon.className = dark ? 'fas fa-sun' : 'fas fa-moon';
-    btn.title = dark ? 'Modo claro' : 'Modo oscuro';
-  }
-  updateIcon();
-  btn.addEventListener('click', function() {
-    document.body.classList.toggle('dark');
-    updateIcon();
-    // Sincronizar tile del mapa: togglear entre capa clara y oscura.
-    if (map && mapLayers.light && mapLayers.dark) {
-      var isDark = document.body.classList.contains('dark');
-      if (isDark) { map.removeLayer(mapLayers.light); mapLayers.dark.addTo(map); }
-      else        { map.removeLayer(mapLayers.dark);  mapLayers.light.addTo(map); }
-      // Dark usa raster sin etiquetas — necesita SPAIN_LABELS encima. Light
-      // puede ser MapLibre Liberty (trae toponimia filtrada a Espana) o raster
-      // voyager_nolabels; en el segundo caso tambien hacen falta labels custom.
-      // Criterio: si mapLayers.light sigue siendo un TileLayer (raster, el
-      // upgrade MapLibre no llego a aplicarse), mostramos labels en ambos
-      // modos; si es MapLibre (vector), solo en modo dark.
-      var lightIsRaster = mapLayers.light instanceof L.TileLayer;
-      var needLabels = isDark || lightIsRaster;
-      if (needLabels) {
-        if (!labelLayer) {
-          labelLayer = L.layerGroup().addTo(map);
-          map.on('zoomend', renderLabels);
-        } else if (!map.hasLayer(labelLayer)) {
-          labelLayer.addTo(map);
-        }
-        renderLabels();
-      } else {
-        if (labelLayer && map.hasLayer(labelLayer)) {
-          map.removeLayer(labelLayer);
-        }
-      }
-    }
-  });
-})();
-
 // ---- INIT ----
 // Limpiar cache antigua (datos sin normalizar) si existe
 (function() {
@@ -307,11 +117,10 @@ window.addEventListener('resize', function() {
 
 // ---- URL SYNC + SEO SEED ----
 // Dos funcionalidades relacionadas:
-//   1) Al cargar, leemos query params (?prov=28&mun=XXX&fuel=...&order=asc
-//      &text=...&open=1&h24=1&brand=REPSOL&radius=5) para rehidratar el estado
-//      de los controles → habilita enlaces compartibles (?a un compa?ero).
-//   2) Tras una busqueda, reescribimos la URL con history.replaceState para
-//      que el "Compartir" funcione y refrescar la pagina no pierda contexto.
+//   1) Al cargar, leemos query params (?prov=28&mun=XXX&fuel=...) para
+//      rehidratar los selects → habilita enlaces compartibles.
+//   2) Al cambiar provincia/municipio/combustible, reescribimos la URL con
+//      history.replaceState para que refrescar no pierda contexto.
 // La seed via window.__SEO__ (rutas /gasolineras/<slug>) solo rellena la
 // provincia; los query params tienen prioridad sobre ella.
 var __urlSyncActive = false;   // evita que la rehidratacion dispare loadStations
@@ -324,13 +133,7 @@ function readQueryState() {
   return {
     prov:   p.get('prov')   || (seo && seo.provinciaId) || '',
     mun:    p.get('mun')    || (seo && seo.municipioId) || '',
-    fuel:   p.get('fuel')   || '',
-    order:  p.get('order')  || '',
-    text:   p.get('text')   || '',
-    brand:  p.get('brand')  || '',
-    open:   p.get('open')   === '1',
-    h24:    p.get('h24')    === '1',
-    radius: p.get('radius') || ''
+    fuel:   p.get('fuel')   || ''
   };
 }
 function writeQueryState() {
@@ -339,23 +142,10 @@ function writeQueryState() {
     var prov  = document.getElementById('sel-provincia').value;
     var mun   = document.getElementById('sel-municipio').value;
     var fuel  = document.getElementById('sel-combustible').value;
-    var order = document.getElementById('sel-orden').value;
-    var text  = (document.getElementById('search-text').value || '').trim();
-    var radius= document.getElementById('in-radius').value;
-    var brand = (document.getElementById('sel-marca') || {}).value || '';
-    var open  = (document.getElementById('flt-abierto') || {}).checked;
-    var h24   = (document.getElementById('flt-24h')     || {}).checked;
     if (prov)  p.set('prov',  prov);
     if (mun)   p.set('mun',   mun);
     // fuel por defecto es "Precio Gasolina 95 E5"; no lo escribimos para URLs limpias
     if (fuel && fuel !== 'Precio Gasolina 95 E5') p.set('fuel', fuel);
-    if (order && order !== 'asc') p.set('order', order);
-    if (text)  p.set('text',  text);
-    if (brand) p.set('brand', brand);
-    if (open)  p.set('open',  '1');
-    if (h24)   p.set('h24',   '1');
-    // Radio solo se guarda en modos cerca/dist
-    if (radius && (order === 'cerca' || order === 'dist')) p.set('radius', radius);
     var qs = p.toString();
     var base = location.pathname;
     // En rutas /gasolineras/<slug>[/<mun-slug>], mantener la ruta pero anadir
@@ -374,18 +164,10 @@ function writeQueryState() {
 }
 
 async function applyQueryState(state) {
-  // Orden: provincia (dispara loadMunicipios asincrono) → municipio → resto.
+  // Orden: provincia (dispara loadMunicipios asincrono) → municipio → combustible.
   var selProv = document.getElementById('sel-provincia');
   var selMun  = document.getElementById('sel-municipio');
   var selFuel = document.getElementById('sel-combustible');
-  var selOrd  = document.getElementById('sel-orden');
-  var txt     = document.getElementById('search-text');
-  var selMk   = document.getElementById('sel-marca');
-  var fOpen   = document.getElementById('flt-abierto');
-  var f24     = document.getElementById('flt-24h');
-  var rg      = document.getElementById('radius-group');
-  var inR     = document.getElementById('in-radius');
-  var lblR    = document.getElementById('lbl-radius');
 
   if (state.prov && selProv) {
     selProv.value = state.prov;
@@ -402,22 +184,6 @@ async function applyQueryState(state) {
     if (match) selMun.value = state.mun;
   }
   if (state.fuel && selFuel)  selFuel.value = state.fuel;
-  if (state.order && selOrd)  selOrd.value  = state.order;
-  if (state.text && txt)      txt.value     = state.text;
-  if (state.brand && selMk)   selMk.value   = state.brand;
-  if (fOpen) fOpen.checked = !!state.open;
-  if (f24)   f24.checked   = !!state.h24;
-  if (state.radius && inR) {
-    inR.value = state.radius;
-    if (lblR) lblR.textContent = state.radius + ' km';
-  }
-  // Mostrar radius si order es cerca/dist y tenemos userPos (aunque userPos
-  // llega despues; el handler de sel-orden ya lo vuelve a evaluar).
-  if ((state.order === 'cerca' || state.order === 'dist') && rg && userPos) {
-    rg.style.display = 'block';
-  }
-  // Refrescamos el contador de filtros avanzados si existe.
-  try { if (typeof updateAdvCountBadge === 'function') updateAdvCountBadge(); } catch(_) {}
 }
 
 // Si el <script> de Leaflet no carga (adblocker agresivo, red corporativa que
@@ -481,28 +247,14 @@ async function bootApp() {
     try { await loadStations(); } catch(_) {}
   }
   // Ship 4: acciones rapidas desde Manifest shortcuts (?action=...).
-  // Soportadas: geolocate (cerca de mi), route (abrir planificador), favs
-  // (abrir modal favoritos), cheapest (sort por precio + primera provincia).
-  // Se ejecuta despues del bootstrap para que todos los handlers esten
-  // registrados. El delay es mas defensivo que necesario pero evita races
-  // con initMap/loadProvincias.
+  // Soportada: favs (abrir modal de favoritos). Se ejecuta despues del
+  // bootstrap para que los handlers esten registrados.
   try {
     var action = new URLSearchParams(location.search).get('action');
     if (action) {
       setTimeout(function() {
-        if (action === 'geolocate') {
-          var btn = document.getElementById('btn-geolocate');
-          if (btn) btn.click();
-        } else if (action === 'route') {
-          if (typeof window.__openRouteModal === 'function') window.__openRouteModal();
-        } else if (action === 'favs') {
+        if (action === 'favs') {
           if (typeof openFavsModal === 'function') openFavsModal();
-        } else if (action === 'cheapest') {
-          // Ordena por precio y geolocaliza para contextualizar a la zona.
-          var sel = document.getElementById('sel-orden');
-          if (sel) { sel.value = 'asc'; sel.dispatchEvent(new Event('change')); }
-          var gbtn = document.getElementById('btn-geolocate');
-          if (gbtn) gbtn.click();
         }
       }, 300);
     }
@@ -513,50 +265,6 @@ if (document.readyState === 'loading') {
 } else {
   bootApp();
 }
-
-// Tras cada busqueda, escribimos la URL. Hookeamos en el boton Buscar.
-(function() {
-  var btn = document.getElementById('btn-buscar');
-  if (btn) btn.addEventListener('click', function() {
-    // writeQueryState se ejecuta en el siguiente microtask para no interferir
-    // con el click handler original (loadStations).
-    setTimeout(writeQueryState, 0);
-  });
-  // Filtros avanzados: al cambiar, reescribimos tambien.
-  ['flt-abierto','flt-24h','sel-marca'].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.addEventListener('change', function() { setTimeout(writeQueryState, 0); });
-  });
-})();
-
-// ---- BOTON SHARE ----
-// Usa Web Share API si esta disponible (movil) y cae a copiar-al-clipboard
-// en escritorio. Primero nos aseguramos de que la URL refleja el estado actual.
-(function() {
-  var btn = document.getElementById('btn-share');
-  if (!btn) return;
-  btn.addEventListener('click', function() {
-    writeQueryState();
-    var url = location.href;
-    var title = document.title;
-    var text  = 'Precios de gasolineras actualizados';
-    if (navigator.share) {
-      navigator.share({ title: title, text: text, url: url }).catch(function(){});
-      return;
-    }
-    // Fallback: copy to clipboard
-    try {
-      navigator.clipboard.writeText(url).then(function() {
-        showToast('Enlace copiado al portapapeles', 'success');
-      }).catch(function() {
-        // Fallback del fallback: mostramos la URL en un prompt
-        try { window.prompt('Copia este enlace:', url); } catch(_) {}
-      });
-    } catch(_) {
-      try { window.prompt('Copia este enlace:', url); } catch(_) {}
-    }
-  });
-})();
 
 // Re-invalidar tamano al cambiar dimensiones de ventana
 window.addEventListener('resize', function() { if (map) map.invalidateSize(true); });
@@ -1123,13 +831,6 @@ async function navigateToFav(f) {
   var selMun  = document.getElementById('sel-municipio');
   var inText  = document.getElementById('search-text');
 
-  // Clicar una favorita es un cambio de contexto explicito: olvidamos la
-  // GPS anterior (si el usuario habia pulsado "Mi ubicacion" antes en
-  // otra provincia, applyFilters despues filtraba por radio contra esas
-  // coords viejas y dejaba 0 resultados aunque cargaramos la provincia
-  // correcta).
-  clearGeolocationMode();
-
   // Paso 0: centrar el mapa INMEDIATAMENTE sobre la ubicacion real de la
   // favorita. Esto desacopla el feedback visual (siempre funciona si
   // guardamos lat/lng) de la resolucion de provincia (que puede fallar o
@@ -1278,282 +979,17 @@ function closeFavsModal() {
   if (modal) modal.classList.remove('show');
 }
 
-// ---- WIDGET DE GASTO MENSUAL ----
-function updateMonthlyWidget() {
-  var prof = getProfile();
-  var widget = document.getElementById('monthly-widget');
-  if (!prof || !prof.km || !prof.consumo || !currentMedianPrice) {
-    widget.classList.remove('show');
-    return;
-  }
-  var litros = (prof.km / 100) * prof.consumo;
-  var cost = litros * currentMedianPrice;
-  document.getElementById('mw-cost').textContent = cost.toFixed(0) + ' \u20AC / mes';
-  // Calcular ahorro potencial si reposta en el top 3
-  var tank = parseInt(localStorage.getItem('gs_tank') || '50', 10);
-  var repostajes = Math.ceil(litros / tank);
-  var topPrice = null;
-  for (var id in topCheapIds) { if (topCheapIds[id] === 1) {
-    for (var i = 0; i < filteredStations.length; i++) {
-      if (stationId(filteredStations[i]) === id) {
-        topPrice = parsePrice(filteredStations[i][document.getElementById('sel-combustible').value]);
-        break;
-      }
-    }
-  }}
-  var saving = topPrice ? (currentMedianPrice - topPrice) * litros : 0;
-  document.getElementById('mw-sub').textContent = saving > 1
-    ? 'Ahorro potencial: ' + saving.toFixed(0) + ' \u20AC/mes (' + repostajes + ' repostajes)'
-    : repostajes + ' repostajes/mes aprox';
-  widget.classList.add('show');
-}
-
-// ---- ONBOARDING / PERFIL ----
-(function() {
-  var modal = document.getElementById('modal-profile');
-  var chipsCarType = document.getElementById('chips-cartype');
-  var chipsFuel = document.getElementById('chips-fuel');
-  var fuelGroup = document.getElementById('profile-fuel-group');
-  var chipsKm   = document.getElementById('chips-km');
-  var inCons    = document.getElementById('in-consumo');
-  var lblCons   = document.getElementById('lbl-consumo');
-  var lblConsHead = document.getElementById('lbl-consumo-head');
-  var inTankM   = document.getElementById('in-tank-modal');
-  var lblTankM  = document.getElementById('lbl-tank-modal');
-  var lblTankHead = document.getElementById('lbl-tank-head');
-  var outAuto   = document.getElementById('out-autonomy');
-
-  // Ship 25.4: tmpProfile incluye carType ('combustion' | 'electrico').
-  // La autonomia YA NO es editable — se calcula automaticamente con
-  //     autonomy_km = (tank / consumo) * 100
-  // al cambiar tank, consumo o carType. Persiste en el perfil para que el
-  // planificador de rutas la use sin recalcularla cada vez.
-  var tmpProfile = {
-    carType: 'combustion',
-    fuel: '', km: 0,
-    consumo: 6.5, tank: 50,
-    autonomy: 0,
-    strictFuel: true
-  };
-
-  // Formula de autonomia — valida para combustion (L, L/100km) y electrico
-  // (kWh, kWh/100km) porque las unidades cancelan.
-  function computeAutonomy(tank, consumo) {
-    var t = (typeof tank === 'number' && tank > 0) ? tank : 0;
-    var c = (typeof consumo === 'number' && consumo > 0) ? consumo : 0;
-    if (!t || !c) return 0;
-    return Math.round((t / c) * 100);
-  }
-
-  // Re-renderiza el numero grande de autonomia y actualiza tmpProfile.autonomy.
-  // Se invoca desde cada listener (sliders + cambio de tipo).
-  function refreshAutonomy() {
-    tmpProfile.autonomy = computeAutonomy(tmpProfile.tank, tmpProfile.consumo);
-    if (outAuto) outAuto.textContent = String(tmpProfile.autonomy);
-  }
-
-  // Ajusta las unidades visibles (L vs kWh) segun el tipo de coche.
-  // Los valores numericos de los sliders se mantienen — solo cambia la
-  // etiqueta. La formula da el mismo resultado en km para ambos sistemas.
-  function applyCarTypeUI(type) {
-    var isElec = type === 'electrico';
-    // Cabeceras de los sliders
-    if (lblTankHead) {
-      lblTankHead.innerHTML = isElec
-        ? '\u26A1 Capacidad de la bater\u00EDa'
-        : '\u26FD Capacidad del dep\u00F3sito';
-    }
-    if (lblConsHead) {
-      lblConsHead.innerHTML = isElec
-        ? '\uD83D\uDCA7 Consumo medio (kWh/100km)'
-        : '\uD83D\uDCA7 Consumo medio (L/100km)';
-    }
-    // Unidades del valor actual junto a cada slider
-    var unitCap = isElec ? 'kWh' : 'L';
-    var unitCons = isElec ? 'kWh' : 'L';
-    if (lblTankM) lblTankM.textContent = tmpProfile.tank + ' ' + unitCap;
-    if (lblCons) lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unitCons;
-    // ARIA labels
-    if (inTankM) inTankM.setAttribute('aria-label',
-      isElec ? 'Capacidad de la bater\u00EDa en kWh' : 'Capacidad del dep\u00F3sito en litros');
-    if (inCons) inCons.setAttribute('aria-label',
-      isElec ? 'Consumo en kWh por 100 km' : 'Consumo en litros por 100 km');
-    // Rangos del slider de consumo: combustion 3-15 L/100km; electrico 10-30 kWh/100km.
-    // Solo cambiamos el maximo (el minimo 3 es seguro en ambos). Ajustamos el valor
-    // si queda fuera del nuevo rango para evitar que el slider se quede "pegado".
-    if (inCons) {
-      if (isElec) {
-        inCons.min = '10'; inCons.max = '30'; inCons.step = '0.5';
-        if (tmpProfile.consumo < 10) { tmpProfile.consumo = 18; inCons.value = '18'; }
-        if (tmpProfile.consumo > 30) { tmpProfile.consumo = 30; inCons.value = '30'; }
-      } else {
-        inCons.min = '3'; inCons.max = '15'; inCons.step = '0.5';
-        if (tmpProfile.consumo > 15) { tmpProfile.consumo = 6.5; inCons.value = '6.5'; }
-        if (tmpProfile.consumo < 3)  { tmpProfile.consumo = 6.5; inCons.value = '6.5'; }
-      }
-      lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unitCons;
-    }
-    // El grupo "Que combustible usas" no aplica a electricos — lo ocultamos.
-    // Guardamos fuel='' para que el perfil no arrastre un combustible fantasma.
-    if (fuelGroup) fuelGroup.style.display = isElec ? 'none' : '';
-    if (isElec) tmpProfile.fuel = '';
-    refreshAutonomy();
-  }
-
-  function openModal() {
-    var cur = getProfile() || {};
-    tmpProfile = {
-      carType: cur.carType === 'electrico' ? 'electrico' : 'combustion',
-      fuel: cur.fuel || '',
-      km: cur.km || 0,
-      consumo: cur.consumo || 6.5,
-      tank: cur.tank || 50,
-      autonomy: 0,
-      strictFuel: cur.strictFuel !== false
-    };
-    // Marcar chip tipo de coche
-    if (chipsCarType) {
-      Array.prototype.forEach.call(chipsCarType.querySelectorAll('.chip'), function(c) {
-        var sel = c.getAttribute('data-cartype') === tmpProfile.carType;
-        c.classList.toggle('selected', sel);
-        c.setAttribute('aria-checked', String(sel));
-      });
-    }
-    Array.prototype.forEach.call(chipsFuel.querySelectorAll('.chip'), function(c) {
-      c.classList.toggle('selected', c.getAttribute('data-fuel') === tmpProfile.fuel);
-      c.setAttribute('aria-checked', String(c.getAttribute('data-fuel') === tmpProfile.fuel));
-    });
-    Array.prototype.forEach.call(chipsKm.querySelectorAll('.chip'), function(c) {
-      c.classList.toggle('selected', parseInt(c.getAttribute('data-km'),10) === tmpProfile.km);
-      c.setAttribute('aria-checked', String(parseInt(c.getAttribute('data-km'),10) === tmpProfile.km));
-    });
-    inCons.value = tmpProfile.consumo;
-    inTankM.value = tmpProfile.tank;
-    // applyCarTypeUI setea labels + refreshAutonomy; no hace falta repetir.
-    applyCarTypeUI(tmpProfile.carType);
-    modal.classList.add('show');
-  }
-  function closeModal() { modal.classList.remove('show'); }
-
-  // Listener tipo de coche
-  if (chipsCarType) {
-    chipsCarType.addEventListener('click', function(e) {
-      var c = e.target.closest('.chip'); if (!c) return;
-      var type = c.getAttribute('data-cartype');
-      if (type !== 'combustion' && type !== 'electrico') return;
-      tmpProfile.carType = type;
-      Array.prototype.forEach.call(chipsCarType.querySelectorAll('.chip'), function(x) {
-        var sel = x === c;
-        x.classList.toggle('selected', sel);
-        x.setAttribute('aria-checked', String(sel));
-      });
-      applyCarTypeUI(type);
-    });
-  }
-
-  chipsFuel.addEventListener('click', function(e) {
-    var c = e.target.closest('.chip'); if (!c) return;
-    tmpProfile.fuel = c.getAttribute('data-fuel');
-    Array.prototype.forEach.call(chipsFuel.querySelectorAll('.chip'), function(x) {
-      var sel = x === c;
-      x.classList.toggle('selected', sel);
-      x.setAttribute('aria-checked', String(sel));
-    });
-  });
-  chipsKm.addEventListener('click', function(e) {
-    var c = e.target.closest('.chip'); if (!c) return;
-    tmpProfile.km = parseInt(c.getAttribute('data-km'), 10);
-    Array.prototype.forEach.call(chipsKm.querySelectorAll('.chip'), function(x) {
-      var sel = x === c;
-      x.classList.toggle('selected', sel);
-      x.setAttribute('aria-checked', String(sel));
-    });
-  });
-  // Ship 25.4: los sliders SI actualizan la autonomia en vivo (formula:
-  // (tank/consumo)*100). Antes autonomia era un campo independiente; ahora
-  // se deriva — es lo que pidio el usuario para que "se calcule sola".
-  inCons.addEventListener('input', function() {
-    tmpProfile.consumo = parseFloat(inCons.value);
-    var unit = tmpProfile.carType === 'electrico' ? 'kWh' : 'L';
-    lblCons.textContent = tmpProfile.consumo.toString().replace('.', ',') + ' ' + unit;
-    refreshAutonomy();
-  });
-  inTankM.addEventListener('input', function() {
-    tmpProfile.tank = parseInt(inTankM.value, 10);
-    var unit = tmpProfile.carType === 'electrico' ? 'kWh' : 'L';
-    lblTankM.textContent = tmpProfile.tank + ' ' + unit;
-    refreshAutonomy();
-  });
-
-  document.getElementById('btn-profile-save').addEventListener('click', function() {
-    // Ship 25.4: autonomia se recalcula aqui por ultima vez para asegurar
-    // que persistimos el valor derivado del tank+consumo actuales (y no uno
-    // viejo que pudo quedar en tmpProfile si algun listener fallo).
-    tmpProfile.autonomy = computeAutonomy(tmpProfile.tank, tmpProfile.consumo);
-    setProfile(tmpProfile);
-    try { localStorage.setItem('gs_tank', String(tmpProfile.tank)); } catch(e) {}
-    // Sincronizar combustible del sidebar. El deposito ya no tiene slider
-    // aqui: se configura solo en este modal y se lee desde localStorage.gs_tank
-    // donde corresponda (map.ts, list.ts, etc).
-    if (tmpProfile.fuel) document.getElementById('sel-combustible').value = tmpProfile.fuel;
-    closeModal();
-    if (allStations.length) applyFilters();
-    showToast('Perfil guardado \u2713', 'success');
-  });
-  document.getElementById('btn-profile-skip').addEventListener('click', closeModal);
-  // Expuesto para que el dropdown de usuario pueda abrir el mismo modal.
-  window.__openProfileModal = openModal;
-
-  // Cerrar con Escape o click en backdrop
-  modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' && modal.classList.contains('show')) closeModal();
-  });
-
-  // Auto-apertura del onboarding: solo cuando el usuario ya ha iniciado sesion
-  // y todavia no tiene perfil guardado. Visitas anonimas NO ven este modal —
-  // era intrusivo para quien solo entra a consultar precios sin querer
-  // configurar nada. El bloque de auth (mas abajo en este archivo) llama a
-  // window.__maybeOpenOnboarding() dentro de setLogged() cuando /api/me
-  // devuelve usuario valido (boot con sesion activa o callback post-login).
-  window.__maybeOpenOnboarding = function() {
-    if (getProfile()) return;
-    if (localStorage.getItem('gs_onboarded_v2')) return;
-    setTimeout(function() {
-      openModal();
-      try { localStorage.setItem('gs_onboarded_v2', '1'); } catch(e) {}
-    }, 900);
-  };
-
-  // Si ya hay perfil guardado, sincroniza combustible con el sidebar y
-  // persiste la capacidad del deposito en localStorage al cargar (ya no hay
-  // slider en el sidebar: es solo el espejo para map.ts/list.ts).
-  if (getProfile()) {
-    var p = getProfile();
-    if (p.fuel) {
-      // Espera a que el select este listo
-      setTimeout(function() {
-        var sel = document.getElementById('sel-combustible');
-        if (sel) sel.value = p.fuel;
-      }, 50);
-    }
-    if (p.tank) {
-      try { localStorage.setItem('gs_tank', String(p.tank)); } catch(e) {}
-    }
-  }
-})();
-
-// ---- SLIDER DE RADIO ----
-// El slider de deposito vivia aqui pero lo retiramos: estaba duplicado con el
-// del modal "Personaliza tu experiencia" (CAPACIDAD DEL DEPOSITO). La fuente
-// de verdad es localStorage.gs_tank, escrito por el modal al guardar.
+// ---- SLIDER DE RADIO (centrado en el municipio elegido) ----
+// El radio recorta las estaciones a N km alrededor del centro del municipio
+// seleccionado (munCenter). La capacidad del deposito se lee de
+// localStorage.gs_tank (default 50 L) para el calculo de ahorro.
 (function() {
   var inRad = document.getElementById('in-radius');
   var lblRad = document.getElementById('lbl-radius');
   inRad.addEventListener('input', function() {
     lblRad.textContent = inRad.value + ' km';
-    // Re-aplica en vivo tanto en modo GPS (userPos) como en modo municipio (munCenter).
-    if ((userPos || munCenter) && allStations.length) applyFilters();
+    // Re-aplica en vivo el radio alrededor del municipio (munCenter).
+    if (munCenter && allStations.length) applyFilters();
   });
 })();
 
@@ -1572,27 +1008,12 @@ function updateMonthlyWidget() {
   update();
 })();
 
-// ---- ATAJOS DE TECLADO ----
-// /  -> foco en buscador
-// g  -> geolocalizar
-// d  -> dark/light
-// Los atajos se ignoran si el usuario esta escribiendo en un input/textarea.
+// ---- TECLADO: Escape sale del foco de un control ----
+// Los atajos de busqueda/ubicacion/tema se retiraron junto con sus controles.
 document.addEventListener('keydown', function(e) {
   var tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') {
     if (e.key === 'Escape') e.target.blur();
-    return;
-  }
-  if (e.ctrlKey || e.metaKey || e.altKey) return;
-  if (e.key === '/') {
-    e.preventDefault();
-    document.getElementById('search-text').focus();
-  } else if (e.key === 'g' || e.key === 'G') {
-    document.getElementById('btn-geolocate').click();
-  } else if (e.key === 'd' || e.key === 'D') {
-    document.getElementById('btn-dark').click();
-  } else if (e.key === '?') {
-    showToast('Atajos: / buscar \u00B7 g ubicacion \u00B7 d tema', 'info');
   }
 });
 
@@ -1883,12 +1304,8 @@ function showUpdateToast(newSW) {
 // DOM, asi que todos los getElementById devuelven null y los listeners nunca
 // se registran — cero overhead.
 //
-// Relacion con la dropdown de la cuenta (requerimiento explicito del usuario):
-// dentro del desplegable hay tres items — Favoritas, Rutas, Repostajes —
-// que cuando se clickan cierran la dropdown y llaman directamente a las
-// funciones que abren cada modal (openFavsModal, window.__openRouteModal,
-// window.__openDiaryModal). Ya no existen botones de cabecera para estas
-// tres features — todo el acceso va por el desplegable.
+// El desplegable de la cuenta contiene un unico item de accion — Favoritas —
+// que al clicarse cierra la dropdown y abre su modal (openFavsModal).
 (function() {
   var CID = (typeof window !== 'undefined') ? window.__GOOGLE_CLIENT_ID__ : null;
   if (!CID) return;
@@ -1902,9 +1319,6 @@ function showUpdateToast(newSW) {
   var ddName        = document.getElementById('user-dropdown-name');
   var ddEmail       = document.getElementById('user-dropdown-email');
   var btnUserFavs    = document.getElementById('btn-user-favs');
-  var btnUserRoute   = document.getElementById('btn-user-route');
-  var btnUserDiary   = document.getElementById('btn-user-diary');
-  var btnUserProfile = document.getElementById('btn-user-profile');
   var btnLogout     = document.getElementById('btn-logout');
   var loginModal    = document.getElementById('login-modal');
   var loginClose    = document.getElementById('login-modal-close');
@@ -1920,11 +1334,6 @@ function showUpdateToast(newSW) {
       if (userNameEl) userNameEl.textContent = user.name || user.email || '';
       if (ddName)     ddName.textContent     = user.name  || '';
       if (ddEmail)    ddEmail.textContent    = user.email || '';
-      // Onboarding: solo para usuarios logueados sin perfil. La funcion
-      // comprueba internamente que no se haya mostrado ya (gs_onboarded_v2).
-      if (typeof window.__maybeOpenOnboarding === 'function') {
-        window.__maybeOpenOnboarding();
-      }
     } else {
       userMenu.hidden = true;
       btnLogin.hidden = false;
@@ -1973,19 +1382,13 @@ function showUpdateToast(newSW) {
     toggleDropdown();
   });
 
-  // Tres items de la dropdown -> llaman directamente a la funcion que abre
-  // el modal correspondiente. openFavsModal es global (declarada top-level);
-  // openRoute y openDiary viven dentro de IIFEs en features.ts y se exponen
-  // como window.__openRouteModal / window.__openDiaryModal al final de cada
-  // IIFE.
+  // El unico item del dropdown es Favoritas -> abre su modal. openFavsModal
+  // es global (declarada top-level).
   function openModalByName(openFn) {
     closeDropdown();
     if (typeof openFn === 'function') openFn();
   }
   if (btnUserFavs)    btnUserFavs.addEventListener('click',    function() { openModalByName(typeof openFavsModal === 'function' ? openFavsModal : null); });
-  if (btnUserRoute)   btnUserRoute.addEventListener('click',   function() { openModalByName(window.__openRouteModal); });
-  if (btnUserDiary)   btnUserDiary.addEventListener('click',   function() { openModalByName(window.__openDiaryModal); });
-  if (btnUserProfile) btnUserProfile.addEventListener('click', function() { openModalByName(window.__openProfileModal); });
 
   // ---- Login modal ----
   var gsiInitialized = false;

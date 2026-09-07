@@ -643,16 +643,6 @@ ${mastheadHtml('gasolineras')}
       </div>
     </div>
 
-    <!-- INFO CARD — se oculta en click y persiste via localStorage (map_info_dismissed).
-         Ver bootstrap en client/core.ts: si la flag existe, el nodo se borra antes
-         de que el usuario lo vea. -->
-    <div id="map-info" role="note">
-      <button type="button" id="map-info-close" class="map-info-close"
-              aria-label="Cerrar aviso">&times;</button>
-      <div class="info-title">&#x26FD; Gasolineras en directo</div>
-      <div class="info-desc">Localiza estaciones al instante, revisa su contexto y compara el precio elegido con menos fricción.</div>
-    </div>
-
     <!-- LEYENDA -->
     <div id="legend" aria-label="Leyenda de precios">
       <h4>LEYENDA</h4>

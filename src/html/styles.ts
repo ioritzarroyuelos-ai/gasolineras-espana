@@ -233,32 +233,6 @@ export function getStyles(nonce: string = ''): string {
     .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; color:#4b5563; margin-bottom:4px; }
     .legend-dot { width:13px; height:13px; border-radius:50%; flex-shrink:0; }
 
-    /* ===== INFO CARD MAPA ===== */
-    #map-info {
-      position:absolute; top:12px; left:12px; z-index:400;
-      background:rgba(30,41,59,0.85); backdrop-filter:blur(6px);
-      border-radius:12px; padding:12px 32px 12px 16px; max-width:210px;
-      border:1px solid rgba(255,255,255,0.12);
-      box-shadow:0 4px 16px rgba(0,0,0,0.25);
-    }
-    #map-info .info-title { color:#fff; font-weight:700; font-size:14px; margin-bottom:5px; }
-    #map-info .info-desc { color:rgba(255,255,255,0.72); font-size:11px; line-height:1.5; }
-    /* Boton cerrar — 24x24 con area efectiva de 32x32 via padding; alineado al
-       angulo superior-derecho sin desplazar el contenido existente. */
-    #map-info .map-info-close {
-      position:absolute; top:4px; right:4px;
-      width:24px; height:24px;
-      background:transparent; border:0; padding:0;
-      color:rgba(255,255,255,0.55); font-size:18px; line-height:1;
-      cursor:pointer; border-radius:6px;
-      display:flex; align-items:center; justify-content:center;
-      transition:background 0.15s, color 0.15s;
-    }
-    #map-info .map-info-close:hover,
-    #map-info .map-info-close:focus-visible {
-      background:rgba(255,255,255,0.12); color:#fff; outline:none;
-    }
-
     /* ===== LEAFLET LAYER CONTROL ===== */
     .leaflet-control-layers { border-radius:10px !important; border:none !important; box-shadow:0 4px 16px rgba(0,0,0,0.15) !important; overflow:hidden; }
     .leaflet-control-layers-expanded { padding:8px 12px !important; background:rgba(255,255,255,0.95) !important; backdrop-filter:blur(4px); }
@@ -280,7 +254,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .card-sub, body.dark .card-time { color:#94a3b8; }
     body.dark #legend { background:rgba(15,23,42,0.95); border-color:#334155; }
     body.dark #legend h4, body.dark .legend-item { color:#e2e8f0; }
-    body.dark #map-info { background:rgba(2,6,23,0.9); }
     body.dark .leaflet-control-layers-expanded { background:rgba(15,23,42,0.95) !important; }
     body.dark .leaflet-control-layers-base label { color:#e2e8f0 !important; }
     body.dark .leaflet-popup-content-wrapper { background:#1e293b !important; }
@@ -721,7 +694,6 @@ export function getStyles(nonce: string = ''): string {
 
     /* ---- Overlays del mapa < 768px ---- */
     @media (max-width: 767px) {
-      #map-info { display: none; }
       #legend { bottom: 48px; left: 8px; padding: 8px 10px; min-width: 110px; }
       #legend h4 { font-size: 11px; margin-bottom: 5px; }
       .legend-item { font-size: 11px; margin-bottom: 3px; }

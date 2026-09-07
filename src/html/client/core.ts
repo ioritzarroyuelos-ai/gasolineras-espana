@@ -247,35 +247,6 @@ function showToast(msg, type) {
     }
   } catch(_) {}
 
-  // ---- Map-info callout (primer uso) ----
-  // El callout "Gasolineras en directo" es util la primera vez que el usuario
-  // ve el mapa, pero taparle el cuadrante NW cada visita sucesiva es ruido.
-  // Flag binaria: si el usuario lo cierra, localStorage guarda 'seen' y el
-  // callout no vuelve. No hay TTL — es info cosmetica, no proceso.
-  var MAP_INFO_KEY = 'map_info_dismissed';
-  function initMapInfoCallout() {
-    var card = document.getElementById('map-info');
-    if (!card) return;
-    try {
-      if (localStorage.getItem(MAP_INFO_KEY) === '1') {
-        card.remove();
-        return;
-      }
-    } catch(_) {}
-    var btn = document.getElementById('map-info-close');
-    if (btn) {
-      btn.addEventListener('click', function(ev) {
-        ev.stopPropagation();
-        card.remove();
-        try { localStorage.setItem(MAP_INFO_KEY, '1'); } catch(_) {}
-      });
-    }
-  }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initMapInfoCallout);
-  } else {
-    initMapInfoCallout();
-  }
 })();
 
 // ---- FRESHNESS BADGE (Ship 15) ----

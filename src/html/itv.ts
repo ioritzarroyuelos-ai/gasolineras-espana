@@ -193,11 +193,36 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function cerrar() { box.hidden = true; box.innerHTML = ''; active = -1; shown = []; input.setAttribute('aria-expanded', 'false'); }
     function msg(t) { box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>'; box.hidden = false; shown = []; active = -1; input.setAttribute('aria-expanded', 'true'); }
+    // Alias cooficiales/alternativos de provincia (se buscan ADEMAS del nombre
+    // canonico) para que 'gipuzkoa', 'araba', 'gerona'... encuentren su provincia.
+    var provs = null;
+    var PROV_ALIAS = {
+      'guipuzcoa': 'gipuzkoa', 'alava': 'araba', 'bizkaia': 'vizcaya',
+      'girona': 'gerona', 'lleida': 'lerida', 'ourense': 'orense',
+      'a coruna': 'la coruna coruna', 'islas baleares': 'illes balears baleares',
+      'santa cruz de tenerife': 'tenerife', 'navarra': 'nafarroa',
+      'alicante': 'alacant', 'castellon': 'castello'
+    };
+    function buildProvs() {
+      if (provs) return provs;
+      provs = []; var seen = {};
+      for (var i = 0; i < muni.length; i++) {
+        var parts = String(muni[i].u || '').split('/'); var slug = parts[2] || '';
+        if (!slug || seen[slug]) continue; seen[slug] = 1;
+        var nombre = muni[i].p || '', np = norm(nombre);
+        provs.push({ n: nombre, u: '/' + parts[1] + '/' + slug, s: np + ' ' + (PROV_ALIAS[np] || '') });
+      }
+      return provs;
+    }
     function render(q) {
       var nq = norm(q);
       if (nq.length < 2) { cerrar(); return; }
       if (!loaded) { msg('Cargando municipios\\u2026'); return; }
       var res = [];
+      var pv = buildProvs();
+      for (var k = 0; k < pv.length && res.length < 3; k++) {
+        if (pv[k].s.indexOf(nq) >= 0) res.push({ n: 'Toda la provincia: ' + pv[k].n, p: 'Ver municipios', u: pv[k].u });
+      }
       for (var i = 0; i < muni.length && res.length < 12; i++) {
         if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
       }

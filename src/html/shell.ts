@@ -102,6 +102,11 @@ export function buildPage(
   const geoLabel = seo?.municipioName && seo?.provinciaName
     ? (seo.municipioName + ', ' + seo.provinciaName)
     : (seo?.provinciaName || '')
+  // El bloque SEO de abajo (con su H1 visible) se muestra en paginas de
+  // provincia/municipio con datos. Cuando esta, NO emitimos el H1 sr-only de
+  // arriba: si no, la pagina tendria dos H1 con textos distintos (senal diluida).
+  const hasSeoSummary = !!(geoLabel && seo?.stats
+    && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)))
   const pageTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
     : 'Gasolineras España · Precios oficiales en tiempo real'
@@ -447,7 +452,7 @@ ${mastheadHtml('gasolineras')}
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
-<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabel : 'Gasolineras España'} — precios oficiales en tiempo real</h1>
+${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabel : 'Gasolineras España'} — precios oficiales en tiempo real</h1>` : ''}
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
@@ -847,7 +852,7 @@ ${tsKey ? `<!-- Turnstile invisible widget para proteger /api/ingest sin UX intr
      data-expired-callback="__onTsExpired"
      aria-hidden="true"></div>` : ''}
 
-${geoLabel && seo?.stats && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)) ? `
+${hasSeoSummary ? `
 <!-- Bloque SEO estatico: resumen de precios del ambito (provincia o municipio).
      Se renderiza al final del DOM para no desplazar el mapa/sidebar (que son
      lo que el usuario quiere ver primero). Tras arreglar overflow:hidden en

@@ -7,6 +7,7 @@
 import type { Prediccion, Frescura, MunicipioLista } from '../../scripts/lib/tiempo.mjs'
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -63,12 +64,13 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<title>' + esc(m.title) + '</title>'
     + '<meta name="description" content="' + esc(m.desc) + '" />'
     + '<link rel="canonical" href="' + esc(m.canonical) + '" />'
-    + (m.noindex ? '<meta name="robots" content="noindex,follow" />' : '')
+    + (m.noindex ? '<meta name="robots" content="noindex,follow" />' : '<meta name="robots" content="index,follow,max-image-preview:large" />')
     + '<meta name="theme-color" content="#16a34a" />'
     + '<meta property="og:title" content="' + esc(m.title) + '" />'
     + '<meta property="og:description" content="' + esc(m.desc) + '" />'
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(m.canonical) + '" />'
+    + ogSocialTags(originFromCanonical(m.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
     + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
@@ -171,7 +173,12 @@ export function buildTiempoIndexPage(
   const lista = provincias.map(p =>
     '<li><a href="/tiempo/' + esc(p.slug) + '">' + esc(p.name) + '</a></li>'
   ).join('')
-  return envoltorio({ title, desc, canonical, nonce },
+  const origin = originFromCanonical(canonical)
+  const jsonLd = breadcrumbLd([
+    { name: 'Inicio', url: origin + '/' },
+    { name: 'El tiempo', url: origin + '/tiempo/' },
+  ])
+  return envoltorio({ title, desc, canonical, nonce, jsonLd },
     '<h1>El tiempo en España</h1>'
     + '<p class="sub">Predicción por municipio, con datos de AEMET</p>'
     + CAJA_BUSCADOR
@@ -192,7 +199,13 @@ export function buildTiempoProvinciaPage(
   const lista = d.municipios.map(m =>
     '<li><a href="/tiempo/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.nombre) + '</a></li>'
   ).join('')
-  return envoltorio({ title, desc, canonical: d.canonical, nonce },
+  const origin = originFromCanonical(d.canonical)
+  const jsonLd = breadcrumbLd([
+    { name: 'Inicio', url: origin + '/' },
+    { name: 'El tiempo', url: origin + '/tiempo/' },
+    { name: d.provinciaName, url: origin + '/tiempo/' + d.provinciaSlug },
+  ])
+  return envoltorio({ title, desc, canonical: d.canonical, nonce, jsonLd },
     '<h1>El tiempo en ' + esc(d.provinciaName) + '</h1>'
     + '<p class="sub">' + d.municipios.length + ' municipios</p>'
     + CAJA_BUSCADOR
@@ -251,8 +264,15 @@ export function buildTiempoMunicipioPage(
       + '(último dato de hace ' + Math.round(frescura.horas) + " h). Compruébala en aemet.es.</p>"
     : ''
 
+  const origin = originFromCanonical(d.canonical)
+  const jsonLd = breadcrumbLd([
+    { name: 'Inicio', url: origin + '/' },
+    { name: 'El tiempo', url: origin + '/tiempo/' },
+    { name: pred.provincia, url: origin + '/tiempo/' + d.provinciaSlug },
+    { name: pred.nombre, url: d.canonical },
+  ])
   return envoltorio({
-    title, desc, canonical: d.canonical, nonce,
+    title, desc, canonical: d.canonical, nonce, jsonLd,
     noindex: !frescura.fiable,  // no indexar predicciones caducadas
   },
     '<h1>El tiempo en ' + esc(pred.nombre) + '</h1>'

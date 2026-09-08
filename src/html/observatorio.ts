@@ -12,6 +12,16 @@
 
 import type { Observatorio, ProvinciaPrecio, MarcaPrecio } from '../lib/observatorio'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { ogSocialTags, originFromCanonical } from './seo'
+
+// El Ministerio da la fecha como "DD/MM/YYYY HH:mm:SS" (no ISO). schema.org
+// exige ISO 8601; en crudo, Search Console avisa y la ignora.
+function fechaMinisterioISO(f: string | undefined): { fecha: string; dateTime: string } | null {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?/.exec(String(f || ''))
+  if (!m) return null
+  const fecha = m[3] + '-' + m[2] + '-' + m[1]
+  return { fecha, dateTime: fecha + (m[4] ? 'T' + m[4] + ':' + m[5] + ':' + m[6] : '') }
+}
 
 export interface Variacion {
   dias: number
@@ -111,6 +121,7 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + (dsl ? eur(dsl) + ' &euro;/L' : 'n/d') + ') en Espa&ntilde;a, con ranking por provincia y por marca. '
     + 'Datos oficiales del Ministerio, actualizados a diario.'
 
+  const isoFecha = fechaMinisterioISO(obs.fechaMinisterio)
   const jsonLd = JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'Dataset',
@@ -118,7 +129,9 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     description: 'Precio medio (mediana) de gasolina 95 y diesel en Espana, agregado por provincia y por marca a partir de los datos oficiales del Ministerio para la Transicion Ecologica.',
     creator: { '@type': 'Organization', name: 'CercaYa' },
     isBasedOn: 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/',
-    temporalCoverage: obs.fechaMinisterio || undefined,
+    // ISO 8601 (antes iba el crudo "DD/MM/YYYY HH:mm:SS" -> aviso en Search Console).
+    temporalCoverage: isoFecha ? isoFecha.fecha : undefined,
+    dateModified: isoFecha ? isoFecha.dateTime : undefined,
     license: 'https://creativecommons.org/licenses/by/4.0/',
   }).replace(/</g, '\\u003c')
 
@@ -131,6 +144,8 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + '<meta property="og:title" content="' + title + '" />'
     + '<meta property="og:description" content="' + desc + '" />'
     + '<meta property="og:type" content="article" /><meta property="og:url" content="' + esc(d.canonical) + '" />'
+    + '<meta name="robots" content="index,follow,max-image-preview:large" />'
+    + ogSocialTags(originFromCanonical(d.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd + '</script>'
     + '<style nonce="' + esc(nonce) + '">'

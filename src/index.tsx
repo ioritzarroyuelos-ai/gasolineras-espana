@@ -1645,7 +1645,8 @@ app.get('/sitemap.xml', async c => {
   // 1,5 MB — no queremos ese peso en el sitemap principal).
   entries.push(`  <url><loc>${base}/tiempo/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
-  entries.push(`  <url><loc>${base}/status</loc><lastmod>${today}</lastmod><changefreq>hourly</changefreq><priority>0.2</priority></url>`)
+  // /status es una pagina de estado tecnico (auto-refresh), sin intencion de
+  // busqueda: fuera del sitemap y con noindex en su plantilla. Gastaba rastreo.
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${entries.join('\n')}
@@ -1878,7 +1879,7 @@ Si ves "DEGRADADO" mas de 48h seguidas, hay un problema — abre una issue.</p>
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Estado · Gasolineras España</title>
-<meta name="robots" content="index,follow"/>
+<meta name="robots" content="noindex,follow"/>
 <meta name="description" content="Estado del servicio Gasolineras España: health, freshness del snapshot del Ministerio, numero de estaciones cargadas."/>
 <meta http-equiv="refresh" content="60"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${stale ? '&#x26A0;' : '&#x2705;'}</text></svg>"/>

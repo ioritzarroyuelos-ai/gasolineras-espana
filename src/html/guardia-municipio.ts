@@ -13,6 +13,7 @@
 import { frescuraGuardia } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 export interface GuardiaPageData {
   provinciaSlug: string
@@ -157,7 +158,10 @@ function jsonLd(d: GuardiaPageData): string {
       geo: (isFinite(g.lat) && g.lat !== 0)
         ? { '@type': 'GeoCoordinates', latitude: g.lat, longitude: g.lng }
         : undefined,
-      openingHours: horarioLegible(g),
+      // openingHours omitido a proposito: horarioLegible() da texto libre
+      // ("09:30 - 23:00", "Consultar horario") que NO es el formato de
+      // schema.org (Mo-Su 09:00-23:00) y Google lo rechaza con aviso. Ademas
+      // Google no genera rich result de horario de Pharmacy, asi que no aporta.
     },
   }))
   const data = {
@@ -211,15 +215,22 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '<meta name="viewport" content="width=device-width, initial-scale=1" />'
     + '<title>' + esc(title) + '</title>'
     + '<meta name="description" content="' + esc(desc) + '" />'
-    + (p.noindex ? '<meta name="robots" content="noindex,follow" />' : '')
+    + (p.noindex ? '<meta name="robots" content="noindex,follow" />' : '<meta name="robots" content="index,follow,max-image-preview:large" />')
     + '<link rel="canonical" href="' + esc(d.canonical) + '" />'
     + '<meta name="theme-color" content="#16a34a" />'
     + '<meta property="og:title" content="' + esc(title) + '" />'
     + '<meta property="og:description" content="' + esc(desc) + '" />'
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(d.canonical) + '" />'
+    + ogSocialTags(originFromCanonical(d.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (p.mostrarCards && d.guardias.length ? '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd(d) + '</script>' : '')
+    + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + breadcrumbLd([
+        { name: 'Inicio', url: originFromCanonical(d.canonical) + '/' },
+        { name: 'Farmacias de guardia', url: originFromCanonical(d.canonical) + '/farmacias/' },
+        { name: d.provinciaName, url: originFromCanonical(d.canonical) + '/farmacias/' + d.provinciaSlug },
+        { name: d.municipioName, url: d.canonical },
+      ]) + '</script>'
     + '<style nonce="' + esc(nonce) + '">'
     + ':root{color-scheme:light;--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
     + '*{box-sizing:border-box}'

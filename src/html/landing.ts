@@ -211,7 +211,7 @@ export function buildLandingPage(
   <meta property="og:title" content="${esc(title)}" />
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
-  <meta property="og:image" content="${esc(origin)}/static/og-image.png" />
+  <meta property="og:image" content="${esc(origin)}/static/og.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />

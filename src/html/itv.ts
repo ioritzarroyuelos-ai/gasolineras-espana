@@ -12,6 +12,7 @@ import {
   type Tarifa,
 } from '../lib/itv-tarifas'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -86,6 +87,7 @@ interface Meta {
   canonical: string
   nonce: string
   jsonLd?: string
+  breadcrumb?: string
 }
 
 function envoltorio(m: Meta, cuerpo: string): string {
@@ -100,8 +102,11 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<meta property="og:description" content="' + esc(m.desc) + '" />'
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(m.canonical) + '" />'
+    + '<meta name="robots" content="index,follow,max-image-preview:large" />'
+    + ogSocialTags(originFromCanonical(m.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
+    + (m.breadcrumb ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.breadcrumb + '</script>' : '')
     + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml('itv') + '<main>'
     + cuerpo
@@ -263,7 +268,9 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
     document.addEventListener('click', function (e) { if (e.target !== input && !box.contains(e.target)) cerrar(); });
   })();
   </script>`
-  return envoltorio({ title, desc, canonical, nonce },
+  const origin = originFromCanonical(canonical)
+  return envoltorio({ title, desc, canonical, nonce,
+    breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'ITV', url: origin + '/itv/' }]) },
     '<h1>Estaciones de ITV en España</h1>'
     + '<p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
     + buscador
@@ -298,8 +305,14 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
     '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name)
     + (m.count > 1 ? ' <b>' + m.count + '</b>' : '') + '</a></li>'
   ).join('')
+  const origin = originFromCanonical(d.canonical)
   return envoltorio(
-    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.provinciaName, d.estaciones, d.provinciaName) },
+    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.provinciaName, d.estaciones, d.provinciaName),
+      breadcrumb: breadcrumbLd([
+        { name: 'Inicio', url: origin + '/' },
+        { name: 'ITV', url: origin + '/itv/' },
+        { name: d.provinciaName, url: origin + '/itv/' + d.provinciaSlug },
+      ]) },
     '<h1>ITV en ' + esc(d.provinciaName) + '</h1>'
     + '<p class="sub">' + n + ' estacion' + (n === 1 ? '' : 'es') + ' en ' + d.municipios.length + ' municipio'
     + (d.municipios.length === 1 ? '' : 's') + '</p>'
@@ -332,8 +345,15 @@ export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): strin
         ).join('')
       + '</ul></nav>'
     : ''
+  const origin = originFromCanonical(d.canonical)
   return envoltorio(
-    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.municipioName, d.estaciones, d.provinciaName) },
+    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.municipioName, d.estaciones, d.provinciaName),
+      breadcrumb: breadcrumbLd([
+        { name: 'Inicio', url: origin + '/' },
+        { name: 'ITV', url: origin + '/itv/' },
+        { name: d.provinciaName, url: origin + '/itv/' + d.provinciaSlug },
+        { name: d.municipioName, url: d.canonical },
+      ]) },
     '<h1>ITV en ' + esc(d.municipioName) + '</h1>'
     + '<p class="sub">' + esc(d.provinciaName) + ' &middot; ' + n + ' estacion' + (n === 1 ? '' : 'es') + '</p>'
     + d.estaciones.map(e => tarjeta(e, d.municipioName)).join('')

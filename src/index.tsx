@@ -3461,7 +3461,11 @@ app.get('/api/telegram/confirm', async c => {
   ).bind(token).all<{ chat_id: number | null; confirmed_at: number | null; expires_at: number }>()
   const row = r.results[0]
   if (!row) return c.json({ ok: true, confirmed: false, expired: true }, 200, { 'Cache-Control': 'no-store' })
-  if (row.expires_at < Date.now() && !row.confirmed_at) {
+  // Caducidad: aplica TAMBIEN a las filas confirmadas. Antes, una fila
+  // confirmada se podia canjear indefinidamente por tokens nuevos de 180d
+  // mientras la purga (cron) no la borrara. El token de vinculacion solo debe
+  // canjearse dentro de su ventana corta (~10 min).
+  if (row.expires_at < Date.now()) {
     return c.json({ ok: true, confirmed: false, expired: true }, 200, { 'Cache-Control': 'no-store' })
   }
   if (row.confirmed_at && row.chat_id) {
@@ -3485,8 +3489,10 @@ app.post('/api/telegram/unsubscribe', async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const chatId = await tgChatFromAuth(c)
   if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
-  let body: any = {}
-  try { body = await c.req.json() } catch { /* body opcional: sin station/fuel borra todas */ }
+  // Body: {} borra todas las alertas del chat; {station_id, fuel_code} borra una.
+  // Un JSON malformado se rechaza (no lo tratamos como "borrar todo").
+  let body: any
+  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
   const stationId = typeof body?.station_id === 'string' ? body.station_id : ''
   const fuelCode  = typeof body?.fuel_code  === 'string' ? body.fuel_code  : ''
   try {

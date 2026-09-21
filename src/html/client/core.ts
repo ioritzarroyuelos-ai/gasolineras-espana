@@ -733,6 +733,14 @@ function _tgHeaders(withJson) {
   if (t) h['Authorization'] = 'Bearer ' + t;
   return h;
 }
+// Borra la sesion Telegram local (token + chat_id) y resetea el cache. Se llama
+// al desactivar y cuando el server responde 401 (token caducado / secreto rotado):
+// asi la UI vuelve a "activar" en vez de quedarse falsamente "activa".
+function _tgClear() {
+  try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
+  _tgSubs = {};
+  _tgSubsHydrated = true;
+}
 
 // Combustible seleccionado -> fuel_code para el backend.
 function fuelSelectorToCode() {
@@ -839,20 +847,26 @@ async function disableTelegramAlerts() {
   var t = _tgAuth();
   if (!t) {
     // Ya estaba apagado o nunca se activo — nada que hacer
-    try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
+    _tgClear();
     return { ok: true, note: 'no_activo' };
   }
+  var res = null;
   try {
-    await fetch('/api/telegram/unsubscribe', {
+    res = await fetch('/api/telegram/unsubscribe', {
       method: 'POST',
       headers: _tgHeaders(true),
       body: '{}',
     });
-  } catch(_) {}
-  try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
-  // Limpia cache local — las campanas deben volver a estado OFF al instante.
-  _tgSubs = {};
-  _tgSubsHydrated = true;
+  } catch(_) {
+    // Fallo de red: NO limpiamos credenciales, para que el usuario pueda reintentar.
+    return { ok: false, error: 'network' };
+  }
+  if (res && !res.ok && res.status !== 401) {
+    // El server no confirmo el borrado (y no es 401): mantenemos la sesion para reintentar.
+    return { ok: false, error: 'unsubscribe_fallo' };
+  }
+  // Exito real, o 401 (el token ya no vale): limpiamos credenciales y cache local.
+  _tgClear();
   return { ok: true };
 }
 
@@ -886,6 +900,7 @@ async function loadTelegramSubscriptions() {
   if (!_tgAuth()) { _tgSubsHydrated = true; return; }
   try {
     var res = await fetch('/api/telegram/subscriptions', { headers: _tgHeaders(false) });
+    if (res.status === 401) { _tgClear(); return; }
     if (!res.ok) { _tgSubsHydrated = true; return; }
     var j = await res.json();
     if (j && j.ok && Array.isArray(j.subscriptions)) {
@@ -920,6 +935,8 @@ async function toggleTelegramFav(stationId, fuelCode, enabled) {
       }),
     });
     if (!res.ok) {
+      // 401 = el token ya no vale (caducado / secreto rotado): limpiamos y pedimos re-vincular.
+      if (res.status === 401) { _tgClear(); return { ok: false, error: 'not_linked' }; }
       // 503 telegram_not_configured -> mismo trato que not_linked
       if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
       return { ok: false, error: 'toggle_fallo' };

@@ -105,6 +105,67 @@ export async function verifySessionJWT(
   }
 }
 
+// ---- Token de sesion de Telegram (alertas SIN login) ----
+// El bot se vincula sin cuenta: tras confirmar el /start, el servidor emite
+// este token firmado (HMAC-SHA256) que ATA un chat_id concreto. Los endpoints
+// /api/telegram/{subscriptions,unsubscribe,toggle-fav} EXIGEN este token y
+// sacan el chat_id de aqui, nunca de un chat_id enviado por el cliente (antes
+// ese chat_id, un entero adivinable, era la unica "credencial" -> IDOR: se
+// podian leer/borrar/crear alertas ajenas). Es un token firmado CON CADUCIDAD
+// y sin almacenamiento: la revocacion no es inmediata (vive hasta expirar), a
+// cambio no depende de D1. Para revocar de golpe bastaria rotar el secreto.
+export const TG_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 180 // 180 dias
+
+type TelegramTokenPayload = { cid: number; k: 'tg'; iat: number; exp: number }
+
+export async function signTelegramToken(
+  chatId: number,
+  secret: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): Promise<string> {
+  const body: TelegramTokenPayload = { cid: chatId, k: 'tg', iat: nowSeconds, exp: nowSeconds + TG_TOKEN_TTL_SECONDS }
+  const header = { alg: 'HS256', typ: 'JWT' }
+  const h = base64urlEncodeString(JSON.stringify(header))
+  const b = base64urlEncodeString(JSON.stringify(body))
+  const data = `${h}.${b}`
+  const key = await hmacKey(secret)
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data))
+  return `${data}.${base64urlEncode(new Uint8Array(sig))}`
+}
+
+/** Devuelve el chat_id si el token es valido (firma + no caducado + kind 'tg'), o null. Fail-closed. */
+export async function verifyTelegramToken(
+  token: string,
+  secret: string,
+  nowSeconds: number = Math.floor(Date.now() / 1000),
+): Promise<number | null> {
+  if (typeof token !== 'string' || !secret) return null
+  const parts = token.split('.')
+  if (parts.length !== 3) return null
+  const [h, b, s] = parts
+  try {
+    const header = JSON.parse(base64urlDecodeString(h)) as { alg?: string }
+    if (header.alg !== 'HS256') return null
+    const key = await hmacKey(secret)
+    const sigBytes = base64urlDecode(s)
+    const dataBytes = new TextEncoder().encode(`${h}.${b}`)
+    const ok = await crypto.subtle.verify(
+      'HMAC',
+      key,
+      sigBytes.buffer.slice(sigBytes.byteOffset, sigBytes.byteOffset + sigBytes.byteLength) as ArrayBuffer,
+      dataBytes.buffer.slice(dataBytes.byteOffset, dataBytes.byteOffset + dataBytes.byteLength) as ArrayBuffer,
+    )
+    if (!ok) return null
+    const payload = JSON.parse(base64urlDecodeString(b)) as TelegramTokenPayload
+    if (payload.k !== 'tg') return null
+    if (typeof payload.cid !== 'number' || !Number.isFinite(payload.cid) || payload.cid <= 0) return null
+    if (typeof payload.exp !== 'number' || nowSeconds >= payload.exp) return null
+    return payload.cid
+  } catch {
+    return null
+  }
+}
+
 // ---- Google ID token (RS256) ----
 type JWK = {
   kty: string

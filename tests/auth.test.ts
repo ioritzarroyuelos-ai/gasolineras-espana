@@ -11,6 +11,9 @@ import {
   parseSessionCookie,
   isSyncableKey,
   SESSION_COOKIE_NAME,
+  signTelegramToken,
+  verifyTelegramToken,
+  TG_TOKEN_TTL_SECONDS,
 } from '../src/lib/auth'
 
 describe('base64url', () => {
@@ -46,6 +49,37 @@ describe('parseSessionCookie', () => {
   it('decodifica un valor valido', () => {
     expect(parseSessionCookie(`${SESSION_COOKIE_NAME}=abc.def`)).toBe('abc.def')
     expect(parseSessionCookie(`x=1; ${SESSION_COOKIE_NAME}=a%20b`)).toBe('a b')
+  })
+})
+
+describe('signTelegramToken / verifyTelegramToken (IDOR fix)', () => {
+  const secret = 'tg-secret-suficientemente-largo-para-el-test'
+  it('roundtrip: verify devuelve el chatId firmado', async () => {
+    const now = 1_700_000_000
+    const tok = await signTelegramToken(123456, secret, now)
+    expect(await verifyTelegramToken(tok, secret, now + 10)).toBe(123456)
+  })
+  it('rechaza secreto incorrecto', async () => {
+    const tok = await signTelegramToken(123456, secret, 1_700_000_000)
+    expect(await verifyTelegramToken(tok, 'otro-secreto', 1_700_000_000)).toBe(null)
+  })
+  it('rechaza token manipulado (otro chatId sin re-firmar)', async () => {
+    const tok = await signTelegramToken(123456, secret, 1_700_000_000)
+    const parts = tok.split('.')
+    const forgedBody = base64urlEncodeString(JSON.stringify({ cid: 999, k: 'tg', iat: 1, exp: 9_999_999_999 }))
+    const forged = parts[0] + '.' + forgedBody + '.' + parts[2]
+    expect(await verifyTelegramToken(forged, secret, 1_700_000_000)).toBe(null)
+  })
+  it('rechaza token caducado', async () => {
+    const now = 1_700_000_000
+    const tok = await signTelegramToken(123456, secret, now)
+    expect(await verifyTelegramToken(tok, secret, now + TG_TOKEN_TTL_SECONDS + 1)).toBe(null)
+  })
+  it('rechaza secreto vacio, token vacio y basura', async () => {
+    expect(await verifyTelegramToken('', secret, 1)).toBe(null)
+    expect(await verifyTelegramToken('a.b.c', secret, 1)).toBe(null)
+    const tok = await signTelegramToken(1, secret, 1)
+    expect(await verifyTelegramToken(tok, '', 1)).toBe(null)
   })
 })
 

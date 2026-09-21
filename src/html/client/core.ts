@@ -721,7 +721,18 @@ function checkPriceDropsAndUpdateBaselines(stations, fuel) {
 //   4. para desactivar: POST /api/telegram/unsubscribe { chat_id } + borrar
 //      chat_id del localStorage. (El user tambien puede mandar /stop al bot
 //      — el webhook borra sus subs y cierra el loop).
-var TG_CHAT_KEY = 'gs_tg_chat_v1';  // localStorage: chat_id si tiene alertas activas
+var TG_CHAT_KEY = 'gs_tg_chat_v1';  // localStorage: chat_id (informativo; ya NO es credencial)
+var TG_AUTH_KEY = 'gs_tg_auth_v1';  // localStorage: token de sesion Telegram firmado por el server (credencial real)
+// Lee el token de sesion Telegram (la credencial real; el chat_id ya no vale por si solo).
+function _tgAuth() { try { return localStorage.getItem(TG_AUTH_KEY) || ''; } catch(_) { return ''; } }
+// Cabeceras para las llamadas autenticadas /api/telegram/*.
+function _tgHeaders(withJson) {
+  var h = {};
+  if (withJson) h['content-type'] = 'application/json';
+  var t = _tgAuth();
+  if (t) h['Authorization'] = 'Bearer ' + t;
+  return h;
+}
 
 // Combustible seleccionado -> fuel_code para el backend.
 function fuelSelectorToCode() {
@@ -774,7 +785,7 @@ async function waitTelegramConfirm(token, maxAttempts) {
       var res = await fetch('/api/telegram/confirm?token=' + encodeURIComponent(token));
       if (res.ok) {
         var j = await res.json();
-        if (j && j.confirmed && j.chat_id) return { ok: true, chat_id: j.chat_id };
+        if (j && j.confirmed && j.chat_id) return { ok: true, chat_id: j.chat_id, auth: j.auth };
         if (j && j.expired) return { ok: false, error: 'token_caducado' };
       }
     } catch (_) {/* reintentamos */}
@@ -815,6 +826,7 @@ async function enableTelegramAlerts(onDeepLink, seedFavs) {
   var confirmed = await waitTelegramConfirm(link.token);
   if (!confirmed.ok) return confirmed;
   try { localStorage.setItem(TG_CHAT_KEY, String(confirmed.chat_id)); } catch(_) {}
+  try { localStorage.setItem(TG_AUTH_KEY, confirmed.auth || ''); } catch(_) {}
   // Hidrata el cache de subs con lo que el webhook acaba de insertar (favs
   // del pending_token). La UI lo necesita para pintar las campanas como
   // activas en cuanto vuelva a abrir el modal de favoritas.
@@ -824,22 +836,20 @@ async function enableTelegramAlerts(onDeepLink, seedFavs) {
 
 // Desactiva: borra todas las subs del chat y limpia localStorage.
 async function disableTelegramAlerts() {
-  var raw = null;
-  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
-  var chatId = raw ? parseInt(raw, 10) : NaN;
-  if (!isFinite(chatId)) {
+  var t = _tgAuth();
+  if (!t) {
     // Ya estaba apagado o nunca se activo — nada que hacer
-    try { localStorage.removeItem(TG_CHAT_KEY); } catch(_) {}
+    try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
     return { ok: true, note: 'no_activo' };
   }
   try {
     await fetch('/api/telegram/unsubscribe', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId }),
+      headers: _tgHeaders(true),
+      body: '{}',
     });
   } catch(_) {}
-  try { localStorage.removeItem(TG_CHAT_KEY); } catch(_) {}
+  try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
   // Limpia cache local — las campanas deben volver a estado OFF al instante.
   _tgSubs = {};
   _tgSubsHydrated = true;
@@ -849,13 +859,11 @@ async function disableTelegramAlerts() {
 // Sincrono: el UI lo usa para render inicial del panel. Fuente de verdad
 // es localStorage — no hacemos round-trip al server aqui para no bloquear.
 function telegramAlertsActive() {
-  try {
-    var raw = localStorage.getItem(TG_CHAT_KEY);
-    // El archivo entero es un template literal: \d dentro de un template
-    // pierde la barra invertida al serializar. Hay que doblar el escape
-    // (\\d) para que el regex compilado en el cliente sea /^\d+$/.
-    return !!(raw && /^\\d+$/.test(raw));
-  } catch (_) { return false; }
+  // La credencial real es el token firmado; tener solo chat_id ya no cuenta.
+  // (Usuarios antiguos con chat_id pero sin token: telegramAlertsActive=false
+  //  -> la UI les ofrece re-vincular; su chat_id de Telegram es estable, asi
+  //  que sus alertas existentes reaparecen al re-vincular.)
+  try { return !!_tgAuth(); } catch (_) { return false; }
 }
 
 // ---- ALERTAS POR GASOLINERA (Ship 26) ----
@@ -875,12 +883,9 @@ function _tgSubsKey(stationId, fuelCode) { return stationId + '|' + fuelCode; }
 async function loadTelegramSubscriptions() {
   _tgSubs = {};
   _tgSubsHydrated = false;
-  var raw = null;
-  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
-  var chatId = raw ? parseInt(raw, 10) : NaN;
-  if (!isFinite(chatId)) { _tgSubsHydrated = true; return; }
+  if (!_tgAuth()) { _tgSubsHydrated = true; return; }
   try {
-    var res = await fetch('/api/telegram/subscriptions?chat_id=' + chatId);
+    var res = await fetch('/api/telegram/subscriptions', { headers: _tgHeaders(false) });
     if (!res.ok) { _tgSubsHydrated = true; return; }
     var j = await res.json();
     if (j && j.ok && Array.isArray(j.subscriptions)) {
@@ -903,16 +908,12 @@ function isTelegramFavActive(stationId, fuelCode) {
 // de "activa el bot primero". El server es idempotente — si el estado ya
 // era el pedido, no duplica mensajes.
 async function toggleTelegramFav(stationId, fuelCode, enabled) {
-  var raw = null;
-  try { raw = localStorage.getItem(TG_CHAT_KEY); } catch(_) {}
-  var chatId = raw ? parseInt(raw, 10) : NaN;
-  if (!isFinite(chatId)) return { ok: false, error: 'not_linked' };
+  if (!_tgAuth()) return { ok: false, error: 'not_linked' };
   try {
     var res = await fetch('/api/telegram/toggle-fav', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: _tgHeaders(true),
       body: JSON.stringify({
-        chat_id: chatId,
         station_id: stationId,
         fuel_code: fuelCode,
         enabled: !!enabled,

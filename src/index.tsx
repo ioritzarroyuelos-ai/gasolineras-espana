@@ -40,6 +40,8 @@ import {
   buildLogoutCookie,
   parseSessionCookie,
   isSyncableKey,
+  signTelegramToken,
+  verifyTelegramToken,
 } from './lib/auth'
 import {
   LRU,
@@ -3426,6 +3428,23 @@ app.post('/api/telegram/webhook', async c => {
 })
 
 // GET /api/telegram/confirm?token=... — polling endpoint para la web.
+// Secreto para firmar/verificar el token de sesion de Telegram. Preferimos
+// SESSION_SECRET (secreto general del servidor); si no esta, caemos al token
+// del bot (siempre presente cuando Telegram esta configurado). Si no hay
+// ninguno, verifyTelegramToken devuelve null y los endpoints fallan cerrados.
+function tgAuthSecret(env: { SESSION_SECRET?: string; TELEGRAM_BOT_TOKEN?: string }): string {
+  return env.SESSION_SECRET || env.TELEGRAM_BOT_TOKEN || ''
+}
+// Saca el chat_id de "Authorization: Bearer <token>" verificando la firma.
+// Devuelve null si no hay token valido (el llamante responde 401). Este es el
+// arreglo del IDOR: el chat_id ya NO se acepta desde query/body del cliente.
+async function tgChatFromAuth(c: { req: { header: (n: string) => string | undefined }; env: { SESSION_SECRET?: string; TELEGRAM_BOT_TOKEN?: string } }): Promise<number | null> {
+  const h = c.req.header('Authorization') || ''
+  const m = /^Bearer\s+(.+)$/i.exec(h)
+  if (!m) return null
+  return verifyTelegramToken(m[1].trim(), tgAuthSecret(c.env))
+}
+
 // Devuelve { ok, confirmed, chat_id? } — chat_id solo si confirmed=true.
 app.get('/api/telegram/confirm', async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
@@ -3446,7 +3465,10 @@ app.get('/api/telegram/confirm', async c => {
     return c.json({ ok: true, confirmed: false, expired: true }, 200, { 'Cache-Control': 'no-store' })
   }
   if (row.confirmed_at && row.chat_id) {
-    return c.json({ ok: true, confirmed: true, chat_id: row.chat_id }, 200, { 'Cache-Control': 'no-store' })
+    // Emitimos el token de sesion de Telegram: la web lo guardara y lo enviara
+    // en cada operacion (Authorization: Bearer). Es la credencial real, no el chat_id.
+    const auth = await signTelegramToken(row.chat_id, tgAuthSecret(c.env))
+    return c.json({ ok: true, confirmed: true, chat_id: row.chat_id, auth }, 200, { 'Cache-Control': 'no-store' })
   }
   return c.json({ ok: true, confirmed: false }, 200, { 'Cache-Control': 'no-store' })
 })
@@ -3461,10 +3483,10 @@ app.get('/api/telegram/confirm', async c => {
 // Body: { chat_id, station_id?, fuel_code? }  (si no pasas station+fuel, borra todas)
 app.post('/api/telegram/unsubscribe', async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-  let body: any
-  try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
-  const chatId = typeof body?.chat_id === 'number' && Number.isFinite(body.chat_id) ? body.chat_id : NaN
-  if (!Number.isFinite(chatId)) return c.json({ ok: false, error: 'missing_chat_id' }, 400)
+  const chatId = await tgChatFromAuth(c)
+  if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
+  let body: any = {}
+  try { body = await c.req.json() } catch { /* body opcional: sin station/fuel borra todas */ }
   const stationId = typeof body?.station_id === 'string' ? body.station_id : ''
   const fuelCode  = typeof body?.fuel_code  === 'string' ? body.fuel_code  : ''
   try {
@@ -3491,11 +3513,8 @@ app.post('/api/telegram/unsubscribe', async c => {
 // unica "credencial" (modelo establecido desde Ship 25).
 app.get('/api/telegram/subscriptions', async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-  const chatIdStr = c.req.query('chat_id') || ''
-  const chatId = Number(chatIdStr)
-  if (!Number.isFinite(chatId) || chatId <= 0) {
-    return c.json({ ok: false, error: 'invalid_chat_id' }, 400, { 'Cache-Control': 'no-store' })
-  }
+  const chatId = await tgChatFromAuth(c)
+  if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
   try {
     const r = await c.env.DB.prepare(
       'SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ?'
@@ -3522,13 +3541,13 @@ app.get('/api/telegram/subscriptions', async c => {
 app.post('/api/telegram/toggle-fav', async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
+  const chatId = await tgChatFromAuth(c)
+  if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
   let body: any
   try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
-  const chatId = typeof body?.chat_id === 'number' && Number.isFinite(body.chat_id) ? body.chat_id : NaN
   const stationId = typeof body?.station_id === 'string' ? body.station_id.trim() : ''
   const fuelCode = typeof body?.fuel_code === 'string' ? body.fuel_code.trim() : ''
   const enabled = !!body?.enabled
-  if (!Number.isFinite(chatId) || chatId <= 0) return c.json({ ok: false, error: 'invalid_chat_id' }, 400)
   if (!stationId) return c.json({ ok: false, error: 'missing_station_id' }, 400)
   if (!['95', '98', 'diesel', 'diesel_plus'].includes(fuelCode)) {
     return c.json({ ok: false, error: 'invalid_fuel_code' }, 400)

@@ -2,6 +2,7 @@ import { getStyles } from './styles'
 import { getClientScript } from './client'
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml } from './masthead'
+import { escapeHtml, jsonLdSafe } from './html'
 
 export interface SeoContext {
   // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
@@ -141,7 +142,7 @@ export function buildPage(
   const tsKey = opts.turnstileSiteKey
   const turnstileScripts = tsKey
     ? `<script nonce="${nonce}">
-window.__TS_KEY__=${JSON.stringify(tsKey)};
+window.__TS_KEY__=${jsonLdSafe(tsKey)};
 window.__TS_TOKEN__='';
 window.__onTsOk=function(t){ window.__TS_TOKEN__ = t || ''; };
 window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
@@ -156,7 +157,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   // usa para renderizar el boton de login dentro del modal.
   const gClientId = opts.googleClientId
   const googleAuthScripts = gClientId
-    ? `<script nonce="${nonce}">window.__GOOGLE_CLIENT_ID__=${JSON.stringify(gClientId)};</script>
+    ? `<script nonce="${nonce}">window.__GOOGLE_CLIENT_ID__=${jsonLdSafe(gClientId)};</script>
 <script src="https://accounts.google.com/gsi/client" async defer nonce="${nonce}"></script>`
     : ''
 
@@ -164,8 +165,17 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   // dropdown de provincia si hay un provinciaId (via ruta /gasolineras/<slug>).
   // Si ademas viene municipioId, autoselecciona municipio tambien.
   // Queda como window.__SEO__ y el cliente lo lee en initMap().
+  // Variantes escapadas para contextos HTML/atributos. Los nombres de municipio
+  // y provincia vienen del dataset del Ministerio; los blindamos por si acaso.
+  // (El JSON-LD y los <script> usan jsonLdSafe, que es otro contexto.)
+  const geoLabelH = escapeHtml(geoLabel)
+  const pageTitleH = escapeHtml(pageTitle)
+  const pageDescH = escapeHtml(pageDesc)
+  const ogTitleH = escapeHtml(ogTitle)
+  const ogDescH = escapeHtml(ogDesc)
+
   const seoScript = seo?.provinciaId
-    ? `<script nonce="${nonce}">window.__SEO__=${JSON.stringify({
+    ? `<script nonce="${nonce}">window.__SEO__=${jsonLdSafe({
         provinciaId: seo.provinciaId,
         provinciaSlug: seo.provinciaSlug,
         provinciaName: seo.provinciaName,
@@ -180,7 +190,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   // __IS_HOME__ true cuando no hay provincia/municipio en la ruta — el cliente
   // lo usa para decidir si renderizar el widget de stats nacionales.
   const snapMetaScript = `<script nonce="${nonce}">${
-    opts.snapshotDate ? `window.__SNAP_AT__=${JSON.stringify(opts.snapshotDate)};` : ''
+    opts.snapshotDate ? `window.__SNAP_AT__=${jsonLdSafe(opts.snapshotDate)};` : ''
   }window.__IS_HOME__=${!seo?.provinciaId};</script>`
 
   // JSON-LD: declara la aplicacion como WebApplication + el dataset de precios.
@@ -210,7 +220,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     itemListElement: breadcrumbItems,
   }] : []
 
-  const jsonLd = JSON.stringify([
+  const jsonLd = jsonLdSafe([
     {
       '@context': 'https://schema.org',
       '@type': 'WebApplication',
@@ -343,14 +353,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="application-name" content="Gasolineras España" />
   <meta name="author" content="Gasolineras España" />
   <meta name="generator" content="Hono + Cloudflare Pages" />
-  <meta name="description" content="${pageDesc}" />
+  <meta name="description" content="${pageDescH}" />
   <meta name="keywords" content="gasolineras, precios combustible, gasolina, diesel, España, mapa gasolineras, ahorro combustible${seo?.provinciaName ? ', ' + seo.provinciaName.toLowerCase() : ''}" />
 
   <!-- Open Graph / redes -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Gasolineras España" />
-  <meta property="og:title" content="${ogTitle}" />
-  <meta property="og:description" content="${ogDesc}" />
+  <meta property="og:title" content="${ogTitleH}" />
+  <meta property="og:description" content="${ogDescH}" />
   <meta property="og:url" content="${canonical}" />
   <meta property="og:image" content="${ogImage}" />
   <meta property="og:image:alt" content="Gasolineras España · comparador de precios oficial" />
@@ -360,13 +370,13 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${ogTitle}" />
-  <meta name="twitter:description" content="${ogDesc}" />
+  <meta name="twitter:title" content="${ogTitleH}" />
+  <meta name="twitter:description" content="${ogDescH}" />
   <meta name="twitter:image" content="${ogImage}" />
   <meta name="twitter:image:alt" content="Gasolineras España · comparador de precios oficial" />
 
   <link rel="canonical" href="${canonical}" />
-  <title>${pageTitle}</title>
+  <title>${pageTitleH}</title>
 
   <!-- Favicon / PWA icons -->
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
@@ -452,7 +462,7 @@ ${mastheadHtml('gasolineras')}
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
-${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabel : 'Gasolineras España'} — precios oficiales en tiempo real</h1>` : ''}
+${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : 'Gasolineras España'} — precios oficiales en tiempo real</h1>` : ''}
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
@@ -868,8 +878,8 @@ ${hasSeoSummary ? `
       : '<span aria-current="page">' + seo.provinciaName + '</span>') : ''}
     ${seo?.municipioName ? ' &rsaquo; <span aria-current="page">' + seo.municipioName + '</span>' : ''}
   </nav>
-  <h1 id="seo-h1" style="font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700">Precios de combustible en ${geoLabel}</h1>
-  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabel}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <h1 id="seo-h1" style="font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700">Precios de combustible en ${geoLabelH}</h1>
+  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
   <table style="width:100%;border-collapse:collapse;font-size:14px;max-width:640px">
     <thead><tr>
       <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Combustible</th>
@@ -897,7 +907,7 @@ ${hasSeoSummary ? `
       })()}
     </tbody>
   </table>
-  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabel + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabelH + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
 </section>` : ''}
 
 ${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipios.length > 0 ? `

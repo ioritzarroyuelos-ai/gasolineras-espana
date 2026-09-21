@@ -94,7 +94,10 @@ export function originAllowed(
   if (allowList.has(origin)) return true
   try {
     const u = new URL(origin)
-    if (u.hostname.endsWith('.pages.dev')) return true
+    // NO confiamos en todo *.pages.dev: es un dominio compartido (cualquiera
+    // puede desplegar ahi, seria un allowlist efectivamente abierto). El mismo
+    // host —produccion y los previews llamando a SU PROPIA API— ya se permite
+    // arriba via `origin === scheme + host`.
     if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true
   } catch { /* origin invalido */ }
   return false

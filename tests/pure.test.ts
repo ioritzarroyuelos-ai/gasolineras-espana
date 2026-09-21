@@ -137,8 +137,13 @@ describe('originAllowed', () => {
   it('permite origenes en whitelist', () => {
     expect(originAllowed('https://gasolineras.pages.dev', 'x', allow)).toBe(true)
   })
-  it('permite previews de Cloudflare Pages', () => {
-    expect(originAllowed('https://abc123.gasolineras.pages.dev', 'x', allow)).toBe(true)
+  it('rechaza otros *.pages.dev cross-origin (no confiamos en el dominio compartido)', () => {
+    // Antes se permitia cualquier *.pages.dev -> allowlist efectivamente abierto.
+    // Ahora solo produccion (allowlist) + same-origin + localhost(dev).
+    expect(originAllowed('https://abc123.gasolineras.pages.dev', 'x', allow)).toBe(false)
+  })
+  it('permite un preview de Pages llamando a SU PROPIA API (same-origin)', () => {
+    expect(originAllowed('https://abc.webapp-3ft.pages.dev', 'abc.webapp-3ft.pages.dev', allow)).toBe(true)
   })
   it('permite requests sin Origin (same-origin, curl)', () => {
     expect(originAllowed('', 'x', allow)).toBe(true)

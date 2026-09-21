@@ -28,7 +28,16 @@ export function frescuraTiempo(ts, ahora = Date.now()) {
 // elaborado, fuente, dias:[{fecha,tmin,tmax,cielo,probLluvia,viento}] } para que
 // la pagina renderice igual venga de donde venga (solo cambia la etiqueta).
 
-const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null }
+const num = (v) => {
+  // Solo aceptamos numeros finitos o strings numericos NO vacios. Antes,
+  // Number(null) y Number('') daban 0 (finito), asi que una AUSENCIA de dato se
+  // publicaba como 0 (p.ej. 0 grados / 0% de lluvia como si fueran reales). Un 0
+  // de verdad si se conserva.
+  if (v == null || typeof v === 'boolean') return null
+  if (typeof v === 'string' && v.trim() === '') return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}
 
 // AEMET da los valores por PERIODOS del dia (00-24, 00-12, 12-24, ...). El
 // "00-24" es el del dia entero; en el dia de HOY suele venir vacio (ya pasado),
@@ -128,6 +137,13 @@ export async function bajaOpenMeteo(lat, lng) {
  * Devuelve la predicción normalizada de un municipio: AEMET primero, y si falla
  * (tras reintentos), Open-Meteo. `deps` inyectable para tests. `key` = AEMET_API_KEY.
  */
+// Un dia es util si trae al menos una temperatura (min o max). Una respuesta
+// AEMET "exitosa" pero vacia (0 dias, o todos sin temperatura) NO debe bloquear
+// el suplente Open-Meteo ni publicarse como prediccion valida.
+function tieneDiasUtiles(pred) {
+  return !!(pred && Array.isArray(pred.dias) && pred.dias.some(d => d && (d.tmax != null || d.tmin != null)))
+}
+
 export async function resuelvePrediccion(muni, deps = {}) {
   const meta = { ine: muni.ine, nombre: muni.nombre, provincia: muni.provincia }
   const bajaA = deps.bajaAemet || ((ine) => bajaAemet(ine, deps.key || muni.key))
@@ -135,11 +151,19 @@ export async function resuelvePrediccion(muni, deps = {}) {
   const intentos = deps.intentos ?? 2
   let ultimoError
   for (let i = 0; i < intentos; i++) {
-    try { return normalizaAemet(await bajaA(muni.ine), meta) }
+    try {
+      const pred = normalizaAemet(await bajaA(muni.ine), meta)
+      if (tieneDiasUtiles(pred)) return pred
+      ultimoError = new Error('AEMET respondio sin dias utiles')
+    }
     catch (e) { ultimoError = e }
   }
-  // AEMET no responde: suplente Open-Meteo (etiquetado como tal).
-  try { return normalizaOpenMeteo(await bajaO(muni.lat, muni.lng), meta) }
+  // AEMET no responde (o vino vacio): suplente Open-Meteo (etiquetado como tal).
+  try {
+    const pred = normalizaOpenMeteo(await bajaO(muni.lat, muni.lng), meta)
+    if (tieneDiasUtiles(pred)) return pred
+    throw new Error('Open-Meteo respondio sin dias utiles')
+  }
   catch (e) { throw new Error('AEMET y Open-Meteo fallaron: ' + (ultimoError && ultimoError.message) + ' / ' + e.message) }
 }
 

@@ -66,6 +66,24 @@ describe('normalizaOpenMeteo (fixture real de Madrid)', () => {
   })
 })
 
+describe('num: ausencia de dato NO es 0 (integridad M1)', () => {
+  it('null / "" / undefined -> null (no 0)', () => {
+    const raw = { daily: { time: ['2026-09-06'], temperature_2m_max: [null], temperature_2m_min: [''], precipitation_probability_max: [undefined], weathercode: [0], wind_speed_10m_max: [10] } }
+    const p = normalizaOpenMeteo(raw, meta)
+    expect(p.dias[0].tmax).toBe(null)
+    expect(p.dias[0].tmin).toBe(null)
+    expect(p.dias[0].probLluvia).toBe(null)
+    expect(p.dias[0].viento).toBe(10)
+  })
+  it('un 0 real se conserva (no se confunde con ausencia)', () => {
+    const raw = { daily: { time: ['2026-09-06'], temperature_2m_max: [0], temperature_2m_min: [-2], precipitation_probability_max: [0], weathercode: [0], wind_speed_10m_max: [0] } }
+    const p = normalizaOpenMeteo(raw, meta)
+    expect(p.dias[0].tmax).toBe(0)
+    expect(p.dias[0].tmin).toBe(-2)
+    expect(p.dias[0].probLluvia).toBe(0)
+  })
+})
+
 describe('resuelvePrediccion (fallback y auto-recuperacion)', () => {
   const muni = { ine: '28079', nombre: 'Madrid', provincia: 'Madrid', lat: 40.4, lng: -3.7 }
   it('usa AEMET cuando responde', async () => {
@@ -78,6 +96,13 @@ describe('resuelvePrediccion (fallback y auto-recuperacion)', () => {
   it('cae a Open-Meteo si AEMET falla', async () => {
     const p = await resuelvePrediccion(muni, {
       bajaAemet: async () => { throw new Error('AEMET down') },
+      bajaOpenMeteo: async () => rawOM,
+    })
+    expect(p.fuente).toBe('Open-Meteo')
+  })
+  it('cae a Open-Meteo si AEMET responde pero sin dias utiles', async () => {
+    const p = await resuelvePrediccion(muni, {
+      bajaAemet: async () => [{ prediccion: { dia: [] } }],
       bajaOpenMeteo: async () => rawOM,
     })
     expect(p.fuente).toBe('Open-Meteo')

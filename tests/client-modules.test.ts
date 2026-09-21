@@ -87,6 +87,19 @@ describe('bundle completo (critico + features concatenados)', () => {
   })
 })
 
+describe('core string — regex de horario con escapes intactos (QW1)', () => {
+  // Bug historico: dentro del template literal, /(\d{1,2}:\d{2})/ con una sola
+  // barra colapsaba a /(d{1,2}:d{2})/ en el JS emitido, rompiendo isOpenNow
+  // (deteccion abierto/cerrado). Los escapes deben ir doblados en el fuente
+  // para sobrevivir al literal. Este test valida el string realmente emitido.
+  it('emite \\d y \\s reales en las regex de isOpenNow', () => {
+    expect(clientCoreScript).toContain('(\\d{1,2}:\\d{2})')
+    expect(clientCoreScript).toContain(':\\s*(.+)$')
+    // Y NO la version rota (escapes colapsados):
+    expect(clientCoreScript).not.toContain('(d{1,2}:d{2})')
+  })
+})
+
 describe('features string (fuente del prebuild)', () => {
   // El prebuild escribe public/static/features.js extrayendo el contenido de
   // clientFeaturesScript. Aqui validamos que el string exportado tiene las

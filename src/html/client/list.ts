@@ -917,8 +917,8 @@ async function loadStations() {
       applyFilters();
       showToast('El Ministerio no responde. Mostrando datos guardados (' + formatAge(stale.ts) + ').', 'warning');
     } else {
-      showListError('El Ministerio de Industria no responde ahora mismo. Vuelve a intentarlo en unos minutos.');
-      showToast('API del Ministerio no disponible. Reintenta en unos minutos.', 'error');
+      showListError('No hemos podido cargar los precios ahora mismo. Vuelve a intentarlo en unos minutos.');
+      showToast('No se pudieron cargar los precios. Reintenta en unos minutos.', 'error');
     }
   } finally {
     document.getElementById('loading').classList.remove('show');

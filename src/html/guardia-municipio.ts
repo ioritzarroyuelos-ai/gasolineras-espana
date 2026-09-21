@@ -246,7 +246,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '.g-acciones{display:flex;gap:8px;flex-wrap:wrap}'
     + '.g-btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
     + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
-    + '.g-btn--tel{background:var(--v);border-color:var(--v);color:#fff}'
+    + '.g-btn--tel{background:#15803d;border-color:#15803d;color:#fff}'
     + '.g-vacio{background:var(--bg);border:1px solid var(--bd);border-radius:10px;padding:14px}'
     + '.g-caducado{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;border-radius:10px;padding:14px;margin:0 0 14px;font-size:15px}'
     + '.g-nota{background:var(--bg);border-left:3px solid #f59e0b;color:#92400e;padding:8px 12px;margin:0 0 14px;font-size:13px;border-radius:6px}'

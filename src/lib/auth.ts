@@ -262,7 +262,15 @@ export function parseSessionCookie(cookieHeader: string | null | undefined): str
   if (!cookieHeader) return null
   const re = new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`)
   const m = cookieHeader.match(re)
-  return m ? decodeURIComponent(m[1]) : null
+  if (!m) return null
+  // Una cookie con %-encoding malformado (p.ej. "gs_session=%") hacia que
+  // decodeURIComponent lanzara URIError ANTES de la verificacion cripto,
+  // convirtiendo una peticion normal en un 500. La tratamos como sesion invalida.
+  try {
+    return decodeURIComponent(m[1])
+  } catch {
+    return null
+  }
 }
 
 // ---- Validacion de user-data keys sincronizables ----

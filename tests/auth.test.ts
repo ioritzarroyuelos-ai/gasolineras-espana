@@ -32,6 +32,23 @@ describe('base64url', () => {
   })
 })
 
+describe('parseSessionCookie', () => {
+  it('devuelve null (no lanza) ante %-encoding malformado', () => {
+    expect(() => parseSessionCookie(`${SESSION_COOKIE_NAME}=%`)).not.toThrow()
+    expect(parseSessionCookie(`${SESSION_COOKIE_NAME}=%`)).toBe(null)
+    expect(parseSessionCookie(`${SESSION_COOKIE_NAME}=%E0%A4%A`)).toBe(null)
+  })
+  it('devuelve null sin cookie o sin la clave de sesion', () => {
+    expect(parseSessionCookie(null)).toBe(null)
+    expect(parseSessionCookie(undefined)).toBe(null)
+    expect(parseSessionCookie('otra=1; foo=2')).toBe(null)
+  })
+  it('decodifica un valor valido', () => {
+    expect(parseSessionCookie(`${SESSION_COOKIE_NAME}=abc.def`)).toBe('abc.def')
+    expect(parseSessionCookie(`x=1; ${SESSION_COOKIE_NAME}=a%20b`)).toBe('a b')
+  })
+})
+
 describe('signSessionJWT / verifySessionJWT', () => {
   const secret = 'test-secret-that-is-long-enough-to-be-realistic'
 

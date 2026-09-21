@@ -1062,7 +1062,7 @@ function isOpenNow(horario) {
   var segs = horario.split(';').map(function(s) { return s.trim(); });
   for (var i = 0; i < segs.length; i++) {
     var seg = segs[i];
-    var m = seg.match(/^([^:]+):\s*(.+)$/);
+    var m = seg.match(/^([^:]+):\\s*(.+)$/);
     if (!m) continue;
     var days = expandDayRange(m[1]);
     if (days.indexOf(day) < 0) continue;
@@ -1071,7 +1071,7 @@ function isOpenNow(horario) {
     // Rango HH:MM-HH:MM (posibles multiples)
     var ranges = times.split(/[,Y]/).map(function(r) { return r.trim(); });
     for (var j = 0; j < ranges.length; j++) {
-      var rg = ranges[j].match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+      var rg = ranges[j].match(/(\\d{1,2}:\\d{2})\\s*-\\s*(\\d{1,2}:\\d{2})/);
       if (!rg) continue;
       var from = parseTime(rg[1]);
       var to   = parseTime(rg[2]);

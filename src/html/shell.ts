@@ -464,7 +464,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
     <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
     <div class="u-mw-0">
       <div class="header-title">Gasolineras España</div>
-      <div class="header-sub">Precios oficiales · Ministerio de Industria y Energía</div>
+      <div class="header-sub">Precios oficiales · Ministerio para la Transición Ecológica</div>
     </div>
   </a>
 
@@ -496,7 +496,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
           <i class="fas fa-star" aria-hidden="true"></i> Favoritas
         </button>
         <div class="user-dropdown-sep"></div>
-        <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sincronizado</div>
+        <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sesión iniciada</div>
         <button id="btn-logout" class="user-dropdown-item" role="menuitem" type="button">
           <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Cerrar sesión
         </button>

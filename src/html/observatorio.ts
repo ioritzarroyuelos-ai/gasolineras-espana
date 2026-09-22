@@ -207,6 +207,8 @@ export function observatorioHeaders(nonce: string): Record<string, string> {
     "form-action 'self'",
     "object-src 'none'",
     "upgrade-insecure-requests",
+    "report-uri /api/csp-report",
+    "report-to csp-endpoint",
   ].join('; ')
   return {
     'Content-Type': 'text/html; charset=utf-8',
@@ -215,6 +217,10 @@ export function observatorioHeaders(nonce: string): Record<string, string> {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
+    'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=900, s-maxage=3600',
   }
 }

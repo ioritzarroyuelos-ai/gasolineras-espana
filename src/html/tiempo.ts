@@ -301,6 +301,8 @@ export function tiempoHeaders(nonce: string): Record<string, string> {
     "form-action 'self'",
     "object-src 'none'",
     "upgrade-insecure-requests",
+    "report-uri /api/csp-report",
+    "report-to csp-endpoint",
   ].join('; ')
   return {
     'Content-Type': 'text/html; charset=utf-8',
@@ -309,6 +311,10 @@ export function tiempoHeaders(nonce: string): Record<string, string> {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
+    'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     // El tiempo cambia durante el día: cache corta en CDN.
     'Cache-Control': 'public, max-age=1800, s-maxage=1800',
   }

@@ -1,4 +1,7 @@
-export const clientListScript = `
+// list — fuente REAL del cliente (migrado de src/html/client/*.ts, B2).
+// Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
+// scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
+
 // ---- RENDER LIST (paginacion virtual, 30 items + scroll infinito) ----
 var PAGE_SIZE = 30;
 var listStations = [];
@@ -12,15 +15,15 @@ var listPriceStats = null;
 
 // ---- COMPARADOR ----
 // Lista de IDs de estaciones en la seleccion actual del comparador. Max 2.
-// Se alimenta desde los popups (click en "\u2696\uFE0F Comparar") y se
+// Se alimenta desde los popups (click en "⚖️ Comparar") y se
 // consume al renderizar el modal (renderCompareModal). La persistencia en
 // localStorage es a proposito laxa: si el usuario recarga, la seleccion
-// se pierde — queremos que el comparador sea ef\u00edmero, no un estado
+// se pierde — queremos que el comparador sea efímero, no un estado
 // pegajoso que confunda.
 var compareIds = [];
 
 // Anade (o quita si ya estaba) una estacion a la seleccion. Si al anadir
-// llegamos a 2, abrimos el modal autom\u00e1ticamente — el tercer click desde
+// llegamos a 2, abrimos el modal automáticamente — el tercer click desde
 // el popup, en cambio, actualiza la lista pero no ya abre otra vez el modal.
 function toggleCompare(id) {
   var idx = compareIds.indexOf(id);
@@ -60,8 +63,8 @@ function renderCompareChip() {
   chip.setAttribute('aria-hidden', 'false');
   if (txt) {
     txt.textContent = n === 1
-      ? '\u2696\uFE0F 1 estacion seleccionada — anade otra'
-      : '\u2696\uFE0F 2 estaciones — pulsa para comparar';
+      ? '⚖️ 1 estacion seleccionada — anade otra'
+      : '⚖️ 2 estaciones — pulsa para comparar';
   }
 }
 
@@ -90,7 +93,7 @@ function findStationById(id) {
 //    GLP/GNC/H2 que nadie tiene, y a la inversa, una estacion solo-GLP
 //    no muestra 4 filas vacias de gasolina.
 //  - Calcula delta % entre el ganador y los demas por combustible, y lo
-//    muestra a la derecha del precio del no-ganador (ej. "1,589 \u20AC/L +2,1%").
+//    muestra a la derecha del precio del no-ganador (ej. "1,589 €/L +2,1%").
 //  - Summary bar arriba: "Rotulo A gana en 3 de 4 combustibles".
 function renderCompareModal() {
   var body = document.getElementById('compare-body');
@@ -115,13 +118,13 @@ function renderCompareModal() {
   var fuels = [
     ['Precio Gasolina 95 E5',           'Gasolina 95 E5'],
     ['Precio Gasolina 98 E5',           'Gasolina 98 E5'],
-    ['Precio Gasoleo A',                'Gas\u00f3leo A (di\u00e9sel)'],
-    ['Precio Gasoleo Premium',          'Gas\u00f3leo Premium'],
-    ['Precio Diesel Renovable',         'Di\u00e9sel renovable'],
+    ['Precio Gasoleo A',                'Gasóleo A (diésel)'],
+    ['Precio Gasoleo Premium',          'Gasóleo Premium'],
+    ['Precio Diesel Renovable',         'Diésel renovable'],
     ['Precio Gases licuados del petroleo', 'GLP (autogas)'],
     ['Precio Gas Natural Comprimido',   'Gas Natural (GNC)'],
     ['Precio Gas Natural Licuado',      'Gas Natural (GNL)'],
-    ['Precio Hidrogeno',                'Hidr\u00f3geno']
+    ['Precio Hidrogeno',                'Hidrógeno']
   ];
 
   // Pre-calculamos minimo por combustible + filtramos filas donde NINGUNA
@@ -173,7 +176,7 @@ function renderCompareModal() {
            + '</div>';
     }).join('');
     summaryHtml = '<div class="compare-summary">'
-               +   '<div class="compare-sum-title">\u{1F3C6} Ganador por combustible</div>'
+               +   '<div class="compare-sum-title">🏆 Ganador por combustible</div>'
                +   '<div class="compare-sum-grid">' + summaryItems + '</div>'
                + '</div>';
   }
@@ -183,8 +186,8 @@ function renderCompareModal() {
     var status = isOpenNow(s['Horario']);
     var statusChip = status
       ? (status.open
-          ? '<span class="status-chip status-open">\u25CF Abierta</span>'
-          : '<span class="status-chip status-closed">\u25CF Cerrada</span>')
+          ? '<span class="status-chip status-open">● Abierta</span>'
+          : '<span class="status-chip status-closed">● Cerrada</span>')
       : '';
     var priceRows = visibleFuels.map(function(ff) {
       var code = ff[0];
@@ -203,29 +206,29 @@ function renderCompareModal() {
         deltaHtml = '<span class="cp-delta">+' + pct.toFixed(1).replace('.', ',') + '%</span>';
       }
       // Si p == null, la estacion no distribuye ese combustible (""  en el
-      // feed del Ministerio). "No se vende aqu\u00ed" deja claro que no es
+      // feed del Ministerio). "No se vende aquí" deja claro que no es
       // un fallo de datos sino una ausencia real de producto en el surtidor.
       var valueHtml = (p != null)
-        ? '<span class="cp-value">' + p.toFixed(3) + ' \u20AC/L</span>' + deltaHtml
-        : '<span class="cp-value cp-value--none">No se vende aqu\u00ed</span>';
+        ? '<span class="cp-value">' + p.toFixed(3) + ' €/L</span>' + deltaHtml
+        : '<span class="cp-value cp-value--none">No se vende aquí</span>';
       return '<div class="' + cls + '"><span class="cp-label">' + esc(label) + '</span>' + valueHtml + '</div>';
     }).join('');
     var horario = s['Horario'] || '';
     return ''
       + '<div class="compare-col">'
-      +   '<h3>\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</h3>'
-      +   '<div class="compare-dir">\u{1F4CD} ' + esc(s['Direccion'] || '') + '</div>'
+      +   '<h3>⛽ ' + esc(s['Rotulo'] || 'Gasolinera') + '</h3>'
+      +   '<div class="compare-dir">📍 ' + esc(s['Direccion'] || '') + '</div>'
       +   '<div class="compare-muni">' + esc(s['Municipio'] || '') + (s['Provincia'] ? ' &middot; ' + esc(s['Provincia']) : '') + '</div>'
       +   (statusChip ? '<div>' + statusChip + '</div>' : '')
       +   '<div class="compare-prices">' + priceRows + '</div>'
-      +   (horario ? '<div class="compare-meta"><span>\u{1F550} ' + esc(horario) + '</span></div>' : '')
+      +   (horario ? '<div class="compare-meta"><span>🕐 ' + esc(horario) + '</span></div>' : '')
       + '</div>';
   }).join('');
   // Si solo hay 1, anadimos una columna placeholder para mantener la grid
   // de 2-cols y evitar que la unica columna ocupe el ancho completo.
   if (stations.length === 1) {
     // Estilos en styles.ts (.compare-col--empty).
-    cols += '<div class="compare-col compare-col--empty"><div>\u2795<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
+    cols += '<div class="compare-col compare-col--empty"><div>➕<br>Anade otra estacion<br>desde el mapa o lista<br>para comparar</div></div>';
   }
   body.innerHTML = summaryHtml + cols;
 }
@@ -257,7 +260,7 @@ function openHistoryModal(station, fuel, fuelLabel) {
   var price = parsePrice(station[fuel]);
   var rotulo = station['Rotulo'] || 'Gasolinera';
   var loc = station['Municipio'] ? (station['Municipio'] + (station['Provincia'] ? ', ' + station['Provincia'] : '')) : '';
-  if (subtitle) subtitle.textContent = rotulo + (loc ? ' \u00B7 ' + loc : '');
+  if (subtitle) subtitle.textContent = rotulo + (loc ? ' · ' + loc : '');
   // Inyectamos el placeholder — mismo DOM que el popup del mapa. Llamar a
   // renderHistoryPanel(panel, 30) dispara el fetch y pinta el sparkline.
   body.innerHTML = buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, price);
@@ -282,7 +285,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
   var medal = '';
   if (topCheapIds[id] && price) {
     var rank = topCheapIds[id];
-    medal = '<span class="medal" aria-hidden="true">' + (rank === 1 ? '\u{1F947}' : rank === 2 ? '\u{1F948}' : '\u{1F949}') + '</span>';
+    medal = '<span class="medal" aria-hidden="true">' + (rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉') + '</span>';
   }
   // Distancia (calculada ANTES del ahorro para que el ahorro neto reste el
   // coste del desvio ida-vuelta).
@@ -308,12 +311,12 @@ function cardHTML(s, i, fuel, fuelLabel) {
     if (extraKmCard != null && profC && profC.consumo > 0) {
       var netC = computeNetSavings(grossC, extraKmCard, profC.consumo, price);
       if (netC.worthIt) {
-        savingsHtml = '<span class="savings-badge" title="Ahorro - coste desvio">\u{1F4B0} neto ' + netC.netEur.toFixed(2) + ' \u20AC / dep.</span>';
+        savingsHtml = '<span class="savings-badge" title="Ahorro - coste desvio">💰 neto ' + netC.netEur.toFixed(2) + ' € / dep.</span>';
       } else if (grossC >= 0.5) {
-        savingsHtml = '<span class="savings-badge savings-badge--negative" title="El desvio cuesta mas que el ahorro">\u26A0 desvio no compensa</span>';
+        savingsHtml = '<span class="savings-badge savings-badge--negative" title="El desvio cuesta mas que el ahorro">⚠ desvio no compensa</span>';
       }
     } else if (grossC >= 0.5) {
-      savingsHtml = '<span class="savings-badge" title="Ahorro frente a la mediana del listado">\u{1F4B0} ahorra ' + grossC.toFixed(2) + ' \u20AC / dep.</span>';
+      savingsHtml = '<span class="savings-badge" title="Ahorro frente a la mediana del listado">💰 ahorra ' + grossC.toFixed(2) + ' € / dep.</span>';
     }
   }
 
@@ -327,7 +330,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
     if (price >= listPriceStats.p90) {
       var overMed = ((price / listPriceStats.med - 1) * 100);
       var pctTxt = overMed >= 1 ? ' (+' + overMed.toFixed(0) + '% vs mediana)' : '';
-      anomalyHtml = '<span class="anomaly-chip anomaly-chip--expensive" title="Precio entre el 10% mas caro del listado actual' + pctTxt + '">\u{1F4B8} Caro para el listado</span>';
+      anomalyHtml = '<span class="anomaly-chip anomaly-chip--expensive" title="Precio entre el 10% mas caro del listado actual' + pctTxt + '">💸 Caro para el listado</span>';
     }
   }
 
@@ -349,10 +352,10 @@ function cardHTML(s, i, fuel, fuelLabel) {
   var status = isOpenNow(s['Horario']);
   if (status) {
     if (status.open) {
-      statusHtml = '<span class="status-chip status-open" aria-label="Abierta ahora">\u25CF Abierta'
+      statusHtml = '<span class="status-chip status-open" aria-label="Abierta ahora">● Abierta'
                  + (status.closesAt ? ' &middot; cierra ' + esc(status.closesAt) : '') + '</span>';
     } else {
-      statusHtml = '<span class="status-chip status-closed" aria-label="Cerrada ahora">\u25CF Cerrada'
+      statusHtml = '<span class="status-chip status-closed" aria-label="Cerrada ahora">● Cerrada'
                  + (status.opensAt ? ' &middot; abre ' + esc(status.opensAt) : '') + '</span>';
     }
   }
@@ -360,7 +363,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
   // que el usuario sepa antes de decidir conducir hasta ahi que necesita
   // tarjeta del club.
   if ((s['Rotulo'] || '').toUpperCase().indexOf('COSTCO') >= 0) {
-    statusHtml += '<span class="status-chip status-members" aria-label="Solo para socios de Costco Club" title="Necesitas tarjeta de socio Costco Club para repostar">\u{1F511} Solo socios</span>';
+    statusHtml += '<span class="status-chip status-members" aria-label="Solo para socios de Costco Club" title="Necesitas tarjeta de socio Costco Club para repostar">🔑 Solo socios</span>';
   }
 
   var priceText = price ? fmtPriceUnit(price) : '';
@@ -372,7 +375,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
   var tankCostHtml = '';
   if (price && tankLitersCard > 0) {
     var tankTotal = (price * tankLitersCard).toFixed(2);
-    tankCostHtml = '<div class="row-tank-cost" title="Coste de llenar el deposito de ' + tankLitersCard + ' L">\u00d7' + tankLitersCard + 'L = ' + tankTotal + ' \u20AC</div>';
+    tankCostHtml = '<div class="row-tank-cost" title="Coste de llenar el deposito de ' + tankLitersCard + ' L">×' + tankLitersCard + 'L = ' + tankTotal + ' €</div>';
   }
   // Cuando la estacion no distribuye este combustible (Ministerio publica ""),
   // priceEl muestra "No se vende" en vez de N/D. Asi el usuario distingue de un
@@ -387,16 +390,16 @@ function cardHTML(s, i, fuel, fuelLabel) {
   // robar espacio al precio.
   // Si la estacion no vende este combustible, no hay historico que mostrar
   // (el modal saldria vacio y confundiria: mejor no ofrecerlo).
-  var histBtn = price ? '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">\u{1F4C8}</button>' : '';
+  var histBtn = price ? '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">📈</button>' : '';
 
   return '<div class="station-card" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
-    + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '" aria-pressed="' + fav + '">'
-    + (fav ? '\u2605' : '\u2606') + '</button>'
+    + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'Añadir a favoritas') + '" aria-pressed="' + fav + '">'
+    + (fav ? '★' : '☆') + '</button>'
     + '<div class="row-info-flex">'
     + '<div class="row-info-left">'
-    + '<div class="card-title">' + medal + '\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + distHtml + '</div>'
-    + '<div class="card-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + '</div>'
-    + '<div class="card-time">\u{1F550} ' + horarioCard(s['Horario']) + statusHtml + '</div>'
+    + '<div class="card-title">' + medal + '⛽ ' + esc(s['Rotulo'] || 'Gasolinera') + distHtml + '</div>'
+    + '<div class="card-sub">📍 ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + '</div>'
+    + '<div class="card-time">🕐 ' + horarioCard(s['Horario']) + statusHtml + '</div>'
     + (savingsHtml || anomalyHtml || predictSlot ? '<div class="u-mt-3">' + savingsHtml + (savingsHtml && (anomalyHtml || predictSlot) ? ' ' : '') + anomalyHtml + (anomalyHtml && predictSlot ? ' ' : '') + predictSlot + '</div>' : '')
     + '</div>'
     + '<div class="row-info-right">'
@@ -410,7 +413,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
 function appendPage() {
   var list = document.getElementById('station-list');
   var fuel = document.getElementById('sel-combustible').value;
-  var fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text.replace(/^\S+\s*/, '');
+  var fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text.replace(/^S+s*/, '');
   var sentinel = list.querySelector('#list-sentinel');
   var slice = listStations.slice(listOffset, listOffset + PAGE_SIZE);
   if (!slice.length) {
@@ -483,9 +486,9 @@ function renderList(stations) {
 
   document.getElementById('stats-bar').style.display = 'block';
   document.getElementById('stat-n').textContent = stations.length;
-  document.getElementById('stat-min').textContent = sMin ? sMin.toFixed(3) + ' \u20AC' : 'N/D';
-  document.getElementById('stat-avg').textContent = sAvg ? sAvg.toFixed(3) + ' \u20AC' : 'N/D';
-  document.getElementById('stat-max').textContent = sMax ? sMax.toFixed(3) + ' \u20AC' : 'N/D';
+  document.getElementById('stat-min').textContent = sMin ? sMin.toFixed(3) + ' €' : 'N/D';
+  document.getElementById('stat-avg').textContent = sAvg ? sAvg.toFixed(3) + ' €' : 'N/D';
+  document.getElementById('stat-max').textContent = sMax ? sMax.toFixed(3) + ' €' : 'N/D';
 
   // Reset estado virtual
   listStations = stations;
@@ -676,7 +679,7 @@ function showCacheIndicator(ts, stale) {
   var age = formatAge(ts);
   lbl.innerHTML = '';
   if (stale) {
-    lbl.appendChild(document.createTextNode('\u26A0 ' + age + ' '));
+    lbl.appendChild(document.createTextNode('⚠ ' + age + ' '));
     var btn = document.createElement('button');
     btn.textContent = 'Actualizar';
     // Estilos en styles.ts (.cache-refresh-btn).
@@ -684,7 +687,7 @@ function showCacheIndicator(ts, stale) {
     btn.addEventListener('click', forceReload);
     lbl.appendChild(btn);
   } else {
-    lbl.textContent = '\u2713 ' + age;
+    lbl.textContent = '✓ ' + age;
   }
   lbl.style.display = 'inline';
 }
@@ -928,8 +931,8 @@ async function loadStations() {
 // ---- NORMALIZACION DE CADENAS (compartida con favoritas: provinciaIdByName) ----
 function normStr(s) {
   return (s || '').toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9s]/g, ' ').replace(/s+/g, ' ').trim();
 }
 
 // ============================================================
@@ -1055,4 +1058,3 @@ function normStr(s) {
     reset();
   }, { passive: true });
 })();
-`

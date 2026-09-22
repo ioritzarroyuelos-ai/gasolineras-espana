@@ -1,4 +1,7 @@
-export const clientUiScript = `
+// ui — fuente REAL del cliente (migrado de src/html/client/*.ts, B2).
+// Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
+// scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
+
 
 // ---- EVENTOS ----
 // Filosofia UX: los cambios en los filtros NO disparan carga ni render. El
@@ -286,10 +289,10 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
       if (!station) return;
       var added = toggleFav(station);
       favBtn.classList.toggle('active', added);
-      favBtn.textContent = added ? '\u2605' : '\u2606';
+      favBtn.textContent = added ? '★' : '☆';
       favBtn.setAttribute('aria-pressed', String(added));
-      favBtn.setAttribute('aria-label', added ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas');
-      showToast(added ? 'Guardada en favoritas \u2605' : 'Eliminada de favoritas', added ? 'success' : 'info');
+      favBtn.setAttribute('aria-label', added ? 'Quitar de favoritas' : 'Añadir a favoritas');
+      showToast(added ? 'Guardada en favoritas ★' : 'Eliminada de favoritas', added ? 'success' : 'info');
       // Ship 26: si el bot ya esta vinculado, auto-activa (o desactiva) la
       // alerta para la favorita que acaba de cambiar. El server manda el
       // mensaje bonito al bot; aqui no hace falta feedback adicional mas
@@ -313,7 +316,7 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
           var fuelVal = fuelSel ? fuelSel.value : '';
           var fuelLbl = '';
           if (fuelSel && fuelSel.selectedOptions && fuelSel.selectedOptions[0]) {
-            fuelLbl = (fuelSel.selectedOptions[0].text || '').replace(/^\S+\s*/, '');
+            fuelLbl = (fuelSel.selectedOptions[0].text || '').replace(/^S+s*/, '');
           }
           openHistoryModal(sh, fuelVal, fuelLbl);
         }
@@ -348,7 +351,7 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
 // Ship 27: refleja el estado (activa/no) del boton "Activar alerta" del popup.
 function setPopupAlertBtnState(btn, on) {
   if (!btn) return;
-  btn.textContent = on ? '\u{1F514} Alerta activa' : '\u{1F514} Activar alerta';
+  btn.textContent = on ? '🔔 Alerta activa' : '🔔 Activar alerta';
   btn.setAttribute('aria-pressed', String(!!on));
   btn.setAttribute('aria-label', on ? 'Quitar alerta de precio' : 'Activar alerta de precio por Telegram');
 }
@@ -391,8 +394,8 @@ async function handlePopupAlertClick(btn) {
       if (r && r.ok) {
         setPopupAlertBtnState(btn, want);
         showToast(want
-          ? '\u{1F514} Alerta activada — aviso diario a las 8:00'
-          : '\u{1F515} Alerta quitada', want ? 'success' : 'info');
+          ? '🔔 Alerta activada — aviso diario a las 8:00'
+          : '🔕 Alerta quitada', want ? 'success' : 'info');
       } else if (r && r.error === 'telegram_no_configurado') {
         showToast('Las alertas por Telegram no estan disponibles ahora', 'warning');
       } else {
@@ -421,9 +424,9 @@ document.addEventListener('click', function(e) {
     }
     if (!station) return;
     var added = toggleFav(station);
-    favBtn.textContent = added ? '\u2605 Favorita' : '\u2606 Guardar';
+    favBtn.textContent = added ? '★ Favorita' : '☆ Guardar';
     favBtn.setAttribute('aria-pressed', String(added));
-    showToast(added ? 'Guardada en favoritas \u2605' : 'Eliminada de favoritas', added ? 'success' : 'info');
+    showToast(added ? 'Guardada en favoritas ★' : 'Eliminada de favoritas', added ? 'success' : 'info');
     // Ship 26: auto-sync con Telegram si el bot esta vinculado.
     if (telegramAlertsActive()) {
       toggleTelegramFav(stationId(station), fuelSelectorToCode(), added);
@@ -494,13 +497,13 @@ document.addEventListener('click', function(e) {
     // el nuevo estado sin cerrar ni reabrir el popup.
     var nowIn = compareIds.indexOf(cmpId) !== -1;
     cmpBtn.setAttribute('aria-pressed', String(nowIn));
-    cmpBtn.textContent = nowIn ? '\u2696\uFE0F En comparativa' : '\u2696\uFE0F Comparar';
-    cmpBtn.setAttribute('aria-label', nowIn ? 'Quitar de comparativa' : 'A\u00f1adir a comparativa');
+    cmpBtn.textContent = nowIn ? '⚖️ En comparativa' : '⚖️ Comparar';
+    cmpBtn.setAttribute('aria-label', nowIn ? 'Quitar de comparativa' : 'Añadir a comparativa');
     if (result.action === 'added' && beforeLen === 1 && compareIds.length === 2) {
       openCompareModal();
     } else if (result.action === 'added') {
       showToast(compareIds.length === 1
-        ? 'A\u00f1adida al comparador — elige otra'
+        ? 'Añadida al comparador — elige otra'
         : 'Lista actualizada', 'info');
     } else {
       showToast('Quitada del comparador', 'info');
@@ -677,7 +680,7 @@ function renderFavsModalList() {
     // el mismo icono de "atencion" que usa showCacheIndicator y con un
     // tooltip claro. Asi el usuario no asume que el precio es live.
     var ageHint = (found && found.stale) ? ' title="Precio guardado ' + formatAge(found.ts) + ' (pulsa para actualizar)"' : '';
-    var stalePrefix = (found && found.stale) ? '\u26A0 ' : '';
+    var stalePrefix = (found && found.stale) ? '⚠ ' : '';
     var priceHtml = price
       ? '<span class="fav-row-price badge badge-' + priceColor(price) + '"' + ageHint + '>' + stalePrefix + fmtPriceUnit(price) + '</span>'
       : '<span class="fav-row-sub fav-row-sub--small">Sin datos</span>';
@@ -694,7 +697,7 @@ function renderFavsModalList() {
     var botLinked = telegramAlertsActive();
     var bellOn = botLinked && isTelegramFavActive(f.id, fuelCode);
     var bellCls = 'fav-row-bell' + (bellOn ? ' is-on' : '') + (botLinked ? '' : ' is-locked');
-    var bellIcon = bellOn ? '\u{1F514}' : (botLinked ? '\u{1F515}' : '\u{1F515}');
+    var bellIcon = bellOn ? '🔔' : (botLinked ? '🔕' : '🔕');
     var bellLabel = bellOn
       ? 'Pausar alerta de Telegram'
       : (botLinked ? 'Activar alerta de Telegram' : 'Activa el bot de Telegram primero');
@@ -702,8 +705,8 @@ function renderFavsModalList() {
     row.className = 'fav-row';
     row.innerHTML =
         '<div class="fav-row-info" role="button" tabindex="0" aria-label="Ver ' + esc(f.rotulo) + ' en el mapa">'
-      + '  <div class="fav-row-title">\u2B50 ' + esc(f.rotulo) + '</div>'
-      + '  <div class="fav-row-sub">\u{1F4CD} ' + loc + '</div>'
+      + '  <div class="fav-row-title">⭐ ' + esc(f.rotulo) + '</div>'
+      + '  <div class="fav-row-sub">📍 ' + loc + '</div>'
       + '</div>'
       + '<div>' + priceHtml + '</div>'
       + '<button class="' + bellCls + '" data-bell-id="' + esc(f.id) + '" data-bell-fuel="' + esc(fuelCode) + '" aria-label="' + bellLabel + '" aria-pressed="' + (bellOn ? 'true' : 'false') + '" title="' + bellLabel + '">' + bellIcon + '</button>'
@@ -747,9 +750,9 @@ function renderFavsModalList() {
       var cardBtn = document.querySelector('.fav-btn[data-fav-id="' + f.id + '"]');
       if (cardBtn) {
         cardBtn.classList.remove('active');
-        cardBtn.textContent = '\u2606';
+        cardBtn.textContent = '☆';
         cardBtn.setAttribute('aria-pressed', 'false');
-        cardBtn.setAttribute('aria-label', 'A\u00f1adir a favoritas');
+        cardBtn.setAttribute('aria-label', 'Añadir a favoritas');
       }
     });
     // Click en campana -> toggle alerta individual (o dialog si no hay bot).
@@ -771,9 +774,9 @@ function renderFavsModalList() {
           return;
         }
         if (!currentlyOn) {
-          showToast('\u{1F514} Alerta activada para ' + f.rotulo, 'success');
+          showToast('🔔 Alerta activada para ' + f.rotulo, 'success');
         } else {
-          showToast('\u{1F515} Alerta pausada para ' + f.rotulo, 'info');
+          showToast('🔕 Alerta pausada para ' + f.rotulo, 'info');
         }
         // Re-render para refrescar el estado visual.
         renderFavs();
@@ -931,7 +934,7 @@ async function navigateToFav(f) {
   }
   if (!f.provinciaId) {
     // Atajo 2: reverse geocode por lat/lng y mapear nombre -> codigo INE.
-    showToast('Resolviendo ubicacion de la favorita\u2026', 'info');
+    showToast('Resolviendo ubicacion de la favorita…', 'info');
     var provName = await reverseProvinciaFromLatLng(favLat, favLng);
     var provId = provName ? provinciaIdByName(provName) : '';
     if (provId) {
@@ -990,7 +993,7 @@ async function navigateToFav(f) {
     clearFavProvinceHints(f.id);
     f.provinciaId = '';
     f.municipioId = '';
-    showToast('Re-resolviendo ubicacion de la favorita\u2026', 'info');
+    showToast('Re-resolviendo ubicacion de la favorita…', 'info');
     var provName2 = await reverseProvinciaFromLatLng(favLat, favLng);
     var provId2 = provName2 ? provinciaIdByName(provName2) : '';
     if (provId2 && provId2 !== oldProvId) {
@@ -1229,16 +1232,16 @@ function hideTelegramLinkPromptDialog() {
       } else {
         // Feedback inmediato: "abriendo Telegram..."
         if (statusEl) statusEl.textContent = 'Abriendo Telegram... pulsa START para vincular el bot.';
-        showToast('Abriendo Telegram \u2014 pulsa START para continuar', 'info');
+        showToast('Abriendo Telegram — pulsa START para continuar', 'info');
         var res2 = await enableTelegramAlerts(function(deepLink) {
           // Abre el deepLink en nueva pestana — hecho en el momento del click,
           // antes del await del polling (para no ser bloqueado por popup blockers).
           try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
         });
         if (res2.ok) {
-          showToast('\u2705 Alertas Telegram activas \u2014 resumen diario a las 8:00', 'success');
+          showToast('✅ Alertas Telegram activas — resumen diario a las 8:00', 'success');
         } else if (res2.error === 'sin_favoritos') {
-          showToast('A\u00F1ade al menos una favorita antes de activar alertas', 'info');
+          showToast('Añade al menos una favorita antes de activar alertas', 'info');
         } else if (res2.error === 'telegram_no_configurado') {
           showToast('Las alertas Telegram no estan disponibles en este servidor', 'warning');
         } else if (res2.error === 'timeout') {
@@ -1246,7 +1249,7 @@ function hideTelegramLinkPromptDialog() {
         } else if (res2.error === 'token_caducado') {
           showToast('El enlace caduco (>10 min). Prueba de nuevo.', 'warning');
         } else {
-          showToast('No se pudo activar \u2014 intentalo mas tarde', 'error');
+          showToast('No se pudo activar — intentalo mas tarde', 'error');
         }
       }
     } finally {
@@ -1337,7 +1340,7 @@ function showUpdateToast(newSW) {
   t.className = 'sw-update-toast';
 
   var msg = document.createElement('span');
-  msg.textContent = '\u{1F504} Nueva version disponible';
+  msg.textContent = '🔄 Nueva version disponible';
   t.appendChild(msg);
 
   var btn = document.createElement('button');
@@ -1357,7 +1360,7 @@ function showUpdateToast(newSW) {
   var close = document.createElement('button');
   close.type = 'button';
   close.setAttribute('aria-label', 'Descartar');
-  close.textContent = '\u00D7';
+  close.textContent = '×';
   close.className = 'sw-update-toast-close';
   close.addEventListener('click', function() { t.remove(); });
   t.appendChild(close);
@@ -1560,4 +1563,3 @@ function showUpdateToast(newSW) {
     .then(function(data) { setLogged(data && data.user); })
     .catch(function() { setLogged(null); });
 })();
-`

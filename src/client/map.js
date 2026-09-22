@@ -1,4 +1,7 @@
-export const clientMapScript = `
+// map — fuente REAL del cliente (migrado de src/html/client/*.ts, B2).
+// Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
+// scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
+
 // ---- MAPA ----
 var map;
 var mapLayers = {};
@@ -816,7 +819,7 @@ var SPAIN_LABELS = [
   { t: 'Teruel',     p: [40.3440, -1.1069], c: 'map-label-city', mn: 9, mx: 20 },
   { t: 'Huesca',     p: [42.1401, -0.4089], c: 'map-label-city', mn: 9, mx: 20 },
   { t: 'Mérida',     p: [38.9165, -6.3437], c: 'map-label-city', mn: 9, mx: 20 },
-  { t: 'L\u2019Hospitalet de Llobregat', p: [41.3596,  2.0997], c: 'map-label-city', mn: 10, mx: 20 },
+  { t: 'L’Hospitalet de Llobregat', p: [41.3596,  2.0997], c: 'map-label-city', mn: 10, mx: 20 },
   { t: 'Badalona',   p: [41.4500,  2.2474], c: 'map-label-city', mn: 10, mx: 20 },
   { t: 'Sabadell',   p: [41.5483,  2.1075], c: 'map-label-city', mn: 10, mx: 20 },
   { t: 'Terrassa',   p: [41.5662,  2.0086], c: 'map-label-city', mn: 10, mx: 20 },
@@ -906,7 +909,7 @@ var topCheapIds = {};                       // ids de las 3 estaciones mas barat
 // Formatea precio en €/L (unica unidad soportada tras quitar el toggle).
 function fmtPriceUnit(price) {
   if (price == null) return 'N/D';
-  return price.toFixed(3) + ' \u20AC';
+  return price.toFixed(3) + ' €';
 }
 
 // ---- ICONS - price badge pill ----
@@ -959,12 +962,12 @@ function priceColor(price) {
   return 'red';
 }
 
-function fmt(price) { return price ? price.toFixed(3) + ' \u20AC/L' : 'N/D'; }
+function fmt(price) { return price ? price.toFixed(3) + ' €/L' : 'N/D'; }
 
 // Detecta si una gasolinera es 24H
 function is24H(h) {
   if (!h) return false;
-  var u = h.toUpperCase().replace(/\s/g,'');
+  var u = h.toUpperCase().replace(/s/g,'');
   return u === '24H' || u.includes('00:00-24:00') || u.includes('00:00-00:00') || u === 'L-D:00:00-24:00';
 }
 
@@ -983,7 +986,7 @@ function horarioPopup(h) {
   if (is24H(h)) return '<span class="popup-h24">&#x2665; Abierto 24 horas todos los dias</span>';
   var segs = h.split(';').map(function(s){ return s.trim(); }).filter(Boolean);
   return segs.map(function(seg) {
-    var parts = seg.match(/^([^:]+):\s*(.+)$/);
+    var parts = seg.match(/^([^:]+):s*(.+)$/);
     if (!parts) return '<div class="popup-segment">' + esc(seg) + '</div>';
     return '<div class="popup-segment-row">'
       + '<span class="popup-seg-day">' + esc(parts[1].trim()) + '</span>'
@@ -1113,14 +1116,14 @@ function buildHistoryPlaceholder(stationId, provinciaId, fuel, fuelLabel, curren
        + ' data-hist-fuel-label="' + flAttr + '"'
        + ' data-hist-current="' + cp + '"'
        + ' data-hist-days="30">'
-       + '<div class="popup-trend-caption">\u{1F4C8} Evolucion (' + esc(fuelLabel || fuel) + ')</div>'
+       + '<div class="popup-trend-caption">📈 Evolucion (' + esc(fuelLabel || fuel) + ')</div>'
        + '<div class="hist-toggles" role="tablist" aria-label="Rango de historico">'
        + '<button type="button" class="hist-toggle"            data-hist-range="7"   role="tab" aria-selected="false">7d</button>'
        + '<button type="button" class="hist-toggle active"     data-hist-range="30"  role="tab" aria-selected="true">30d</button>'
        + '<button type="button" class="hist-toggle"            data-hist-range="90"  role="tab" aria-selected="false">90d</button>'
        + '<button type="button" class="hist-toggle"            data-hist-range="365" role="tab" aria-selected="false">1a</button>'
        + '</div>'
-       + '<div class="hist-body" data-hist-body="1"><div class="hist-loading">\u23F3 Cargando historial\u2026</div></div>'
+       + '<div class="hist-body" data-hist-body="1"><div class="hist-loading">⏳ Cargando historial…</div></div>'
        + '</div>';
 }
 
@@ -1146,7 +1149,7 @@ function renderHistoryPanel(container, days) {
     toggles[i].setAttribute('aria-selected', active ? 'true' : 'false');
   }
   container.setAttribute('data-hist-days', String(days));
-  body.innerHTML = '<div class="hist-loading">\u23F3 Cargando historial\u2026</div>';
+  body.innerHTML = '<div class="hist-loading">⏳ Cargando historial…</div>';
 
   // Fetch estacion (obligatorio) + mediana provincial (opcional, no bloquea).
   // El endpoint provincial valida fuel contra los codigos cortos del Ministerio
@@ -1214,7 +1217,7 @@ function renderFallbackLocal(body, stationIdV, fuel, days) {
   renderHistoryBody(body, filtered, null, null, fuel);
   var note = document.createElement('div');
   note.className = 'trend-label u-mt-2';
-  note.textContent = '\u2139 Datos locales (servidor sin historial)';
+  note.textContent = 'ℹ Datos locales (servidor sin historial)';
   body.appendChild(note);
 }
 
@@ -1226,7 +1229,7 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
   var min = Math.min.apply(null, vals);
   var max = Math.max.apply(null, vals);
   var avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
-  var fmt = function(v) { return v.toFixed(3) + ' \u20AC'; };
+  var fmt = function(v) { return v.toFixed(3) + ' €'; };
   // Badge "historicamente bajo": precio actual <= percentil 10 del periodo.
   // Usamos una copia ordenada para no mutar el array original.
   var sorted = vals.slice().sort(function(a, b) { return a - b; });
@@ -1238,20 +1241,20 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
     // El +/- 0.0005 absorbe redondeos de eurosToCents en el servidor (precios
     // son multiplos de 0.001 €/L en las dos puntas).
     if (currentPrice <= p10 + 0.0005) {
-      lowBadge = '<div class="hist-lowbadge">\u{1F3C6} Precio historicamente bajo</div>';
+      lowBadge = '<div class="hist-lowbadge">🏆 Precio historicamente bajo</div>';
     } else if (currentPrice >= p90 - 0.0005) {
       // Senal inversa: si ha estado mas barato la mayoria de dias, espera;
       // el combustible en Espana suele volver a su banda en 1-2 semanas.
-      highBadge = '<div class="hist-highbadge">\u{1F4B8} Precio historicamente alto</div>';
+      highBadge = '<div class="hist-highbadge">💸 Precio historicamente alto</div>';
     }
   }
   // Tendencia total sobre la ventana mostrada
   var first = vals[0], last = vals[vals.length - 1];
   var delta = last - first;
   var trendClass = delta > 0.005 ? 'trend-up' : (delta < -0.005 ? 'trend-down' : '');
-  var trendArrow = delta > 0.005 ? '\u2191' : (delta < -0.005 ? '\u2193' : '\u2192');
+  var trendArrow = delta > 0.005 ? '↑' : (delta < -0.005 ? '↓' : '→');
   var trendTxt = '<div class="trend-label u-mt-2 ' + trendClass + '">'
-               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3) + ' \u20AC en ' + points.length + ' observaciones</div>';
+               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3) + ' € en ' + points.length + ' observaciones</div>';
 
   var legend = medianPoints
     ? '<div class="hist-legend">'
@@ -1346,15 +1349,15 @@ function buildPercentileHistogram(info) {
   var markerPct = Math.max(2, Math.min(98, rawPct));
   var label;
   if (info.rank === 1) {
-    label = '\u{1F3C6} La m\u00E1s barata de su zona (' + info.total + ' estaciones)';
+    label = '🏆 La más barata de su zona (' + info.total + ' estaciones)';
   } else if (info.quintile === 0) {
-    label = 'Top 20% m\u00E1s barato \u2014 m\u00E1s barata que el ' + info.cheaperThanPct + '% (' + info.total + ')';
+    label = 'Top 20% más barato — más barata que el ' + info.cheaperThanPct + '% (' + info.total + ')';
   } else if (info.quintile === 4) {
-    label = 'Peor 20% \u2014 solo supera al ' + info.cheaperThanPct + '% (' + info.total + ')';
+    label = 'Peor 20% — solo supera al ' + info.cheaperThanPct + '% (' + info.total + ')';
   } else {
-    label = 'M\u00E1s barata que el ' + info.cheaperThanPct + '% de su zona (' + info.total + ')';
+    label = 'Más barata que el ' + info.cheaperThanPct + '% de su zona (' + info.total + ')';
   }
-  var markerTitle = 'T\u00FA: posici\u00F3n ' + info.rank + ' de ' + info.total;
+  var markerTitle = 'Tú: posición ' + info.rank + ' de ' + info.total;
   // IMPORTANTE: no usamos style="left:X%" inline porque el CSP (style-src sin
   // 'unsafe-inline') los bloquea y el marcador acaba en left:auto = 0 (extremo
   // izquierdo, zona verde) aunque el precio sea el mas caro. En su lugar
@@ -1403,8 +1406,8 @@ function buildPopup(s) {
   var statusHtml = '';
   if (status) {
     statusHtml = status.open
-      ? '<span class="status-chip status-open">\u25CF Abierta' + (status.closesAt ? ' hasta ' + esc(status.closesAt) : '') + '</span>'
-      : '<span class="status-chip status-closed">\u25CF Cerrada' + (status.opensAt ? ' hasta ' + esc(status.opensAt) : '') + '</span>';
+      ? '<span class="status-chip status-open">● Abierta' + (status.closesAt ? ' hasta ' + esc(status.closesAt) : '') + '</span>'
+      : '<span class="status-chip status-closed">● Cerrada' + (status.opensAt ? ' hasta ' + esc(status.opensAt) : '') + '</span>';
   }
 
   // Ship 25.6: Badge "Solo socios" para Costco. El Ministerio publica sus
@@ -1413,7 +1416,7 @@ function buildPopup(s) {
   var rotuloUpper = (s['Rotulo'] || '').toUpperCase();
   if (rotuloUpper.indexOf('COSTCO') >= 0) {
     statusHtml = (statusHtml ? statusHtml + ' ' : '')
-      + '<span class="status-chip status-members">\u{1F511} Solo socios Costco Club</span>';
+      + '<span class="status-chip status-members">🔑 Solo socios Costco Club</span>';
   }
 
   // Distancia al centro del municipio elegido (munCenter). La calculamos
@@ -1424,7 +1427,7 @@ function buildPopup(s) {
     var kmPop = distanceKm(munCenter.lat, munCenter.lng, lat, lng);
     extraKmPopup = kmPop * 2;  // ida + vuelta, conservador
     var minsPop = Math.round(kmPop / 40 * 60); // 40 km/h urbano
-    distHtml = '<span class="distance-chip u-ml-6">\u{1F9ED} ' + kmPop.toFixed(1) + ' km &middot; ~' + minsPop + ' min</span>';
+    distHtml = '<span class="distance-chip u-ml-6">🧭 ' + kmPop.toFixed(1) + ' km &middot; ~' + minsPop + ' min</span>';
   }
 
   // Ahorro — AHORRO NETO si tenemos centro de municipio + perfil (resta el
@@ -1438,13 +1441,13 @@ function buildPopup(s) {
     if (extraKmPopup != null && profP && profP.consumo > 0) {
       var netP = computeNetSavings(grossP, extraKmPopup, profP.consumo, mainPrice);
       if (netP.worthIt) {
-        savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorro neto ' + netP.netEur.toFixed(2) + ' \u20AC / deposito ' + tankP + 'L'
-                    + ' <span class="savings-sub">(' + grossP.toFixed(2) + ' \u20AC \u2212 ' + netP.detourCostEur.toFixed(2) + ' desvio)</span></div>';
+        savingsHtml = '<div class="savings-badge u-mt-6">💰 Ahorro neto ' + netP.netEur.toFixed(2) + ' € / deposito ' + tankP + 'L'
+                    + ' <span class="savings-sub">(' + grossP.toFixed(2) + ' € − ' + netP.detourCostEur.toFixed(2) + ' desvio)</span></div>';
       } else if (grossP >= 0.5) {
-        savingsHtml = '<div class="savings-badge savings-badge--negative u-mt-6">\u26A0 El desvio cuesta ' + netP.detourCostEur.toFixed(2) + ' \u20AC — no compensa (neto ' + netP.netEur.toFixed(2) + ' \u20AC)</div>';
+        savingsHtml = '<div class="savings-badge savings-badge--negative u-mt-6">⚠ El desvio cuesta ' + netP.detourCostEur.toFixed(2) + ' € — no compensa (neto ' + netP.netEur.toFixed(2) + ' €)</div>';
       }
     } else if (grossP >= 0.5) {
-      savingsHtml = '<div class="savings-badge u-mt-6">\u{1F4B0} Ahorras ' + grossP.toFixed(2) + ' \u20AC / deposito ' + tankP + 'L</div>';
+      savingsHtml = '<div class="savings-badge u-mt-6">💰 Ahorras ' + grossP.toFixed(2) + ' € / deposito ' + tankP + 'L</div>';
     }
   }
 
@@ -1514,14 +1517,14 @@ function buildPopup(s) {
   var inCompare = compareIds && compareIds.indexOf(id) !== -1;
   var actionBtns =
       '<div class="popup-actions">'
-    + '  <button data-pop-fav="' + esc(id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'A\u00f1adir a favoritas') + '">'
-    + (fav ? '\u2605 Favorita' : '\u2606 Guardar')
+    + '  <button data-pop-fav="' + esc(id) + '" aria-pressed="' + fav + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'Añadir a favoritas') + '">'
+    + (fav ? '★ Favorita' : '☆ Guardar')
     + '  </button>'
-    + '  <button data-pop-compare="' + esc(id) + '" aria-pressed="' + inCompare + '" aria-label="' + (inCompare ? 'Quitar de comparativa' : 'A\u00f1adir a comparativa') + '">'
-    + (inCompare ? '\u2696\uFE0F En comparativa' : '\u2696\uFE0F Comparar')
+    + '  <button data-pop-compare="' + esc(id) + '" aria-pressed="' + inCompare + '" aria-label="' + (inCompare ? 'Quitar de comparativa' : 'Añadir a comparativa') + '">'
+    + (inCompare ? '⚖️ En comparativa' : '⚖️ Comparar')
     + '</button>'
-    + '  <button data-pop-share="1" aria-label="Compartir gasolinera">\u{1F4E4} Compartir</button>'
-    + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">\u{1F4CB} Copiar</button>'
+    + '  <button data-pop-share="1" aria-label="Compartir gasolinera">📤 Compartir</button>'
+    + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">📋 Copiar</button>'
     + '</div>';
 
   // Ship 27: boton "Activar alerta" por Telegram. Usa el combustible
@@ -1537,7 +1540,7 @@ function buildPopup(s) {
         '<div class="popup-alert-row">'
       + '<button class="popup-alert-btn" data-pop-alert="' + esc(id) + '" data-pop-alert-fuel="' + esc(alertFuelCode) + '"'
       + ' aria-pressed="' + alertOn + '" aria-label="' + (alertOn ? 'Quitar alerta de precio' : 'Activar alerta de precio por Telegram') + '">'
-      + (alertOn ? '\u{1F514} Alerta activa' : '\u{1F514} Activar alerta')
+      + (alertOn ? '🔔 Alerta activa' : '🔔 Activar alerta')
       + '</button>'
       + '</div>';
   }
@@ -1551,8 +1554,8 @@ function buildPopup(s) {
   // Mensaje explicito en vez de "Sin precio" para que el usuario no piense
   // que es un fallo de carga de datos.
   var priceDisplay = mainPrice
-    ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">\u20AC/L</span></strong>'
-    : '<span class="popup-price-none">No se vende aqu\u00ed</span>';
+    ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">€/L</span></strong>'
+    : '<span class="popup-price-none">No se vende aquí</span>';
 
   // Ship 8: link de reporte. Solo lo mostramos si hay precio publicado — si
   // no hay, no tiene sentido reportar "precio incorrecto". data-pop-report
@@ -1566,7 +1569,7 @@ function buildPopup(s) {
   if (mainPrice && reportFuelCode) {
     var repPayload = id + '|' + reportFuelCode + '|' + mainPrice.toFixed(3) + '|' + (s['Rotulo'] || 'Gasolinera');
     reportLink = '<button class="popup-report-link" data-pop-report="' + esc(repPayload) + '" type="button">'
-               + '\u{1F6A9} Reportar precio incorrecto'
+               + '🚩 Reportar precio incorrecto'
                + '</button>';
   }
 
@@ -1584,8 +1587,8 @@ function buildPopup(s) {
   return '<div class="popup-root">'
     // Cabecera — la gradiente del fondo se pinta por clase .popup-header--<color>
     + '<div class="popup-header popup-header--' + mainColor + '">'
-    + '  <div class="popup-header-title">\u26FD ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
-    + '  <div class="popup-header-sub">\u{1F4CD} ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + distHtml + '</div>'
+    + '  <div class="popup-header-title">⛽ ' + esc(s['Rotulo'] || 'Gasolinera') + '</div>'
+    + '  <div class="popup-header-sub">📍 ' + esc(s['Direccion'] || '') + ', ' + esc(s['Municipio'] || '') + distHtml + '</div>'
     + (statusHtml ? '  <div class="popup-header-status">' + statusHtml + '</div>' : '')
     + '</div>'
     // Precio
@@ -1601,7 +1604,7 @@ function buildPopup(s) {
     // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia
     // de la de Evolucion, que es mb:2 por defecto)
     + '<div class="popup-trend-top">'
-    + '  <div class="popup-trend-caption popup-trend-caption--mb4">\u{1F550} Horario</div>'
+    + '  <div class="popup-trend-caption popup-trend-caption--mb4">🕐 Horario</div>'
     + horarioPopup(s['Horario'])
     + '</div>'
     + sparkHtml
@@ -1660,7 +1663,7 @@ function renderMarkers(stations) {
         html: [
           '<div class="cluster-icon ' + szCls + ' cluster-icon--' + cColor + '">',
           '  <span class="cluster-icon-count ' + fsCls + '">' + count + '</span>',
-          cMin ? '<span class="cluster-icon-price">' + cMin.toFixed(2) + '\u20AC</span>' : '',
+          cMin ? '<span class="cluster-icon-price">' + cMin.toFixed(2) + '€</span>' : '',
           '</div>'
         ].join(''),
         className: '',
@@ -1873,5 +1876,3 @@ function highlightCard(idx) {
     }
   });
 })();
-
-`

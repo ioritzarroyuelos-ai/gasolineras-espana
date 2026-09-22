@@ -1,4 +1,7 @@
-export const clientCoreScript = `
+// core — fuente REAL del cliente (migrado de src/html/client/*.ts, B2).
+// Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
+// scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
+
 // ============================================================
 // ===== ERROR REPORTER (Nivel 1: deteccion) =====
 // ============================================================
@@ -63,7 +66,7 @@ export const clientCoreScript = `
       var tag = el.tagName ? el.tagName.toLowerCase() : '?';
       var id  = el.id ? ('#' + el.id) : '';
       var cls = (!id && el.className && typeof el.className === 'string')
-        ? ('.' + el.className.split(/\\s+/).filter(Boolean).slice(0,2).join('.'))
+        ? ('.' + el.className.split(/\s+/).filter(Boolean).slice(0,2).join('.'))
         : '';
       addCrumb('click:' + tag + (id || cls));
     } catch(_) {}
@@ -75,8 +78,8 @@ export const clientCoreScript = `
   window.addEventListener('offline', function() { addCrumb('net:offline'); });
 
   // Ruido conocido: usamos indexOf para evitar quebraderos de cabeza con
-  // regex escapes dentro del template literal del wrapper (en \`...\` los
-  // \\ se comen y las barras cierran el regex antes de tiempo).
+  // regex escapes dentro del template literal del wrapper (en `...` los
+  // \ se comen y las barras cierran el regex antes de tiempo).
   function isNoise(msg, stack) {
     if (!msg) return true;
     var ml = String(msg).toLowerCase();
@@ -92,13 +95,12 @@ export const clientCoreScript = `
     return false;
   }
   // ---- Ship 13: infiere el modulo a partir del stack ----
-  // Orden de match: (1) URL del frame (features.js → 'features'), (2)
-  // keywords inequivocas del stack (buildPopup/initMap → 'map'), (3) fallback.
+  // Desde B2 todo el cliente (core+map+list+ui+features) va en /static/app.js, asi
+  // que ya no se puede distinguir por URL de fichero: se infiere por keywords
+  // inequivocas del stack (buildPopup/initMap → 'map'), con fallback 'unknown'.
   function inferModule(stack) {
     if (!stack) return 'unknown';
     var s = String(stack);
-    // La URL del asset mas explicita primero.
-    if (s.indexOf('/static/features.js') >= 0) return 'features';
     // Keywords: funciones exportadas o nombres muy distintivos por modulo.
     if (/initMap|buildPopup|renderMarkers|createMap|computePricePercentile/.test(s)) return 'map';
     if (/renderList|renderCompareModal|buildCard|addToCompare/.test(s))            return 'list';
@@ -122,7 +124,7 @@ export const clientCoreScript = `
       var selF = document.getElementById('sel-combustible');
       if (selF && selF.value) {
         // Solo el sufijo corto: "Precio Gasolina 95 E5" → "95 E5". Ahorra bytes.
-        var v = String(selF.value).replace(/^Precio\\s+/i, '').slice(0, 40);
+        var v = String(selF.value).replace(/^Precio\s+/i, '').slice(0, 40);
         ctx.fuel = v;
       }
     } catch(_) {}
@@ -142,7 +144,7 @@ export const clientCoreScript = `
         msg = String(err);
       }
       if (isNoise(msg, stack)) return;
-      var firstLine = (stack.split('\\n')[0] || '').substring(0, 200);
+      var firstLine = (stack.split('\n')[0] || '').substring(0, 200);
       var fp = hashCode(msg + '|' + firstLine);
       var now = Date.now();
       if (lastSent[fp] && now - lastSent[fp] < 10000) return;
@@ -186,7 +188,7 @@ export const clientCoreScript = `
 // Usa nodos DOM + textContent para evitar XSS si 'msg' viene de un backend comprometido.
 function showToast(msg, type) {
   type = type || 'error';
-  var icons = { error:'\u2715', warning:'\u26A0', success:'\u2713', info:'\u2139' };
+  var icons = { error:'✕', warning:'⚠', success:'✓', info:'ℹ' };
   var variant = icons[type] ? type : 'error';
   var t = document.createElement('div');
   // Estilos en styles.ts (.app-toast + .app-toast--<variant>) para no
@@ -220,7 +222,7 @@ function showToast(msg, type) {
     b.id = 'offline-badge';
     b.setAttribute('role', 'status');
     b.setAttribute('aria-live', 'polite');
-    b.textContent = '\u26A0 Sin conexion';
+    b.textContent = '⚠ Sin conexion';
     // Estilos en styles.ts (.offline-badge).
     b.className = 'offline-badge';
     // Colgado de #app-body (position:relative) para quedar sobre el mapa, bajo la
@@ -264,9 +266,9 @@ function showToast(msg, type) {
     var raw = window.__SNAP_AT__;
     if (!raw || typeof raw !== 'string') return;
     // new RegExp en lugar de /literal/: el outer template literal (clientCoreScript)
-    // rechaza secuencias \d como escape invalida en ES2015+. Con string doble-escaped
+    // rechaza secuencias d como escape invalida en ES2015+. Con string doble-escaped
     // el wrapper pasa parse y el regex se construye bien en runtime.
-    var m = new RegExp('^(\\d{2})/(\\d{2})/(\\d{4})\\s+(\\d{2}):(\\d{2}):(\\d{2})$').exec(raw.trim());
+    var m = new RegExp('^(\d{2})/(\d{2})/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$').exec(raw.trim());
     if (!m) return;
     var snapAt = new Date(
       parseInt(m[3], 10),
@@ -292,7 +294,7 @@ function showToast(msg, type) {
       b.setAttribute('role', 'status');
       b.setAttribute('aria-label', 'Edad de los datos de precios');
       b.title = 'Datos del Ministerio actualizados ' + label + ' (' + raw + ')';
-      b.textContent = '\u{1F55B} ' + label;
+      b.textContent = '🕛 ' + label;
       // Estilos en styles.ts (.freshness-badge + variante).
       b.className = 'freshness-badge ' + (stale ? 'freshness-badge--stale' : 'freshness-badge--fresh');
       // Colgado de #app-body (position:relative) para quedar sobre el mapa, bajo
@@ -324,11 +326,11 @@ function showToast(msg, type) {
     function fmtEur(n) {
       if (n == null || !isFinite(n)) return '--';
       // Precio con 3 decimales (convencion Ministerio: 1.479 €/L).
-      return n.toFixed(3) + ' \u20AC';
+      return n.toFixed(3) + ' €';
     }
     function fmtDelta(pct) {
       if (pct == null || !isFinite(pct)) return '';
-      var sign = pct > 0 ? '\u2191' : pct < 0 ? '\u2193' : '=';
+      var sign = pct > 0 ? '↑' : pct < 0 ? '↓' : '=';
       // Antes era style="color:...;font-weight:700" inline, pero el CSP
       // (style-src 'self' 'nonce-...') bloquea style attributes y generaba
       // violation reports. Ahora clases en styles.ts (.stats-nacional-delta*).
@@ -397,10 +399,10 @@ function showToast(msg, type) {
         parts.push('<div>95: <strong>' + fmtEur(g95.today) + '/L</strong> ' + fmtDelta(g95.delta_pct) + '</div>');
       }
       if (di && di.today != null) {
-        parts.push('<div>Di\u00E9sel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
+        parts.push('<div>Diésel: <strong>' + fmtEur(di.today) + '/L</strong> ' + fmtDelta(di.delta_pct) + '</div>');
       }
       if (daysN > 0) {
-        parts.push('<div class="stats-nacional-footer">comparado con media de los \u00FAltimos ' + daysN + ' d\u00EDa' + (daysN === 1 ? '' : 's') + '</div>');
+        parts.push('<div class="stats-nacional-footer">comparado con media de los últimos ' + daysN + ' día' + (daysN === 1 ? '' : 's') + '</div>');
       }
       // innerHTML seguro: los valores numericos vienen de /api/stats/national
       // (servidor) con rangos validados; no hay texto libre del usuario.
@@ -507,7 +509,7 @@ var predictCache = {};
 function fetchPredict(stationIdStr, fuelLabel, currentEurL) {
   var fuelCode = FUEL_CODES_BY_LABEL[fuelLabel];
   if (!fuelCode) return Promise.resolve(null);
-  if (!stationIdStr || !/^\\d{1,10}$/.test(stationIdStr)) return Promise.resolve(null);
+  if (!stationIdStr || !/^\d{1,10}$/.test(stationIdStr)) return Promise.resolve(null);
   var k = stationIdStr + '|' + fuelCode;
   if (predictCache[k]) return Promise.resolve(predictCache[k]);
   var url = '/api/predict/' + encodeURIComponent(stationIdStr) + '?fuel=' + fuelCode;
@@ -531,20 +533,20 @@ function predictBadgeHTML(predict) {
   var label, cls, emoji;
   if (verdict === 'buy_now') {
     cls = 'predict-badge predict-badge--good';
-    emoji = '\u{1F7E2}';
+    emoji = '🟢';
     label = 'Buen momento';
   } else if (verdict === 'wait') {
     cls = 'predict-badge predict-badge--bad';
-    emoji = '\u{1F534}';
+    emoji = '🔴';
     label = 'Mejor esperar';
   } else {
     cls = 'predict-badge predict-badge--neutral';
-    emoji = '\u{1F7E1}';
+    emoji = '🟡';
     label = 'Precio tipico';
   }
-  var conf = predict.confidence === 'high' ? '' : (predict.confidence === 'mid' ? ' \u00B7 muestra media' : ' \u00B7 poca muestra');
-  var tip = 'Percentil ' + predict.percentile + ' en ' + predict.sampleCount + ' observaciones (mismo dia de la semana). Tipico: ' + predict.tipicalEurL.toFixed(3) + ' \u20AC/L.';
-  return '<span class="' + cls + '" title="' + esc(tip) + '" aria-label="' + esc(label + ' \u2014 ' + tip) + '">' + emoji + ' ' + label + conf + '</span>';
+  var conf = predict.confidence === 'high' ? '' : (predict.confidence === 'mid' ? ' · muestra media' : ' · poca muestra');
+  var tip = 'Percentil ' + predict.percentile + ' en ' + predict.sampleCount + ' observaciones (mismo dia de la semana). Tipico: ' + predict.tipicalEurL.toFixed(3) + ' €/L.';
+  return '<span class="' + cls + '" title="' + esc(tip) + '" aria-label="' + esc(label + ' — ' + tip) + '">' + emoji + ' ' + label + conf + '</span>';
 }
 
 // ---- PERFIL DEL USUARIO (localStorage) ----
@@ -726,7 +728,7 @@ function fireDropNotification(title, body) {
     }
   } catch(_) {}
   // Fallback visual in-app
-  try { showToast('\u{1F514} ' + title + ' — ' + body, 'success'); } catch(_) {}
+  try { showToast('🔔 ' + title + ' — ' + body, 'success'); } catch(_) {}
   return false;
 }
 
@@ -761,7 +763,7 @@ function checkPriceDropsAndUpdateBaselines(stations, fuel) {
         var drop = (base.p - p);
         var fav = favIds[id];
         var title = 'Precio en bajada: ' + (fav.rotulo || 'gasolinera');
-        var body = '-' + (drop * 100).toFixed(1) + 'c (ahora ' + p.toFixed(3) + ' \u20AC) en ' + (fav.municipio || '');
+        var body = '-' + (drop * 100).toFixed(1) + 'c (ahora ' + p.toFixed(3) + ' €) en ' + (fav.municipio || '');
         fireDropNotification(title, body);
         lastNotif[k] = now;
       }
@@ -1125,12 +1127,12 @@ var recordHistoryForFavorites = recordHistoryForTracked;
 // Formato tipico: "L-V: 06:00-22:00; S: 07:00-14:00; D: cerrado"
 var DAY_MAP = { L:1, M:2, X:3, J:4, V:5, S:6, D:0 };
 function parseTime(s) {
-  var m = s.match(/(\d{1,2}):(\d{2})/);
+  var m = s.match(/(d{1,2}):(d{2})/);
   if (!m) return null;
   return parseInt(m[1],10) * 60 + parseInt(m[2],10);
 }
 function expandDayRange(token) {
-  token = token.toUpperCase().replace(/\s/g,'');
+  token = token.toUpperCase().replace(/s/g,'');
   if (token === 'LABORABLES' || token === 'L-V') return [1,2,3,4,5];
   if (token === 'DIARIO' || token === 'L-D' || token === 'TODOS') return [0,1,2,3,4,5,6];
   if (token.indexOf('-') > -1) {
@@ -1159,7 +1161,7 @@ function isOpenNow(horario) {
   var segs = horario.split(';').map(function(s) { return s.trim(); });
   for (var i = 0; i < segs.length; i++) {
     var seg = segs[i];
-    var m = seg.match(/^([^:]+):\\s*(.+)$/);
+    var m = seg.match(/^([^:]+):\s*(.+)$/);
     if (!m) continue;
     var days = expandDayRange(m[1]);
     if (days.indexOf(day) < 0) continue;
@@ -1168,7 +1170,7 @@ function isOpenNow(horario) {
     // Rango HH:MM-HH:MM (posibles multiples)
     var ranges = times.split(/[,Y]/).map(function(r) { return r.trim(); });
     for (var j = 0; j < ranges.length; j++) {
-      var rg = ranges[j].match(/(\\d{1,2}:\\d{2})\\s*-\\s*(\\d{1,2}:\\d{2})/);
+      var rg = ranges[j].match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
       if (!rg) continue;
       var from = parseTime(rg[1]);
       var to   = parseTime(rg[2]);
@@ -1226,7 +1228,7 @@ function showListError(msg, retryLabel) {
   var icon = document.createElement('div');
   icon.className = 'icon';
   icon.style.fontSize = '40px';
-  icon.textContent = '\u26A0';
+  icon.textContent = '⚠';
   var p = document.createElement('p');
   p.textContent = String(msg == null ? '' : msg);
   var btn = document.createElement('button');
@@ -1302,7 +1304,7 @@ function mapFitPadding() {
 function normalizeStation(s) {
   var out = {};
   for (var k in s) {
-    out[k.normalize('NFD').replace(/[\u0300-\u036f]/g, '')] = s[k];
+    out[k.normalize('NFD').replace(/[̀-ͯ]/g, '')] = s[k];
   }
   return out;
 }
@@ -1602,5 +1604,3 @@ function normalizeStation(s) {
   });
   window.addEventListener('pagehide', flush);
 })();
-
-`

@@ -869,24 +869,24 @@ ${hasSeoSummary ? `
      lo que el usuario quiere ver primero). Tras arreglar overflow:hidden en
      body, ahora es accesible por scroll normal — tanto para el crawler (texto
      canonico) como para el usuario (tabla + municipios). -->
-<section class="seo-summary" aria-labelledby="seo-h1" style="padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
+<section class="seo-summary" aria-labelledby="seo-h1">
   <!-- Breadcrumb visible — complementa al BreadcrumbList del JSON-LD dandole
        al usuario navegacion ascendente (Inicio / Provincia). -->
-  <nav class="page-breadcrumb" aria-label="Migas de pan" style="font-size:13px;color:#64748b;margin:0 0 16px">
-    <a href="/gasolineras/" style="color:#15803d;text-decoration:none">Inicio</a>
+  <nav class="page-breadcrumb" aria-label="Migas de pan">
+    <a href="/gasolineras/">Inicio</a>
     ${seo?.provinciaName && seo?.provinciaSlug ? ' &rsaquo; ' + (seo?.municipioName
-      ? '<a href="/gasolineras/' + seo.provinciaSlug + '" style="color:#15803d;text-decoration:none">' + seo.provinciaName + '</a>'
+      ? '<a href="/gasolineras/' + seo.provinciaSlug + '">' + seo.provinciaName + '</a>'
       : '<span aria-current="page">' + seo.provinciaName + '</span>') : ''}
     ${seo?.municipioName ? ' &rsaquo; <span aria-current="page">' + seo.municipioName + '</span>' : ''}
   </nav>
-  <h1 id="seo-h1" style="font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700">Precios de combustible en ${geoLabelH}</h1>
-  <p style="margin:0 0 16px;color:#475569;line-height:1.6">Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
-  <table style="width:100%;border-collapse:collapse;font-size:14px;max-width:640px">
+  <h1 id="seo-h1">Precios de combustible en ${geoLabelH}</h1>
+  <p>Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <table>
     <thead><tr>
-      <th style="text-align:left;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Combustible</th>
-      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Más barato</th>
-      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Medio</th>
-      <th style="text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500">Más caro</th>
+      <th>Combustible</th>
+      <th>Más barato</th>
+      <th>Medio</th>
+      <th>Más caro</th>
     </tr></thead>
     <tbody>
       ${(() => {
@@ -899,27 +899,27 @@ ${hasSeoSummary ? `
         return Object.keys(seo!.stats!).filter(k => seo!.stats![k].count >= 3).map(fuelCode => {
           const s = seo!.stats![fuelCode]
           return '<tr>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9">' + (labels[fuelCode] || fuelCode) + '</td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace">' + s.min.toFixed(3) + ' €</td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace"><strong>' + s.avg.toFixed(3) + ' €</strong></td>'
-            + '<td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-family:ui-monospace,monospace">' + s.max.toFixed(3) + ' €</td>'
+            + '<td>' + (labels[fuelCode] || fuelCode) + '</td>'
+            + '<td class="num">' + s.min.toFixed(3) + ' €</td>'
+            + '<td class="num"><strong>' + s.avg.toFixed(3) + ' €</strong></td>'
+            + '<td class="num">' + s.max.toFixed(3) + ' €</td>'
             + '</tr>'
         }).join('')
       })()}
     </tbody>
   </table>
-  <p style="margin:14px 0 0;color:#64748b;font-size:13px">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabelH + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+  <p class="seo-note">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabelH + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
 </section>` : ''}
 
 ${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipios.length > 0 ? `
 <!-- Enlace interno a municipios destacados de la provincia (Ship 11): mejora
      la "internal linking" para SEO y ayuda a los crawlers a descubrir las
      paginas municipio. Solo aparece en la pagina provincial. -->
-<section class="seo-municipios" aria-labelledby="munis-h2" style="padding:0 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;">
-  <h2 id="munis-h2" style="font-size:18px;color:#14532d;margin:0 0 12px">Gasolineras por municipio en ${seo.provinciaName}</h2>
-  <p style="margin:0 0 12px;color:#475569;font-size:14px">Páginas dedicadas con precios y mapa de los municipios con más estaciones:</p>
-  <ul style="list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px">
-    ${opts.municipios.map(m => `<li><a href="/gasolineras/${seo.provinciaSlug}/${m.slug}" style="color:#15803d;text-decoration:none;font-size:14px">${m.name} <span style="color:#94a3b8;font-size:12px">(${m.stationCount})</span></a></li>`).join('')}
+<section class="seo-municipios" aria-labelledby="munis-h2">
+  <h2 id="munis-h2">Gasolineras por municipio en ${seo.provinciaName}</h2>
+  <p>Páginas dedicadas con precios y mapa de los municipios con más estaciones:</p>
+  <ul>
+    ${opts.municipios.map(m => `<li><a href="/gasolineras/${seo.provinciaSlug}/${m.slug}">${m.name} <span>(${m.stationCount})</span></a></li>`).join('')}
   </ul>
 </section>` : ''}
 

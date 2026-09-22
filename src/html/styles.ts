@@ -1883,5 +1883,25 @@ export function getStyles(nonce: string = ''): string {
        especificidad que la media query, para que la cabecera siga al botón. */
     body:not(.dark) .masthead{--mh-paper:#faf8f4;--mh-ink:#1a1a1a;--mh-muted:#5b6470;--mh-brand:#16a34a;--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9}
     body.dark .masthead{--mh-paper:#0f172a;--mh-ink:#f1f5f9;--mh-muted:#94a3b8;--mh-brand:#4ade80;--mh-brand-dark:#86efac;--mh-brand-soft:#064e3b;--mh-rule:#334155}
+    /* Resumen SEO + listado de municipios (bajo el app). Antes iban con style=""
+       inline, que la CSP (sin unsafe-inline en style-src) BLOQUEA -> se veian sin
+       estilo. Movido a clases/selectores (H3). */
+    .seo-summary{padding:32px 20px;max-width:900px;margin:24px auto;border-top:1px solid rgba(100,116,139,0.2);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .seo-summary .page-breadcrumb{font-size:13px;color:#64748b;margin:0 0 16px}
+    .seo-summary a{color:#15803d;text-decoration:none}
+    .seo-summary #seo-h1{font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700}
+    .seo-summary p{margin:0 0 16px;color:#475569;line-height:1.6}
+    .seo-summary p:last-of-type{margin:14px 0 0;color:#64748b;font-size:13px}
+    .seo-summary table{width:100%;border-collapse:collapse;font-size:14px;max-width:640px}
+    .seo-summary th{text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500}
+    .seo-summary th:first-child{text-align:left}
+    .seo-summary td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
+    .seo-summary td:not(:first-child){text-align:right;font-family:ui-monospace,monospace}
+    .seo-municipios{padding:0 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+    .seo-municipios #munis-h2{font-size:18px;color:#14532d;margin:0 0 12px}
+    .seo-municipios p{margin:0 0 12px;color:#475569;font-size:14px}
+    .seo-municipios ul{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px}
+    .seo-municipios a{color:#15803d;text-decoration:none;font-size:14px}
+    .seo-municipios a span{color:#94a3b8;font-size:12px}
   </style>`
 }

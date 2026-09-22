@@ -153,6 +153,10 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function disableTelegramAlerts',     in: ['core'] },
     { name: 'function telegramAlertsActive',      in: ['core'] },
     { name: 'function telegramServerConfigured',  in: ['core'] },
+    // Ship 29: sincronizacion entre dispositivos.
+    { name: 'function enableSync',    in: ['core'] },
+    { name: 'function syncPull',      in: ['core'] },
+    { name: 'function syncPush',      in: ['core'] },
     { name: 'function prefersReducedMotion', in: ['core'] },
     { name: 'function scrollBehavior',  in: ['core'] },
     { name: 'function showToast',       in: ['core'] },

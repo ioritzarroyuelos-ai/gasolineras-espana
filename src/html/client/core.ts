@@ -554,6 +554,7 @@ function getProfile() {
 }
 function setProfile(p) {
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch(e) {}
+  syncPush(PROFILE_KEY);
 }
 
 // ---- FAVORITOS (localStorage) ----
@@ -563,7 +564,61 @@ function getFavs() {
 }
 function setFavs(list) {
   try { localStorage.setItem(FAV_KEY, JSON.stringify(list)); } catch(e) {}
+  syncPush(FAV_KEY);
 }
+
+// ---- SINCRONIZACION entre dispositivos (Ship 29: sobre el login de Google) ----
+// El servidor guarda por usuario en KV (u:<sub>:<clave>). Al iniciar sesion
+// tiramos (pull) y fusionamos con lo local; en cada cambio local empujamos
+// (push). Favoritas = UNION por id (nunca se pierde una favorita de ningun
+// dispositivo). Perfil = ultimo en escribir gana. Sin login, _syncOn=false y
+// todo sigue viviendo solo en localStorage (comportamiento previo).
+var SYNC_KEYS = ['gs_favs_v1', 'gs_profile_v1'];
+var _syncOn = false;
+function _lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+function syncPush(key) {
+  if (!_syncOn || SYNC_KEYS.indexOf(key) < 0) return;
+  var v = _lsGet(key);
+  if (v == null) return;
+  var body;
+  try { body = JSON.parse(v); } catch (_) { return; }
+  fetch('/api/sync/' + encodeURIComponent(key), {
+    method: 'PUT', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }).catch(function () {});
+}
+function _mergeFavsById(localList, remoteList) {
+  var seen = {}, out = [];
+  function add(list) {
+    if (!Array.isArray(list)) return;
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      if (f && f.id && !seen[f.id]) { seen[f.id] = 1; out.push(f); }
+    }
+  }
+  add(remoteList); add(localList);
+  return out;
+}
+function syncPull() {
+  return fetch('/api/sync', { credentials: 'same-origin', cache: 'no-store' })
+    .then(function (r) { return (r && r.ok) ? r.json() : null; })
+    .then(function (j) {
+      if (!j || !j.data) return false;
+      var data = j.data;
+      if (data['gs_favs_v1']) {
+        // setFavs re-empuja la union -> ambos dispositivos convergen.
+        setFavs(_mergeFavsById(getFavs(), data['gs_favs_v1']));
+      }
+      if (data['gs_profile_v1'] && _lsGet('gs_profile_v1') == null) {
+        try { localStorage.setItem('gs_profile_v1', JSON.stringify(data['gs_profile_v1'])); } catch (_) {}
+      }
+      return true;
+    })
+    .catch(function () { return false; });
+}
+function enableSync() { _syncOn = true; return syncPull(); }
+function disableSync() { _syncOn = false; }
 function isFav(id) {
   var favs = getFavs();
   for (var i = 0; i < favs.length; i++) if (favs[i].id === id) return true;

@@ -1394,6 +1394,10 @@ function showUpdateToast(newSW) {
 
   if (!btnLogin || !userMenu || !loginModal || !gsiContainer) return;
 
+  function setSyncBadge(txt) {
+    var el = document.getElementById('user-dropdown-sync');
+    if (el) el.textContent = txt;
+  }
   function setLogged(user) {
     if (user && user.sub) {
       btnLogin.hidden = true;
@@ -1402,9 +1406,19 @@ function showUpdateToast(newSW) {
       if (userNameEl) userNameEl.textContent = user.name || user.email || '';
       if (ddName)     ddName.textContent     = user.name  || '';
       if (ddEmail)    ddEmail.textContent    = user.email || '';
+      // Ship 29: sincronizacion real entre dispositivos. Tira del servidor,
+      // fusiona favoritas (union) y refresca la UI; el badge refleja el estado.
+      if (typeof enableSync === 'function') {
+        setSyncBadge('Sincronizando…');
+        enableSync().then(function (ok) {
+          if (ok) { try { renderFavs(); } catch (_) {} }
+          setSyncBadge(ok ? 'Sincronizado' : 'Sesión iniciada');
+        });
+      }
     } else {
       userMenu.hidden = true;
       btnLogin.hidden = false;
+      if (typeof disableSync === 'function') disableSync();
     }
   }
 

@@ -43,6 +43,7 @@ import {
   signTelegramToken,
   verifyTelegramToken,
 } from './lib/auth'
+import { BRAND } from './lib/brand'
 import {
   LRU,
   validateId,
@@ -1751,9 +1752,9 @@ ${entries.join('\n')}
 function legalPage(title: string, bodyHtml: string, nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>${title} · Gasolineras España</title>
+<title>${title} · ${BRAND}</title>
 <meta name="robots" content="index,follow"/>
-<meta name="description" content="${title} de Gasolineras España"/>
+<meta name="description" content="${title} de ${BRAND}"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26FD;</text></svg>"/>
 <style nonce="${nonce}">
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
@@ -1771,7 +1772,7 @@ ${mastheadHtml()}
 <main class="legal-main">
 <a class="back" href="/gasolineras/">← Volver</a>
 ${bodyHtml}
-<footer>Gasolineras España · v${APP_VERSION} · Datos: Ministerio para la Transición Ecológica y el Reto Demográfico.</footer>
+<footer>${BRAND} · v${APP_VERSION} · Datos: Ministerio para la Transición Ecológica y el Reto Demográfico.</footer>
 </main>
 </body></html>`
 }
@@ -1880,9 +1881,9 @@ Si ves "DEGRADADO" mas de 48h seguidas, hay un problema — abre una issue.</p>
 `
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Estado · Gasolineras España</title>
+<title>Estado · ${BRAND}</title>
 <meta name="robots" content="noindex,follow"/>
-<meta name="description" content="Estado del servicio Gasolineras España: health, freshness del snapshot del Ministerio, numero de estaciones cargadas."/>
+<meta name="description" content="Estado del servicio ${BRAND}: health, freshness del snapshot del Ministerio, numero de estaciones cargadas."/>
 <meta http-equiv="refresh" content="60"/>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${stale ? '&#x26A0;' : '&#x2705;'}</text></svg>"/>
 </head><body>

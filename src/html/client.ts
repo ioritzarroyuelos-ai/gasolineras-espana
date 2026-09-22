@@ -23,6 +23,7 @@ import { clientCoreScript }     from './client/core'
 import { clientMapScript }      from './client/map'
 import { clientListScript }     from './client/list'
 import { clientUiScript }       from './client/ui'
+import { BRAND }                from '../lib/brand'
 
 export function getClientScript(nonce: string, version: string = '0.0.0'): string {
   // El nonce debe coincidir con el del header CSP para que el script se ejecute.
@@ -34,6 +35,6 @@ ${clientMapScript}
 ${clientListScript}
 ${clientUiScript}
 // ---- VERSION visible en consola (ayuda a diagnosticar sin ingenieria inversa) ----
-try { console.info('%cGasolineras Espana v' + APP_VER, 'color:#16a34a;font-weight:bold'); } catch(_) {}
+try { console.info('%c${BRAND} v' + APP_VER, 'color:#16a34a;font-weight:bold'); } catch(_) {}
 </script>`
 }

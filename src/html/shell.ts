@@ -3,6 +3,7 @@ import { getClientScript } from './client'
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml } from './masthead'
 import { escapeHtml, jsonLdSafe } from './html'
+import { BRAND } from '../lib/brand'
 
 export interface SeoContext {
   // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
@@ -110,7 +111,7 @@ export function buildPage(
     && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)))
   const pageTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
-    : 'Gasolineras España · Precios oficiales en tiempo real'
+    : BRAND + ' · Precios oficiales en tiempo real'
   // Description enriquecida cuando hay stats: incluye precio min-max de 95 y
   // numero de estaciones — mejora CTR en SERP y le da a Google material
   // ranqueable ("precio gasolina madrid" matchea directamente).
@@ -126,7 +127,7 @@ export function buildPage(
     : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica.'
   const ogTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
-    : 'Gasolineras España · Precios en tiempo real'
+    : BRAND + ' · Precios en tiempo real'
   const ogDesc = geoLabel
     ? 'Mapa de precios de combustible en ' + geoLabel + ', actualizados a diario. Datos oficiales.'
     : 'Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario.'
@@ -224,7 +225,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     {
       '@context': 'https://schema.org',
       '@type': 'WebApplication',
-      name: 'Gasolineras España',
+      name: BRAND,
       url: canonical,
       description: pageDesc,
       applicationCategory: 'UtilitiesApplication',
@@ -237,7 +238,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
     {
       '@context': 'https://schema.org',
       '@type': 'Organization',
-      name: 'Gasolineras España',
+      name: BRAND,
       url: origin,
       logo: logoUrl,
     },
@@ -350,20 +351,20 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Gasolineras" />
   <meta name="robots" content="${opts.mapTool ? 'noindex,follow' : 'index,follow,max-image-preview:large'}" />
-  <meta name="application-name" content="Gasolineras España" />
-  <meta name="author" content="Gasolineras España" />
+  <meta name="application-name" content="${BRAND}" />
+  <meta name="author" content="${BRAND}" />
   <meta name="generator" content="Hono + Cloudflare Pages" />
   <meta name="description" content="${pageDescH}" />
   <meta name="keywords" content="gasolineras, precios combustible, gasolina, diesel, España, mapa gasolineras, ahorro combustible${seo?.provinciaName ? ', ' + seo.provinciaName.toLowerCase() : ''}" />
 
   <!-- Open Graph / redes -->
   <meta property="og:type" content="website" />
-  <meta property="og:site_name" content="Gasolineras España" />
+  <meta property="og:site_name" content="${BRAND}" />
   <meta property="og:title" content="${ogTitleH}" />
   <meta property="og:description" content="${ogDescH}" />
   <meta property="og:url" content="${canonical}" />
   <meta property="og:image" content="${ogImage}" />
-  <meta property="og:image:alt" content="Gasolineras España · comparador de precios oficial" />
+  <meta property="og:image:alt" content="${BRAND} · comparador de precios oficial" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:locale" content="es_ES" />
@@ -373,7 +374,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="twitter:title" content="${ogTitleH}" />
   <meta name="twitter:description" content="${ogDescH}" />
   <meta name="twitter:image" content="${ogImage}" />
-  <meta name="twitter:image:alt" content="Gasolineras España · comparador de precios oficial" />
+  <meta name="twitter:image:alt" content="${BRAND} · comparador de precios oficial" />
 
   <link rel="canonical" href="${canonical}" />
   <title>${pageTitleH}</title>
@@ -462,7 +463,7 @@ ${mastheadHtml('gasolineras')}
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
-${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : 'Gasolineras España'} — precios oficiales en tiempo real</h1>` : ''}
+${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND} — precios oficiales en tiempo real</h1>` : ''}
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
@@ -470,10 +471,10 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
     <i class="fas fa-bars u-c-white u-fs-16" aria-hidden="true"></i>
   </button>
 
-  <a href="/gasolineras/" id="brand" class="brand-link" aria-label="Gasolineras España · inicio">
+  <a href="/gasolineras/" id="brand" class="brand-link" aria-label="${BRAND} · inicio">
     <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
     <div class="u-mw-0">
-      <div class="header-title">Gasolineras España</div>
+      <div class="header-title">${BRAND}</div>
       <div class="header-sub">Precios oficiales · Ministerio para la Transición Ecológica</div>
     </div>
   </a>

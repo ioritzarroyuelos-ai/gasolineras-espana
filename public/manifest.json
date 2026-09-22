@@ -1,6 +1,6 @@
 {
-  "name": "Gasolineras España",
-  "short_name": "Gasolineras",
+  "name": "CercaYa",
+  "short_name": "CercaYa",
   "description": "Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador, favoritos y modo offline.",
   "start_url": "/gasolineras/mapa",
   "scope": "/gasolineras/",

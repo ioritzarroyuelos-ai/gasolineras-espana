@@ -21,6 +21,7 @@
 
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { BRAND } from '../lib/brand'
 
 /** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
 export interface LandingTiempo {
@@ -130,7 +131,7 @@ export function buildLandingPage(
             position: 2,
             item: {
               '@type': 'Service',
-              name: 'Gasolineras España',
+              name: BRAND,
               description: 'Precios oficiales de carburantes en tiempo real en toda España.',
               url: origin + '/gasolineras/',
               serviceType: 'Consulta de precios de combustible',

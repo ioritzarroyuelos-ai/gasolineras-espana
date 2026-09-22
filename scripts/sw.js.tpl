@@ -41,11 +41,11 @@ const STATIC_ASSETS = [
   '/static/apple-touch-icon.png',
   '/static/icon-192.png',
   '/static/icon-512.png',
-  // Ship 1: features.js se carga con ?v=X.Y.Z en produccion para cache-busting.
-  // Precacheamos la URL sin query — el fetch handler (cache-first) servira
-  // este mismo blob aunque llegue con query distinta porque ignoraremos la
-  // query al hacer match (ver cache-first handler con {ignoreSearch:true}).
-  '/static/features.js',
+  // B2: app.js es el bundle de cliente (core+map+list+ui+features), se carga con
+  // ?v=X.Y.Z para cache-busting. Precacheamos la URL sin query — el fetch handler
+  // sirve este blob aunque llegue con query distinta (match con {ignoreSearch:true}).
+  // Importante para offline: desde B2 el JS critico ya NO viaja en el HTML.
+  '/static/app.js',
   '/static/vendor/map/leaflet/leaflet.css',
   '/static/vendor/map/leaflet/leaflet.js',
   '/static/vendor/map/leaflet.markercluster/MarkerCluster.css',
@@ -248,13 +248,13 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Ship 1: features.js llega con ?v=<APP_VERSION> para invalidar el cache
-  // del navegador en cada release. Al matchear en la cache del SW usamos
+  // B2: app.js (bundle de cliente) llega con ?v=<APP_VERSION> para invalidar el
+  // cache del navegador en cada release. Al matchear en la cache del SW usamos
   // ignoreSearch:true asi un shell cacheado con ?v=1.8.0 sigue sirviendose
   // mientras el nuevo ?v=1.8.1 se descarga en background (network-first
   // efectivo porque el put cachea la URL completa y la siguiente request
   // con la misma ?v hace hit directo).
-  if (url.pathname === '/static/features.js') {
+  if (url.pathname === '/static/app.js') {
     event.respondWith(
       fetch(request).then(res => {
         if (res.ok && request.method === 'GET') {
@@ -266,7 +266,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('/static/features.js')))
+      }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('/static/app.js')))
     );
     return;
   }

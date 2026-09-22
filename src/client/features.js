@@ -1,4 +1,7 @@
-export const clientFeaturesScript = `
+// features — fuente REAL del cliente (migrado de src/html/client/*.ts, B2).
+// Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
+// scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
+
 // ---- TREND STRIP (tendencia nacional hoy vs ciclo anterior) ----
 // Lee /data/trends.json (generado por scripts/fetch-prices.mjs cada cron) y
 // pinta un strip horizontal con medianas nacionales de gasolina 95 + gasoleo A
@@ -14,14 +17,14 @@ export const clientFeaturesScript = `
   var closer = document.getElementById('trend-strip-close');
   var DISMISS_KEY = 'gs_trend_dismiss_v1';
 
-  function fmtPrice(v) { return v == null ? '--' : v.toFixed(3) + ' \u20AC'; }
+  function fmtPrice(v) { return v == null ? '--' : v.toFixed(3) + ' €'; }
   function fmtDelta(d) {
     if (d == null) return '';
     // Mostramos en centimos porque el delta inter-ciclo es de decimas de cent.
     var cents = d * 100;
     var abs = Math.abs(cents);
-    if (abs < 0.5) return '<span class="dlt dlt-flat">\u2194 sin cambio</span>';
-    var arrow = cents < 0 ? '\u2193' : '\u2191';
+    if (abs < 0.5) return '<span class="dlt dlt-flat">↔ sin cambio</span>';
+    var arrow = cents < 0 ? '↓' : '↑';
     var cls = cents < 0 ? 'dlt-down' : 'dlt-up';
     return '<span class="dlt ' + cls + '">' + arrow + ' ' + abs.toFixed(1) + 'c</span>';
   }
@@ -50,7 +53,7 @@ export const clientFeaturesScript = `
 
       var any = false;
       any = paint('G95:',   curr.g95,    prev.g95,    g95El) || any;
-      any = paint('Di\u00E9sel:', curr.diesel, prev.diesel, dslEl) || any;
+      any = paint('Diésel:', curr.diesel, prev.diesel, dslEl) || any;
       if (any) strip.hidden = false;
     }).catch(function() { /* silenciar — strip es opcional */ });
   } catch(_) {}
@@ -347,13 +350,13 @@ export const clientFeaturesScript = `
   var FUEL_LABELS = {
     '95': 'Gasolina 95',
     '98': 'Gasolina 98',
-    'diesel': 'Di\u00E9sel A',
-    'diesel_plus': 'Di\u00E9sel Plus',
+    'diesel': 'Diésel A',
+    'diesel_plus': 'Diésel Plus',
     'glp': 'GLP (autogas)',
     'gnc': 'GNC',
     'gnl': 'GNL',
-    'hidrogeno': 'Hidr\u00F3geno',
-    'diesel_renov': 'Di\u00E9sel Renovable'
+    'hidrogeno': 'Hidrógeno',
+    'diesel_renov': 'Diésel Renovable'
   };
 
   function setStatus(msg, isError) {
@@ -377,7 +380,7 @@ export const clientFeaturesScript = `
     // Caja contextual con lo que el usuario va a reportar.
     var fuelLabel = FUEL_LABELS[current.fuel] || current.fuel;
     var priceTxt  = current.officialPrice != null
-      ? current.officialPrice.toFixed(3) + ' \u20AC/L'
+      ? current.officialPrice.toFixed(3) + ' €/L'
       : 'sin precio publicado';
     if (ctxBox) {
       ctxBox.innerHTML = 'Reportando <strong>' + esc(current.rotulo) + '</strong>'
@@ -431,7 +434,7 @@ export const clientFeaturesScript = `
   // para dar feedback inmediato.
   if (btnSubmit) btnSubmit.addEventListener('click', async function() {
     if (!current.ideess || !current.fuel) {
-      setStatus('Falta la estaci\u00F3n o el combustible.', true);
+      setStatus('Falta la estación o el combustible.', true);
       return;
     }
     var reason = selReason ? selReason.value : '';
@@ -446,7 +449,7 @@ export const clientFeaturesScript = `
     if (priceRaw) {
       var n = parseFloat(priceRaw.replace(',', '.'));
       if (!isFinite(n) || n < 0.1 || n > 10) {
-        setStatus('El precio debe estar entre 0,10 y 10,00 \u20AC/L.', true);
+        setStatus('El precio debe estar entre 0,10 y 10,00 €/L.', true);
         return;
       }
       reportedPrice = n;
@@ -455,7 +458,7 @@ export const clientFeaturesScript = `
     if (comment.length > 500) comment = comment.slice(0, 500);
 
     btnSubmit.disabled = true;
-    setStatus('Enviando reporte\u2026', false);
+    setStatus('Enviando reporte…', false);
 
     try {
       var r = await fetch('/api/reports/price', {
@@ -473,24 +476,22 @@ export const clientFeaturesScript = `
       });
       if (r.ok) {
         closeReport();
-        showToast('Gracias \u2014 reporte enviado', 'success');
+        showToast('Gracias — reporte enviado', 'success');
         return;
       }
       if (r.status === 429) {
         setStatus('Has enviado demasiados reportes. Espera un momento.', true);
       } else if (r.status === 409) {
-        setStatus('Ya reportaste esta estaci\u00F3n en la \u00FAltima hora. Gracias.', true);
+        setStatus('Ya reportaste esta estación en la última hora. Gracias.', true);
       } else if (r.status === 400 || r.status === 413 || r.status === 415) {
-        setStatus('Datos no v\u00E1lidos. Revisa los campos y prueba de nuevo.', true);
+        setStatus('Datos no válidos. Revisa los campos y prueba de nuevo.', true);
       } else {
         setStatus('No se pudo enviar el reporte. Prueba en unos segundos.', true);
       }
       btnSubmit.disabled = false;
     } catch (err) {
-      setStatus('Fallo de red. Comprueba tu conexi\u00F3n y prueba de nuevo.', true);
+      setStatus('Fallo de red. Comprueba tu conexión y prueba de nuevo.', true);
       btnSubmit.disabled = false;
     }
   });
 })();
-
-`

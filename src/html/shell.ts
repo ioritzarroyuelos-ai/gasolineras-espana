@@ -1,5 +1,4 @@
 import { getStyles } from './styles'
-import { getClientScript } from './client'
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml } from './masthead'
 import { escapeHtml, jsonLdSafe } from './html'
@@ -923,13 +922,14 @@ ${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipio
   </ul>
 </section>` : ''}
 
-${getClientScript(nonce, APP_VERSION)}
-<!-- Ship 1: features JS se carga como asset externo con defer. Cacheable por
-     CDN + SW, paralelo al parse HTML, no bloquea FCP. El ?v=${APP_VERSION}
-     fuerza invalidacion en cada release. Sin integrity hash (cambia por
-     release y hacerlo requeriria build-time hashing que complica el pipeline).
-     Same-origin + CSP script-src 'self' lo cubre. -->
-<script defer src="/static/features.js?v=${APP_VERSION}" nonce="${nonce}"></script>
+<!-- B2: todo el JS de cliente (core+map+list+ui+features) va en un UNICO bundle
+     externo con defer, en vez de core/map/list/ui inline + features.js aparte.
+     Mismo origen -> CSP script-src 'self' lo cubre (el nonce es redundante en un
+     <script src> pero inofensivo). El ?v=${APP_VERSION} invalida cache en cada
+     release. Se genera con scripts/gen-client-bundle.mjs (prebuild y npm run dev).
+     Ventaja: HTML mas pequeno, el JS se cachea entre navegaciones y el SW lo
+     precachea. defer -> corre tras el parse y tras los vendors del mapa. -->
+<script defer src="/static/app.js?v=${APP_VERSION}" nonce="${nonce}"></script>
 </body>
 </html>`
 }

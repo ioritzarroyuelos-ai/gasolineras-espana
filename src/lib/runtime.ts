@@ -8,7 +8,7 @@
 // importadores comparten la MISMA instancia (igual que cuando index las creaba una
 // vez). runtime NO importa de index (queda por debajo): los tipos MinistryResponse/
 // StationRecord se DEFINEN aquí y index los re-exporta.
-import { LRU, SlidingWindowLimiter } from './pure'
+import { LRU, SlidingWindowLimiter, tokensEqualConstTime } from './pure'
 import { APP_VERSION } from './version'
 import { MinistryResponseSchema, MunicipioListSchema, ProvinciaListSchema, safeValidate } from './schemas'
 import type { FilaHistorico } from './observatorio'
@@ -341,6 +341,22 @@ function clientKey(c: { req: { header: (h: string) => string | undefined } }): s
   return c.req.header('cf-connecting-ip') || 'unknown'
 }
 
+// Autoriza rutas de cron/admin: exige Authorization: Bearer <CRON_TOKEN> comparado
+// en tiempo constante. env se genericiza a { CRON_TOKEN? } para no acoplar runtime a
+// Env (index/routes lo llaman con el `c` completo, que lo satisface estructuralmente).
+async function authorizeCron(c: { req: { header: (h: string) => string | undefined }; env: { CRON_TOKEN?: string } }): Promise<{ ok: true } | { ok: false; status: number; body: Record<string, unknown> }> {
+  const cfg = c.env.CRON_TOKEN
+  if (!cfg) {
+    return { ok: false, status: 503, body: { error: 'cron_not_configured' } }
+  }
+  const auth = c.req.header('authorization') || ''
+  const provided = auth.startsWith('Bearer ') ? auth.slice(7).trim() : ''
+  if (!provided || !tokensEqualConstTime(provided, cfg)) {
+    return { ok: false, status: 401, body: { error: 'unauthorized' } }
+  }
+  return { ok: true }
+}
+
 // ---- CSP con nonce por request ----
 function genNonce(): string {
   const bytes = new Uint8Array(16)
@@ -419,7 +435,7 @@ export {
   loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
   ALLOWED_ORIGINS, resolveHost, resolveScheme,
   apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
-  exportLimiter, reportLimiter, vitalsLimiter, clientKey,
+  exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron,
   genNonce, pageHeaders,
   SNAPSHOT_STALE_MS, MUNI_INDEX_TTL, GEO_TTL_FRESH, GEO_TTL_STALE, GEO_UPSTREAM_TIMEOUT,
 }

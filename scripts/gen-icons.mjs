@@ -22,6 +22,16 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const STATIC_DIR = resolve(__dirname, '..', 'public', 'static')
 
+// Fuentes para el og.png. resvg con loadSystemFonts:false descarta TODO <text> si no
+// le damos ficheros → el og salía SIN texto (píldoras y título en blanco). Bundleamos
+// Liberation Sans (libre, SIL/GPL+FE) en el repo para que el render sea determinista y
+// funcione igual en el runner de CI (que no trae system-ui/Segoe/Roboto). El og.svg
+// declara font-family 'Liberation Sans'. Sin emojis en el SVG: Liberation no los tiene.
+const FONT_FILES = [
+  join(__dirname, 'assets', 'LiberationSans-Regular.ttf'),
+  join(__dirname, 'assets', 'LiberationSans-Bold.ttf'),
+]
+
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 }
@@ -43,7 +53,7 @@ function renderWithWidth(svgPath, outPath, width) {
   const resvg = new Resvg(svg, {
     fitTo: { mode: 'width', value: width },
     background: '#14532d',
-    font: { loadSystemFonts: false },
+    font: { loadSystemFonts: false, fontFiles: FONT_FILES, defaultFontFamily: 'Liberation Sans' },
   })
   const png = resvg.render().asPng()
   writeFileSync(outPath, png)

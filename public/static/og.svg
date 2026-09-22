@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="Gasolineras España - precios oficiales en tiempo real">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="CercaYa - info útil de España al instante">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0"    stop-color="#052e1b"/>
@@ -31,33 +31,33 @@
     </g>
   </g>
 
-  <!-- tipografia -->
-  <g font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" fill="#ffffff">
-    <text x="300" y="240" font-size="84" font-weight="800" letter-spacing="-2">Gasolineras España</text>
-    <text x="300" y="310" font-size="38" font-weight="500" fill="#bbf7d0">Precios oficiales · en tiempo real</text>
+  <!-- tipografia (Liberation Sans se bundlea en gen-icons.mjs; sin emojis) -->
+  <g font-family="'Liberation Sans', 'DejaVu Sans', sans-serif" fill="#ffffff">
+    <text x="300" y="240" font-size="92" font-weight="800" letter-spacing="-2">CercaYa</text>
+    <text x="300" y="310" font-size="38" font-weight="500" fill="#bbf7d0">Info útil de España, al instante</text>
 
-    <!-- chips de combustible -->
+    <!-- chips de las verticales -->
     <g transform="translate(300 360)" font-size="26" font-weight="600">
       <g>
-        <rect x="0"   y="0" width="190" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
-        <text x="95"  y="37" text-anchor="middle" fill="#ecfdf5">⛽ Gasolina 95</text>
-      </g>
-      <g transform="translate(210 0)">
-        <rect x="0"   y="0" width="150" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
-        <text x="75"  y="37" text-anchor="middle" fill="#ecfdf5">🛢️ Diesel</text>
-      </g>
-      <g transform="translate(380 0)">
-        <rect x="0"   y="0" width="120" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
-        <text x="60"  y="37" text-anchor="middle" fill="#ecfdf5">💧 GLP</text>
-      </g>
-      <g transform="translate(520 0)">
         <rect x="0"   y="0" width="180" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
-        <text x="90"  y="37" text-anchor="middle" fill="#ecfdf5">🔋 Hidrógeno</text>
+        <text x="90"  y="37" text-anchor="middle" fill="#ecfdf5">El tiempo</text>
+      </g>
+      <g transform="translate(200 0)">
+        <rect x="0"   y="0" width="210" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
+        <text x="105" y="37" text-anchor="middle" fill="#ecfdf5">Gasolineras</text>
+      </g>
+      <g transform="translate(430 0)">
+        <rect x="0"   y="0" width="180" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
+        <text x="90"  y="37" text-anchor="middle" fill="#ecfdf5">Farmacias</text>
+      </g>
+      <g transform="translate(630 0)">
+        <rect x="0"   y="0" width="100" height="56" rx="28" fill="#ffffff" fill-opacity="0.12" stroke="#86efac" stroke-opacity="0.35"/>
+        <text x="50"  y="37" text-anchor="middle" fill="#ecfdf5">ITV</text>
       </g>
     </g>
 
     <!-- footer -->
-    <text x="300" y="500" font-size="22" font-weight="400" fill="#86efac" opacity="0.85">Mapa · Comparador · Favoritos · Offline</text>
-    <text x="300" y="535" font-size="20" font-weight="400" fill="#86efac" opacity="0.6">Datos del Ministerio para la Transición Ecológica</text>
+    <text x="300" y="500" font-size="22" font-weight="400" fill="#86efac" opacity="0.85">Tiempo · Gasolineras · Farmacias · ITV</text>
+    <text x="300" y="535" font-size="20" font-weight="400" fill="#86efac" opacity="0.6">Datos oficiales de fuentes públicas</text>
   </g>
 </svg>

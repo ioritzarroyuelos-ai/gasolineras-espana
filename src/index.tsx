@@ -301,8 +301,14 @@ async function proxiedFetch(path: string): Promise<unknown> {
         const parsed = safeValidate(schema, raw)
         if (!parsed.ok) {
           slog('error', 'ministry.schema_drift', { path, issues: parsed.issues })
-          // Fallback: si tenemos cache previa validable, preferimos eso.
+          // NO cacheamos NI devolvemos datos invalidos (antes caian abajo y se
+          // hacia srvCache.set(raw)+return raw -> se publicaba y cacheaba basura).
+          // Preferimos cache stale valida; si no hay, marcamos el intento como
+          // fallo: se reintenta y, si todo falla, el handler cae al snapshot
+          // estatico (ultimo dato valido conocido).
           if (cached && Date.now() - cached.ts < SRV_TTL_STALE) return cached.data
+          lastErr = new Error('ministry schema_drift on ' + path)
+          continue
         }
       }
 

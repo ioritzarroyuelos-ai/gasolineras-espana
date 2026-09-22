@@ -99,7 +99,7 @@ jobs:
         # Si el artefacto ya expiro (>7d de retention), GHA falla con
         # "Artifact not found" — el workaround es un empty commit para
         # regenerarlo desde CI, o esperar al siguiente push real.
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dist-${{ steps.ci.outputs.head_sha }}
           path: dist

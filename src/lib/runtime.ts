@@ -335,6 +335,13 @@ const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
 const reportLimiter = new SlidingWindowLimiter(10,  60_000)  // 10 reports/min por IP
 const vitalsLimiter = new SlidingWindowLimiter(30,  60_000)  // 30 req/min por IP
 
+// Tamaños de las 3 LRU para /api/health (las caches viven aqui; el endpoint las
+// consulta via este getter en vez de acceder a las instancias por su cuenta).
+function cacheSizes(): { srv: number; snapshot: number; geo: number } {
+  const sz = (c: unknown) => (c as { size: number }).size
+  return { srv: sz(srvCache), snapshot: sz(snapshotCache), geo: sz(geoCache) }
+}
+
 function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
   // cf-connecting-ip lo inyecta el edge CF y no es spoofable; x-forwarded-for/
   // x-real-ip si lo son -> los omitimos (mejor bucket 'unknown' compartido).
@@ -435,7 +442,7 @@ export {
   loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
   ALLOWED_ORIGINS, resolveHost, resolveScheme,
   apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
-  exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron,
+  exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron, cacheSizes,
   genNonce, pageHeaders,
   SNAPSHOT_STALE_MS, MUNI_INDEX_TTL, GEO_TTL_FRESH, GEO_TTL_STALE, GEO_UPSTREAM_TIMEOUT,
 }

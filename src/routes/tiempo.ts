@@ -11,6 +11,7 @@ import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } fr
 import { construyeIndiceMunicipios, resuelvePrediccion, frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
 import { buildTiempoIndexPage, buildTiempoProvinciaPage, buildTiempoMunicipioPage, tiempoHeaders } from '../html/tiempo'
+import { DATA_SCHEMA_VER } from '../lib/schemas'   // M2: versiona la clave de caché persistente de la predicción
 
 // Contrato de dependencias compartidas que el vertical necesita del runtime del
 // index. Se pasan explicitamente (en vez de importarlas) para acotar el radio de
@@ -66,7 +67,7 @@ export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
   // resuelvePrediccion cae a Open-Meteo (etiquetado). Devuelve null si ambas fallan.
   async function resuelveTiempo(c: { env: Env; executionCtx?: { waitUntil: (p: Promise<unknown>) => void } }, m: MunicipioLista): Promise<Prediccion | null> {
     const cache = (caches as unknown as { default: Cache }).default
-    const cacheKey = new Request('https://tiempo.cercaya.internal/' + m.ine)
+    const cacheKey = new Request('https://tiempo.cercaya.internal/v' + DATA_SCHEMA_VER + '/' + m.ine)
     try {
       const hit = await cache.match(cacheKey)
       if (hit) { const p = await hit.json() as Prediccion; if (frescuraTiempo(p.elaborado).fiable) return p }

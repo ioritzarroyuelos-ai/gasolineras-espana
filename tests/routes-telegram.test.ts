@@ -39,6 +39,12 @@ describe('rutas Telegram tras extraer a src/routes/telegram.ts (B1)', () => {
     expect(res.status).toBe(503)
   })
 
+  it('POST /api/telegram/toggle-fav -> 413 con cuerpo > límite (H4 bodyLimit)', async () => {
+    const big = JSON.stringify({ x: 'a'.repeat(5 * 1024) })  // > 4 KB
+    const res = await app.request('/api/telegram/toggle-fav', { method: 'POST', body: big }, {})
+    expect(res.status).toBe(413)
+  })
+
   it('POST /api/telegram/webhook -> 401 con secret erróneo (fix seguridad movido intacto)', async () => {
     const env = { TELEGRAM_BOT_TOKEN: 'x', TELEGRAM_BOT_USERNAME: 'x', TELEGRAM_WEBHOOK_SECRET: 'realsecret', DB: {} }
     const res = await app.request('/api/telegram/webhook', {

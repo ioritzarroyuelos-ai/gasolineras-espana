@@ -10,6 +10,7 @@ import {
 } from '../lib/runtime'
 import { validateId, isValidProvinciaId, sanitizeLatLng, tokensEqualConstTime } from '../lib/pure'
 import { APP_VERSION } from '../lib/version'
+import { DATA_SCHEMA_VER } from '../lib/schemas'   // M2: versiona la clave de caché persistente
 
 type MunicipiosSnapshot = { Fecha?: string; Data: Record<string, Array<{ IDMunicipio: string; Municipio: string; IDProvincia: string }>> }
 type SnapshotMeta = { fetchedAt?: string; ministryDate?: string; stationCount?: number; source?: string }
@@ -113,7 +114,7 @@ app.get('/api/geocode/reverse', async c => {
   }
 
   const host = c.req.header('host') || ''
-  const out = await cachedJson('geo-rev-' + encodeURIComponent(cacheKey), 3600, async () => {
+  const out = await cachedJson('v' + DATA_SCHEMA_VER + '/geo-rev-' + encodeURIComponent(cacheKey), 3600, async () => {
     const url = 'https://nominatim.openstreetmap.org/reverse?'
       + 'format=json&zoom=16&addressdetails=1'
       + '&lat=' + encodeURIComponent(ll.lat)

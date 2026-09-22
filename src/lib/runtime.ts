@@ -8,6 +8,7 @@
 // importadores comparten la MISMA instancia (igual que cuando index las creaba una
 // vez). runtime NO importa de index (queda por debajo): los tipos MinistryResponse/
 // StationRecord se DEFINEN aquí y index los re-exporta.
+import { bodyLimit } from 'hono/body-limit'
 import { LRU, SlidingWindowLimiter, tokensEqualConstTime } from './pure'
 import { APP_VERSION } from './version'
 import { MinistryResponseSchema, MunicipioListSchema, ProvinciaListSchema, safeValidate } from './schemas'
@@ -412,6 +413,15 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   ].join('; ')
 }
 
+// H4: middleware por-ruta que rechaza cuerpos demasiado grandes ANTES de que corra el
+// handler. bodyLimit de Hono cubre Content-Length y stream (Transfer-Encoding: chunked
+// sin Content-Length): cuenta bytes al leer y aborta al superar maxSize → 413. No cambia
+// la lógica del handler (su c.req.json()/text() sigue igual). Se aplica solo a los POST/PUT
+// que leen cuerpo; el /api/* global (CORS+rate-limit) sigue corriendo antes.
+function jsonBodyLimit(maxSize: number) {
+  return bodyLimit({ maxSize, onError: (c) => c.json({ ok: false, error: 'payload_too_large' }, 413) })
+}
+
 // ---- HTML pages ----
 // Headers compartidos (CSP + seguridad + preconnect).
 function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Record<string, string> {
@@ -442,7 +452,7 @@ export {
   ALLOWED_ORIGINS, resolveHost, resolveScheme,
   apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
   exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron, cacheSizes,
-  genNonce, pageHeaders,
+  genNonce, pageHeaders, jsonBodyLimit,
   SNAPSHOT_STALE_MS, MUNI_INDEX_TTL, GEO_TTL_FRESH, GEO_TTL_STALE, GEO_UPSTREAM_TIMEOUT,
 }
 export type { MinistryResponse, StationRecord }

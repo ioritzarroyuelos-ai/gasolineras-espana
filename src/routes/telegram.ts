@@ -4,7 +4,7 @@
 // (tgChatFromAuth: chat_id solo desde Bearer verificado). Helpers privados anidados.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { slog, authorizeCron } from '../lib/runtime'
+import { slog, authorizeCron, jsonBodyLimit } from '../lib/runtime'
 import { tokensEqualConstTime } from '../lib/pure'
 import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
 
@@ -92,7 +92,7 @@ const PENDING_TOKEN_TTL_MS = 10 * 60 * 1000  // 10 min
 // Almacenamos los favoritos serializados en el pending_token: asi el webhook
 // puede insertarlos en telegram_subscriptions y listarlos en el mensaje de
 // confirmacion en una sola transaccion (ver migracion 0008).
-app.post('/api/telegram/start-link', async c => {
+app.post('/api/telegram/start-link', jsonBodyLimit(16 * 1024), async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   let body: any = {}
@@ -142,7 +142,7 @@ app.post('/api/telegram/start-link', async c => {
 // con setWebhook y Telegram nos lo devuelve en el header). Responde SIEMPRE
 // 200 si el secret es valido, incluso si el update no es procesable — asi
 // Telegram no reintenta indefinidamente.
-app.post('/api/telegram/webhook', async c => {
+app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const got = c.req.header('x-telegram-bot-api-secret-token') || ''
@@ -403,7 +403,7 @@ app.get('/api/telegram/confirm', async c => {
 
 // POST /api/telegram/unsubscribe — borra alertas de un chat.
 // Body: { chat_id, station_id?, fuel_code? }  (si no pasas station+fuel, borra todas)
-app.post('/api/telegram/unsubscribe', async c => {
+app.post('/api/telegram/unsubscribe', jsonBodyLimit(4 * 1024), async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const chatId = await tgChatFromAuth(c)
   if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
@@ -462,7 +462,7 @@ app.get('/api/telegram/subscriptions', async c => {
 // El rotulo + municipio se resuelven contra /data/stations.json (cacheado
 // 60s en CF) para que el mensaje del bot sea descriptivo sin que el cliente
 // tenga que enviarlo.
-app.post('/api/telegram/toggle-fav', async c => {
+app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const chatId = await tgChatFromAuth(c)

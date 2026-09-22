@@ -7,7 +7,7 @@
 // sin USER_DATA -> /api/sync 503 pero el login sigue.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { ingestLimiter, clientKey, slog } from '../lib/runtime'
+import { ingestLimiter, clientKey, slog, jsonBodyLimit } from '../lib/runtime'
 import {
   verifyGoogleIdToken, signSessionJWT, verifySessionJWT,
   buildSessionCookie, buildLogoutCookie, parseSessionCookie, isSyncableKey,
@@ -23,7 +23,7 @@ export function registerAuthRoutes(app: Hono<{ Bindings: Env }>): void {
     return verifySessionJWT(token, secret)
   }
 
-  app.post('/api/auth/google', async c => {
+  app.post('/api/auth/google', jsonBodyLimit(8 * 1024), async c => {
     const rl = ingestLimiter.check(clientKey(c))
     if (!rl.allowed) return c.json({ error: 'rate limited' }, 429, { 'Retry-After': String(rl.retryAfterSec) })
     const clientId = c.env.GOOGLE_CLIENT_ID
@@ -91,7 +91,7 @@ export function registerAuthRoutes(app: Hono<{ Bindings: Env }>): void {
     return c.json({ data: out }, 200, { 'Cache-Control': 'no-store' })
   })
 
-  app.put('/api/sync/:key', async c => {
+  app.put('/api/sync/:key', jsonBodyLimit(300 * 1024), async c => {
     const user = await getSessionUser(c)
     if (!user) return c.json({ error: 'unauthorized' }, 401)
     const kv = c.env.USER_DATA

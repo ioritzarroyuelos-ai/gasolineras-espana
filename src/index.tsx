@@ -19,15 +19,12 @@ import {
   buildObservatorio, observatorioFromPre, calculaVariaciones,
   type ObservatorioPre, type FilaHistorico,
 } from './lib/observatorio'
+// Las rutas /itv/* viven en src/routes/itv.ts; aqui solo quedan los usos de ITV
+// en sitemap.xml (parseItv/provinciasConItv/municipiosConItv/estacionesDeProvincia).
 import {
-  parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
-  estacionesDeProvincia, estacionesDeMunicipio,
-  type EstacionITV, type ItvFile,
+  parseItv, provinciasConItv, municipiosConItv, estacionesDeProvincia,
+  type ItvFile,
 } from './lib/itv'
-import {
-  buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, buildItvPreciosPage, itvHeaders,
-} from './html/itv'
-import { tarifaPorProvincia } from './lib/itv-tarifas'
 import {
   guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
   municipiosConGuardia, guardiasForMunicipio, frescuraGuardia,
@@ -68,6 +65,7 @@ import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
 import { topMunicipiosInProvincia, municipiosInProvincia, findMunicipioBySlug, statsForMunicipio, statsNacional, topCheapestStationsIn } from './lib/municipios'
 import type { StationLite } from './lib/municipios'
 import { registerTiempoRoutes } from './routes/tiempo'
+import { registerItvRoutes } from './routes/itv'
 import {
   snapshotToRows,
   buildInsertBatches,
@@ -1271,120 +1269,16 @@ app.get('/farmacias/:provinciaSlug/:municipioSlug', async c => {
   }), { headers: hdrs })
 })
 
-// ---- ITV ----
-// La portada anunciaba ITV desde el Ship 27 sin que existiera la seccion. Los
-// datos salen del FeatureServer publico de la DGT (ver scripts/fetch-itv.mjs).
-//
-// Expectativas realistas: a diferencia de las guardias, aqui el dato es ESTATICO
-// y la SERP la copan sitios especializados en ITV con captacion de citas. Esto
-// cierra la promesa de la portada y da cobertura de cola larga por municipio,
-// pero no se espera de aqui el trafico que dan las guardias.
-async function cargaItv(c: { req: { url: string }; env: Env }): Promise<EstacionITV[]> {
-  return parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
-}
-
-// Indice ligero de municipios con ITV para el autocompletado de /itv/.
-// Mismo patron que /api/guardias/municipios: [{n: municipio, p: provincia,
-// u: /itv/<prov>/<mun>}], cacheado en memoria (los datos ITV son estaticos).
-let itvMuniIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
-
-app.get('/api/itv/municipios', async c => {
-  const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
-  if (itvMuniIndex && Date.now() - itvMuniIndex.ts < MUNI_INDEX_TTL) {
-    return c.json(itvMuniIndex.data, 200, CACHE)
-  }
-  const todas = await cargaItv(c)
-  const out: Array<{ n: string; p: string; u: string }> = []
-  const seen = new Set<string>()
-  for (const prov of provinciasConItv(todas)) {
-    for (const m of municipiosConItv(estacionesDeProvincia(todas, prov.id))) {
-      const u = '/itv/' + prov.slug + '/' + m.slug
-      if (seen.has(u)) continue
-      seen.add(u)
-      out.push({ n: m.name, p: prov.name, u })
-    }
-  }
-  out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
-  itvMuniIndex = { ts: Date.now(), data: out }
-  return c.json(out, 200, CACHE)
-})
-
 // Vertical del tiempo (AEMET + Open-Meteo). Rutas en src/routes/tiempo.ts:
 // /api/tiempo/municipios, /tiempo, /tiempo/, /tiempo/:prov, /tiempo/:prov/:mun.
 // Se registran aqui para preservar el orden relativo al resto de verticales.
 registerTiempoRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
 
-app.get('/itv/', async c => {
-  const todas = await cargaItv(c)
-  if (!todas.length) return c.notFound()
-  const nonce = genNonce()
-  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/'
-  return new Response(
-    buildItvIndexPage(nonce, provinciasConItv(todas), todas.length, canonical),
-    { headers: itvHeaders(nonce) },
-  )
-})
-
-// Canonicalizamos `/itv` -> `/itv/` para no duplicar, igual que /gasolineras.
-app.get('/itv', c => c.redirect('/itv/', 301))
-
-// `/itv/precios` — comparativa nacional. Va ANTES de `/itv/:provinciaSlug` o el
-// parametro se tragaria "precios" como si fuera un slug de provincia.
-//
-// Es la pagina con mas opcion real de posicionar de todo el vertical: el dato es
-// oficial y citable, y las SERP de "precio ITV" las ocupan agregadores que no
-// citan fuente ni distinguen el regimen fiscal de cada territorio.
-app.get('/itv/precios', c => {
-  const nonce = genNonce()
-  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/precios'
-  return new Response(buildItvPreciosPage(nonce, canonical), { headers: itvHeaders(nonce) })
-})
-
-app.get('/itv/:provinciaSlug', async c => {
-  const provSlug = c.req.param('provinciaSlug')
-  const prov = provinciaPorSlug(provSlug)
-  if (!prov) return c.notFound()
-
-  const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
-  // Sin estaciones no se publica pagina: mejor un 404 que una URL vacia en el indice.
-  if (!deProvincia.length) return c.notFound()
-
-  const nonce = genNonce()
-  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug
-  return new Response(buildItvProvinciaPage(nonce, {
-    provinciaSlug: provSlug,
-    provinciaName: prov.name,
-    estaciones: deProvincia,
-    municipios: municipiosConItv(deProvincia),
-    tarifa: tarifaPorProvincia(provSlug),
-    canonical,
-  }), { headers: itvHeaders(nonce) })
-})
-
-app.get('/itv/:provinciaSlug/:municipioSlug', async c => {
-  const provSlug = c.req.param('provinciaSlug')
-  const munSlug  = c.req.param('municipioSlug')
-  const prov = provinciaPorSlug(provSlug)
-  if (!prov) return c.notFound()
-
-  const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
-  if (!deProvincia.length) return c.notFound()
-
-  const municipios = municipiosConItv(deProvincia)
-  const munEntry = municipios.find(m => m.slug === munSlug)
-  if (!munEntry) return c.notFound()
-
-  const nonce = genNonce()
-  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug + '/' + munSlug
-  return new Response(buildItvMunicipioPage(nonce, {
-    provinciaSlug: provSlug,
-    provinciaName: prov.name,
-    municipioName: munEntry.name,
-    estaciones: estacionesDeMunicipio(deProvincia, munSlug),
-    otrosMunicipios: municipios.filter(m => m.slug !== munSlug),
-    canonical,
-  }), { headers: itvHeaders(nonce) })
-})
+// ---- ITV (datos del FeatureServer de la DGT) ----
+// Rutas en src/routes/itv.ts: /api/itv/municipios, /itv/, /itv, /itv/precios,
+// /itv/:prov, /itv/:prov/:mun. El orden interno importa (/itv/precios ANTES de
+// /itv/:provinciaSlug); se preserva dentro del modulo.
+registerItvRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
 
 // ---- Observatorio de precios ----
 // Pagina de datos pensada para SER CITADA por medios y foros: el Geoportal

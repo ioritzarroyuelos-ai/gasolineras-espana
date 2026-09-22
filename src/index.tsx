@@ -1296,27 +1296,143 @@ app.get('/privacidad', c => {
 <h1>Política de privacidad</h1>
 <p><strong>Última actualización:</strong> ${new Date().toISOString().slice(0,10)}</p>
 
-<h2>Qué datos tratamos</h2>
-<p>Esta aplicación <strong>no almacena</strong> datos personales en nuestros servidores. Todos los ajustes (provincia, combustible, favoritos, perfil de vehículo) se guardan exclusivamente en el <code>localStorage</code> de tu navegador y nunca salen de tu dispositivo.</p>
+<p>Esta política cuenta, en lenguaje llano, qué datos tratamos y cuáles no.
+La idea de CercaYa es simple: <strong>casi todo funciona sin cuenta y sin que
+tus datos salgan de tu navegador</strong>. Solo recogemos datos personales
+cuando tú decides activarlos (iniciar sesión o suscribirte a las alertas de
+Telegram).</p>
 
-<h2>Geolocalización</h2>
-<p>Si concedes permiso de ubicación, tus coordenadas se usan <strong>solo en el navegador</strong> para calcular la distancia a las gasolineras. No se envían a ningún servidor.</p>
-
-<h2>Servicios de terceros</h2>
+<h2>Resumen rápido</h2>
 <ul>
-  <li><strong>Ministerio para la Transición Ecológica</strong>: origen oficial de los precios. Las peticiones pasan por nuestro servidor, tu IP no llega al Ministerio.</li>
-  <li><strong>OpenStreetMap Nominatim</strong>: geocodificación de direcciones. Las peticiones pasan por nuestro servidor (endpoint <code>/api/geocode/*</code>), tu IP no llega a OpenStreetMap.</li>
-  <li><strong>CartoDB / unpkg</strong>: CDN de tiles de mapa y librerías. Estos servicios sí reciben tu IP directamente porque los recursos se cargan desde el navegador.</li>
+  <li>No hace falta registrarse para usar la web.</li>
+  <li>No mostramos publicidad ni usamos rastreadores de terceros.</li>
+  <li>La única cookie que ponemos es la de tu sesión, y solo si inicias sesión.</li>
+  <li>Puedes borrar tus datos tú mismo (cerrar sesión, borrar favoritos, o <code>/stop</code> en Telegram).</li>
 </ul>
 
-<h2>Informes de errores</h2>
-<p>Si se produce un fallo en JavaScript, se puede enviar un informe técnico mínimo (mensaje, stack, URL, user-agent) al endpoint <code>/api/ingest</code>. No se incluye contenido introducido por el usuario ni cookies. Puedes desactivarlo bloqueando <code>/api/ingest</code> en tu navegador.</p>
+<h2>Si NO inicias sesión (uso normal)</h2>
+<p>Tus ajustes, favoritos y perfil de vehículo se guardan únicamente en el
+almacenamiento local (<code>localStorage</code>) de tu navegador. <strong>No se
+envían a ningún servidor</strong> y no salen de tu dispositivo. Si borras los
+datos del navegador, desaparecen.</p>
+
+<h2>Si inicias sesión con Google (opcional)</h2>
+<p>El inicio de sesión sirve para tener tus favoritos y ajustes en varios
+dispositivos. Es totalmente voluntario. Cuando inicias sesión:</p>
+<ul>
+  <li>Verificamos tu identidad con Google y creamos una <strong>cookie de sesión</strong>
+      propia (firmada, <code>HttpOnly</code>, válida 30 días). Solo sirve para
+      mantenerte identificado; no rastrea tu navegación.</li>
+  <li>Guardamos un identificador opaco de tu cuenta de Google, tu correo, tu
+      nombre y tu foto de perfil, asociados a tu sesión.</li>
+  <li>Sincronizamos tus favoritos, perfil y ajustes en la base de datos de claves
+      de Cloudflare (Workers KV), bajo una clave ligada a tu identificador de Google.</li>
+</ul>
+<p><strong>Base legal:</strong> tu consentimiento y la prestación del servicio que
+tú pides (la sincronización).</p>
+<p><strong>Cómo borrarlos:</strong> al eliminar un favorito o vaciar tu perfil,
+la app borra ese dato también en el servidor. Cerrar sesión elimina la cookie de
+este dispositivo. Si quieres que borremos por completo tus datos sincronizados,
+escríbenos (ver <em>Contacto</em>).</p>
+
+<h2>Alertas de precios por Telegram (opcional)</h2>
+<p>Si activas las alertas, vinculas tu chat de Telegram con la web. Para ello
+guardamos, en nuestra base de datos (Cloudflare D1), tu <strong>identificador de
+chat de Telegram</strong> junto con las gasolineras y combustibles que quieres
+vigilar y el umbral de aviso. Con eso te enviamos el resumen diario y el listado
+cuando escribes <code>/precios</code>.</p>
+<p><strong>Base legal:</strong> tu consentimiento (lo activas tú).</p>
+<p><strong>Cómo darte de baja:</strong> escribe <code>/stop</code> al bot y
+borramos todas tus alertas al instante. Si bloqueas el bot, también dejamos de
+enviarte mensajes y limpiamos tu suscripción.</p>
+
+<h2>Reportar un precio incorrecto (opcional)</h2>
+<p>Si nos avisas de que un precio no cuadra, guardamos la gasolinera, el
+combustible, el precio que indicas y tu comentario (si escribes uno). Para evitar
+abusos guardamos una <strong>huella de tu IP</strong> (un hash que cambia cada día
+y no permite identificarte ni seguirte de un día para otro), nunca tu IP en claro.
+No escribas datos personales en el comentario: es un campo de texto libre que
+revisamos manualmente.</p>
+<p><strong>Base legal:</strong> interés legítimo en la calidad de los datos.</p>
+
+<h2>Tu ubicación</h2>
+<p>Si concedes permiso de ubicación, usamos tus coordenadas <strong>en el propio
+navegador</strong> para calcular distancias a las gasolineras. En algunas funciones,
+para traducir tus coordenadas a una dirección, se envían al servidor de CercaYa,
+que reenvía la consulta a OpenStreetMap <strong>sin tu dirección IP</strong>. No
+guardamos tus coordenadas asociadas a ti.</p>
+
+<h2>Datos técnicos y telemetría (anónimos)</h2>
+<p>Para mantener el servicio funcionando y detectar fallos recogemos información
+técnica <strong>sin identificarte</strong>:</p>
+<ul>
+  <li><strong>Errores de la web:</strong> mensaje, traza técnica, página y navegador
+      (versión). No guardamos ni cookies ni tu IP junto a estos errores.</li>
+  <li><strong>Velocidad de carga (Web Vitals):</strong> tiempos de carga y respuesta
+      de la página, sin identificador y <strong>sin tu IP</strong>.</li>
+  <li><strong>Avisos de seguridad (CSP):</strong> si el navegador bloquea un recurso
+      sospechoso, nos llega un informe para revisarlo.</li>
+</ul>
+<p><strong>Base legal:</strong> interés legítimo en la seguridad y el buen
+funcionamiento del servicio.</p>
+
+<h2>Tu dirección IP</h2>
+<p>Como cualquier web, nuestro servidor ve tu IP en cada petición (nos la facilita
+Cloudflare). La usamos para <strong>limitar el abuso</strong> (evitar que alguien
+sature el servicio). Este control es temporal y en memoria. Tu IP puede aparecer
+de forma pasajera en los registros técnicos del servidor, que se usan solo para
+diagnóstico y no para crear perfiles.</p>
+
+<h2>Con quién se comparten datos</h2>
+<p>No vendemos ni cedemos tus datos. Para que la web funcione intervienen estos
+servicios:</p>
+<ul>
+  <li><strong>Cloudflare</strong>: alojamiento, red y bases de datos donde se
+      ejecuta y guarda todo lo anterior.</li>
+  <li><strong>Mapa</strong>: al abrir el mapa, tu navegador pide las imágenes a
+      <code>OpenFreeMap</code> y al <code>IGN</code> (vista satélite), que reciben tu IP.</li>
+  <li><strong>jsDelivr</strong>: sirve iconos y tipografías; recibe tu IP al cargar la web.</li>
+  <li><strong>Google</strong>: solo si usas el inicio de sesión; entonces Google
+      gestiona la autenticación y tu foto de perfil.</li>
+  <li><strong>Telegram</strong>: solo si te suscribes a las alertas.</li>
+  <li><strong>OpenStreetMap, Ministerio (precios) y AEMET / Open-Meteo (tiempo)</strong>:
+      sus datos llegan a través de nuestro servidor, <strong>sin exponer tu IP</strong>
+      a esos servicios.</li>
+</ul>
+<p>La infraestructura y las bases de datos son de Cloudflare (red global). Cloudflare
+es una empresa estadounidense adherida a los marcos de transferencia de datos vigentes.</p>
+
+<h2>De dónde salen los datos que mostramos</h2>
+<ul>
+  <li><strong>Precios de carburantes</strong>: Ministerio para la Transición Ecológica y el Reto Demográfico.</li>
+  <li><strong>Estaciones de ITV</strong>: Dirección General de Tráfico (DGT).</li>
+  <li><strong>El tiempo</strong>: AEMET (Agencia Estatal de Meteorología), con Open-Meteo como suplente.</li>
+  <li><strong>Farmacias de guardia</strong>: Colegios Oficiales de Farmacéuticos.</li>
+</ul>
+
+<h2>Cuánto tiempo guardamos las cosas</h2>
+<ul>
+  <li>Cookie de sesión: 30 días (o hasta que cierres sesión).</li>
+  <li>Datos sincronizados (si inicias sesión) y alertas de Telegram: hasta que los borres tú.</li>
+  <li>Errores técnicos y reportes de precio: mientras nos sean útiles para mantener el servicio.</li>
+</ul>
 
 <h2>Cookies</h2>
-<p>No usamos cookies de seguimiento ni publicidad.</p>
+<p>No usamos cookies de publicidad ni de seguimiento. La única cookie es la de tu
+sesión, y solo existe si inicias sesión.</p>
+
+<h2>Tus derechos</h2>
+<p>Tienes derecho a acceder, rectificar y borrar tus datos, y a oponerte a su
+tratamiento. En la práctica puedes ejercerlos tú directamente: cerrar sesión,
+borrar tus favoritos, darte de baja con <code>/stop</code> en Telegram o borrar los
+datos de tu navegador. Para cualquier otra petición, escríbenos.</p>
+
+<h2>Cambios</h2>
+<p>Si cambiamos esta política, actualizaremos la fecha del principio.</p>
 
 <h2>Contacto</h2>
-<p>Incidencias: issue en el repositorio.</p>
+<p>Para dudas o para pedir el borrado de tus datos, abre una incidencia en el
+repositorio del proyecto.</p>
 `, nonce)
   return c.html(html, 200, {
     ...pageHeaders(nonce, false),

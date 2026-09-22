@@ -11,6 +11,7 @@
 
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 export interface GasLandingProvincia { slug: string; name: string; count: number }
 
@@ -133,7 +134,7 @@ export function buildGasolinerasLanding(
   <meta name="twitter:description" content="${esc(desc)}" />
 
   <meta name="generator" content="CercaYa v${APP_VERSION}" />
-  <script type="application/ld+json" nonce="${nonce}">${JSON.stringify(jsonLd)}</script>
+  ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
     :root {

@@ -14,6 +14,7 @@
 
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 export function buildFarmaciasPage(
   nonce: string = '',
@@ -74,7 +75,7 @@ export function buildFarmaciasPage(
   <meta name="robots" content="index,follow,max-image-preview:large" />
   <meta name="generator" content="CercaYa v${APP_VERSION}" />
 
-  <script type="application/ld+json" nonce="${nonce}">${JSON.stringify(jsonLd)}</script>
+  ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
     :root {

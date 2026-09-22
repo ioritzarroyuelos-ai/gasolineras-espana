@@ -15,8 +15,13 @@ import {
 } from '../src/lib/schemas'
 
 describe('StationSchema', () => {
-  it('acepta un registro minimo vacio (todos los campos son opcionales)', () => {
+  it('M2: rechaza un registro sin IDEESS (identidad requerida)', () => {
     const r = StationSchema.safeParse({})
+    expect(r.success).toBe(false)
+  })
+
+  it('acepta un registro minimo con solo IDEESS', () => {
+    const r = StationSchema.safeParse({ IDEESS: '12345' })
     expect(r.success).toBe(true)
   })
 
@@ -51,12 +56,12 @@ describe('StationSchema', () => {
   })
 
   it('rechaza strings gigantes (DoS de memoria)', () => {
-    const r = StationSchema.safeParse({ Rotulo: 'x'.repeat(500) })
+    const r = StationSchema.safeParse({ IDEESS: '1', Rotulo: 'x'.repeat(500) })
     expect(r.success).toBe(false)
   })
 
   it('rechaza tipos incorrectos en campos conocidos', () => {
-    const r = StationSchema.safeParse({ Rotulo: 123 })
+    const r = StationSchema.safeParse({ IDEESS: '1', Rotulo: 123 })
     expect(r.success).toBe(false)
   })
 })
@@ -82,6 +87,11 @@ describe('MinistryResponseSchema', () => {
 
   it('rechaza si ListaEESSPrecio no es array', () => {
     const r = MinistryResponseSchema.safeParse({ ListaEESSPrecio: 'no soy array' })
+    expect(r.success).toBe(false)
+  })
+
+  it('M2: rechaza lista vacia (0 estaciones = drift → fallback)', () => {
+    const r = MinistryResponseSchema.safeParse({ ListaEESSPrecio: [] })
     expect(r.success).toBe(false)
   })
 })
@@ -112,6 +122,10 @@ describe('MunicipioSchema / MunicipioListSchema', () => {
     }))
     const r = MunicipioListSchema.safeParse(list)
     expect(r.success).toBe(false)
+  })
+
+  it('M2: rechaza lista vacia (respuesta corrupta)', () => {
+    expect(MunicipioListSchema.safeParse([]).success).toBe(false)
   })
 })
 
@@ -146,6 +160,10 @@ describe('ProvinciaListSchema', () => {
     const list = Array.from({ length: 81 }, () => ({ IDProvincia: '1', Provincia: 'P' }))
     const r = ProvinciaListSchema.safeParse(list)
     expect(r.success).toBe(false)
+  })
+
+  it('M2: rechaza lista vacia (respuesta corrupta)', () => {
+    expect(ProvinciaListSchema.safeParse([]).success).toBe(false)
   })
 })
 

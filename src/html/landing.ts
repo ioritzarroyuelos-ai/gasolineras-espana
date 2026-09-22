@@ -22,6 +22,7 @@
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { BRAND } from '../lib/brand'
+import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 /** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
 export interface LandingTiempo {
@@ -220,7 +221,7 @@ export function buildLandingPage(
   <meta name="robots" content="index,follow,max-image-preview:large" />
   <meta name="generator" content="CercaYa v${APP_VERSION}" />
 
-  <script type="application/ld+json" nonce="${nonce}">${JSON.stringify(jsonLd)}</script>
+  ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
     :root {

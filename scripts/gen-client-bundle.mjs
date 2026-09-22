@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import esbuild from 'esbuild'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -44,7 +45,18 @@ const parts = ORDER.map(f => {
 const prelude = 'var APP_VER = ' + JSON.stringify(APP_VERSION) + ';\n'
 const footer = "\n// ---- VERSION visible en consola ----\n" +
   "try { console.info('%c" + BRAND + " v' + APP_VER, 'color:#16a34a;font-weight:bold'); } catch(_) {}\n"
-const out = prelude + parts.join('\n') + footer
+const raw = prelude + parts.join('\n') + footer
+// B2 fase B: minificar con esbuild en modo SCRIPT (sin format:iife, sin bundle) →
+// preserva las funciones/globales top-level por nombre (se referencian entre módulos
+// y no hay onclick inline). target es2019 ⊇ ES2018 (object-spread + async/await del
+// código) → NO transpila, solo minifica. Verificado: ~306 KB → ~130 KB, mantiene el
+// prelude `var APP_VER` y el console.info. legalComments:none (bundle 100% propio).
+const out = esbuild.transformSync(raw, {
+  loader: 'js',
+  minify: true,
+  target: 'es2019',
+  legalComments: 'none',
+}).code
 
 mkdirSync(DEST_DIR, { recursive: true })
 const existing = existsSync(DEST) ? readFileSync(DEST, 'utf8') : null

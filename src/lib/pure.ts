@@ -103,6 +103,28 @@ export function originAllowed(
   return false
 }
 
+// ---- Origen canonico para SEO (canonical / sitemaps / robots) ----
+// Independiente del Host de la peticion: si PUBLIC_ORIGIN esta configurado,
+// manda (asi los despliegues preview <hash>.pages.dev no generan canonicals ni
+// sitemaps propios que Google indexaria como duplicados). Si no esta, cae al
+// host/esquema de la peticion (comportamiento previo). `isCanonical` indica si
+// la peticion llega por el host canonico (para, p.ej., bloquear previews en robots).
+export function canonicalSite(
+  publicOrigin: string | undefined,
+  reqScheme: string,
+  reqHost: string,
+): { origin: string; host: string; isCanonical: boolean } {
+  if (publicOrigin) {
+    try {
+      const u = new URL(publicOrigin)
+      const host = u.host
+      const origin = u.protocol.replace(':', '') + '://' + host
+      return { origin, host, isCanonical: reqHost === host }
+    } catch { /* PUBLIC_ORIGIN invalido: fallback abajo */ }
+  }
+  return { origin: reqScheme + '://' + reqHost, host: reqHost, isCanonical: true }
+}
+
 // ---- Haversine: distancia en kilometros entre dos coordenadas ----
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371

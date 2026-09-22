@@ -50,6 +50,7 @@ import {
   isValidProvinciaId,
   sanitizeLatLng,
   originAllowed,
+  canonicalSite,
   SlidingWindowLimiter,
   tokensEqualConstTime,
   classifyPriceVsCycle,
@@ -1548,16 +1549,23 @@ app.get('/precios-carburantes', async c => {
 
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {
-  const host = resolveHost(c)
-  const scheme = resolveScheme(c)
+  const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
+  // Hosts NO canonicos (despliegues preview <hash>.pages.dev cuando hay
+  // PUBLIC_ORIGIN): bloqueamos el rastreo entero para que Google no indexe
+  // duplicados del sitio de produccion.
+  if (!site.isCanonical) {
+    return c.text('User-agent: *\nDisallow: /\n', 200, {
+      'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600',
+    })
+  }
   const body = [
     'User-agent: *',
     'Allow: /',
     'Disallow: /api/',
     '',
-    'Sitemap: ' + scheme + '://' + host + '/sitemap.xml',
-    'Sitemap: ' + scheme + '://' + host + '/sitemap-guardias.xml',
-    'Sitemap: ' + scheme + '://' + host + '/sitemap-tiempo.xml',
+    'Sitemap: ' + site.origin + '/sitemap.xml',
+    'Sitemap: ' + site.origin + '/sitemap-guardias.xml',
+    'Sitemap: ' + site.origin + '/sitemap-tiempo.xml',
     '',
   ].join('\n')
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })

@@ -6,6 +6,7 @@ import {
   sanitizeGeocodeQuery,
   sanitizeLatLng,
   originAllowed,
+  canonicalSite,
   haversineKm,
   median,
   isOpenNow,
@@ -126,6 +127,28 @@ describe('sanitizeLatLng', () => {
     expect(sanitizeLatLng(null, '0')).toBeNull()
     expect(sanitizeLatLng('0', undefined)).toBeNull()
     expect(sanitizeLatLng('Infinity', '0')).toBeNull()
+  })
+})
+
+describe('canonicalSite (M6: canonical/sitemap/robots por PUBLIC_ORIGIN)', () => {
+  it('usa PUBLIC_ORIGIN e ignora el Host (preview no es canonico)', () => {
+    const s = canonicalSite('https://webapp-3ft.pages.dev', 'https', 'abc123.webapp-3ft.pages.dev')
+    expect(s.origin).toBe('https://webapp-3ft.pages.dev')
+    expect(s.host).toBe('webapp-3ft.pages.dev')
+    expect(s.isCanonical).toBe(false)
+  })
+  it('marca isCanonical cuando el Host coincide con PUBLIC_ORIGIN', () => {
+    expect(canonicalSite('https://webapp-3ft.pages.dev', 'https', 'webapp-3ft.pages.dev').isCanonical).toBe(true)
+  })
+  it('cae al host de la peticion si no hay PUBLIC_ORIGIN', () => {
+    const s = canonicalSite(undefined, 'https', 'ejemplo.com')
+    expect(s.origin).toBe('https://ejemplo.com')
+    expect(s.isCanonical).toBe(true)
+  })
+  it('cae al host de la peticion si PUBLIC_ORIGIN es invalido', () => {
+    const s = canonicalSite('no-es-url', 'http', 'localhost:8788')
+    expect(s.origin).toBe('http://localhost:8788')
+    expect(s.isCanonical).toBe(true)
   })
 })
 

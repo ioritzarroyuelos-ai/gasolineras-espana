@@ -7,6 +7,7 @@ import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { construyeObservatorio } from './lib/observatorio-precalculo.mjs'
+import { construyeGasolineras } from './lib/gasolineras-precalculo.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -156,6 +157,18 @@ async function main() {
     // No abortamos: el Worker tiene camino de respaldo y el resto del snapshot
     // ya esta escrito y es valido.
     console.error('  AVISO: no se pudo construir el observatorio')
+  }
+
+  // 6) Resumen de gasolineras pre-calculado (M5): media nacional + recuento por
+  //    provincia, para que la home y /gasolineras/ no parseen stations.json (12 MB).
+  const gasResumen = construyeGasolineras(all)
+  if (gasResumen) {
+    const gasPath = resolve(DATA_DIR, 'gasolineras-resumen.json')
+    const payload = JSON.stringify(gasResumen)
+    writeFileSync(gasPath, payload)
+    console.log(`  escrito ${gasPath} (${Math.round(payload.length / 1024)} KB)`)
+  } else {
+    console.error('  AVISO: no se pudo construir el resumen de gasolineras')
   }
 
   console.log('OK')

@@ -44,6 +44,7 @@ import {
   verifyTelegramToken,
 } from './lib/auth'
 import { BRAND } from './lib/brand'
+import { resumenFromPre } from './lib/gasolineras-precalculo'
 import {
   LRU,
   validateId,
@@ -826,8 +827,12 @@ app.get('/', async c => {
   const nonce = genNonce()
   const data: LandingData = {}
   try {
-    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    const st = statsNacional(snap).stats
+    // M5: media nacional desde el resumen precomputado (KB). Solo parseamos
+    // stations.json (12 MB) si el resumen falta o no valida (fallback).
+    const resumen = resumenFromPre(await loadSnapshot<unknown>(c.req.url, 'gasolineras-resumen.json', c.env.ASSETS))
+    const st = resumen
+      ? resumen.nacionalStats.stats
+      : statsNacional(await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)).stats
     if (st['95'] || st['diesel']) {
       data.gasolina = {
         g95: st['95'] ? st['95'].avg : undefined,
@@ -889,18 +894,30 @@ app.get('/gasolineras/', async c => {
   let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
   let provincias: GasLandingProvincia[] = []
   try {
-    const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    const r = statsNacional(snap)
-    stats = Object.keys(r.stats).length ? r.stats : undefined
-    if (snap && Array.isArray(snap.ListaEESSPrecio)) {
-      const counts = new Map<string, number>()
-      for (const s of snap.ListaEESSPrecio) {
-        if (s.IDProvincia) counts.set(s.IDProvincia, (counts.get(s.IDProvincia) || 0) + 1)
-      }
+    // M5: stats nacionales + recuento por provincia desde el resumen precomputado;
+    // fallback al calculo completo sobre stations.json (12 MB) si falta/no valida.
+    const resumen = resumenFromPre(await loadSnapshot<unknown>(c.req.url, 'gasolineras-resumen.json', c.env.ASSETS))
+    if (resumen) {
+      stats = Object.keys(resumen.nacionalStats.stats).length ? resumen.nacionalStats.stats : undefined
+      const counts = resumen.provinciaCounts
       provincias = PROVINCIAS
-        .map(p => ({ slug: p.slug, name: p.name, count: counts.get(p.id) || 0 }))
+        .map(p => ({ slug: p.slug, name: p.name, count: counts[p.id] || 0 }))
         .filter(p => p.count > 0)
         .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+    } else {
+      const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+      const r = statsNacional(snap)
+      stats = Object.keys(r.stats).length ? r.stats : undefined
+      if (snap && Array.isArray(snap.ListaEESSPrecio)) {
+        const counts = new Map<string, number>()
+        for (const s of snap.ListaEESSPrecio) {
+          if (s.IDProvincia) counts.set(s.IDProvincia, (counts.get(s.IDProvincia) || 0) + 1)
+        }
+        provincias = PROVINCIAS
+          .map(p => ({ slug: p.slug, name: p.name, count: counts.get(p.id) || 0 }))
+          .filter(p => p.count > 0)
+          .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+      }
     }
   } catch { /* degradacion: portada sin bloque de precios/provincias */ }
   return new Response(

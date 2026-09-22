@@ -52,6 +52,7 @@ import { registerItvRoutes } from './routes/itv'
 import { registerFarmaciasRoutes } from './routes/farmacias'
 import { registerGasolinerasRoutes } from './routes/gasolineras'
 import { registerAuthRoutes } from './routes/auth'
+import { registerHomeRoutes } from './routes/home'
 import {
   snapshotToRows,
   buildInsertBatches,
@@ -254,84 +255,11 @@ async function verifyTurnstile(
   }
 }
 
-// Ship 27: la raíz `/` ya no redirige — ahora sirve la landing del portal
-// CercaYa con tiles hacia cada servicio (gasolineras activo, farmacias e
-// ITV próximamente).
-//
-// Compatibilidad con shortcuts PWA viejos: los manifests anteriores tenían
-// shortcuts como `/?action=cheapest` (y luego `/gasolineras/?action=...`) que
-// esperaban entrar al mapa. Ahora el mapa vive en `/gasolineras/mapa` y la
-// portada `/gasolineras/` es un buscador que NO procesa `?action=`. Para no
-// romper instalaciones viejas, cualquier `?action=` en `/` se redirige al mapa.
-// Franja "El tiempo hoy" de la portada: las ciudades más pobladas (municipios
-// "importantes") que tengan predicción de AEMET fresca en el snapshot. Cargamos
-// cada snapshot de provincia una sola vez (en paralelo) y cogemos el día 0. Solo
-// AEMET y fresco (misma norma que /tiempo/*): nunca metemos dato dudoso en la
-// portada. Como mucho 6 ciudades.
-async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<LandingTiempo[] | undefined> {
-  const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
-  const all = (raw && raw.municipios) || []
-  const cand = all.filter(m => m.imp).sort((a, b) => (b.pob || 0) - (a.pob || 0))
-  if (!cand.length) return undefined
-  // Recorremos los candidatos por población y cargamos el snapshot de cada
-  // provincia SOLO cuando hace falta (una lectura por provincia, memorizada),
-  // hasta llenar 6 ciudades. Así no cargamos 12 provincias para quedarnos con 6
-  // ni desbordamos el LRU en memoria (10 huecos) que comparte todo el sitio.
-  const snapCache = new Map<string, Record<string, Prediccion> | null>()
-  const out: LandingTiempo[] = []
-  for (const m of cand) {
-    if (out.length >= 6) break
-    let preds = snapCache.get(m.provinciaSlug)
-    if (preds === undefined) {
-      const s = await loadSnapshot<{ predicciones: Record<string, Prediccion> }>(
-        c.req.url, 'tiempo/snapshot/' + m.provinciaSlug + '.json', c.env.ASSETS)
-      preds = (s && s.predicciones) || null
-      snapCache.set(m.provinciaSlug, preds)
-    }
-    const p = preds && preds[m.ine]
-    if (!p || p.fuente !== 'AEMET' || !frescuraTiempo(p.elaborado).fiable) continue
-    const hoy = p.dias && p.dias[0]
-    if (!hoy) continue
-    out.push({
-      nombre: m.nombre,
-      provincia: m.provinciaNombre,
-      url: '/tiempo/' + m.provinciaSlug + '/' + m.slug,
-      tmax: hoy.tmax,
-      tmin: hoy.tmin,
-      cielo: hoy.cielo || '',
-    })
-  }
-  return out.length ? out : undefined
-}
-
-// Ship 28: `/` sirve la portada "periódico" con dato fresco (fecha, media
-// nacional de carburantes y el tiempo de hoy de las ciudades grandes). Todo el
-// IO va en try/catch: si un snapshot falla, la portada degrada sin romperse.
-// Compat: `/?action=...` (shortcuts PWA viejos) redirige al mapa.
-app.get('/', async c => {
-  const url = new URL(c.req.url)
-  if (url.searchParams.has('action')) {
-    return c.redirect('/gasolineras/mapa' + url.search, 301)
-  }
-  const nonce = genNonce()
-  const data: LandingData = {}
-  try {
-    // M5: media nacional desde el resumen precomputado (KB). Solo parseamos
-    // stations.json (12 MB) si el resumen falta o no valida (fallback).
-    const resumen = resumenFromPre(await loadSnapshot<unknown>(c.req.url, 'gasolineras-resumen.json', c.env.ASSETS))
-    const st = resumen
-      ? resumen.nacionalStats.stats
-      : statsNacional(await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)).stats
-    if (st['95'] || st['diesel']) {
-      data.gasolina = {
-        g95: st['95'] ? st['95'].avg : undefined,
-        diesel: st['diesel'] ? st['diesel'].avg : undefined,
-      }
-    }
-    data.tiempo = await franjaTiempo(c)
-  } catch { /* la portada funciona sin datos frescos */ }
-  return new Response(buildLandingPage(nonce, c.req.url, data), { headers: landingHeaders(nonce) })
-})
+// ---- Portada (/) + Observatorio (/precios-carburantes) ----
+// Rutas en src/routes/home.ts (incluye el helper franjaTiempo). Se registran aqui
+// para que `/` siga siendo la primera ruta. Ambas son paths estaticos exactos: no
+// hay shadowing con las rutas namespaced de los verticales.
+registerHomeRoutes(app)
 
 // ---- Gasolineras (precios del Ministerio) ----
 // Rutas en src/routes/gasolineras.ts: /gasolineras (301), /api/gasolineras/municipios,
@@ -356,61 +284,6 @@ registerTiempoRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, 
 // /itv/:prov, /itv/:prov/:mun. El orden interno importa (/itv/precios ANTES de
 // /itv/:provinciaSlug); se preserva dentro del modulo.
 registerItvRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
-
-// ---- Observatorio de precios ----
-// Pagina de datos pensada para SER CITADA por medios y foros: el Geoportal
-// oficial solo publica la foto de hoy, sin comparar provincias ni marcas y sin
-// historico, y los agregadores que compiten beben de ese mismo fichero. Aqui se
-// publica lo que ninguno da (ranking, diferencia entre extremos y variacion),
-// que es lo unico enlazable — y los enlaces son lo que hace posicionar al resto
-// del sitio, incluidas las paginas de farmacias de guardia.
-app.get('/precios-carburantes', async c => {
-  const nonce = genNonce()
-
-  // Camino rapido: agregados ya calculados por scripts/fetch-prices.mjs, unos
-  // pocos KB. Si el fichero falta o no valida, se cae al calculo completo sobre
-  // stations.json: la pagina sale igual, solo que mas lenta.
-  let obs = observatorioFromPre(
-    await loadSnapshot<ObservatorioPre>(c.req.url, 'observatorio.json', c.env.ASSETS)
-  )
-  if (!obs) {
-    slog('warn', 'observatorio.pre_miss', {})
-    let snap: MinistryResponse | null = null
-    try {
-      snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    } catch (err) {
-      slog('warn', 'observatorio.snapshot_failed', { err: String(err).slice(0, 160) })
-    }
-    obs = buildObservatorio(snap)
-  }
-  if (!obs) return c.notFound()
-
-  // Variaciones: se calculan sobre la serie nacional que el bot deja en
-  // history/national.json. NO se consulta D1 aqui — hacerlo costaba 11,9 s por
-  // visita y millones de filas del cupo diario (ver src/lib/observatorio.ts).
-  // Si el fichero falta, la pagina sale con los rankings y sin variaciones, que
-  // es la misma degradacion que ya habia prevista para cuando D1 no respondia.
-  let variacionG95: Variacion[] = []
-  let variacionDiesel: Variacion[] = []
-  try {
-    const serie = await loadStaticNational(c.req.url, c.env.ASSETS)
-    if (serie) {
-      const v = calculaVariaciones(serie)
-      variacionG95 = v.g95
-      variacionDiesel = v.diesel
-    } else {
-      slog('warn', 'observatorio.variaciones_miss', {})
-    }
-  } catch (err) {
-    slog('warn', 'observatorio.variaciones_failed', { err: String(err).slice(0, 160) })
-  }
-
-  const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/precios-carburantes'
-  return new Response(
-    buildObservatorioPage(nonce, { obs, variacionG95, variacionDiesel, canonical, deposito: 50 }),
-    { headers: observatorioHeaders(nonce) },
-  )
-})
 
 // ---- SEO: robots.txt ----
 app.get('/robots.txt', c => {

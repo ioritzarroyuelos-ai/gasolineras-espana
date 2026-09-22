@@ -90,9 +90,9 @@ describe('MinistryResponseSchema', () => {
     expect(r.success).toBe(false)
   })
 
-  it('M2: rechaza lista vacia (0 estaciones = drift → fallback)', () => {
+  it('acepta ListaEESSPrecio vacía (FiltroMunicipio de un municipio sin gasolineras NO es drift)', () => {
     const r = MinistryResponseSchema.safeParse({ ListaEESSPrecio: [] })
-    expect(r.success).toBe(false)
+    expect(r.success).toBe(true)
   })
 })
 

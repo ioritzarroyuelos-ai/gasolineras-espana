@@ -466,7 +466,9 @@ guardamos tus coordenadas asociadas a ti.</p>
 técnica <strong>sin identificarte</strong>:</p>
 <ul>
   <li><strong>Errores de la web:</strong> mensaje, traza técnica, página y navegador
-      (versión). No guardamos ni cookies ni tu IP junto a estos errores.</li>
+      (versión). No se guardan cookies, y la IP no se almacena en la base de datos de
+      errores (puede aparecer de forma transitoria en los registros técnicos del
+      servidor — ver «Tu dirección IP»).</li>
   <li><strong>Velocidad de carga (Web Vitals):</strong> tiempos de carga y respuesta
       de la página, sin identificador y <strong>sin tu IP</strong>.</li>
   <li><strong>Avisos de seguridad (CSP):</strong> si el navegador bloquea un recurso

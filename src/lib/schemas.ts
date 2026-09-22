@@ -52,7 +52,12 @@ export const StationSchema = z.object({
 
 export const MinistryResponseSchema = z.object({
   Fecha: str(40).optional(),
-  ListaEESSPrecio: z.array(StationSchema).min(1).max(20000),  // cap defensivo; min(1): 0 estaciones = drift → fallback
+  // cap defensivo. NO .min(1): el mismo schema valida FiltroMunicipio (schemaFor casa
+  // por 'EstacionesTerrestres/'), y un municipio pequeño puede tener 0 gasolineras
+  // legítimamente → exigir >=1 marcaría esa respuesta válida como schema_drift (falsos
+  // positivos que contaminarían la propia alerta de drift). Las listas de municipio/
+  // provincia sí llevan .min(1): ahí una lista vacía sí es respuesta corrupta.
+  ListaEESSPrecio: z.array(StationSchema).max(20000),
 }).passthrough()
 
 export const MunicipioSchema = z.object({

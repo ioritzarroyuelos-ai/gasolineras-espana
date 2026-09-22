@@ -6,6 +6,7 @@
 // `deps` para no duplicar ni mover el estado global del index.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
+import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
 // Lógica del tiempo compartida con el robot/tests (scripts/lib/tiempo.mjs + .d.mts).
 import { construyeIndiceMunicipios, resuelvePrediccion, frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
@@ -14,16 +15,7 @@ import { buildTiempoIndexPage, buildTiempoProvinciaPage, buildTiempoMunicipioPag
 // Contrato de dependencias compartidas que el vertical necesita del runtime del
 // index. Se pasan explicitamente (en vez de importarlas) para acotar el radio de
 // impacto de la extraccion: index.tsx sigue siendo el dueño de esa infra.
-export interface TiempoDeps {
-  loadSnapshot: <T>(origin: string, file: string, assets?: { fetch: (req: Request) => Promise<Response> }) => Promise<T | null>
-  genNonce: () => string
-  resolveScheme: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  resolveHost: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  MUNI_INDEX_TTL: number
-}
-
-export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>, deps: TiempoDeps): void {
-  const { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } = deps
+export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
 
   // Indice de municipios con predicción para el autocompletado de /tiempo/.
   // Lee public/data/tiempo/municipios.json (generado desde el maestro de AEMET) y

@@ -5,6 +5,7 @@
 // o "guardia" se tragaria como slug de provincia. Se preserva dentro del modulo.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
+import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
 import { buildFarmaciasPage, farmaciasHeaders } from '../html/farmacias'
 import {
   buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage,
@@ -17,16 +18,7 @@ import {
 } from '../lib/guardias'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
 
-export interface FarmaciasDeps {
-  loadSnapshot: <T>(origin: string, file: string, assets?: { fetch: (req: Request) => Promise<Response> }) => Promise<T | null>
-  genNonce: () => string
-  resolveScheme: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  resolveHost: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  MUNI_INDEX_TTL: number
-}
-
-export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>, deps: FarmaciasDeps): void {
-  const { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } = deps
+export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
 
   // ---- Farmacias (Fase 1 MVP nacional) ----
   // `/farmacias` sin barra -> 301 a `/farmacias/` (misma canonicalizacion que

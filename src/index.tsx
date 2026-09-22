@@ -1,52 +1,15 @@
 import { Hono } from 'hono'
-import { buildLandingPage, landingHeaders, type LandingData, type LandingTiempo } from './html/landing'
-import { mastheadHtml, MASTHEAD_CSS } from './html/masthead'
-// Lógica del tiempo compartida con el robot/tests (scripts/lib/tiempo.mjs + .d.mts).
-// Las rutas /tiempo/* viven en src/routes/tiempo.ts; aqui solo quedan los usos
-// residuales del tiempo en la portada (franjaTiempo) y en sitemap-tiempo.xml.
-import { frescuraTiempo } from '../scripts/lib/tiempo.mjs'
-import type { MunicipioLista, Prediccion } from '../scripts/lib/tiempo.mjs'
-import { buildObservatorioPage, observatorioHeaders, type Variacion } from './html/observatorio'
-import {
-  buildObservatorio, observatorioFromPre, calculaVariaciones,
-  type ObservatorioPre, type FilaHistorico,
-} from './lib/observatorio'
-// Las rutas /itv/* viven en src/routes/itv.ts; aqui solo quedan los usos de ITV
-// en sitemap.xml (parseItv/provinciasConItv/municipiosConItv/estacionesDeProvincia).
-import {
-  parseItv, provinciasConItv, municipiosConItv, estacionesDeProvincia,
-  type ItvFile,
-} from './lib/itv'
-// Las rutas /farmacias/* viven en src/routes/farmacias.ts; estas funciones siguen
-// aqui porque las usa sitemap-guardias.xml (guardiasForMunicipio si se fue al modulo).
-import {
-  guardiasFileForProvincia, parseGuardias, guardiasForProvincia,
-  municipiosConGuardia, frescuraGuardia,
-  GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
-} from './lib/guardias'
-// La sesion Google + sync KV viven en src/routes/auth.ts. Aqui solo quedan los
-// tokens firmados de Telegram (los usa tgChatFromAuth, aun en index).
-import { signTelegramToken, verifyTelegramToken } from './lib/auth'
-import { BRAND } from './lib/brand'
-import { resumenFromPre } from './lib/gasolineras-precalculo'
-import {
-  validateId,
-  isValidProvinciaId,
-  sanitizeLatLng,
-  originAllowed,
-  canonicalSite,
-  tokensEqualConstTime,
-  classifyPriceVsCycle,
-} from './lib/pure'
+import { originAllowed } from './lib/pure'
 import { APP_VERSION } from './lib/version'
-// LRU/SlidingWindowLimiter y los schemas del Ministerio (MinistryResponseSchema…)
-// se movieron a src/lib/runtime.ts junto con las cachés, limiters y proxiedFetch.
-import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
-// Las rutas /gasolineras/* viven en src/routes/gasolineras.ts (junto con buildPage,
-// los builders y municipiosInProvincia/findMunicipioBySlug/statsForMunicipio/
-// topCheapestStationsIn/StationLite). Aqui se quedan topMunicipiosInProvincia
-// (sitemap.xml) y statsNacional (portada /).
-import { topMunicipiosInProvincia, statsNacional } from './lib/municipios'
+import { snapshotToRows, buildInsertBatches, todayUtc, purgeCutoffDate } from './lib/history'
+// Infra compartida del servidor en src/lib/runtime.ts. index solo usa lo del
+// middleware /api/* (originAllowed/ALLOWED_ORIGINS/apiLimiter/clientKey/slog), el cron
+// (authorizeCron) y el handler de errores (slog). El resto de la infra la importan
+// directamente los modulos de ruta. Los tipos del snapshot se re-exportan para ellos.
+import { slog, clientKey, apiLimiter, ALLOWED_ORIGINS, authorizeCron } from './lib/runtime'
+import type { MinistryResponse } from './lib/runtime'
+export type { MinistryResponse, StationRecord } from './lib/runtime'
+// Sub-apps de ruta (src/routes/*): cada registerXRoutes registra su grupo sobre `app`.
 import { registerTiempoRoutes } from './routes/tiempo'
 import { registerItvRoutes } from './routes/itv'
 import { registerFarmaciasRoutes } from './routes/farmacias'
@@ -58,42 +21,6 @@ import { registerAdminRoutes } from './routes/admin'
 import { registerDataRoutes } from './routes/data'
 import { registerHistoryRoutes } from './routes/history'
 import { registerTelegramRoutes } from './routes/telegram'
-import {
-  snapshotToRows,
-  buildInsertBatches,
-  todayUtc,
-  purgeCutoffDate,
-  FUEL_CODES,
-  centsToEuros,
-  hydrateDedupe,
-} from './lib/history'
-
-// Infra compartida del servidor (logger, cachés, fetch al Ministerio, snapshots,
-// histórico estático, CORS/host, rate-limiters, nonce/CSP, cabeceras) vive en
-// src/lib/runtime.ts (B1). Los tipos del snapshot se definen alli; se re-exportan
-// para que los módulos de ruta sigan usando import type { MinistryResponse } from ../index.
-import {
-  slog, srvCache, snapshotCache, geoCache, buildUserAgent, cachedJson, proxiedFetch,
-  loadSnapshot, filterStations, incrementIsoDate, maxIsoDate,
-  loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
-  ALLOWED_ORIGINS, resolveHost, resolveScheme,
-  apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
-  exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron,
-  genNonce, pageHeaders,
-  SNAPSHOT_STALE_MS, MUNI_INDEX_TTL, GEO_TTL_FRESH, GEO_TTL_STALE, GEO_UPSTREAM_TIMEOUT,
-} from './lib/runtime'
-import type { MinistryResponse, StationRecord } from './lib/runtime'
-export type { MinistryResponse, StationRecord }
-type MunicipiosSnapshot = {
-  Fecha?: string
-  Data: Record<string, Array<{ IDMunicipio: string; Municipio: string; IDProvincia: string }>>
-}
-type SnapshotMeta = {
-  fetchedAt?: string
-  ministryDate?: string
-  stationCount?: number
-  source?: string
-}
 
 // ---- ENV ----
 // Exportado para que los sub-modulos de rutas (src/routes/*) tipen `app` y el
@@ -224,24 +151,24 @@ registerHomeRoutes(app)
 // /gasolineras/ (buscador), /gasolineras/mapa (SPA), /gasolineras/:slug (SEO provincia)
 // y /gasolineras/:prov/:mun (SEO municipio). Orden interno critico (/gasolineras/mapa
 // ANTES de /gasolineras/:slug); preservado en el modulo.
-registerGasolinerasRoutes(app, { loadSnapshot, genNonce, MUNI_INDEX_TTL, slog, pageHeaders })
+registerGasolinerasRoutes(app)
 
 // ---- Farmacias de guardia ----
 // Rutas en src/routes/farmacias.ts: /farmacias, /farmacias/, /farmacias/guardia,
 // /api/guardias/municipios, /farmacias/:prov, /farmacias/:prov/:mun. Orden interno
 // critico (/farmacias/guardia ANTES de /farmacias/:prov); preservado en el modulo.
-registerFarmaciasRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
+registerFarmaciasRoutes(app)
 
 // Vertical del tiempo (AEMET + Open-Meteo). Rutas en src/routes/tiempo.ts:
 // /api/tiempo/municipios, /tiempo, /tiempo/, /tiempo/:prov, /tiempo/:prov/:mun.
 // Se registran aqui para preservar el orden relativo al resto de verticales.
-registerTiempoRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
+registerTiempoRoutes(app)
 
 // ---- ITV (datos del FeatureServer de la DGT) ----
 // Rutas en src/routes/itv.ts: /api/itv/municipios, /itv/, /itv, /itv/precios,
 // /itv/:prov, /itv/:prov/:mun. El orden interno importa (/itv/precios ANTES de
 // /itv/:provinciaSlug); se preserva dentro del modulo.
-registerItvRoutes(app, { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL })
+registerItvRoutes(app)
 
 // ---- SEO: robots.txt ----
 // ---- META/SEO ----
@@ -255,7 +182,7 @@ registerMetaRoutes(app)
 // Rutas en src/routes/auth.ts: /api/auth/google, /api/auth/logout, /api/me,
 // /api/sync (GET) y /api/sync/:key (PUT/DELETE). Degradacion: sin
 // GOOGLE_CLIENT_ID/SESSION_SECRET -> 503; sin USER_DATA -> /api/sync 503.
-registerAuthRoutes(app, { ingestLimiter, clientKey, slog })
+registerAuthRoutes(app)
 
 // ---- Core de datos + histórico (API) ----
 // Rutas en src/routes/data.ts (provincias/municipios/estaciones/geocode/health/tiles)

@@ -7,19 +7,13 @@
 // sin USER_DATA -> /api/sync 503 pero el login sigue.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
+import { ingestLimiter, clientKey, slog } from '../lib/runtime'
 import {
   verifyGoogleIdToken, signSessionJWT, verifySessionJWT,
   buildSessionCookie, buildLogoutCookie, parseSessionCookie, isSyncableKey,
 } from '../lib/auth'
 
-export interface AuthDeps {
-  ingestLimiter: { check: (key: string) => { allowed: boolean; retryAfterSec: number } }
-  clientKey: (c: { req: { header: (h: string) => string | undefined } }) => string
-  slog: (level: 'info' | 'warn' | 'error', event: string, fields?: Record<string, unknown>) => void
-}
-
-export function registerAuthRoutes(app: Hono<{ Bindings: Env }>, deps: AuthDeps): void {
-  const { ingestLimiter, clientKey, slog } = deps
+export function registerAuthRoutes(app: Hono<{ Bindings: Env }>): void {
 
   async function getSessionUser(c: { env: Env; req: { header: (k: string) => string | undefined } }) {
     const secret = c.env.SESSION_SECRET

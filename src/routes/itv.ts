@@ -8,6 +8,7 @@
 // las rutas.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
+import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
 import {
   parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
   estacionesDeProvincia, estacionesDeMunicipio,
@@ -18,16 +19,7 @@ import {
 } from '../html/itv'
 import { tarifaPorProvincia } from '../lib/itv-tarifas'
 
-export interface ItvDeps {
-  loadSnapshot: <T>(origin: string, file: string, assets?: { fetch: (req: Request) => Promise<Response> }) => Promise<T | null>
-  genNonce: () => string
-  resolveScheme: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  resolveHost: (c: { req: { header: (h: string) => string | undefined; url: string } }) => string
-  MUNI_INDEX_TTL: number
-}
-
-export function registerItvRoutes(app: Hono<{ Bindings: Env }>, deps: ItvDeps): void {
-  const { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } = deps
+export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
 
   async function cargaItv(c: { req: { url: string }; env: Env }): Promise<EstacionITV[]> {
     return parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))

@@ -378,7 +378,6 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://cdn.jsdelivr.net']
   const frameSrc   = ["'self'"]
   const connectSrc = ["'self'"]
-  const imgSrc     = ["'self'", 'data:', 'blob:', 'https:']
   if (turnstile) {
     scriptSrc.push('https://challenges.cloudflare.com')
     frameSrc.push('https://challenges.cloudflare.com')

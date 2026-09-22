@@ -10,6 +10,7 @@
 // se importan directamente (son puros).
 import type { Hono } from 'hono'
 import type { Env, MinistryResponse } from '../index'
+import { loadSnapshot, genNonce, MUNI_INDEX_TTL, slog, pageHeaders } from '../lib/runtime'
 import { buildPage } from '../html/shell'
 import { buildGasolinerasLanding, gasolinerasLandingHeaders, type GasLandingProvincia } from '../html/gasolineras'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
@@ -19,16 +20,7 @@ import {
 } from '../lib/municipios'
 import { resumenFromPre } from '../lib/gasolineras-precalculo'
 
-export interface GasolinerasDeps {
-  loadSnapshot: <T>(origin: string, file: string, assets?: { fetch: (req: Request) => Promise<Response> }) => Promise<T | null>
-  genNonce: () => string
-  MUNI_INDEX_TTL: number
-  slog: (level: 'info' | 'warn' | 'error', event: string, fields?: Record<string, unknown>) => void
-  pageHeaders: (nonce: string, turnstile: boolean, googleAuth?: boolean) => Record<string, string>
-}
-
-export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>, deps: GasolinerasDeps): void {
-  const { loadSnapshot, genNonce, MUNI_INDEX_TTL, slog, pageHeaders } = deps
+export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
 
   // Canonicalizamos `/gasolineras` (sin barra) → `/gasolineras/` para evitar
   // duplicado SEO. Usamos 301 porque es permanente.

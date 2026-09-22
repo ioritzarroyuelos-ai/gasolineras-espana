@@ -1410,9 +1410,15 @@ function showUpdateToast(newSW) {
       // fusiona favoritas (union) y refresca la UI; el badge refleja el estado.
       if (typeof enableSync === 'function') {
         setSyncBadge('Sincronizando…');
-        enableSync().then(function (ok) {
-          if (ok) { try { renderFavs(); } catch (_) {} }
-          setSyncBadge(ok ? 'Sincronizado' : 'Sesión iniciada');
+        enableSync().then(function (state) {
+          if (state === 'ok' || state === 'pending') { try { renderFavs(); } catch (_) {} }
+          setSyncBadge(
+            state === 'ok'      ? 'Sincronizado'
+          : state === 'pending' ? 'Cambios pendientes'
+          : state === 'expired' ? 'Sesión caducada'
+          : state === 'error'   ? 'Sin conexión'
+          :                       'Sesión iniciada'
+          );
         });
       }
     } else {

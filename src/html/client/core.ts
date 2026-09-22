@@ -568,57 +568,81 @@ function setFavs(list) {
 }
 
 // ---- SINCRONIZACION entre dispositivos (Ship 29: sobre el login de Google) ----
-// El servidor guarda por usuario en KV (u:<sub>:<clave>). Al iniciar sesion
-// tiramos (pull) y fusionamos con lo local; en cada cambio local empujamos
-// (push). Favoritas = UNION por id (nunca se pierde una favorita de ningun
-// dispositivo). Perfil = ultimo en escribir gana. Sin login, _syncOn=false y
-// todo sigue viviendo solo en localStorage (comportamiento previo).
+// Servidor: guarda por usuario en KV (u:<sub>:<clave>). Al iniciar sesion se
+// TIRA (pull) y se fusiona; cada cambio local EMPUJA (push) esa clave.
+// Favoritas = UNION por id: nunca se pierde una favorita.
+// LIMITACION conocida (v1): al ser union, QUITAR una favorita no se propaga de
+// forma fiable a otros dispositivos (puede reaparecer), y dos altas simultaneas
+// pueden pisarse (last-write-wins de la lista completa; KV es eventualmente
+// consistente). Un modelo por-item con tombstones/version + coordinacion (p.ej.
+// Durable Objects) seria v2. _syncGen invalida respuestas tardias tras
+// logout/cambio de cuenta para no escribir datos de otra sesion.
 var SYNC_KEYS = ['gs_favs_v1', 'gs_profile_v1'];
 var _syncOn = false;
+var _syncGen = 0;
 function _lsGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+// Empuja UNA clave. Devuelve Promesa<bool> (ok). Un 401 corta la sesion de sync.
 function syncPush(key) {
-  if (!_syncOn || SYNC_KEYS.indexOf(key) < 0) return;
+  if (!_syncOn || SYNC_KEYS.indexOf(key) < 0) return Promise.resolve(false);
   var v = _lsGet(key);
-  if (v == null) return;
+  if (v == null) return Promise.resolve(false);
   var body;
-  try { body = JSON.parse(v); } catch (_) { return; }
-  fetch('/api/sync/' + encodeURIComponent(key), {
+  try { body = JSON.parse(v); } catch (_) { return Promise.resolve(false); }
+  return fetch('/api/sync/' + encodeURIComponent(key), {
     method: 'PUT', credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-  }).catch(function () {});
+  }).then(function (r) {
+    if (r && r.status === 401) { disableSync(); return false; }
+    return !!(r && r.ok);
+  }).catch(function () { return false; });
 }
 function _mergeFavsById(localList, remoteList) {
-  var seen = {}, out = [];
+  var seen = Object.create(null), out = [];
   function add(list) {
     if (!Array.isArray(list)) return;
     for (var i = 0; i < list.length; i++) {
       var f = list[i];
-      if (f && f.id && !seen[f.id]) { seen[f.id] = 1; out.push(f); }
+      if (!f || f.id == null) continue;
+      var k = String(f.id);   // Object.create(null)+String: sin colisiones con proto ni 1 vs "1"
+      if (!seen[k]) { seen[k] = 1; out.push(f); }
     }
   }
-  add(remoteList); add(localList);
+  add(localList); add(remoteList); // local primero: conservamos metadatos propios
   return out;
 }
-function syncPull() {
+// gen: la generacion con la que arranco; si la sesion cambia, se descarta.
+function syncPull(gen) {
   return fetch('/api/sync', { credentials: 'same-origin', cache: 'no-store' })
-    .then(function (r) { return (r && r.ok) ? r.json() : null; })
-    .then(function (j) {
-      if (!j || !j.data) return false;
-      var data = j.data;
-      if (data['gs_favs_v1']) {
-        // setFavs re-empuja la union -> ambos dispositivos convergen.
-        setFavs(_mergeFavsById(getFavs(), data['gs_favs_v1']));
-      }
-      if (data['gs_profile_v1'] && _lsGet('gs_profile_v1') == null) {
-        try { localStorage.setItem('gs_profile_v1', JSON.stringify(data['gs_profile_v1'])); } catch (_) {}
-      }
-      return true;
+    .then(function (r) {
+      if (r && r.status === 401) { disableSync(); return 'expired'; }
+      return (r && r.ok) ? r.json() : null;
     })
-    .catch(function () { return false; });
+    .then(function (j) {
+      if (j === 'expired') return 'expired';
+      if (gen !== _syncGen) return 'stale';  // la sesion cambio: no aplicamos nada
+      var data = (j && j.data) || {};
+      var favsFromServer = !!data['gs_favs_v1'];
+      if (favsFromServer) setFavs(_mergeFavsById(getFavs(), data['gs_favs_v1'])); // setFavs re-empuja la union
+      if (data['gs_profile_v1']) {
+        var lp = _lsGet('gs_profile_v1');
+        if (lp == null || lp === 'null') {
+          try { localStorage.setItem('gs_profile_v1', JSON.stringify(data['gs_profile_v1'])); } catch (_) {}
+        }
+      }
+      // SUBIDA INICIAL: lo que el usuario ya tenia en local y aun no esta en la nube
+      // (primer login con cuenta vacia). Antes esto no se subia hasta el proximo cambio.
+      var pushes = [];
+      if (!favsFromServer && _lsGet('gs_favs_v1') != null) pushes.push(syncPush('gs_favs_v1'));
+      if (data['gs_profile_v1'] == null && _lsGet('gs_profile_v1') != null) pushes.push(syncPush('gs_profile_v1'));
+      return Promise.all(pushes).then(function (res) {
+        return res.length && !res.every(function (x) { return x; }) ? 'pending' : 'ok';
+      });
+    })
+    .catch(function () { return 'error'; });
 }
-function enableSync() { _syncOn = true; return syncPull(); }
-function disableSync() { _syncOn = false; }
+function enableSync() { _syncGen++; var gen = _syncGen; _syncOn = true; return syncPull(gen); }
+function disableSync() { _syncGen++; _syncOn = false; }
 function isFav(id) {
   var favs = getFavs();
   for (var i = 0; i < favs.length; i++) if (favs[i].id === id) return true;

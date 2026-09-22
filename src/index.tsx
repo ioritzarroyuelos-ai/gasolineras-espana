@@ -30,23 +30,17 @@ import { signTelegramToken, verifyTelegramToken } from './lib/auth'
 import { BRAND } from './lib/brand'
 import { resumenFromPre } from './lib/gasolineras-precalculo'
 import {
-  LRU,
   validateId,
   isValidProvinciaId,
   sanitizeLatLng,
   originAllowed,
   canonicalSite,
-  SlidingWindowLimiter,
   tokensEqualConstTime,
   classifyPriceVsCycle,
 } from './lib/pure'
 import { APP_VERSION } from './lib/version'
-import {
-  MinistryResponseSchema,
-  MunicipioListSchema,
-  ProvinciaListSchema,
-  safeValidate,
-} from './lib/schemas'
+// LRU/SlidingWindowLimiter y los schemas del Ministerio (MinistryResponseSchema…)
+// se movieron a src/lib/runtime.ts junto con las cachés, limiters y proxiedFetch.
 import { PROVINCIAS, provinciaBySlug } from './lib/provincias'
 // Las rutas /gasolineras/* viven en src/routes/gasolineras.ts (junto con buildPage,
 // los builders y municipiosInProvincia/findMunicipioBySlug/statsForMunicipio/
@@ -68,17 +62,22 @@ import {
   hydrateDedupe,
 } from './lib/history'
 
-type StationRecord = Record<string, string> & {
-  IDProvincia?: string
-  IDMunicipio?: string
-}
-// Exportado para que src/routes/gasolineras.ts (y otros sub-modulos) tipen el
-// snapshot sin redefinirlo. Import type-only alli -> sin ciclo en runtime.
-export type MinistryResponse = {
-  Fecha?: string
-  ListaEESSPrecio?: StationRecord[]
-  [k: string]: unknown
-}
+// Infra compartida del servidor (logger, cachés, fetch al Ministerio, snapshots,
+// histórico estático, CORS/host, rate-limiters, nonce/CSP, cabeceras) vive en
+// src/lib/runtime.ts (B1). Los tipos del snapshot se definen alli; se re-exportan
+// para que los módulos de ruta sigan usando import type { MinistryResponse } from ../index.
+import {
+  slog, srvCache, snapshotCache, geoCache, buildUserAgent, cachedJson, proxiedFetch,
+  loadSnapshot, filterStations, incrementIsoDate, maxIsoDate,
+  loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
+  ALLOWED_ORIGINS, resolveHost, resolveScheme,
+  apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
+  exportLimiter, reportLimiter, vitalsLimiter, clientKey,
+  genNonce, pageHeaders,
+  SNAPSHOT_STALE_MS, MUNI_INDEX_TTL, GEO_TTL_FRESH, GEO_TTL_STALE, GEO_UPSTREAM_TIMEOUT,
+} from './lib/runtime'
+import type { MinistryResponse, StationRecord } from './lib/runtime'
+export type { MinistryResponse, StationRecord }
 type MunicipiosSnapshot = {
   Fecha?: string
   Data: Record<string, Array<{ IDMunicipio: string; Municipio: string; IDProvincia: string }>>
@@ -173,390 +172,9 @@ type KVNamespace = {
 
 const app = new Hono<{ Bindings: Env }>()
 
-// Threshold del watchdog: si el snapshot del Ministerio es mas viejo que esto,
-// /api/health devuelve 503 para activar alertas de monitorizacion.
-const SNAPSHOT_STALE_MS = 24 * 60 * 60 * 1000  // 24 horas
-
-const MINISTRY = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes'
-
 // APP_VERSION se importa desde ./lib/version para romper el ciclo de imports
 // con ./html/shell. Se expone via /api/health.
 export { APP_VERSION }
-
-// ---- LOGGER estructurado (captado por Cloudflare Logpush / `wrangler tail`) ----
-type LogLevel = 'info' | 'warn' | 'error'
-function slog(level: LogLevel, event: string, fields: Record<string, unknown> = {}): void {
-  const payload = {
-    ts: new Date().toISOString(),
-    level,
-    event,
-    version: APP_VERSION,
-    ...fields,
-  }
-  // JSON de una sola linea → buscable con Logpush.
-  try {
-    const line = JSON.stringify(payload)
-    if (level === 'error') console.error(line)
-    else if (level === 'warn') console.warn(line)
-    else console.log(line)
-  } catch {
-    console.log('log-serialize-error', event)
-  }
-}
-
-// ---- LRU CACHE con tope (evita DoS por memoria) ----
-const srvCache      = new LRU<unknown>(200)
-const snapshotCache = new LRU<unknown>(10)
-const geoCache      = new LRU<unknown>(500)      // Nominatim: cache agresivo, las direcciones cambian poco
-const SRV_TTL_FRESH = 4 * 60 * 60 * 1000         // 4h: datos fresquisimos
-const SRV_TTL_STALE = 30 * 24 * 60 * 60 * 1000   // 30d: ultimo recurso en memoria
-const SNAP_TTL      = 10 * 60 * 1000             // 10 min en memoria, luego re-leer del asset
-// TTL de los indices de municipios (autocompletado de farmacias/itv/tiempo). Lo
-// consumen los registerXRoutes (src/routes/*) via deps.
-const MUNI_INDEX_TTL = 30 * 60 * 1000
-const GEO_TTL_FRESH = 60 * 60 * 1000             // 1h geocode fresco
-const GEO_TTL_STALE = 7  * 24 * 60 * 60 * 1000   // 7d si Nominatim cae
-const GEO_UPSTREAM_TIMEOUT = 5000                 // 5s corte al upstream para evitar slowloris
-// User-Agent identificable exigido por la Nominatim Usage Policy.
-// https://operations.osmfoundation.org/policies/nominatim/
-// El hostname se construye en runtime desde el request para evitar hardcode del
-// deployment URL.
-function buildUserAgent(host: string): string {
-  const h = (host && /^[a-zA-Z0-9.-]+$/.test(host)) ? host : 'pages.dev'
-  return 'gasolineras-espana/' + APP_VERSION + ' (+https://' + h + '/privacidad)'
-}
-
-// ---- CLOUDFLARE CACHE API (cache global compartido entre instancias) ----
-// El LRU in-memory es por-instancia: cada Worker arranca vacio. El Cache API
-// sobrevive entre fries y es compartido dentro de un colo → absorbe el grueso
-// del trafico sin golpear ni a la LRU ni al upstream. Se combina con el LRU:
-// LRU (instance-local, microsegundos) → Cache (colo, milisegundos) → upstream.
-// Las claves son URLs sinteticas para no chocar con recursos reales.
-function cfCache(): Cache | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c = (caches as any)?.default
-    return c && typeof c.match === 'function' ? c : null
-  } catch { return null }
-}
-
-async function cachedJson<T>(key: string, ttlSec: number, fn: () => Promise<T>): Promise<T> {
-  const cache = cfCache()
-  const cacheUrl = 'https://cache.internal/' + key
-  const req = new Request(cacheUrl, { method: 'GET' })
-  if (cache) {
-    try {
-      const hit = await cache.match(req)
-      if (hit) {
-        const body = await hit.json() as T
-        return body
-      }
-    } catch { /* cache miss silencioso */ }
-  }
-  const data = await fn()
-  if (cache) {
-    try {
-      const res = new Response(JSON.stringify(data), {
-        headers: {
-          'Content-Type': 'application/json',
-          'Cache-Control': 'public, max-age=' + ttlSec,
-        },
-      })
-      // No esperamos al put: respondemos al cliente ya y poblamos cache en background.
-      cache.put(req, res).catch(() => {})
-    } catch { /* put fallido: siguiente request lo intentara de nuevo */ }
-  }
-  return data
-}
-
-// Selecciona el schema zod apropiado segun la URL del Ministerio. Si no casa
-// con ninguno conocido devuelve null → salta validacion (datos pasan tal cual
-// pero no se validan, ej: endpoints nuevos que aun no hemos modelado).
-function schemaFor(path: string) {
-  if (path.includes('EstacionesTerrestres/'))       return MinistryResponseSchema
-  if (path.includes('MunicipiosPorProvincia/'))     return MunicipioListSchema
-  if (path.includes('Provincias'))                  return ProvinciaListSchema
-  return null
-}
-
-async function proxiedFetch(path: string): Promise<unknown> {
-  const cached = srvCache.get(path)
-  if (cached && Date.now() - cached.ts < SRV_TTL_FRESH) return cached.data
-
-  let lastErr: unknown
-  const t0 = Date.now()
-  for (let i = 0; i < 3; i++) {
-    try {
-      // Timeout duro: el Ministerio a veces se cuelga y no queremos que bloquee
-      // el Worker indefinidamente (slowloris / agotar CPU time limit).
-      const res = await fetch(MINISTRY + path, { signal: AbortSignal.timeout(8000) })
-      if (!res.ok) { lastErr = new Error('Ministry ' + res.status); continue }
-      const raw = await res.json()
-
-      // Validacion de esquema en la frontera. Fail-open pero con telemetria:
-      // si el Ministerio cambia el shape, lo detectamos en los logs y podemos
-      // reaccionar antes de que llegue basura a la UI. No bloqueamos la
-      // respuesta para no rompernos por cambios menores (campos nuevos).
-      const schema = schemaFor(path)
-      if (schema) {
-        const parsed = safeValidate(schema, raw)
-        if (!parsed.ok) {
-          slog('error', 'ministry.schema_drift', { path, issues: parsed.issues })
-          // NO cacheamos NI devolvemos datos invalidos (antes caian abajo y se
-          // hacia srvCache.set(raw)+return raw -> se publicaba y cacheaba basura).
-          // Preferimos cache stale valida; si no hay, marcamos el intento como
-          // fallo: se reintenta y, si todo falla, el handler cae al snapshot
-          // estatico (ultimo dato valido conocido).
-          if (cached && Date.now() - cached.ts < SRV_TTL_STALE) return cached.data
-          lastErr = new Error('ministry schema_drift on ' + path)
-          continue
-        }
-      }
-
-      srvCache.set(path, { data: raw, ts: Date.now() })
-      slog('info', 'ministry.ok', { path, attempt: i + 1, ms: Date.now() - t0 })
-      return raw
-    } catch (e) {
-      lastErr = e
-    }
-  }
-
-  if (cached && Date.now() - cached.ts < SRV_TTL_STALE) {
-    slog('warn', 'ministry.stale', { path, ageMs: Date.now() - cached.ts })
-    return cached.data
-  }
-  slog('error', 'ministry.fail', { path, err: String(lastErr), ms: Date.now() - t0 })
-  throw lastErr || new Error('Ministry API unreachable')
-}
-
-// ---- SNAPSHOT ESTATICO (fallback cuando el Ministerio esta caido) ----
-async function loadSnapshot<T>(origin: string, file: string, assets?: { fetch: (req: Request) => Promise<Response> }): Promise<T | null> {
-  const hit = snapshotCache.get(file)
-  if (hit && Date.now() - hit.ts < SNAP_TTL) return hit.data as T
-  try {
-    const url = new URL('/data/' + file, origin).toString()
-    const req = new Request(url)
-    const res = assets ? await assets.fetch(req) : await fetch(req)
-    if (!res.ok) return null
-    const data = await res.json() as T
-    snapshotCache.set(file, { data, ts: Date.now() })
-    return data
-  } catch {
-    return null
-  }
-}
-
-function filterStations(snapshot: MinistryResponse | null, predicate: (s: StationRecord) => boolean): MinistryResponse | null {
-  if (!snapshot || !Array.isArray(snapshot.ListaEESSPrecio)) return null
-  return { ...snapshot, ListaEESSPrecio: snapshot.ListaEESSPrecio.filter(predicate) }
-}
-
-// ---- HISTORICO ESTATICO (servido por CDN, al dia por el bot) ----
-// Forma del archivo public/data/history/{provincia}.json. Lo genero
-// scripts/backfill-static-history.mjs (un año, abril de 2026) y desde septiembre
-// de 2026 lo alarga con cada foto de precios scripts/actualiza-historico-estatico.mjs
-// (formato en scripts/lib/historico-estatico.mjs). Con `to` = hoy, los endpoints
-// de historico no piden nada a D1: leer la serie de D1 costaba millones de filas
-// al dia y agoto el cupo del plan gratuito. El dedupe consecutivo (solo cambios
-// de precio) reduce ~5-10x el tamaño respecto a guardar un punto por dia: una
-// estacion media tiene ~50 cambios/año en lugar de 365 puntos.
-type StaticHistoryFile = {
-  v: number
-  provincia_id: string
-  from: string                    // YYYY-MM-DD primer dia
-  to: string                      // YYYY-MM-DD ultimo dia incluido
-  days: number
-  generated_at: string
-  // stations[stationId][fuelCode] = [[date, cents], ...] solo en cambios.
-  stations: Record<string, Record<string, Array<[string, number]>>>
-}
-type StaticMedianFile = {
-  v: number
-  provincia_id: string
-  from: string
-  to: string
-  days: number
-  generated_at: string
-  // median[fuelCode] = [[date, cents], ...] (sin dedupe — son <365 puntos por fuel).
-  median: Record<string, Array<[string, number]>>
-}
-
-// Suma 1 dia a una fecha YYYY-MM-DD. Lo hacemos via Date.UTC para no caer en
-// quirks de timezone (el endpoint razona siempre en UTC, igual que la columna
-// `date` de price_history).
-function incrementIsoDate(iso: string): string {
-  const d = new Date(iso + 'T00:00:00Z')
-  d.setUTCDate(d.getUTCDate() + 1)
-  return d.toISOString().slice(0, 10)
-}
-
-// Devuelve la fecha ISO mayor de las dos (YYYY-MM-DD compara bien como texto).
-function maxIsoDate(a: string, b: string): string {
-  return a >= b ? a : b
-}
-
-// Carga el JSON estatico de la provincia a la que pertenece `stationId` y
-// devuelve solo sus series dedupeadas (sin hidratar — el caller decide rango).
-// Devuelve null si no encontramos la provincia o no hay archivo estatico.
-async function loadStaticHistoryForStation(
-  origin: string,
-  stationId: string,
-  assets?: { fetch: (req: Request) => Promise<Response> },
-): Promise<{ to: string; from: string; byFuel: Record<string, Array<[string, number]>> } | null> {
-  // 1) Resolvemos la provincia desde stations.json (snapshot estatico ya
-  // cacheado en memoria por el resto de endpoints; coste marginal nulo).
-  const snap = await loadSnapshot<MinistryResponse>(origin, 'stations.json', assets)
-  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) return null
-  const station = snap.ListaEESSPrecio.find(s => s['IDEESS'] === stationId)
-  if (!station || !station.IDProvincia || !/^\d{1,2}$/.test(station.IDProvincia)) return null
-  const provKey = String(station.IDProvincia).padStart(2, '0')
-
-  // 2) Cargamos history/{provKey}.json. Si no existe (provincia sin backfill,
-  // o backfill todavia no aplicado), devolvemos null — el endpoint cae al
-  // comportamiento solo-D1.
-  const histFile = await loadSnapshot<StaticHistoryFile>(origin, 'history/' + provKey + '.json', assets)
-  if (!histFile || !histFile.stations || !histFile.stations[stationId]) return null
-  return {
-    to: histFile.to,
-    from: histFile.from,
-    byFuel: histFile.stations[stationId],
-  }
-}
-
-// Variante para la mediana provincial — carga el archivo pre-calculado.
-async function loadStaticMedianForProvince(
-  origin: string,
-  provinciaId: string,
-  fuel: string,
-  assets?: { fetch: (req: Request) => Promise<Response> },
-): Promise<{ to: string; from: string; points: Array<[string, number]> } | null> {
-  const provKey = String(provinciaId).padStart(2, '0')
-  const file = await loadSnapshot<StaticMedianFile>(origin, 'history/median/' + provKey + '.json', assets)
-  if (!file || !file.median) return null
-  const arr = file.median[fuel]
-  if (!arr) return null
-  return { to: file.to, from: file.from, points: arr }
-}
-
-// Serie diaria nacional (media de centimos y numero de estaciones por dia y
-// combustible), la deja el bot en history/national.json. La consumen la home
-// (/api/stats/national) y el observatorio (variaciones a 7/30/90 dias). Antes
-// salia de agregar ~2,1 M de filas de D1 en cada guardado, que era el gasto que
-// agotaba el cupo diario de lecturas.
-type StaticNationalFile = {
-  v: number
-  from: string
-  to: string
-  days: number
-  generated_at: string
-  // series[fuelCode] = [[date, avg_cents, n], ...] un punto por dia.
-  series: Record<string, Array<[string, number, number]>>
-}
-
-// Devuelve la serie nacional como filas {date, fuel_code, avg_cents, n} en orden
-// de fecha, que es la forma que ya esperan computeNationalStats() y
-// calculaVariaciones(). null si el fichero falta o no valida: los llamantes
-// degradan (home sin bloque de precios, observatorio sin variaciones) en vez de
-// caer a D1, que es justo lo que no queremos.
-async function loadStaticNational(
-  origin: string,
-  assets?: { fetch: (req: Request) => Promise<Response> },
-): Promise<FilaHistorico[] | null> {
-  const file = await loadSnapshot<StaticNationalFile>(origin, 'history/national.json', assets)
-  if (!file || file.v !== 1 || !file.series || typeof file.series !== 'object') return null
-  const rows: FilaHistorico[] = []
-  for (const fuel of Object.keys(file.series)) {
-    const serie = file.series[fuel]
-    if (!Array.isArray(serie)) continue
-    for (const p of serie) {
-      if (!Array.isArray(p) || typeof p[0] !== 'string' || typeof p[1] !== 'number') continue
-      rows.push({ date: p[0], fuel_code: fuel, avg_cents: p[1], n: typeof p[2] === 'number' ? p[2] : undefined })
-    }
-  }
-  if (!rows.length) return null
-  rows.sort((a, b) => a.date.localeCompare(b.date))
-  return rows
-}
-
-// ---- CORS / ANTI-HOTLINK ----
-// El allowlist explicito quedaba redundante con la regla de originAllowed() que
-// acepta cualquier subdominio *.pages.dev (dondoe vive el deploy) + localhost
-// (dev) + el propio host. Mantenerlo vacio deja la logica canonica en pure.ts y
-// evita hardcodear la URL de produccion en el codigo (todo derivable del request).
-const ALLOWED_ORIGINS: ReadonlySet<string> = new Set<string>()
-
-// Resuelve el hostname del request. Priorizamos el header Host (Cloudflare lo
-// inyecta siempre) y caemos a parsear c.req.url. El resultado se usa para
-// construir URLs canonicas (robots, sitemap) sin hardcodear el
-// dominio de produccion.
-function resolveHost(c: { req: { header: (h: string) => string | undefined; url: string } }): string {
-  const h = c.req.header('host')
-  if (h && /^[a-zA-Z0-9.:\-]+$/.test(h)) return h
-  try { return new URL(c.req.url).host } catch { return 'localhost' }
-}
-function resolveScheme(c: { req: { header: (h: string) => string | undefined; url: string } }): string {
-  const proto = c.req.header('x-forwarded-proto')
-  if (proto === 'http' || proto === 'https') return proto
-  try { return new URL(c.req.url).protocol.replace(':', '') || 'https' } catch { return 'https' }
-}
-
-// ---- RATE LIMITING ----
-// Protege endpoints de consumo (evita que alguien martillee y agote el free tier
-// de Workers). En memoria por instancia de Worker: no es distribuido, pero anade
-// friccion real sin depender de KV. Ingest tiene un limite mas bajo porque es
-// escritura potencial.
-const apiLimiter    = new SlidingWindowLimiter(120, 60_000)  // 120 req/min por IP
-const ingestLimiter = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min por IP
-// Geocoding hace fetch upstream a Nominatim (policy: 1 req/s global). Un atacante
-// con muchos IPs podria convertirnos en su amplificador de DDoS contra OSM, asi
-// que aqui somos mas estrictos: cache cubre el trafico normal y aun asi cada IP
-// puede pedir 15/min de cache-miss antes de ser bloqueada.
-const geoLimiter    = new SlidingWindowLimiter(15,  60_000)  // 15 req/min por IP
-// CSP report-uri: los navegadores pueden mandar muchos reports en rafaga
-// (varios por pageload si hay un XSS encadenado). Rate-limit agresivo para
-// evitar DoS via spam de informes desde navegador malicioso.
-const cspLimiter    = new SlidingWindowLimiter(30,  60_000)  // 30 reports/min por IP
-// Client errors: el navegador deduplica client-side a 10s por fingerprint, asi
-// que este limite sirve solo para cortar IPs maliciosas que intentan llenar la
-// tabla D1 con basura. 20/min es generoso para un usuario real (imposible
-// provocar 20 errores distintos en un minuto sin romper algo serio).
-const errLimiter    = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min por IP
-// Historico de precios: cada popup de gasolinera hace 1 call. Un usuario que
-// pasea el mapa puede abrir 10 popups en un minuto tranquilamente; 60 deja
-// margen ancho y aun asi frena scrapers que intenten paginar todas las
-// gasolineras (11k estaciones / 60 req-min = 3 horas de scrapeo visible).
-const histLimiter   = new SlidingWindowLimiter(60,  60_000)  // 60 req/min por IP
-// Export CSV: payload grande (hasta ~12k filas, varios MB sin filtros). Un
-// periodista / blogger / investigador lo descarga una vez al dia — 6/min es
-// generoso para uso legitimo y hace inviable el scraping continuo.
-const exportLimiter = new SlidingWindowLimiter(6,   60_000)  // 6 req/min por IP
-// Ship 8: reportes de precio. 10/min/IP — margen holgado para un usuario
-// legitimo reportando varias estaciones de una ruta o reintentando tras errores
-// de validacion (formato de precio, etc). Bajo suficiente para frenar un bot
-// que intente inflar reports sobre una sola estacion. La dedupe aplicativa
-// (mismo ip_hash+ideess+fuel en 1h → 409) complementa este limite: el primer
-// reporte pasa, los siguientes sobre la misma (estacion,fuel) se rechazan
-// antes de tocar DB.
-// Historia: empezamos con 5/min, pero humanos rellenando un form y corrigiendo
-// errores de formato (coma vs punto, locale ES) agotaban la ventana en 2-3
-// reintentos y quedaban bloqueados con un mensaje confuso. 10/min da oxigeno.
-const reportLimiter = new SlidingWindowLimiter(10,  60_000)  // 10 reports/min por IP
-// Ship 12: Real User Monitoring (Web Vitals LCP/INP/CLS/TTFB/FCP). El cliente
-// manda UN beacon por sesion (en visibilitychange=hidden) con los 5 valores
-// agregados. Un usuario normal no genera > 1-2 beacons / hora; 30/min deja
-// margen para SPAs que reinstalen el SW o abran multiples tabs y frena bots
-// que intenten inflar la telemetria sin impactar UX real.
-const vitalsLimiter = new SlidingWindowLimiter(30,  60_000)  // 30 req/min por IP
-
-function clientKey(c: { req: { header: (h: string) => string | undefined } }): string {
-  // En Cloudflare Workers, `cf-connecting-ip` lo inyecta el edge CF y no se
-  // puede spoofar desde el cliente — es la fuente autoritativa de la IP del
-  // peticionario. `x-forwarded-for` y `x-real-ip` SI son spoofables en un
-  // request directo, asi que los omitimos como fallback: preferimos rate-limitar
-  // contra 'unknown' (bucket compartido, mas agresivo) que dejar un bypass
-  // trivial si alguna vez el Worker se sirviera fuera del edge CF.
-  return c.req.header('cf-connecting-ip') || 'unknown'
-}
 
 app.use('/api/*', async (c, next) => {
   const origin = c.req.header('origin') || ''
@@ -587,98 +205,6 @@ app.use('/api/*', async (c, next) => {
     c.header('Vary', 'Origin')
   }
 })
-
-// ---- CSP con nonce por request ----
-function genNonce(): string {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  let s = ''
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
-  return btoa(s)
-}
-
-function buildCsp(nonce: string, turnstile = false, googleAuth = false): string {
-  // script-src: ya no necesitamos 'https://unpkg.com' — Leaflet, MarkerCluster,
-  // leaflet.heat, MapLibre GL y el bridge leaflet-maplibre-gl se sirven desde
-  // /static/vendor/map/* (mismo origen, cae bajo 'self'). Adblockers que
-  // bloquean unpkg.com y redes corporativas que lo filtran ya no pueden
-  // tumbar el mapa. Version instalada en public/static/vendor/map/manifest.json.
-  const scriptSrc  = ["'self'", "'nonce-" + nonce + "'"]
-  // style-src con nonce + allowlist de CDNs. Ya NO llevamos 'unsafe-inline':
-  //   - Los <style> inline (shell.ts / legalPage) emiten nonce="${nonce}" que
-  //     coincide con este valor — el navegador ejecuta solo los que llevan el
-  //     nonce valido.
-  //   - Los stylesheets externos siguen permitidos por URL (jsdelivr para
-  //     FontAwesome). Los CSS del mapa (Leaflet/MarkerCluster/MapLibre) ya
-  //     salen de /static/vendor/map y caen bajo 'self'.
-  //   - Mutaciones programaticas element.style.x = valor son CSSOM y no
-  //     dependen de style-src, asi que no se rompe nada del cliente.
-  //   - No hay bloque style-src-attr — si en el futuro se necesitase permitir
-  //     style="..." inline en algun componente third-party se documentaria y
-  //     evaluaria usar 'unsafe-hashes' antes que reintroducir 'unsafe-inline'.
-  const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://cdn.jsdelivr.net']
-  const frameSrc   = ["'self'"]
-  // connect-src: sin nominatim. Todo el geocoding pasa por /api/geocode/* (mismo
-  // origen) → no expone la IP del usuario a OSM y reduce superficie de CSP.
-  const connectSrc = ["'self'"]
-  const imgSrc     = ["'self'", 'data:', 'blob:', 'https:']
-  if (turnstile) {
-    scriptSrc.push('https://challenges.cloudflare.com')
-    frameSrc.push('https://challenges.cloudflare.com')
-    connectSrc.push('https://challenges.cloudflare.com')
-  }
-  if (googleAuth) {
-    // GIS necesita cargar el SDK + embedar un iframe de login + postMessage al
-    // backend (/api/auth/google pasa por 'self', pero el SDK inicializa via
-    // accounts.google.com). Solo anadimos los hosts estrictamente necesarios.
-    scriptSrc.push('https://accounts.google.com/gsi/client')
-    frameSrc.push('https://accounts.google.com/gsi/')
-    connectSrc.push('https://accounts.google.com/gsi/')
-    styleSrc.push('https://accounts.google.com/gsi/style')
-    // Avatar del usuario sale de lh3.googleusercontent.com — img-src ya es https: asi
-    // que no hace falta anadirlo explicito, pero lo dejamos documentado.
-  }
-  // tiles.openfreemap.org sirve vector tiles, sprites y glyphs PBF para el
-  // estilo Liberty de MapLibre GL (render vectorial con toponimia name:es).
-  // Necesita estar en connect-src (fetch del style.json + /planet + /sprites/*)
-  // y en font-src (glyphs .pbf). Los tiles raster caen bajo img-src 'https:'.
-  // worker-src necesita blob: porque MapLibre crea Web Workers a partir de
-  // blob URLs (optimizacion de cold start del motor vectorial).
-  connectSrc.push('https://tiles.openfreemap.org')
-  // PNOA Maxima Actualidad (IGN): ortofoto oficial de Espana a 25 cm/px que
-  // sustituye a Esri en la vista satelite. MapLibre GL lee los tiles con
-  // fetch(), asi que el host tiene que estar en connect-src (img-src ya cubre
-  // el caso raster de Leaflet). El servicio envia Access-Control-Allow-Origin:*
-  // por lo que no hace falta proxearlo.
-  connectSrc.push('https://tms-pnoa-ma.idee.es')
-  // jsdelivr: Chrome DevTools intenta fetchear los source maps .css.map
-  // del CSS de FontAwesome (unico recurso tercero que queda). Permitirlo
-  // solo quita ruido de la consola, no amplia superficie (style-src ya
-  // limita las hojas de estilo ejecutables a este CDN).
-  connectSrc.push('https://cdn.jsdelivr.net')
-  return [
-    "default-src 'self'",
-    "script-src " + scriptSrc.join(' '),
-    "style-src " + styleSrc.join(' '),
-    "img-src 'self' data: blob: https:",
-    "font-src 'self' data: https://cdn.jsdelivr.net https://tiles.openfreemap.org",
-    "connect-src " + connectSrc.join(' '),
-    "frame-src " + frameSrc.join(' '),
-    "worker-src 'self' blob:",
-    "manifest-src 'self'",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-    "upgrade-insecure-requests",
-    // Report-uri es legacy pero aun lo usan la mayoria de navegadores; report-to
-    // requiere un header Reporting-Endpoints complementario que tambien emitimos.
-    // Cualquier violacion (XSS intentado, recurso no autorizado) llega a nuestro
-    // endpoint /api/csp-report donde se lo loguea estructuradamente.
-    "report-uri /api/csp-report",
-    "report-to csp-endpoint",
-  ].join('; ')
-}
 
 // ---- Turnstile (opcional) ----
 // Verifica un token de Cloudflare Turnstile contra la API /siteverify.
@@ -725,42 +251,6 @@ async function verifyTurnstile(
   } catch (e) {
     slog('warn', 'turnstile.error', { err: String(e) })
     return false
-  }
-}
-
-// ---- HTML pages ----
-// Headers compartidos (CSP + seguridad + preconnect). Factorizado porque los
-// usan tanto la home como las rutas provinciales.
-function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Record<string, string> {
-  return {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': buildCsp(nonce, turnstile, googleAuth),
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()',
-    // GIS abre un popup cross-origin y espera un postMessage de vuelta del
-    // opener. Con 'same-origin' el navegador desconecta window.opener -> el
-    // popup recibe null y falla. 'same-origin-allow-popups' mantiene el canal
-    // abierto solo para popups que abrimos nosotros, sin empeorar el aislamiento
-    // frente a terceros. Solo lo activamos si googleAuth esta configurado.
-    'Cross-Origin-Opener-Policy': googleAuth ? 'same-origin-allow-popups' : 'same-origin',
-    // CORP: impide que terceros embeban nuestras respuestas via <img>/<script>/
-    // etc desde otro origen. Reduce clases de side-channel como Spectre-web.
-    'Cross-Origin-Resource-Policy': 'same-origin',
-    // HSTS: pages.dev ya fuerza HTTPS pero publicamos este header para que
-    // navegadores y scanners de cumplimiento confirmen la postura. 2 anios +
-    // subdominios. Sin preload porque eso afectaria a todo pages.dev.
-    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
-    // Reporting API: el mapa de endpoints para que los navegadores envien
-    // violaciones de CSP (v3). Complementa report-uri (v2 legacy).
-    'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    'Cache-Control': 'no-store',
-    'Link': [
-      '<https://sedeaplicaciones.minetur.gob.es>; rel=preconnect',
-      '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
-      '<https://unpkg.com>; rel=preconnect; crossorigin',
-    ].join(', '),
   }
 }
 

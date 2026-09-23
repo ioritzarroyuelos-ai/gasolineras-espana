@@ -51,7 +51,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + '<img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" decoding="async" />'
     + titulo
     + '</a>'
-    + '<p class="mh-tag">Info útil de España al instante · sin registro y gratis</p>'
+    + '<p class="mh-tag">Datos oficiales de España al instante · sin registro y gratis</p>'
     + '</div>'
     + '<nav class="mh-nav" aria-label="Secciones">'
     + item('/tiempo/', 'tiempo', 'El tiempo')

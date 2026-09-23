@@ -24,7 +24,7 @@ export function buildFarmaciasPage(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/farmacias/'
-  const title = 'Farmacia de guardia en España · CercaYa'
+  const title = 'Farmacia de guardia en España · España Útil'
   const desc = 'Busca la farmacia de guardia de tu municipio: dirección, teléfono y horario. '
     + 'Datos de los Colegios Oficiales de Farmacéuticos, sin registro.'
 
@@ -35,7 +35,7 @@ export function buildFarmaciasPage(
     url: canonical,
     description: desc,
     inLanguage: 'es-ES',
-    isPartOf: { '@type': 'WebSite', name: 'CercaYa', url: origin },
+    isPartOf: { '@type': 'WebSite', name: 'España Útil', url: origin },
   }
 
   const esc = (s: string): string => s
@@ -60,20 +60,20 @@ export function buildFarmaciasPage(
 
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="es_ES" />
-  <meta property="og:site_name" content="CercaYa" />
+  <meta property="og:site_name" content="España Útil" />
   <meta property="og:title" content="${esc(title)}" />
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
   <meta property="og:image" content="${esc(origin)}/static/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="CercaYa · info útil de España al instante" />
+  <meta property="og:image:alt" content="España Útil · info útil de España al instante" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />
 
   <meta name="robots" content="index,follow,max-image-preview:large" />
-  <meta name="generator" content="CercaYa v${APP_VERSION}" />
+  <meta name="generator" content="España Útil v${APP_VERSION}" />
 
   ${jsonLdScript(jsonLd, nonce)}
 
@@ -143,7 +143,7 @@ export function buildFarmaciasPage(
   </main>
 
   <footer>
-    <div>Datos de los Colegios Oficiales de Farmacéuticos · <a href="/">CercaYa</a> · <a href="/privacidad">Privacidad</a> · v${APP_VERSION}</div>
+    <div>Datos de los Colegios Oficiales de Farmacéuticos · <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a> · v${APP_VERSION}</div>
   </footer>
 
   <script nonce="${nonce}">

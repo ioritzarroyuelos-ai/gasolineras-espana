@@ -14,7 +14,7 @@ import AxeBuilder from '@axe-core/playwright'
 test.describe('Mapa (/gasolineras/mapa)', () => {
   test('carga el shell y muestra la barra superior', async ({ page }) => {
     await page.goto('/gasolineras/mapa')
-    await expect(page).toHaveTitle(/CercaYa/i)
+    await expect(page).toHaveTitle(/España Útil/i)
 
     // Cabecera principal presente
     await expect(page.locator('#app-header')).toBeVisible()

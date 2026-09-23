@@ -113,7 +113,7 @@ export function buildGuardiaProvinciaFlatPage(
   const fr = frescuraGuardia(actualizado)
   const p = piezasFrescura(fr, provinciaName)
   const n = p.mostrarCards ? guardias.length : 0
-  const title = 'Farmacia de guardia en ' + provinciaName + (n && p.hoy ? ' hoy' : '') + ' | CercaYa'
+  const title = 'Farmacia de guardia en ' + provinciaName + (n && p.hoy ? ' hoy' : '') + ' | España Útil'
   const desc = 'Las ' + n + ' farmacias de guardia de ' + provinciaName
     + ': direccion, telefono y horario. Datos del Colegio Oficial de Farmaceuticos.'
   const fecha = fechaLegible(actualizado)
@@ -180,8 +180,8 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
   const n = p.mostrarCards ? d.guardias.length : 0
   const hoyTxt = (n && p.hoy) ? ' hoy' : ''
   const title = n
-    ? 'Farmacia de guardia en ' + d.municipioName + hoyTxt + ' | CercaYa'
-    : 'Farmacias de guardia en ' + d.municipioName + ' | CercaYa'
+    ? 'Farmacia de guardia en ' + d.municipioName + hoyTxt + ' | España Útil'
+    : 'Farmacias de guardia en ' + d.municipioName + ' | España Útil'
   const desc = n
     ? 'Farmacia' + (n > 1 ? 's' : '') + ' de guardia' + hoyTxt + ' en ' + d.municipioName +
       ' (' + d.provinciaName + '): direccion, telefono y horario. Datos del Colegio Oficial de Farmaceuticos.'
@@ -274,7 +274,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + otros
     + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmaceuticos. '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
@@ -326,7 +326,7 @@ function envoltorioIndice(nonce: string, title: string, desc: string, canonical:
     + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml('farmacias') + '<main>' + cuerpo + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmaceuticos. '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
@@ -337,7 +337,7 @@ export interface ProvinciaGuardia {
 
 // /farmacias/guardia — indice nacional de provincias con guardia.
 export function buildGuardiaIndexPage(nonce: string, provincias: ProvinciaGuardia[], canonical: string): string {
-  const title = 'Farmacias de guardia hoy en España, por provincia | CercaYa'
+  const title = 'Farmacias de guardia hoy en España, por provincia | España Útil'
   const desc = 'Consulta que farmacia esta de guardia hoy en tu municipio. '
     + 'Datos de los Colegios Oficiales de Farmaceuticos de ' + provincias.length + ' provincias.'
   const lista = provincias.map(p =>
@@ -360,7 +360,7 @@ export function buildGuardiaProvinciaPage(
 ): string {
   const fr = frescuraGuardia(actualizado)
   const p = piezasFrescura(fr, provinciaName)
-  const title = 'Farmacia de guardia en ' + provinciaName + (p.hoy ? ' hoy' : '') + ' | CercaYa'
+  const title = 'Farmacia de guardia en ' + provinciaName + (p.hoy ? ' hoy' : '') + ' | España Útil'
   const desc = 'Farmacias de guardia en los ' + municipios.length + ' municipios de '
     + provinciaName + ' con turno publicado: direccion, telefono y horario.'
   const fecha = fechaLegible(actualizado)

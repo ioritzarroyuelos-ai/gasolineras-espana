@@ -1,4 +1,4 @@
-// Portada del portal CercaYa en `/` — diseño "periódico" (Ship 28). HTML
+// Portada del portal España Útil en `/` — diseño "periódico" (Ship 28). HTML
 // estatico sin JS. Comprobamos: cabecera de marca, menú de secciones con enlace
 // a cada vertical (El tiempo, Gasolineras, Farmacias, ITV), navegación al
 // clicar, los shortcuts PWA viejos (?action=) siguen redirigiendo al mapa, sin
@@ -7,10 +7,10 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
-test.describe('Portada CercaYa (/)', () => {
+test.describe('Portada España Útil (/)', () => {
   test('cabecera de marca + menú con las 4 secciones', async ({ page }) => {
     await page.goto('/')
-    await expect(page).toHaveTitle(/CercaYa/i)
+    await expect(page).toHaveTitle(/España Útil/i)
 
     // Cabecera de periódico: H1 de la marca.
     await expect(page.getByRole('heading', { level: 1, name: /cercaya/i })).toBeVisible()

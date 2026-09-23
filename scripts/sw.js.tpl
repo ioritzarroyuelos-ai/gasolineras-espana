@@ -30,7 +30,7 @@ const API_CACHE_MAX = 24;
 // porque pesa y no justifica autohost por ahora.
 const STATIC_ASSETS = [
   // Ship 26: la home del mapa pasó de `/` a `/gasolineras/` en preparación
-  // para el portal CercaYa. Precacheamos ambas: `/gasolineras/` es el shell
+  // para el portal España Útil. Precacheamos ambas: `/gasolineras/` es el shell
   // real, `/` es el redirect 301 (Response opaca al Cache API pero la
   // guardamos igualmente como offline-safety-net).
   '/gasolineras/',

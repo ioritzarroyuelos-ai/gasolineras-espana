@@ -93,7 +93,7 @@ export function buildPage(
   // Pathname progresivo: /gasolineras/ → /gasolineras/<prov> → /gasolineras/<prov>/<mun>.
   // La URL canonica siempre refleja el nivel mas fino disponible.
   // Ship 26: la raíz del mapa pasó de `/` a `/gasolineras/` — `/` redirige 301
-  // al portal CercaYa (aún futuro), así que la canónica apunta al nuevo root.
+  // al portal España Útil (aún futuro), así que la canónica apunta al nuevo root.
   let pathname = opts.mapTool ? '/gasolineras/mapa' : '/gasolineras/'
   if (seo?.provinciaSlug) pathname = '/gasolineras/' + seo.provinciaSlug
   if (seo?.provinciaSlug && seo?.municipioSlug) pathname = '/gasolineras/' + seo.provinciaSlug + '/' + seo.municipioSlug

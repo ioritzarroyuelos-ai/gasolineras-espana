@@ -33,7 +33,7 @@ const APP_VERSION = vm[1]
 // BRAND para el console.info (mismo texto que el orquestador viejo).
 const brandTs = readFileSync(resolve(ROOT, 'src', 'lib', 'brand.ts'), 'utf8')
 const bm = brandTs.match(/BRAND\s*=\s*'([^']+)'/)
-const BRAND = bm ? bm[1] : 'CercaYa'
+const BRAND = bm ? bm[1] : 'España Útil'
 
 const ORDER = ['core.js', 'map.js', 'list.js', 'ui.js', 'features.js']
 const parts = ORDER.map(f => {

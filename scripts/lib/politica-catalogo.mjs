@@ -184,3 +184,24 @@ export function normSiglas(s) {
 export function colorPartido(siglas) {
   return COLORES[normSiglas(siglas)] || DEFECTO
 }
+
+// Orden aproximado en el eje izquierda→derecha (menor = más a la izquierda), para
+// pintar la barra de escaños como un hemiciclo. Es una convención (los partidos
+// nacionalistas se colocan por su bloque habitual); los no listados van al centro.
+const ORDEN_IDEOLOGICO = {
+  CUP: 2, ANOVA: 3, EHBILDU: 5, BILDU: 5, IU: 7, IZQUIERDAUNIDA: 7,
+  PODEMOS: 9, UP: 9, UNIDASPODEMOS: 9, ADELANTEANDALUCIA: 10, PORANDALUCIA: 11,
+  SUMAR: 12, COMPROMIS: 13, MM: 14, MASMADRID: 14, MASPAIS: 14, BNG: 16, ERC: 18,
+  PSOE: 30, PSC: 30, PSDEG: 30, PSPV: 30, PSE: 30, PSOEA: 30, PSN: 30,
+  PRC: 40, PNV: 42, EAJPNV: 42, GBAI: 43, JUNTS: 45, PDECAT: 45, CC: 48, CCA: 48, NCA: 48, FORO: 50,
+  CS: 55, UPN: 60, PAR: 61,
+  PP: 65,
+  VOX: 80, SALF: 85,
+}
+const ORDEN_DEFECTO = 50
+
+// Devuelve la posición izquierda→derecha de una candidatura (menor = izquierda).
+export function ordenIdeologico(siglas) {
+  const k = normSiglas(siglas)
+  return ORDEN_IDEOLOGICO[k] != null ? ORDEN_IDEOLOGICO[k] : ORDEN_DEFECTO
+}

@@ -17,3 +17,4 @@ export const ELECCIONES: EleccionCatalogo[]
 export function eleccionPorId(id: string): EleccionCatalogo | undefined
 export function normSiglas(s: string): string
 export function colorPartido(siglas: string): string
+export function ordenIdeologico(siglas: string): number

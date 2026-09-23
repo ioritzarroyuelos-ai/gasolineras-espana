@@ -11,7 +11,7 @@
 
 import type { EleccionFile, IndexEntry, Sondeo, Candidatura } from '../lib/politica-schemas'
 import { calculaCambio, type Cambio } from '../lib/politica'
-import { colorPartido, type EleccionCatalogo } from '../../scripts/lib/politica-catalogo.mjs'
+import { colorPartido, ordenIdeologico, type EleccionCatalogo } from '../../scripts/lib/politica-catalogo.mjs'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
@@ -263,7 +263,10 @@ function deltaHtml(c: Cambio): string {
 // color por clase. El total y la mayoría se calculan sobre los escaños de ESA
 // elección (no sobre la cámara futura), para que la barra sea coherente.
 function barraResultado(file: EleccionFile, colores: Map<string, { siglas: string; color: string }>): string {
-  const orden = [...file.referencia.escanos].filter((r) => r.escanos > 0).sort((a, b) => b.escanos - a.escanos)
+  // Orden izquierda→derecha (hemiciclo); a igualdad, el de más escaños primero.
+  const sig = (id: string) => colores.get(id)?.siglas || id
+  const orden = [...file.referencia.escanos].filter((r) => r.escanos > 0)
+    .sort((a, b) => ordenIdeologico(sig(a.candidaturaId)) - ordenIdeologico(sig(b.candidaturaId)) || b.escanos - a.escanos)
   if (!orden.length) return ''
   const total = orden.reduce((a, r) => a + r.escanos, 0)
   if (total <= 0) return ''
@@ -428,10 +431,13 @@ function graficaEvolucionSvg(file: EleccionFile, topIds: string[], colores: Map<
     const xx = x(Math.min(Math.max(t, t0), t1))
     svg += '<text x="' + xx.toFixed(1) + '" y="' + (H - 8) + '" font-size="9.5" fill="#94a3b8" text-anchor="middle">' + yr + '</text>'
   }
-  // Línea + puntos por partido
+  // Línea + puntos por partido. Cada punto lleva un <title> (tooltip nativo del
+  // navegador, sin JS ni CSP): partido, encuestadora, fecha, escaños y %.
   for (const id of topIds) {
-    const color = colores.get(id)?.color || '#8a8f98'
-    const pts: Array<[number, number]> = []
+    const info = colores.get(id)
+    const color = info?.color || '#8a8f98'
+    const siglas = info?.siglas || id
+    const pts: Array<{ x: number; y: number; title: string }> = []
     for (const s of dated) {
       const d = s.datos.find((x2) => x2.candidaturaId === id)
       if (!d) continue
@@ -439,15 +445,22 @@ function graficaEvolucionSvg(file: EleccionFile, topIds: string[], colores: Map<
       if (v == null) continue
       const t = Date.parse(s.campoFin! + 'T00:00:00Z')
       if (Number.isNaN(t)) continue
-      pts.push([x(t), y(v)])
+      const escStr = typeof d.escanos === 'object' && d.escanos ? d.escanos.min + '–' + d.escanos.max : String(seatVal(d.escanos))
+      const title = esc(siglas + ' · ' + s.empresa + (s.comitente ? '/' + s.comitente : '')
+        + ' · ' + (s.fechaTexto || fmtFecha(s.campoFin)) + ' · ' + escStr + ' escaños'
+        + (d.pct != null ? ' · ' + d.pct.toFixed(1) + '%' : ''))
+      pts.push({ x: x(t), y: y(v), title })
     }
     if (pts.length < 1) continue
-    pts.sort((a, b) => a[0] - b[0])
+    pts.sort((a, b) => a.x - b.x)
     if (pts.length >= 2) {
-      const poly = pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ')
-      svg += '<polyline points="' + poly + '" fill="none" stroke="' + esc(color) + '" stroke-width="1.4" opacity="0.5" stroke-linejoin="round" />'
+      const poly = pts.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ')
+      svg += '<polyline points="' + poly + '" fill="none" stroke="' + esc(color) + '" stroke-width="1.4" opacity="0.45" stroke-linejoin="round" />'
     }
-    for (const p of pts) svg += '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.3" fill="' + esc(color) + '" opacity="0.9" />'
+    for (const p of pts) {
+      svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + esc(color) + '" opacity="0.9">'
+        + '<title>' + p.title + '</title></circle>'
+    }
   }
   svg += '</svg></div>'
   return svg

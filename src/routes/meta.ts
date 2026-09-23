@@ -18,6 +18,7 @@ import {
   type GuardiasFile,
 } from '../lib/guardias'
 import type { MunicipioLista } from '../../scripts/lib/tiempo.mjs'
+import { ELECCIONES } from '../../scripts/lib/politica-catalogo.mjs'
 
 type SnapshotMeta = { fetchedAt?: string; ministryDate?: string; stationCount?: number; source?: string }
 
@@ -135,6 +136,17 @@ app.get('/sitemap.xml', async c => {
   // municipio viven en sitemap-tiempo.xml aparte (carga tiempo/municipios.json,
   // 1,5 MB — no queremos ese peso en el sitemap principal).
   entries.push(`  <url><loc>${base}/tiempo/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+
+  // Política: hub + índice de autonómicas + una URL por elección (generales,
+  // europeas y 19 territoriales). Vienen del catálogo (existen siempre, aunque
+  // aún no haya sondeos). changefreq semanal: el contenido cambia con los sondeos.
+  entries.push(`  <url><loc>${base}/politica/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`)
+  entries.push(`  <url><loc>${base}/politica/autonomicas/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`)
+  for (const e of ELECCIONES) {
+    const ruta = e.tipo === 'autonomica' ? `/politica/autonomicas/${e.id}` : `/politica/${e.id}`
+    entries.push(`  <url><loc>${base}${ruta}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>${e.tipo === 'autonomica' ? '0.6' : '0.8'}</priority></url>`)
+  }
+
   entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   // /status es una pagina de estado tecnico (auto-refresh), sin intencion de
   // busqueda: fuera del sitemap y con noindex en su plantilla. Gastaba rastreo.

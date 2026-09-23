@@ -353,6 +353,12 @@ export function buildLandingPage(
         <p>Estaciones de ITV de toda España con dirección, teléfono, precios y cómo llegar.</p>
         <a class="more" href="/itv/">Buscar estación de ITV &rarr;</a>
       </section>
+
+      <section class="col" aria-labelledby="t-pol">
+        <h2 id="t-pol">Política</h2>
+        <p>Fechas de las elecciones y todos los sondeos, con los escaños estimados frente al último resultado.</p>
+        <a class="more" href="/politica/">Elecciones y sondeos &rarr;</a>
+      </section>
     </div>
 
     <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
@@ -364,6 +370,7 @@ export function buildLandingPage(
         <li><a href="/tiempo/">El tiempo por municipio (predicción de AEMET)</a></li>
         <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
         <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
+        <li><a href="/politica/">Elecciones y sondeos (generales, europeas y autonómicas)</a></li>
         <li><a href="/precios-carburantes">Observatorio de precios de los carburantes</a></li>
       </ul>
     </nav>
@@ -376,6 +383,7 @@ export function buildLandingPage(
       <a href="/farmacias/">Farmacias</a>·
       <a href="/farmacias/guardia">Farmacias de guardia</a>·
       <a href="/itv/">ITV</a>·
+      <a href="/politica/">Política</a>·
       <a href="/precios-carburantes">Precios</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>

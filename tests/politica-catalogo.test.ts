@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ELECCIONES, eleccionPorId, colorPartido, normSiglas } from '../src/data/politica-catalogo'
+import { ELECCIONES, eleccionPorId, colorPartido, normSiglas } from '../scripts/lib/politica-catalogo.mjs'
 
 describe('catálogo de elecciones', () => {
   it('tiene 21 elecciones: 1 generales + 1 europeas + 19 autonómicas', () => {

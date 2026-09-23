@@ -44,9 +44,10 @@ describe('SondeoSchema', () => {
 })
 
 describe('CandidaturaSchema', () => {
-  it('exige color hex #rrggbb', () => {
+  it('color opcional pero, si se da, debe ser hex #rrggbb', () => {
     expect(CandidaturaSchema.safeParse(candidatura).success).toBe(true)
-    expect(CandidaturaSchema.safeParse({ ...candidatura, color: 'azul' }).success).toBe(false)
+    expect(CandidaturaSchema.safeParse({ id: 'pp', nombre: 'PP', siglas: 'PP' }).success).toBe(true) // sin color
+    expect(CandidaturaSchema.safeParse({ ...candidatura, color: 'azul' }).success).toBe(false) // color inválido
   })
 })
 

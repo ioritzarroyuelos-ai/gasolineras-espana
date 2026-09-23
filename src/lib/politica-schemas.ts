@@ -16,7 +16,8 @@ export const CandidaturaSchema = z.object({
   id: z.string().min(1).max(40),
   nombre: z.string().min(1).max(120),
   siglas: z.string().min(1).max(24),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color hex #rrggbb'),
+  // El color lo asigna el render desde el catálogo (colorPartido); opcional aquí.
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color hex #rrggbb').optional(),
 })
 
 // Escaños estimados por un sondeo para una candidatura:

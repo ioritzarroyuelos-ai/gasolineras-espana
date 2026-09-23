@@ -8,7 +8,7 @@
 //   rich result más frecuente y barato: Google puede pintar la ruta
 //   Inicio > Sección > Provincia > Municipio bajo el título en los resultados.
 
-const OG_IMG_ALT = 'España Útil · info útil de España al instante'
+const OG_IMG_ALT = 'España Útil · datos oficiales de España al instante'
 
 /** Bloque Open Graph + Twitter de imagen social. `origin` = "https://host". */
 export function ogSocialTags(origin: string): string {

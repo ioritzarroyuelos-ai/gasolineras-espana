@@ -89,7 +89,7 @@ export function buildLandingPage(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/'
-  const title = 'España Útil · Info útil de España al instante'
+  const title = 'España Útil · Datos oficiales de España al instante'
   const desc = 'Portal con servicios esenciales en España: el tiempo por municipio (AEMET), gasolineras con precios oficiales en tiempo real, farmacias de guardia y estaciones de ITV. Sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
@@ -100,7 +100,7 @@ export function buildLandingPage(
       {
         '@type': 'WebSite',
         name: 'España Útil',
-        alternateName: 'España Útil — Info útil de España',
+        alternateName: 'España Útil — Datos oficiales de España',
         url: origin,
         description: desc,
         inLanguage: 'es-ES',

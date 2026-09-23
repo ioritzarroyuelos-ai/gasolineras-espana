@@ -67,7 +67,7 @@ export function buildFarmaciasPage(
   <meta property="og:image" content="${esc(origin)}/static/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="España Útil · info útil de España al instante" />
+  <meta property="og:image:alt" content="España Útil · datos oficiales de España al instante" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />

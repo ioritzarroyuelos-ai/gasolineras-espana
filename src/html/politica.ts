@@ -76,11 +76,19 @@ const CSS =
   + '.leyenda-res .dot{width:10px;height:10px;border-radius:3px;display:inline-block;align-self:center}'
   + '.leyenda-res .it b{font-size:14px;color:var(--ink)}'
   // gráfica
-  + '.chart{border:1px solid var(--bd);border-radius:14px;padding:14px 14px 8px;background:#fff;margin:0 0 8px}'
+  + '.chart{position:relative;border:1px solid var(--bd);border-radius:14px;padding:14px 14px 8px;background:#fff;margin:0 0 8px}'
   + '.chart h3{margin:0 0 4px;font-size:15px;color:var(--ink)}'
   + '.chart .hint{font-size:12px;color:var(--mu);margin:0 0 8px}'
   + '.svgwrap{overflow-x:auto}'
   + '.evsvg{max-width:100%;height:auto;display:block}'
+  + '.evsvg circle{cursor:pointer}'
+  // Tooltip propio de la gráfica (se posiciona por JS con CSSOM; sin estilos inline en el HTML)
+  + '.chart-tip{position:absolute;left:0;top:0;pointer-events:none;opacity:0;transform:translateY(-2px);'
+  + 'background:#1a1a1a;color:#fff;font-size:12px;line-height:1.35;padding:7px 10px;border-radius:8px;'
+  + 'max-width:250px;box-shadow:0 6px 18px rgba(16,24,40,.25);z-index:20;transition:opacity .08s}'
+  + '.chart-tip.on{opacity:1}'
+  + '.chart-tip .tp{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}'
+  + '.chart-tip b{color:#fff}'
   + '.leyenda{display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 2px 0;font-size:12.5px}'
   + '.leyenda span{display:inline-flex;align-items:center;gap:6px;color:var(--tx)}'
   + '.leyenda i{width:11px;height:3px;border-radius:2px;display:inline-block}'
@@ -341,6 +349,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
         const info = colores.get(id)
         return '<span><i class="sw-' + esc(id) + '"></i>' + esc(info?.siglas || id) + '</span>'
       }).join('') + '</div></div>'
+      + chartTooltipScript(nonce)
 
     // Tabla (los más recientes primero; cap para no inflar la página).
     const CAP = 40
@@ -458,12 +467,31 @@ function graficaEvolucionSvg(file: EleccionFile, topIds: string[], colores: Map<
       svg += '<polyline points="' + poly + '" fill="none" stroke="' + esc(color) + '" stroke-width="1.4" opacity="0.45" stroke-linejoin="round" />'
     }
     for (const p of pts) {
-      svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + esc(color) + '" opacity="0.9">'
+      svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + esc(color) + '" opacity="0.9" data-c="' + esc(color) + '">'
         + '<title>' + p.title + '</title></circle>'
     }
   }
   svg += '</svg></div>'
   return svg
+}
+
+// Tooltip interactivo de la gráfica (mejora progresiva). Muestra los datos del
+// sondeo del punto más cercano al cursor (~26px), leyendo el <title> y el data-c
+// de cada círculo. Sin el script, el <title> nativo sigue funcionando de respaldo.
+// Script con nonce (CSP script-src 'self' 'nonce'); posiciona por CSSOM (permitido).
+function chartTooltipScript(nonce: string): string {
+  const js = "(function(){var svg=document.querySelector('.evsvg');"
+    + "if(!svg)return;var chart=svg.closest('.chart');if(!chart)return;"
+    + "var tip=document.createElement('div');tip.className='chart-tip';"
+    + "var dot=document.createElement('span');dot.className='tp';var txt=document.createElement('span');"
+    + "tip.appendChild(dot);tip.appendChild(txt);chart.appendChild(tip);"
+    + "var cs=[].slice.call(svg.querySelectorAll('circle'));"
+    + "function m(e){var b=null,bd=1e9,i,r,dx,dy,d;for(i=0;i<cs.length;i++){r=cs[i].getBoundingClientRect();dx=e.clientX-(r.left+r.width/2);dy=e.clientY-(r.top+r.height/2);d=dx*dx+dy*dy;if(d<bd){bd=d;b=cs[i];}}"
+    + "if(b&&bd<=676){var t=b.querySelector('title');txt.textContent=t?t.textContent:'';dot.style.background=b.getAttribute('data-c')||'#888';"
+    + "var cr=chart.getBoundingClientRect();var lx=e.clientX-cr.left+14,ly=e.clientY-cr.top+14;if(lx>cr.width-170)lx-=180;if(lx<0)lx=4;tip.style.left=lx+'px';tip.style.top=ly+'px';tip.classList.add('on');}"
+    + "else{tip.classList.remove('on');}}"
+    + "svg.addEventListener('mousemove',m);svg.addEventListener('mouseleave',function(){tip.classList.remove('on');});})();"
+  return '<script nonce="' + esc(nonce) + '">' + js + '</scr' + 'ipt>'
 }
 
 export function politicaHeaders(nonce: string): Record<string, string> {

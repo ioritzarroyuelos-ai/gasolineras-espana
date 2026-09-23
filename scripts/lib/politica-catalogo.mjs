@@ -174,6 +174,9 @@ const COLORES = {
   ERC: '#f6be00', JUNTS: '#00c3b2', EHBILDU: '#8fb63c', BILDU: '#8fb63c', PNV: '#009b48', EAJPNV: '#009b48',
   BNG: '#99badd', CC: '#ffd700', CCA: '#ffd700', UPN: '#0369a3', MM: '#00b0aa', MASMADRID: '#00b0aa', MASPAIS: '#00b0aa',
   COMPROMIS: '#e94e1b', PRC: '#00a650', CUP: '#fcdd09', CS: '#eb6109', SALF: '#222b6d', UPL: '#b41f2e',
+  COMUNS: '#5c3a8c',
+  // Regionalistas reconocibles con presencia en su comunidad.
+  GBAI: '#4e9c5a', FORO: '#0067b1', NCA: '#f5b400', MES: '#5ab43a',
 }
 const DEFECTO = '#8a8f98'
 
@@ -181,27 +184,56 @@ export function normSiglas(s) {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
-export function colorPartido(siglas) {
-  return COLORES[normSiglas(siglas)] || DEFECTO
-}
-
 // Orden aproximado en el eje izquierda→derecha (menor = más a la izquierda), para
 // pintar la barra de escaños como un hemiciclo. Es una convención (los partidos
 // nacionalistas se colocan por su bloque habitual); los no listados van al centro.
 const ORDEN_IDEOLOGICO = {
   CUP: 2, ANOVA: 3, EHBILDU: 5, BILDU: 5, IU: 7, IZQUIERDAUNIDA: 7,
-  PODEMOS: 9, UP: 9, UNIDASPODEMOS: 9, ADELANTEANDALUCIA: 10, PORANDALUCIA: 11,
-  SUMAR: 12, COMPROMIS: 13, MM: 14, MASMADRID: 14, MASPAIS: 14, BNG: 16, ERC: 18,
+  PODEMOS: 9, UP: 9, UNIDASPODEMOS: 9, COMUNS: 10, ADELANTEANDALUCIA: 10, PORANDALUCIA: 11,
+  SUMAR: 12, COMPROMIS: 13, MM: 14, MASMADRID: 14, MASPAIS: 14, MES: 14, BNG: 16, ERC: 18,
   PSOE: 30, PSC: 30, PSDEG: 30, PSPV: 30, PSE: 30, PSOEA: 30, PSN: 30,
-  PRC: 40, PNV: 42, EAJPNV: 42, GBAI: 43, JUNTS: 45, PDECAT: 45, CC: 48, CCA: 48, NCA: 48, FORO: 50,
-  CS: 55, UPN: 60, PAR: 61,
+  PRC: 40, PNV: 42, EAJPNV: 42, GBAI: 43, JUNTS: 45, PDECAT: 45, CC: 48, CCA: 48, NCA: 48,
+  CS: 55, FORO: 58, UPN: 60, PAR: 61,
   PP: 65,
   VOX: 80, SALF: 85,
 }
 const ORDEN_DEFECTO = 50
 
+// Mapea siglas y NOMBRES LARGOS (p.ej. "PSE–EE (PSOE)", "Partido Popular de
+// Cataluña", "Esquerra Republicana de Catalunya") a una CLAVE de familia política,
+// para no dejar en gris ni descolocados a los grandes partidos por su variante
+// regional. El orden importa (CUP antes que PP; socialistas primero).
+const FAMILIA = [
+  [/PSOE|SOCIALIST|^PSE|^PSC|^PSDEG|^PSPV|^PSN|^PSIB/, 'PSOE'],
+  [/CUP|UNIDADPOPULAR/, 'CUP'],
+  [/PARTIDOPOPULAR|^PP/, 'PP'],
+  [/VOX/, 'VOX'],
+  [/UNIDASPODEMOS|PODEMOS|PODEM/, 'PODEMOS'],
+  [/COMUNS|COMUN/, 'COMUNS'],
+  [/SUMAR/, 'SUMAR'],
+  [/EHBILDU|BILDU|^EH/, 'EHBILDU'],
+  [/ESQUERRA|^ERC/, 'ERC'],
+  [/JUNTS/, 'JUNTS'],
+  [/^PNV|EAJ|NACIONALISTAVASCO/, 'PNV'],
+  [/BNG|NACIONALISTAGALEGO/, 'BNG'],
+  [/COMPROMIS/, 'COMPROMIS'],
+  [/MASMADRID|MASPAIS|^MM$/, 'MASMADRID'],
+]
+
+// Clave canónica: exacta si la conocemos; si no, por familia; si no, ella misma.
+function claveFamilia(siglas) {
+  const k = normSiglas(siglas)
+  if (COLORES[k] != null || ORDEN_IDEOLOGICO[k] != null) return k
+  for (const [re, fam] of FAMILIA) if (re.test(k)) return fam
+  return k
+}
+
+export function colorPartido(siglas) {
+  return COLORES[claveFamilia(siglas)] || DEFECTO
+}
+
 // Devuelve la posición izquierda→derecha de una candidatura (menor = izquierda).
 export function ordenIdeologico(siglas) {
-  const k = normSiglas(siglas)
-  return ORDEN_IDEOLOGICO[k] != null ? ORDEN_IDEOLOGICO[k] : ORDEN_DEFECTO
+  const v = ORDEN_IDEOLOGICO[claveFamilia(siglas)]
+  return v != null ? v : ORDEN_DEFECTO
 }

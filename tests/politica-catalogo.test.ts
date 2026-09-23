@@ -40,7 +40,7 @@ describe('catálogo de elecciones', () => {
     }
     // Sin artículo de sondeos de la próxima: europeas (2029) + anticipadas recientes
     const sinSondeos = ELECCIONES.filter((e) => !e.wikiSondeos).map((e) => e.id).sort()
-    expect(sinSondeos).toEqual(['aragon', 'europeas', 'extremadura'])
+    expect(sinSondeos).toEqual(['aragon', 'castilla-y-leon', 'europeas', 'extremadura'])
   })
 
   it('eleccionPorId encuentra y devuelve undefined si no existe', () => {

@@ -68,7 +68,7 @@ export const ELECCIONES = [
     id: 'castilla-y-leon', tipo: 'autonomica', nombre: 'Elecciones a las Cortes de Castilla y León', comunidad: 'Castilla y León',
     camara: { nombre: 'Cortes de Castilla y León', escanos: 82, mayoria: 42 },
     ultimaFecha: '2026-03-15', proxima: { valor: '2030-04-14', confirmada: false },
-    wikiSondeos: en('Next Castilian-Leonese regional election'),
+    wikiSondeos: null, // elección anticipada reciente (mar-2026); aún sin artículo de sondeos de la próxima
     wikiResultados: es('Elecciones a las Cortes de Castilla y León de 2026'),
   },
   {

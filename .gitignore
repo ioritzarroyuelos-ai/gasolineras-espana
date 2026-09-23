@@ -58,6 +58,10 @@ tests/e2e/.auth/
 # scratch / dev (HTML/PDF descargados manualmente para investigar parsers)
 .tmp/
 
+# parte de ejecución del robot de política (efímero, lo lee politica-monitor.mjs
+# en el mismo job de CI para avisar; no se commitea). Los datos SÍ: public/data/politica/*.json
+politica-run.json
+
 # cache local de geocoding Nominatim — los CI workers llenan su propia cache
 # desde cero; solo es util en dev local para evitar ratelimit de Nominatim.
 scripts/cache/

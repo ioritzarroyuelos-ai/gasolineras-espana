@@ -42,12 +42,67 @@ echo "[monitor] ${COUNT} errores nuevos"
 
 TS=$(date -u +"%Y-%m-%d %H:%M UTC")
 
-if [ "$COUNT" -eq 0 ]; then
+# --- Frescura de la vertical de política (dato SERVIDO en prod, no el commit) ---
+# El robot fetch-politica corre a diario y regenera index.json (campo `generado`).
+# Si en prod ese dato tiene >30 h, el robot lleva sin refrescar o el deploy falló.
+# También avisamos si alguna elección quedó marcada "no_disponible".
+POL_OK=1
+POL_LINE=""
+NOW=$(date -u +%s)
+if POL=$(curl -fsS --max-time 20 "${ORIGIN}/data/politica/index.json" 2>/dev/null); then
+  GEN=$(echo "$POL" | jq -r '.generado // empty')
+  if [ -z "$GEN" ]; then
+    POL_OK=0
+    POL_LINE="⚠️ Política: index.json sin campo 'generado'."
+  else
+    # GNU date (ubuntu) parsea ISO con milisegundos y Z.
+    GEN_TS=$(date -u -d "$GEN" +%s 2>/dev/null || echo 0)
+    if [ "$GEN_TS" = "0" ]; then
+      POL_OK=0
+      POL_LINE="⚠️ Política: fecha 'generado' ilegible (${GEN})."
+    else
+      AGE_H=$(( (NOW - GEN_TS) / 3600 ))
+      if [ "$AGE_H" -gt 30 ]; then
+        POL_OK=0
+        POL_LINE="⚠️ Política: datos sin refrescar hace ${AGE_H} h (revisar fetch-politica.yml)."
+      fi
+    fi
+  fi
+  # Fallo persistente por elección: alguna lleva >30 h sin comprobarse (el robot
+  # corre pero esa elección falla y conserva el último bueno). Defensivo: si jq no
+  # pudiera parsear las fechas, cae a 0 (la alerta inmediata la da politica-monitor).
+  if [ "$POL_OK" -eq 1 ]; then
+    STALE_EL=$(echo "$POL" | jq -r --argjson now "$NOW" '[ .elecciones[]? | select( (.ultimaComprobacionOk == null) or ((.ultimaComprobacionOk | sub("\\.[0-9]+Z$";"Z") | fromdateiso8601) < ($now - 108000)) ) ] | length' 2>/dev/null || echo 0)
+    if [ "${STALE_EL:-0}" -gt 0 ]; then
+      POL_OK=0
+      POL_LINE="⚠️ Política: ${STALE_EL} elección(es) sin comprobar en >30 h."
+    fi
+  fi
+  if [ "$POL_OK" -eq 1 ]; then
+    NODISP=$(echo "$POL" | jq -r '[.elecciones[]?|select(.estado=="no_disponible")]|length' 2>/dev/null || echo 0)
+    if [ "${NODISP:-0}" -gt 0 ]; then
+      POL_OK=0
+      POL_LINE="⚠️ Política: ${NODISP} elección(es) no disponibles."
+    fi
+  fi
+else
+  POL_OK=0
+  POL_LINE="⚠️ Política: no se pudo leer /data/politica/index.json en prod."
+fi
+echo "[monitor] política OK=${POL_OK} ${POL_LINE}"
+
+if [ "$COUNT" -eq 0 ] && [ "$POL_OK" -eq 1 ]; then
   # Ship 16: heartbeat siempre — mensaje verde corto para confirmar que el
   # pipeline (GHA + endpoint admin + Telegram) sigue vivo. Sin esto el
   # silencio es indistinguible de un bot roto.
   MSG="✅ ${TS}
-Cero errores nuevos en prod."
+Cero errores nuevos en prod. Política al día."
+elif [ "$COUNT" -eq 0 ]; then
+  # Sin errores de cliente, pero la vertical de política tiene un problema.
+  MSG="⚠️ ${TS}
+Cero errores nuevos en prod, pero:
+
+${POL_LINE}"
 else
   # Formato:   • 15× v1.8.0: TypeError: foo is undefined
   # Truncamos mensaje a 120 chars para que no explote en mobile.
@@ -69,6 +124,11 @@ ${COUNT} error(es) nuevo(s) en prod:
 ${SUMMARY}${EXTRA}
 
 Ver detalles: ${ORIGIN}/api/admin/errors (requiere CRON_TOKEN)"
+  if [ -n "$POL_LINE" ]; then
+    MSG="${MSG}
+
+${POL_LINE}"
+  fi
 fi
 
 echo "[monitor] Enviando a Telegram..."

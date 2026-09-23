@@ -34,6 +34,7 @@
     "@playwright/test": "^1.63.0",
     "@resvg/resvg-js": "^2.6.2",
     "esbuild": "^0.28.0",
+    "node-html-parser": "^9.0.4",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "typescript": "^7.0.2",

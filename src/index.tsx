@@ -21,6 +21,7 @@ import { registerAdminRoutes } from './routes/admin'
 import { registerDataRoutes } from './routes/data'
 import { registerHistoryRoutes } from './routes/history'
 import { registerTelegramRoutes } from './routes/telegram'
+import { registerPoliticaRoutes } from './routes/politica'
 
 // ---- ENV ----
 // Exportado para que los sub-modulos de rutas (src/routes/*) tipen `app` y el
@@ -169,6 +170,13 @@ registerTiempoRoutes(app)
 // /itv/:prov, /itv/:prov/:mun. El orden interno importa (/itv/precios ANTES de
 // /itv/:provinciaSlug); se preserva dentro del modulo.
 registerItvRoutes(app)
+
+// ---- Política (elecciones + sondeos de Wikipedia) ----
+// Rutas en src/routes/politica.ts: /api/politica/elecciones, /politica, /politica/,
+// /politica/autonomicas(/), /politica/autonomicas/:comunidad, /politica/:eleccionId.
+// Orden interno crítico (/politica/autonomicas ANTES de /politica/:eleccionId);
+// preservado en el módulo. La veda (LOREG 69.7) se evalúa por request.
+registerPoliticaRoutes(app)
 
 // ---- SEO: robots.txt ----
 // ---- META/SEO ----

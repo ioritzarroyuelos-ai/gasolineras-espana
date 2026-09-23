@@ -40,7 +40,7 @@ describe('buildEleccionPage', () => {
     const html = buildEleccionPage({ ...base, file: fileCon('Data10'), enVeda: true })
     expect(html).toContain('Veda electoral')
     expect(html).not.toContain('Data10')
-    expect(html).not.toContain('<svg')
+    expect(html).not.toContain('Evolución de los sondeos') // no gráfica de sondeos (la barra de resultado sí puede ser SVG)
     expect(html).toContain('Resultado de la última elección')
   })
 
@@ -49,7 +49,7 @@ describe('buildEleccionPage', () => {
     f.sondeos = []
     const html = buildEleccionPage({ ...base, file: f, enVeda: false, estado: 'sin_sondeos' })
     expect(html).toContain('Todavía no hay sondeos')
-    expect(html).not.toContain('<svg')
+    expect(html).not.toContain('Evolución de los sondeos')
   })
 })
 

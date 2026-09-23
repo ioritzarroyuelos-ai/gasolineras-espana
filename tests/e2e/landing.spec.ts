@@ -13,7 +13,7 @@ test.describe('Portada España Útil (/)', () => {
     await expect(page).toHaveTitle(/España Útil/i)
 
     // Cabecera de periódico: H1 de la marca.
-    await expect(page.getByRole('heading', { level: 1, name: /cercaya/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: /españa útil/i })).toBeVisible()
 
     // Menú de secciones con enlace a cada vertical.
     await expect(page.locator('.mh-nav a[href="/tiempo/"]')).toBeVisible()

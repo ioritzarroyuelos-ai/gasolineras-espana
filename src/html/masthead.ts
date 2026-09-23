@@ -1,4 +1,4 @@
-// Cabecera de periódico COMÚN a todo el portal CercaYa.
+// Cabecera de periódico COMÚN a todo el portal España Útil.
 //
 // Misma cabecera en TODAS las páginas (portada, tiempo, gasolineras, farmacias,
 // ITV, precios y el mapa): fecha del día + marca + lema + menú de secciones.
@@ -40,14 +40,14 @@ function fechaHoy(): string {
 export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: boolean } = {}): string {
   const fecha = fechaHoy()
   const titulo = opts.brandAsH1
-    ? '<h1 class="mh-title">CercaYa</h1>'
-    : '<span class="mh-title">CercaYa</span>'
+    ? '<h1 class="mh-title">España Útil</h1>'
+    : '<span class="mh-title">España Útil</span>'
   const item = (href: string, key: SeccionActiva, label: string): string =>
     '<a href="' + href + '"' + (active === key ? ' class="mh-on" aria-current="page"' : '') + '>' + label + '</a>'
   return '<header class="masthead">'
     + '<div class="mh-inner">'
     + (fecha ? '<p class="mh-date">' + esc(fecha) + ' · España</p>' : '')
-    + '<a href="/" class="mh-brand" aria-label="CercaYa — inicio">'
+    + '<a href="/" class="mh-brand" aria-label="España Útil — inicio">'
     + '<img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" decoding="async" />'
     + titulo
     + '</a>'

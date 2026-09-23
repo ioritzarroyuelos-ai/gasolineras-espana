@@ -148,7 +148,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + mastheadHtml('politica') + '<main>'
     + cuerpo
     + '</main><footer>Sondeos recopilados de Wikipedia (CC BY-SA); resultados oficiales del Ministerio del Interior. '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
@@ -195,7 +195,7 @@ export function buildIndexPage(nonce: string, elecciones: IndexEntry[], canonica
     + seccion('Autonómicas', auton)
     + '<p class="aviso">Los sondeos los recopila Wikipedia de cada casa encuestadora; nosotros los mostramos con su fuente. Los resultados oficiales son del Ministerio del Interior. Durante los 5 días previos a una votación, la ley (LOREG art. 69.7) prohíbe difundir sondeos: esas fechas la página los oculta.</p>'
   return envoltorio({
-    title: 'Elecciones y sondeos en España · CercaYa',
+    title: 'Elecciones y sondeos en España · España Útil',
     desc: 'Fechas de las elecciones en España y todos los sondeos publicados, con escaños estimados frente al último resultado. Generales, europeas y autonómicas.',
     canonical, nonce,
     breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'Política', url: canonical }]),
@@ -213,7 +213,7 @@ export function buildAutonomicasIndex(nonce: string, auton: IndexEntry[], canoni
     + '<p class="sub">Las 17 comunidades autónomas y las ciudades de Ceuta y Melilla.</p>'
     + '<div class="grid-el">' + auton.map(card).join('') + '</div>'
   return envoltorio({
-    title: 'Elecciones autonómicas y sondeos · CercaYa',
+    title: 'Elecciones autonómicas y sondeos · España Útil',
     desc: 'Sondeos y fechas de las elecciones autonómicas de las 17 comunidades y Ceuta y Melilla.',
     canonical, nonce,
     breadcrumb: breadcrumbLd([
@@ -390,7 +390,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
 
   const comunidad = cat.comunidad ? cat.comunidad + (cat.ciudadAutonoma ? ' (ciudad autónoma)' : '') : ''
   return envoltorio({
-    title: esc(cat.nombre) + ' · sondeos · CercaYa',
+    title: esc(cat.nombre) + ' · sondeos · España Útil',
     desc: 'Todos los sondeos de ' + esc(cat.nombre) + (comunidad ? ' (' + esc(comunidad) + ')' : '') + ': escaños estimados por partido frente al resultado de la última elección.',
     canonical, nonce,
     breadcrumb: breadcrumbLd([

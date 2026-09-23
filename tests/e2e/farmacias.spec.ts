@@ -17,7 +17,7 @@ import AxeBuilder from '@axe-core/playwright'
 test.describe('Farmacias de guardia (/farmacias/)', () => {
   test('carga el buscador (H1, input, enlace por provincia) y ya no hay mapa', async ({ page }) => {
     await page.goto('/farmacias/')
-    await expect(page).toHaveTitle(/Farmacia de guardia.*CercaYa/i)
+    await expect(page).toHaveTitle(/Farmacia de guardia.*España Útil/i)
     await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia en españa/i })).toBeVisible()
     await expect(page.locator('#q')).toBeVisible()
     await expect(page.getByRole('link', { name: /provincia por provincia/i })).toBeVisible()

@@ -38,7 +38,7 @@ export function buildGasolinerasLanding(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/gasolineras/'
-  const title = 'Gasolineras baratas en España · Precios oficiales | CercaYa'
+  const title = 'Gasolineras baratas en España · Precios oficiales | España Útil'
   const stats95 = data.stats?.['95']
   const desc = stats95 && stats95.count >= 3
     ? 'Encuentra la gasolinera más barata cerca de ti. Gasolina 95 desde '
@@ -68,7 +68,7 @@ export function buildGasolinerasLanding(
     : undefined
   const jsonLd = [
     {
-      '@context': 'https://schema.org', '@type': 'WebSite', name: 'CercaYa', url: origin,
+      '@context': 'https://schema.org', '@type': 'WebSite', name: 'España Útil', url: origin,
       potentialAction: {
         '@type': 'SearchAction',
         target: origin + '/gasolineras/mapa?q={search_term_string}',
@@ -124,7 +124,7 @@ export function buildGasolinerasLanding(
 
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="es_ES" />
-  <meta property="og:site_name" content="CercaYa" />
+  <meta property="og:site_name" content="España Útil" />
   <meta property="og:title" content="${esc(title)}" />
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
@@ -133,7 +133,7 @@ export function buildGasolinerasLanding(
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />
 
-  <meta name="generator" content="CercaYa v${APP_VERSION}" />
+  <meta name="generator" content="España Útil v${APP_VERSION}" />
   ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
@@ -232,7 +232,7 @@ export function buildGasolinerasLanding(
 
   <footer>
     <div>Datos oficiales del Ministerio para la Transición Ecológica ·
-      <a href="/">CercaYa</a> · <a href="/privacidad">Privacidad</a> · v${APP_VERSION}</div>
+      <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a> · v${APP_VERSION}</div>
   </footer>
 
   <script nonce="${nonce}">

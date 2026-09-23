@@ -15,7 +15,7 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-// Verde de marca CercaYa (mismo que gasolineras/farmacias/ITV).
+// Verde de marca España Útil (mismo que gasolineras/farmacias/ITV).
 const CSS =
   ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
@@ -77,7 +77,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + mastheadHtml('tiempo') + '<main>'
     + cuerpo
     + '</main><footer>Datos de AEMET (Agencia Estatal de Meteorología). '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a> &middot; v' + esc(APP_VERSION) + '</footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a> &middot; v' + esc(APP_VERSION) + '</footer>'
     + '</body></html>'
 }
 
@@ -167,7 +167,7 @@ export function buildTiempoIndexPage(
   provincias: Array<{ slug: string; name: string }>,
   canonical: string,
 ): string {
-  const title = 'El tiempo en España por municipios | CercaYa'
+  const title = 'El tiempo en España por municipios | España Útil'
   const desc = 'Predicción del tiempo por municipio en España: temperaturas, cielo, '
     + 'probabilidad de lluvia y viento. Datos oficiales de AEMET.'
   const lista = provincias.map(p =>
@@ -193,7 +193,7 @@ export function buildTiempoProvinciaPage(
   nonce: string,
   d: { provinciaSlug: string; provinciaName: string; municipios: Array<{ slug: string; nombre: string }>; canonical: string },
 ): string {
-  const title = 'El tiempo en ' + d.provinciaName + ' por municipios | CercaYa'
+  const title = 'El tiempo en ' + d.provinciaName + ' por municipios | España Útil'
   const desc = 'Predicción del tiempo en los municipios de ' + d.provinciaName
     + ': temperaturas, cielo, lluvia y viento. Datos de AEMET.'
   const lista = d.municipios.map(m =>
@@ -235,7 +235,7 @@ export function buildTiempoMunicipioPage(
   d: { pred: Prediccion; frescura: Frescura; provinciaSlug: string; canonical: string },
 ): string {
   const { pred, frescura } = d
-  const title = 'El tiempo en ' + pred.nombre + ' (' + pred.provincia + ') | CercaYa'
+  const title = 'El tiempo en ' + pred.nombre + ' (' + pred.provincia + ') | España Útil'
   const hoy = pred.dias[0]
   const desc = hoy
     ? 'Predicción del tiempo en ' + pred.nombre + ': hoy ' + (hoy.tmin ?? '?') + '° / ' + (hoy.tmax ?? '?') + '°, '

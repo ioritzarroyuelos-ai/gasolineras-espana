@@ -81,7 +81,7 @@ app.get('/sitemap.xml', async c => {
     const m = snap.Fecha.match(/^(\d{2})\/(\d{2})\/(\d{4})/)
     if (m) snapLastmod = `${m[3]}-${m[2]}-${m[1]}`
   }
-  // Home del portal CercaYa. Hoy redirige 301 a /gasolineras/, pero la
+  // Home del portal España Útil. Hoy redirige 301 a /gasolineras/, pero la
   // dejamos en el sitemap para que Google entienda la jerarquía. Priority
   // 1.0 porque sigue siendo la puerta de entrada principal.
   entries.push(`  <url><loc>${base}/</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>`)
@@ -408,7 +408,7 @@ app.get('/privacidad', c => {
 <p><strong>Última actualización:</strong> ${new Date().toISOString().slice(0,10)}</p>
 
 <p>Esta política cuenta, en lenguaje llano, qué datos tratamos y cuáles no.
-La idea de CercaYa es simple: <strong>casi todo funciona sin cuenta y sin que
+La idea de España Útil es simple: <strong>casi todo funciona sin cuenta y sin que
 tus datos salgan de tu navegador</strong>. Solo recogemos datos personales
 cuando tú decides activarlos (iniciar sesión o suscribirte a las alertas de
 Telegram).</p>
@@ -469,7 +469,7 @@ revisamos manualmente.</p>
 <h2>Tu ubicación</h2>
 <p>Si concedes permiso de ubicación, usamos tus coordenadas <strong>en el propio
 navegador</strong> para calcular distancias a las gasolineras. En algunas funciones,
-para traducir tus coordenadas a una dirección, se envían al servidor de CercaYa,
+para traducir tus coordenadas a una dirección, se envían al servidor de España Útil,
 que reenvía la consulta a OpenStreetMap <strong>sin tu dirección IP</strong>. No
 guardamos tus coordenadas asociadas a ti.</p>
 

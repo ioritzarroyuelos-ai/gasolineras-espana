@@ -1,4 +1,4 @@
-// Landing del portal CercaYa — home pública en `/`.
+// Landing del portal España Útil — home pública en `/`.
 //
 // Diseño "periódico web" (Ship 28): en vez de una rejilla de tiles/cuadrados,
 // una portada tipo diario — cabecera con fecha + cabecera de marca, un menú de
@@ -89,7 +89,7 @@ export function buildLandingPage(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/'
-  const title = 'CercaYa · Info útil de España al instante'
+  const title = 'España Útil · Info útil de España al instante'
   const desc = 'Portal con servicios esenciales en España: el tiempo por municipio (AEMET), gasolineras con precios oficiales en tiempo real, farmacias de guardia y estaciones de ITV. Sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
@@ -99,21 +99,21 @@ export function buildLandingPage(
     '@graph': [
       {
         '@type': 'WebSite',
-        name: 'CercaYa',
-        alternateName: 'CercaYa — Info útil de España',
+        name: 'España Útil',
+        alternateName: 'España Útil — Info útil de España',
         url: origin,
         description: desc,
         inLanguage: 'es-ES',
         publisher: {
           '@type': 'Organization',
-          name: 'CercaYa',
+          name: 'España Útil',
           url: origin,
           logo: logoUrl,
         },
       },
       {
         '@type': 'ItemList',
-        name: 'Servicios de CercaYa',
+        name: 'Servicios de España Útil',
         itemListElement: [
           {
             '@type': 'ListItem',
@@ -209,7 +209,7 @@ export function buildLandingPage(
   <!-- Open Graph / Twitter para compartir -->
   <meta property="og:type" content="website" />
   <meta property="og:locale" content="es_ES" />
-  <meta property="og:site_name" content="CercaYa" />
+  <meta property="og:site_name" content="España Útil" />
   <meta property="og:title" content="${esc(title)}" />
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
@@ -219,7 +219,7 @@ export function buildLandingPage(
   <meta name="twitter:description" content="${esc(desc)}" />
 
   <meta name="robots" content="index,follow,max-image-preview:large" />
-  <meta name="generator" content="CercaYa v${APP_VERSION}" />
+  <meta name="generator" content="España Útil v${APP_VERSION}" />
 
   ${jsonLdScript(jsonLd, nonce)}
 
@@ -388,7 +388,7 @@ export function buildLandingPage(
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>
     </div>
-    <div>CercaYa v${APP_VERSION} · Datos oficiales de fuentes públicas</div>
+    <div>España Útil v${APP_VERSION} · Datos oficiales de fuentes públicas</div>
   </footer>
 </body>
 </html>`

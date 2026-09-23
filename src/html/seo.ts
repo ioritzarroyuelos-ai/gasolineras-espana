@@ -8,12 +8,12 @@
 //   rich result más frecuente y barato: Google puede pintar la ruta
 //   Inicio > Sección > Provincia > Municipio bajo el título en los resultados.
 
-const OG_IMG_ALT = 'CercaYa · info útil de España al instante'
+const OG_IMG_ALT = 'España Útil · info útil de España al instante'
 
 /** Bloque Open Graph + Twitter de imagen social. `origin` = "https://host". */
 export function ogSocialTags(origin: string): string {
   const img = origin + '/static/og.png'
-  return '<meta property="og:site_name" content="CercaYa" />'
+  return '<meta property="og:site_name" content="España Útil" />'
     + '<meta property="og:locale" content="es_ES" />'
     + '<meta property="og:image" content="' + img + '" />'
     + '<meta property="og:image:width" content="1200" />'

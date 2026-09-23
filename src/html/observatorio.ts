@@ -116,7 +116,7 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
   const { obs } = d
   const g95 = obs.g95.nacional
   const dsl = obs.diesel.nacional
-  const title = 'Precio de la gasolina y el di&eacute;sel en Espa&ntilde;a hoy | CercaYa'
+  const title = 'Precio de la gasolina y el di&eacute;sel en Espa&ntilde;a hoy | España Útil'
   const desc = 'Precio medio de la gasolina 95 (' + (g95 ? eur(g95) + ' &euro;/L' : 'n/d') + ') y del di&eacute;sel ('
     + (dsl ? eur(dsl) + ' &euro;/L' : 'n/d') + ') en Espa&ntilde;a, con ranking por provincia y por marca. '
     + 'Datos oficiales del Ministerio, actualizados a diario.'
@@ -127,7 +127,7 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     '@type': 'Dataset',
     name: 'Precios de carburante en Espana por provincia y marca',
     description: 'Precio medio (mediana) de gasolina 95 y diesel en Espana, agregado por provincia y por marca a partir de los datos oficiales del Ministerio para la Transicion Ecologica.',
-    creator: { '@type': 'Organization', name: 'CercaYa' },
+    creator: { '@type': 'Organization', name: 'España Útil' },
     isBasedOn: 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/',
     // ISO 8601 (antes iba el crudo "DD/MM/YYYY HH:mm:SS" -> aviso en Search Console).
     temporalCoverage: isoFecha ? isoFecha.fecha : undefined,
@@ -190,7 +190,7 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + '<p><a href="/gasolineras/">Ver el mapa de gasolineras</a></p>'
     + '</main>'
     + '<footer>Datos oficiales del Ministerio para la Transici&oacute;n Ecol&oacute;gica. '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 

@@ -111,7 +111,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + mastheadHtml('itv') + '<main>'
     + cuerpo
     + '</main><footer>Datos de la DGT y de los portales de datos abiertos autonomicos. '
-    + '<a href="/">CercaYa</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
@@ -168,7 +168,7 @@ const AVISO = '<p class="aviso">Los precios de la ITV los fija cada comunidad au
 
 // ---- Indice nacional: /itv/ ----
 export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string): string {
-  const title = 'Estaciones de ITV en España por provincia | CercaYa'
+  const title = 'Estaciones de ITV en España por provincia | España Útil'
   const desc = 'Directorio de las ' + total + ' estaciones de ITV de España: direccion, telefono y como llegar, '
     + 'organizadas por provincia y municipio.'
   const lista = provincias.map(p =>
@@ -296,7 +296,7 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
   const n = d.estaciones.length
   const precio = d.tarifa && d.tarifa.gasolina != null ? desglosa(d.tarifa, d.tarifa.gasolina) : null
   const title = 'ITV en ' + d.provinciaName + ': ' + n + ' estaciones'
-    + (precio ? ' y precio ' + eur(precio.total) : '') + ' | CercaYa'
+    + (precio ? ' y precio ' + eur(precio.total) : '') + ' | España Útil'
   const desc = (precio
       ? 'Cuánto cuesta la ITV en ' + d.provinciaName + ' (' + eur(precio.total) + ' un turismo de gasolina) y '
       : 'Todas las estaciones de ITV de ' + d.provinciaName + ': dirección, teléfono y cómo llegar. ')
@@ -335,7 +335,7 @@ export interface ItvMunicipioData {
 
 export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): string {
   const n = d.estaciones.length
-  const title = 'ITV en ' + d.municipioName + ': direccion y telefono | CercaYa'
+  const title = 'ITV en ' + d.municipioName + ': direccion y telefono | España Útil'
   const desc = (n === 1 ? 'Estacion de ITV en ' : 'Las ' + n + ' estaciones de ITV de ')
     + d.municipioName + ' (' + d.provinciaName + '): direccion, telefono y como llegar.'
   const otros = d.otrosMunicipios.length
@@ -386,7 +386,7 @@ function filaTarifa(t: Tarifa): string {
 }
 
 export function buildItvPreciosPage(nonce: string, canonical: string): string {
-  const title = 'Precio de la ITV 2026 por comunidad autónoma | CercaYa'
+  const title = 'Precio de la ITV 2026 por comunidad autónoma | España Útil'
   const desc = 'Cuánto cuesta pasar la ITV en cada comunidad autónoma en 2026, con el precio final '
     + 'que se paga en caja: tarifa oficial, impuesto de cada territorio y tasa de Tráfico.'
 

@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="CercaYa - info útil de España al instante">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="España Útil - info útil de España al instante">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0"    stop-color="#052e1b"/>
@@ -29,7 +29,7 @@
 
   <!-- tipografia (Liberation Sans se bundlea en gen-icons.mjs; sin emojis) -->
   <g font-family="'Liberation Sans', 'DejaVu Sans', sans-serif" fill="#ffffff">
-    <text x="300" y="240" font-size="92" font-weight="800" letter-spacing="-2">CercaYa</text>
+    <text x="300" y="240" font-size="92" font-weight="800" letter-spacing="-2">España Útil</text>
     <text x="300" y="310" font-size="38" font-weight="500" fill="#bbf7d0">Info útil de España, al instante</text>
 
     <!-- chips de las verticales -->

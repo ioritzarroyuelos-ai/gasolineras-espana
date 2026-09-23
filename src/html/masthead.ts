@@ -15,7 +15,7 @@
 //   páginas ya tienen su propio <h1> de contenido).
 // - MASTHEAD_CSS: los estilos, para inyectar en el <style> de cada página.
 
-export type SeccionActiva = 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | null
+export type SeccionActiva = 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | null
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -58,6 +58,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + item('/gasolineras/', 'gasolineras', 'Gasolineras')
     + item('/farmacias/', 'farmacias', 'Farmacias')
     + item('/itv/', 'itv', 'ITV')
+    + item('/politica/', 'politica', 'Política')
     + '</nav>'
     + '</header>'
 }

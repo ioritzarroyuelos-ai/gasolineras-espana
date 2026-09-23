@@ -44,6 +44,7 @@ export const SondeoSchema = z.object({
   campoInicio: iso.optional(),
   campoFin: iso.optional(),
   publicacion: iso.optional(),
+  fechaTexto: z.string().max(60).optional(), // texto original de la fecha de campo (Wikipedia)
   muestra: z.number().int().positive().max(10_000_000).nullable().optional(),
   datos: z.array(SondeoDatoSchema).max(80),
   fuenteUrl: z.string().max(400).optional(),

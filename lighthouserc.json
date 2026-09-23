@@ -1,7 +1,7 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "npx wrangler pages dev dist --port 8787 --show-interactive-dev-session=false",
+      "startServerCommand": "npx wrangler pages dev dist --binding PUBLIC_ORIGIN=http://127.0.0.1:8787 --port 8787 --show-interactive-dev-session=false",
       "startServerReadyPattern": "Ready on http",
       "startServerReadyTimeout": 60000,
       "url": [

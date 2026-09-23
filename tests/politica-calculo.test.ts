@@ -26,6 +26,23 @@ describe('calculaCambio (sube/baja frente al resultado anterior)', () => {
     expect(calculaCambio({ min: 18, max: 20 }, 22)).toEqual({ tipo: 'rango', min: -4, max: -2, direccion: 'baja' })
   })
 
+  it('rango que toca la referencia por abajo: {22,25} vs 22 -> sube (no ambiguo)', () => {
+    expect(calculaCambio({ min: 22, max: 25 }, 22)).toEqual({ tipo: 'rango', min: 0, max: 3, direccion: 'sube' })
+  })
+
+  it('rango que toca la referencia por arriba: {19,22} vs 22 -> baja', () => {
+    expect(calculaCambio({ min: 19, max: 22 }, 22)).toEqual({ tipo: 'rango', min: -3, max: 0, direccion: 'baja' })
+  })
+
+  it('rango exacto en la referencia: {22,22} vs 22 -> igual', () => {
+    expect(calculaCambio({ min: 22, max: 22 }, 22)).toEqual({ tipo: 'rango', min: 0, max: 0, direccion: 'igual' })
+  })
+
+  it('valores no finitos -> sin_dato (no cálculos falsos)', () => {
+    expect(calculaCambio(NaN, 22)).toEqual({ tipo: 'sin_dato' })
+    expect(calculaCambio({ min: NaN, max: 5 }, 22)).toEqual({ tipo: 'sin_dato' })
+  })
+
   it('sin referencia (candidatura nueva/coalición) -> desconocido, NO 0', () => {
     expect(calculaCambio(15, null)).toEqual({ tipo: 'desconocido' })
     expect(calculaCambio(15, undefined)).toEqual({ tipo: 'desconocido' })

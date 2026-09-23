@@ -225,6 +225,7 @@ function deltaHtml(c: Cambio): string {
     const r = (c.min === c.max ? String(c.min) : c.min + '…' + c.max)
     if (c.direccion === 'sube') return '<span class="d-sube">▲' + r + '</span>'
     if (c.direccion === 'baja') return '<span class="d-baja">▼' + r + '</span>'
+    if (c.direccion === 'igual') return '<span class="d-igual">=</span>'
     return '<span class="d-amb">±</span>'
   }
   return ''

@@ -6,13 +6,19 @@
 import type { EscanosEstim, EstadoEleccion } from './politica-schemas'
 
 const DIA_MS = 86_400_000
+// Margen para cubrir la diferencia horaria España↔UTC (UTC+1/+2, con DST) sin
+// hacer aritmética de zona horaria: la votación se maneja como 00:00Z, pero la
+// ventana legal es en hora peninsular. Ampliar 3 h por ambos lados garantiza que
+// NUNCA se difundan sondeos dentro de la franja legal (sobre-cumplimiento; como
+// mucho se ocultan ~3 h de más, que es lo seguro). Cubre también Canarias (UTC+0).
+const VEDA_MARGEN_MS = 3 * 3_600_000
 // Frescura: si la última comprobación correcta es más vieja que esto, el dato
 // se considera desactualizado (cadencia del robot: diaria).
 export const STALE_MS = 30 * 3_600_000 // 30 h
 
 export type Cambio =
   | { tipo: 'exacto'; delta: number; direccion: 'sube' | 'baja' | 'igual' }
-  | { tipo: 'rango'; min: number; max: number; direccion: 'sube' | 'baja' | 'ambiguo' }
+  | { tipo: 'rango'; min: number; max: number; direccion: 'sube' | 'baja' | 'ambiguo' | 'igual' }
   | { tipo: 'sin_dato' } // el sondeo no da escaños para esa candidatura
   | { tipo: 'desconocido' } // no hay referencia (candidatura nueva/coalición)
 
@@ -22,15 +28,22 @@ export function calculaCambio(esc: EscanosEstim, ref: number | null | undefined)
   if (ref === null || ref === undefined) return { tipo: 'desconocido' }
   if (esc === null) return { tipo: 'sin_dato' }
   if (typeof esc === 'number') {
+    if (!Number.isFinite(esc) || !Number.isFinite(ref)) return { tipo: 'sin_dato' }
     const delta = esc - ref
     return { tipo: 'exacto', delta, direccion: delta > 0 ? 'sube' : delta < 0 ? 'baja' : 'igual' }
   }
-  // Rango: el cambio también es un rango. Solo hay dirección clara si TODO el
-  // rango queda por encima (sube) o por debajo (baja) de la referencia; si lo
-  // cruza, es ambiguo y NO se pinta flecha desde un punto medio inventado.
+  if (!Number.isFinite(esc.min) || !Number.isFinite(esc.max) || !Number.isFinite(ref)) return { tipo: 'sin_dato' }
+  // Rango: el cambio también es un rango. No inventamos flecha desde un punto
+  // medio. Solo es "ambiguo" cuando el rango CRUZA la referencia (puede subir o
+  // bajar). Un rango que toca la referencia por un extremo pero no baja/sube del
+  // otro tiene dirección: [0,+] = sube (o igual), [-,0] = baja (o igual).
   const min = esc.min - ref
   const max = esc.max - ref
-  const direccion = min > 0 ? 'sube' : max < 0 ? 'baja' : 'ambiguo'
+  let direccion: 'sube' | 'baja' | 'ambiguo' | 'igual'
+  if (min === 0 && max === 0) direccion = 'igual'
+  else if (min >= 0) direccion = 'sube'
+  else if (max <= 0) direccion = 'baja'
+  else direccion = 'ambiguo'
   return { tipo: 'rango', min, max, direccion }
 }
 
@@ -44,8 +57,8 @@ export function enVeda(ahoraISO: string, fecha: { valor: string | null; confirma
   const votacion = Date.parse(fecha.valor.slice(0, 10) + 'T00:00:00Z')
   const ahora = Date.parse(ahoraISO)
   if (Number.isNaN(votacion) || Number.isNaN(ahora)) return false
-  const inicio = votacion - 5 * DIA_MS
-  const fin = votacion + DIA_MS // incluye todo el día de la votación
+  const inicio = votacion - 5 * DIA_MS - VEDA_MARGEN_MS
+  const fin = votacion + DIA_MS + VEDA_MARGEN_MS // incluye todo el día de la votación + margen
   return ahora >= inicio && ahora < fin
 }
 

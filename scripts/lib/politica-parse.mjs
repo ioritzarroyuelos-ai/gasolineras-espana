@@ -247,6 +247,12 @@ export function parseSondeos(html, opts = {}) {
   let referencia = null
   let candidatasFilas = 0
   let rechazadas = 0
+  // Invariante de ordenación: las tablas van de sondeo más NUEVO (arriba) a más
+  // ANTIGUO. Guardamos la fecha de FIN del sondeo anterior (más nuevo) para
+  // corregir el año inferido: la fecha de fin nunca puede ser posterior a la del
+  // anterior; si sale posterior, hemos cruzado a un año anterior. Persiste entre
+  // tablas (años consecutivos).
+  let prevFinTs = null
 
   for (const { tab } of seleccion) {
     const columnas = columnasDe(tab)
@@ -257,12 +263,8 @@ export function parseSondeos(html, opts = {}) {
     const muestraCol = columnas.find((c) => c.rol === 'muestra')
     for (const p of partidos) if (!candMap.has(p.id)) candMap.set(p.id, { id: p.id, nombre: p.nombre, siglas: p.siglas })
 
-    // Arrastre de mes: la tabla va de más nueva (arriba) a más antigua. El
-    // ancla es el mes de INICIO (monótono descendente); si un mes de inicio sube
-    // respecto al anterior, hemos cruzado a un año anterior. anioRun se arrastra
-    // entre tablas (años consecutivos de nuevo a viejo).
+    // anio = año de trabajo (se arrastra fila a fila y entre tablas).
     let anio = anioRun
-    let mesPrev1 = null
     const filas = tab.querySelectorAll('tr')
     for (let r = 1; r < filas.length; r++) {
       const tds = filas[r].querySelectorAll('td')
@@ -288,15 +290,24 @@ export function parseSondeos(html, opts = {}) {
       const c = fechaCol ? componentesFecha(tds[fechaCol.i] ? tds[fechaCol.i].text : '') : { texto: '' }
       // Determina el año de inicio y de fin de esta fila.
       let inicioAnio, finAnio
-      if (c.anio != null) {
-        inicioAnio = finAnio = c.anio // año explícito en la celda: ancla dura
-        anio = c.anio
-        if (c.mes1 != null) mesPrev1 = c.mes1
-      } else if (anio != null && c.mes1 != null) {
-        if (mesPrev1 != null && c.mes1 > mesPrev1) anio -= 1 // el inicio subió → año anterior
-        inicioAnio = anio
-        finAnio = c.mes2 != null && c.mes2 < c.mes1 ? anio + 1 : anio // rango que cruza fin de año
-        mesPrev1 = c.mes1
+      if (c.mes1 != null) {
+        const base = c.anio != null ? c.anio : anio
+        if (base != null) {
+          inicioAnio = base
+          finAnio = c.mes2 != null && c.mes2 < c.mes1 ? base + 1 : base // rango que cruza fin de año
+          // Con año inferido (no explícito), corrige hacia atrás si la fecha de
+          // fin saldría posterior a la del sondeo anterior (más nuevo): imposible
+          // en una tabla ordenada -> hemos cruzado de año. Arregla el caso dic–ene.
+          if (c.anio == null && prevFinTs != null) {
+            for (let g = 0; g < 6; g++) {
+              const ft = Date.parse(iso(c.dia2 != null ? c.dia2 : c.dia1, c.mes2 != null ? c.mes2 : c.mes1, finAnio) + 'T00:00:00Z')
+              if (Number.isNaN(ft) || ft <= prevFinTs) break
+              inicioAnio -= 1
+              finAnio -= 1
+            }
+          }
+          anio = inicioAnio
+        }
       }
 
       const muestraTxt = muestraCol && tds[muestraCol.i] ? limpiaTexto(tds[muestraCol.i].text).replace(/[.,\s]/g, '') : ''
@@ -319,7 +330,11 @@ export function parseSondeos(html, opts = {}) {
       const inicio = iso(c.dia1, c.mes1, inicioAnio)
       const fin = iso(c.dia2, c.mes2, finAnio)
       if (inicio) s.campoInicio = inicio
-      if (fin) s.campoFin = fin
+      if (fin) {
+        s.campoFin = fin
+        const ft = Date.parse(fin + 'T00:00:00Z')
+        if (!Number.isNaN(ft)) prevFinTs = ft // ancla para el orden de la siguiente fila
+      }
       if (muestra != null) s.muestra = muestra
       sondeos.push(s)
     }

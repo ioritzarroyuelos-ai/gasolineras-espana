@@ -278,7 +278,7 @@ ${canonical ? `<link rel="canonical" href="${canonical}"/>` : ''}
   .legal-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
   h2{color:#15803d;margin-top:28px}
-  a{color:#16a34a}
+  a{color:#15803d}
   code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
   .back{display:inline-block;margin-bottom:16px;color:#64748b;text-decoration:none}
   footer{margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:13px;color:#64748b}

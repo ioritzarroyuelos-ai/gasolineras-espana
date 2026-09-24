@@ -62,10 +62,14 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
     await input.fill('madrid')
     const sugs = page.locator('#sugs')
     await expect(sugs).toBeVisible({ timeout: 10_000 })
-    // Al menos una sugerencia con enlace a una pagina de municipio.
-    const link = sugs.locator('a').first()
-    await expect(link).toBeVisible()
-    await expect(link).toHaveAttribute('href', /^\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
+    // Debe haber al menos una sugerencia de MUNICIPIO (enlace de dos segmentos:
+    // /farmacias/<provincia>/<municipio>). Cuando el texto coincide con el nombre
+    // de una provincia, el autocompletado antepone una sugerencia de provincia
+    // ("Toda la provincia: …", enlace de un segmento /farmacias/<provincia>), asi
+    // que no asumimos que la primera sea un municipio: excluimos las de provincia.
+    const muniLink = sugs.locator('a').filter({ hasNotText: /Toda la provincia/i }).first()
+    await expect(muniLink).toBeVisible()
+    await expect(muniLink).toHaveAttribute('href', /^\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
   })
 
   test('pulsar una sugerencia navega a la pagina de guardia del municipio', async ({ page }) => {
@@ -75,7 +79,11 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
     await input.fill('madrid')
     const sugs = page.locator('#sugs')
     await expect(sugs).toBeVisible({ timeout: 10_000 })
-    await sugs.locator('a').first().click()
+    // Pulsamos la primera sugerencia de MUNICIPIO (dos segmentos). Puede ir
+    // precedida de una sugerencia de provincia ("Toda la provincia: …") cuando el
+    // texto coincide con el nombre de una provincia; esa lleva a /farmacias/<provincia>
+    // y no es lo que valida este test, asi que la excluimos.
+    await sugs.locator('a').filter({ hasNotText: /Toda la provincia/i }).first().click()
     await expect(page).toHaveURL(/\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
     await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia/i })).toBeVisible()
   })

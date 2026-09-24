@@ -5,7 +5,7 @@
 // o "guardia" se tragaria como slug de provincia. Se preserva dentro del modulo.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
+import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/runtime'
 import { buildFarmaciasPage, farmaciasHeaders } from '../html/farmacias'
 import {
   buildGuardiaMunicipioPage, buildGuardiaIndexPage, buildGuardiaProvinciaPage,
@@ -53,7 +53,7 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
       .filter(p => guardiasFileForProvincia(p.slug))
       .map(p => ({ slug: p.slug, name: p.name }))
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/guardia'
+    const canonical = canonicalBase(c) + '/farmacias/guardia'
     return new Response(
       buildGuardiaIndexPage(nonce, provincias, canonical),
       { headers: guardiaHeaders(nonce) },
@@ -123,7 +123,7 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const municipios = municipiosConGuardia(all)
 
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug
+    const canonical = canonicalBase(c) + '/farmacias/' + provSlug
     // Si el territorio no se ha refrescado en el ultimo pase (>30 h), no lo
     // dejamos indexar: la pagina mostrara el aviso de caducado en vez del turno.
     const hdrs = frescuraGuardia(raw.ts).fiable
@@ -161,7 +161,7 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!munEntry) return c.notFound()
 
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/farmacias/' + provSlug + '/' + munSlug
+    const canonical = canonicalBase(c) + '/farmacias/' + provSlug + '/' + munSlug
     const hdrs = frescuraGuardia(raw.ts).fiable
       ? guardiaHeaders(nonce)
       : { ...guardiaHeaders(nonce), 'X-Robots-Tag': 'noindex, follow' }

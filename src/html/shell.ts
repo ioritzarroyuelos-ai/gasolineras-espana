@@ -3,6 +3,7 @@ import { APP_VERSION } from '../lib/version'
 import { mastheadHtml } from './masthead'
 import { escapeHtml, jsonLdSafe } from './html'
 import { BRAND } from '../lib/brand'
+import { ICON_SPRITE, icon } from './icons'
 
 export interface SeoContext {
   // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
@@ -79,6 +80,9 @@ export interface BuildPageOpts {
   // indexar; el SEO lo llevan la portada y las paginas provincia/municipio).
   // No afecta a las rutas SEO (provincia/municipio), que no pasan este flag.
   mapTool?: boolean
+  // Origen canónico (PUBLIC_ORIGIN-aware) para canonical/OG. Si se pasa, se usa en
+  // vez del host del request → en previews la página apunta a producción.
+  canonicalOrigin?: string
 }
 
 export function buildPage(
@@ -89,6 +93,9 @@ export function buildPage(
   // Base URL (origen) para meta tags canonicos / OG. En Workers reqUrl llega como absoluto.
   let origin = 'https://gasolineras.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
+  // Si el caller pasa el origen canónico (PUBLIC_ORIGIN-aware), lo usamos para que
+  // canonical/OG apunten a producción también desde hosts no canónicos (previews).
+  if (opts.canonicalOrigin) origin = opts.canonicalOrigin
   const seo = opts.seo
   // Pathname progresivo: /gasolineras/ → /gasolineras/<prov> → /gasolineras/<prov>/<mun>.
   // La URL canonica siempre refleja el nivel mas fino disponible.
@@ -394,7 +401,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <link rel="preconnect" href="https://c.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://d.basemaps.cartocdn.com" crossorigin />
   <link rel="preconnect" href="https://tiles.openfreemap.org" crossorigin />
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="dns-prefetch" href="https://nominatim.openstreetmap.org" />
 
   <!-- Preload de recursos criticos del mapa para reducir LCP:
@@ -434,12 +440,9 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <script defer src="/static/vendor/map/maplibre-gl/maplibre-gl.js"></script>
   <script defer src="/static/vendor/map/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
 
-  <!-- FontAwesome -->
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css"
-        integrity="sha384-iw3OoTErCYJJB9mCa8LNS2hbsQ7M3C0EpIsO/H5+EGAkPGc6rk+V8i04oW/K5xq0"
-        crossorigin="anonymous"
-        referrerpolicy="no-referrer" />
+  <!-- Iconos: SVG inline (sprite), sin FontAwesome CDN (era render-blocking: ~70 KB
+       de CSS + webfont de iconos para una docena de glifos). El sprite se inyecta
+       al principio del body. -->
 
   <!-- JSON-LD para SEO / rich results -->
   <script type="application/ld+json" nonce="${nonce}">${jsonLd}</script>
@@ -452,6 +455,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   ${getStyles(nonce)}
 </head>
 <body>
+${ICON_SPRITE}
 
 <!-- Cabecera de periódico común a todo el portal (misma que el resto de
      secciones). Va en flujo normal encima de la app y se desplaza con la
@@ -469,7 +473,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 <!-- ============ HEADER ============ -->
 <header id="app-header">
   <button id="btn-toggle-sidebar" title="Abrir filtros" aria-label="Abrir panel de filtros">
-    <i class="fas fa-bars u-c-white u-fs-16" aria-hidden="true"></i>
+    ${icon('bars', 'u-c-white u-fs-16')}
   </button>
 
   <a href="/gasolineras/" id="brand" class="brand-link" aria-label="${BRAND} · inicio">
@@ -490,7 +494,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
          boton abre el modal de login cuando no hay sesion; cuando la hay,
          client/ui.ts lo oculta y muestra #user-menu en su lugar. -->
     <button id="btn-login" class="btn-login" type="button" title="Iniciar sesión" aria-label="Iniciar sesión con Google" hidden>
-      <i class="fas fa-user-circle" aria-hidden="true"></i>
+      ${icon('user-circle')}
       <span class="btn-login-txt">Entrar</span>
     </button>
     <div id="user-menu" class="user-menu" hidden>
@@ -505,12 +509,12 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
         </div>
         <div class="user-dropdown-sep"></div>
         <button id="btn-user-favs" class="user-dropdown-item" role="menuitem" type="button">
-          <i class="fas fa-star" aria-hidden="true"></i> Favoritas
+          ${icon('star')} Favoritas
         </button>
         <div class="user-dropdown-sep"></div>
         <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sesión iniciada</div>
         <button id="btn-logout" class="user-dropdown-item" role="menuitem" type="button">
-          <i class="fas fa-sign-out-alt" aria-hidden="true"></i> Cerrar sesión
+          ${icon('sign-out')} Cerrar sesión
         </button>
       </div>
     </div>` : ''}
@@ -519,13 +523,13 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 
 <!-- Banner offline -->
 <div id="offline-banner" role="status" aria-live="polite">
-  <i class="fas fa-wifi u-mr-6 u-op-80" aria-hidden="true"></i>
+  ${icon('wifi', 'u-mr-6 u-op-80')}
   <span id="offline-text">Sin conexión · mostrando datos guardados</span>
 </div>
 
 <!-- Banner datos desactualizados (>24h) -->
 <div id="stale-banner" role="status" aria-live="polite">
-  <i class="fas fa-hourglass-half u-mr-6" aria-hidden="true"></i>
+  ${icon('hourglass', 'u-mr-6')}
   <span id="stale-text">Los datos oficiales llevan más de 24 h sin actualizarse.</span>
 </div>
 
@@ -550,7 +554,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
     <div id="sidebar-filters">
       <div class="search-heading-row">
         <span class="search-heading">
-          <i class="fas fa-sliders-h u-c-green" aria-hidden="true"></i> Búsqueda
+          ${icon('sliders', 'u-c-green')} Búsqueda
         </span>
       </div>
 
@@ -598,7 +602,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
     <!-- STATS -->
     <div id="stats-bar">
       <div class="stats-flex">
-        <span class="u-c-slate"><i class="fas fa-map-marker-alt u-c-green u-mr-4" aria-hidden="true"></i><strong id="stat-n">0</strong> gasolineras</span>
+        <span class="u-c-slate">${icon('map-marker', 'u-c-green u-mr-4')}<strong id="stat-n">0</strong> gasolineras</span>
         <span class="stat-chip">&#x2193; <span id="stat-min">--</span></span>
         <span class="stat-chip yellow">&#x2248; <span id="stat-avg">--</span></span>
         <span class="stat-chip red">&#x2191; <span id="stat-max">--</span></span>
@@ -648,7 +652,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
             aria-pressed="false"
             aria-label="Ver mapa en vista satélite"
             title="Vista satélite (ortofoto + etiquetas)">
-      <i class="fa-solid fa-satellite" aria-hidden="true"></i>
+      ${icon('satellite')}
     </button>
 
     <!-- Loading -->
@@ -715,7 +719,7 @@ ${gClientId ? `
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">
         <div id="favs-empty" class="favs-empty">
-          <i class="far fa-star" aria-hidden="true"></i>
+          ${icon('star-o')}
           Aun no tienes favoritas. Pulsa la estrella en el popup de una gasolinera para guardarla.
         </div>
         <div id="favs-list"></div>

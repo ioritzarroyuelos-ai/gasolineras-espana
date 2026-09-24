@@ -6,7 +6,7 @@
 // `deps` para no duplicar ni mover el estado global del index.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
+import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/runtime'
 // Lógica del tiempo compartida con el robot/tests (scripts/lib/tiempo.mjs + .d.mts).
 import { construyeIndiceMunicipios, resuelvePrediccion, frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
@@ -98,7 +98,7 @@ export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get('/tiempo/', async c => {
     const { provincias } = await cargaTiempoMunicipios(c)
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/tiempo/'
+    const canonical = canonicalBase(c) + '/tiempo/'
     return new Response(buildTiempoIndexPage(nonce, provincias, canonical), { headers: tiempoHeaders(nonce) })
   })
 
@@ -111,7 +111,7 @@ export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
       .map(m => ({ slug: m.slug, nombre: m.nombre }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/tiempo/' + provSlug
+    const canonical = canonicalBase(c) + '/tiempo/' + provSlug
     return new Response(buildTiempoProvinciaPage(nonce, {
       provinciaSlug: provSlug, provinciaName: munis[0].provinciaNombre, municipios, canonical,
     }), { headers: tiempoHeaders(nonce) })
@@ -137,7 +137,7 @@ export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
     if (desdeSnap && desdeSnap.fuente === 'AEMET' && frescuraTiempo(desdeSnap.elaborado).fiable) pred = desdeSnap
     if (!pred) pred = await resuelveTiempo(c, m)
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/tiempo/' + provSlug + '/' + munSlug
+    const canonical = canonicalBase(c) + '/tiempo/' + provSlug + '/' + munSlug
     if (!pred) {
       // Degradación: ni AEMET ni Open-Meteo respondieron.
       return new Response(buildTiempoMunicipioPage(nonce, {

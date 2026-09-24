@@ -5,11 +5,28 @@
 // permite 'unsafe-inline', lo que no ocurre en el flujo normal de la app.
 import { MASTHEAD_CSS } from './masthead'
 
+// Minificado SEGURO: quita comentarios e indentación PERO conserva los saltos de
+// línea (así nunca fusiona valores multilínea como `margin: 0\n auto`). Memoizado:
+// el CSS es constante (MASTHEAD_CSS incluido). Recorta ~30 KB (comentarios + sangría).
+let _cssMin = ''
+function minifyCss(css: string): string {
+  if (_cssMin) return _cssMin
+  _cssMin = css
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')   // comentario -> ESPACIO (no vacío: evita fusionar tokens tipo .a/**/.b)
+    .replace(/^[ \t]+/gm, '')            // sangría inicial de cada línea
+    .replace(/\n{2,}/g, '\n')            // líneas en blanco
+    .trim()
+  return _cssMin
+}
+
 export function getStyles(nonce: string = ''): string {
   const nonceAttr = nonce ? ` nonce="${nonce}"` : ''
-  return `<style${nonceAttr}>
+  const cssBody = `
     /* ===== RESET & BASE ===== */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    /* Iconos SVG inline (sprite). Heredan color via currentColor y tamaño via
+       font-size (height:1em), como hacían los <i> de FontAwesome. */
+    .ic { height: 1em; width: auto; display: inline-block; vertical-align: -0.125em; fill: currentColor; flex: none; }
     /* Scroll vertical habilitado en body (antes era overflow:hidden en html/body
        lo que hacia el contenido SEO bajo el app inalcanzable — ver .seo-summary
        / .seo-faq / .seo-municipios). Ahora el "primer pliegue" sigue siendo el
@@ -1910,5 +1927,6 @@ export function getStyles(nonce: string = ''): string {
     .seo-municipios ul{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 16px}
     .seo-municipios a{color:#15803d;text-decoration:none;font-size:14px}
     .seo-municipios a span{color:#94a3b8;font-size:12px}
-  </style>`
+  `
+  return `<style${nonceAttr}>${minifyCss(cssBody)}</style>`
 }

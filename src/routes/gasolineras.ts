@@ -10,7 +10,7 @@
 // se importan directamente (son puros).
 import type { Hono } from 'hono'
 import type { Env, MinistryResponse } from '../index'
-import { loadSnapshot, genNonce, MUNI_INDEX_TTL, slog, pageHeaders } from '../lib/runtime'
+import { loadSnapshot, genNonce, MUNI_INDEX_TTL, slog, pageHeaders, canonicalBase } from '../lib/runtime'
 import { buildPage } from '../html/shell'
 import { buildGasolinerasLanding, gasolinerasLandingHeaders, type GasLandingProvincia } from '../html/gasolineras'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
@@ -120,6 +120,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
     } catch { /* degradacion silenciosa */ }
     return new Response(buildPage(nonce, c.req.url, {
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+      canonicalOrigin: canonicalBase(c),
       snapshotDate,
       supportUrl: c.env.SUPPORT_URL,
       googleClientId: c.env.GOOGLE_CLIENT_ID,
@@ -207,6 +208,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
 
     return new Response(buildPage(nonce, c.req.url, {
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+      canonicalOrigin: canonicalBase(c),
       seo: {
         provinciaId: prov.id,
         provinciaSlug: prov.slug,
@@ -280,6 +282,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
 
     return new Response(buildPage(nonce, c.req.url, {
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
+      canonicalOrigin: canonicalBase(c),
       seo: {
         provinciaId: prov.id,
         provinciaSlug: prov.slug,

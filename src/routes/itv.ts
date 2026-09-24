@@ -8,7 +8,7 @@
 // las rutas.
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { loadSnapshot, genNonce, resolveScheme, resolveHost, MUNI_INDEX_TTL } from '../lib/runtime'
+import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/runtime'
 import {
   parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
   estacionesDeProvincia, estacionesDeMunicipio,
@@ -55,7 +55,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const todas = await cargaItv(c)
     if (!todas.length) return c.notFound()
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/'
+    const canonical = canonicalBase(c) + '/itv/'
     return new Response(
       buildItvIndexPage(nonce, provinciasConItv(todas), todas.length, canonical),
       { headers: itvHeaders(nonce) },
@@ -73,7 +73,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
   // citan fuente ni distinguen el regimen fiscal de cada territorio.
   app.get('/itv/precios', c => {
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/precios'
+    const canonical = canonicalBase(c) + '/itv/precios'
     return new Response(buildItvPreciosPage(nonce, canonical), { headers: itvHeaders(nonce) })
   })
 
@@ -87,7 +87,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!deProvincia.length) return c.notFound()
 
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug
+    const canonical = canonicalBase(c) + '/itv/' + provSlug
     return new Response(buildItvProvinciaPage(nonce, {
       provinciaSlug: provSlug,
       provinciaName: prov.name,
@@ -112,7 +112,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!munEntry) return c.notFound()
 
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/itv/' + provSlug + '/' + munSlug
+    const canonical = canonicalBase(c) + '/itv/' + provSlug + '/' + munSlug
     return new Response(buildItvMunicipioPage(nonce, {
       provinciaSlug: provSlug,
       provinciaName: prov.name,

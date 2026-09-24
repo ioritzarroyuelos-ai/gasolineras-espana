@@ -9,7 +9,7 @@
 // vez). runtime NO importa de index (queda por debajo): los tipos MinistryResponse/
 // StationRecord se DEFINEN aquí y index los re-exporta.
 import { bodyLimit } from 'hono/body-limit'
-import { LRU, SlidingWindowLimiter, tokensEqualConstTime } from './pure'
+import { LRU, SlidingWindowLimiter, tokensEqualConstTime, canonicalSite } from './pure'
 import { APP_VERSION } from './version'
 import { MinistryResponseSchema, MunicipioListSchema, ProvinciaListSchema, safeValidate } from './schemas'
 import type { FilaHistorico } from './observatorio'
@@ -325,6 +325,15 @@ function resolveScheme(c: { req: { header: (h: string) => string | undefined; ur
   try { return new URL(c.req.url).protocol.replace(':', '') || 'https' } catch { return 'https' }
 }
 
+// Origen CANÓNICO para <link rel=canonical> y og:url: usa PUBLIC_ORIGIN (igual que
+// robots.txt y los sitemaps) para que, en hosts no canónicos (previews por commit),
+// la página apunte a producción y no se auto-referencie. En el host canónico coincide
+// con resolveHost. Si PUBLIC_ORIGIN no está en runtime, canonicalSite cae al host del
+// request (mismo comportamiento que antes).
+function canonicalBase(c: { req: { header: (h: string) => string | undefined; url: string }; env?: { PUBLIC_ORIGIN?: string } }): string {
+  return canonicalSite(c.env?.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c)).origin
+}
+
 // ---- RATE LIMITING ---- (singletons de modulo; una instancia compartida)
 const apiLimiter    = new SlidingWindowLimiter(120, 60_000)  // 120 req/min por IP
 const ingestLimiter = new SlidingWindowLimiter(20,  60_000)  // 20 errores/min por IP
@@ -376,7 +385,7 @@ function genNonce(): string {
 
 function buildCsp(nonce: string, turnstile = false, googleAuth = false): string {
   const scriptSrc  = ["'self'", "'nonce-" + nonce + "'"]
-  const styleSrc   = ["'self'", "'nonce-" + nonce + "'", 'https://cdn.jsdelivr.net']
+  const styleSrc   = ["'self'", "'nonce-" + nonce + "'"]
   const frameSrc   = ["'self'"]
   const connectSrc = ["'self'"]
   if (turnstile) {
@@ -392,13 +401,12 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   }
   connectSrc.push('https://tiles.openfreemap.org')
   connectSrc.push('https://tms-pnoa-ma.idee.es')
-  connectSrc.push('https://cdn.jsdelivr.net')
   return [
     "default-src 'self'",
     "script-src " + scriptSrc.join(' '),
     "style-src " + styleSrc.join(' '),
     "img-src 'self' data: blob: https:",
-    "font-src 'self' data: https://cdn.jsdelivr.net https://tiles.openfreemap.org",
+    "font-src 'self' data: https://tiles.openfreemap.org",
     "connect-src " + connectSrc.join(' '),
     "frame-src " + frameSrc.join(' '),
     "worker-src 'self' blob:",
@@ -449,7 +457,7 @@ export {
   slog, srvCache, snapshotCache, geoCache, buildUserAgent, cachedJson, proxiedFetch,
   loadSnapshot, filterStations, incrementIsoDate, maxIsoDate,
   loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
-  ALLOWED_ORIGINS, resolveHost, resolveScheme,
+  ALLOWED_ORIGINS, resolveHost, resolveScheme, canonicalBase,
   apiLimiter, ingestLimiter, geoLimiter, cspLimiter, errLimiter, histLimiter,
   exportLimiter, reportLimiter, vitalsLimiter, clientKey, authorizeCron, cacheSizes,
   genNonce, pageHeaders, jsonBodyLimit,

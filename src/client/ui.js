@@ -45,15 +45,14 @@ function closeMobileSidebar() {
 }
 // ---- DESKTOP SIDEBAR: colapso con tira + persistencia ----
 function sidebarIcon() {
-  var i = document.querySelector('#btn-toggle-sidebar i');
-  if (!i) return;
-  if (isMobile()) {
-    i.className = 'fas fa-bars';
-  } else {
-    i.className = sidebar.classList.contains('collapsed')
-      ? 'fas fa-chevron-right'
-      : 'fas fa-chevron-left';
-  }
+  // El botón contiene un <svg class="ic"><use href="#i-..."/></svg> (sprite SVG,
+  // ya no FontAwesome). Cambiamos el símbolo referenciado por el <use>.
+  var use = document.querySelector('#btn-toggle-sidebar use');
+  if (!use) return;
+  var id = isMobile()
+    ? '#i-bars'
+    : (sidebar.classList.contains('collapsed') ? '#i-chevron-right' : '#i-chevron-left');
+  use.setAttribute('href', id);
 }
 
 function toggleDesktopSidebar() {
@@ -710,7 +709,7 @@ function renderFavsModalList() {
       + '</div>'
       + '<div>' + priceHtml + '</div>'
       + '<button class="' + bellCls + '" data-bell-id="' + esc(f.id) + '" data-bell-fuel="' + esc(fuelCode) + '" aria-label="' + bellLabel + '" aria-pressed="' + (bellOn ? 'true' : 'false') + '" title="' + bellLabel + '">' + bellIcon + '</button>'
-      + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><i class="fas fa-trash" aria-hidden="true"></i></button>';
+      + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg></button>';
     // Click en info -> navegar a la favorita (setea provincia, municipio,
     // busqueda por rotulo y zoom). Funciona aunque actualmente estes viendo
     // otra provincia: navigateToFav carga lo que haga falta.

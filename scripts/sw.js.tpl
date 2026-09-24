@@ -26,8 +26,8 @@ const API_CACHE_MAX = 24;
 
 // Recursos estáticos a cachear en instalación.
 // Las librerias del mapa se sirven desde /static/vendor/map/* (ver shell.ts
-// y scripts/fetch-map-vendor.mjs). FontAwesome sigue viniendo de jsdelivr
-// porque pesa y no justifica autohost por ahora.
+// y scripts/fetch-map-vendor.mjs). Los iconos son SVG inline (sprite en el HTML),
+// ya no hay FontAwesome de CDN que cachear.
 const STATIC_ASSETS = [
   // Ship 26: la home del mapa pasó de `/` a `/gasolineras/` en preparación
   // para el portal España Útil. Precacheamos ambas: `/gasolineras/` es el shell
@@ -51,7 +51,6 @@ const STATIC_ASSETS = [
   '/static/vendor/map/leaflet.markercluster/MarkerCluster.css',
   '/static/vendor/map/leaflet.markercluster/MarkerCluster.Default.css',
   '/static/vendor/map/leaflet.markercluster/leaflet.markercluster.js',
-  'https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css',
 ];
 
 // Instalar: cachear recursos estáticos + auto-promocion.

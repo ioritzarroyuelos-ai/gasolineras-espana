@@ -3,9 +3,9 @@
 // Historia: /gasolineras/ era la SPA del mapa nacional. Por decision del usuario
 // (sept 2026) la portada pasa a ser una pagina ligera "buscador primero": eliges
 // tu municipio (autocompletado) y te lleva a su pagina (SSR, con mapa y precios);
-// tienes ademas "usar mi ubicacion" y "planificar ruta", que abren el mapa
-// completo (que vive ahora en /gasolineras/mapa). El mapa NO se ha eliminado,
-// solo cambia la puerta de entrada. Beneficio SEO: la portada gana contenido
+// tienes ademas "usar mi ubicacion", que geolocaliza en el navegador y abre la
+// pagina del municipio mas cercano. (El mapa completo sigue en /gasolineras/mapa,
+// accesible desde las fichas de municipio.) Beneficio SEO: la portada gana contenido
 // crawleable (precios medios + enlaces a las 52 provincias) y las paginas de
 // municipio/provincia siguen siendo las que posicionan.
 
@@ -171,13 +171,15 @@ export function buildGasolinerasLanding(
     .sug-msg { color:var(--c-muted); font-size:14px; }
     .hint { font-size:13px; color:var(--c-muted); margin:10px 0 0; }
     .acciones { display:flex; flex-wrap:wrap; gap:10px; margin:18px 0 0; }
-    .acciones a { display:inline-flex; align-items:center; gap:8px; padding:12px 16px;
-      border-radius:10px; text-decoration:none; font-weight:600; font-size:15px; }
+    .acciones button { display:inline-flex; align-items:center; gap:8px; padding:12px 16px;
+      border-radius:10px; font-weight:600; font-size:15px; border:none; cursor:pointer;
+      font-family:inherit; }
     /* Verde mas oscuro que --c-brand: texto blanco sobre #16a34a solo da 3.29:1
        (falla WCAG AA en texto normal). #15803d con blanco da ~5:1. */
     .acciones .a-primary { background:#15803d; color:#fff; }
-    .acciones .a-ghost { background:var(--c-surface); color:var(--c-brand-dark);
-      border:1px solid var(--c-border); }
+    .acciones .a-primary:disabled { opacity:.6; cursor:default; }
+    .geo-status { color:var(--c-muted); font-size:13px; margin:8px 0 0; }
+    .geo-status.err { color:#b91c1c; }
     .precios { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
     .pcard { border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:var(--c-surface); }
     .pcard-fuel { font-size:13px; color:var(--c-muted); }
@@ -212,10 +214,9 @@ export function buildGasolinerasLanding(
     <p class="hint">Empieza a escribir el nombre de tu municipio.</p>
 
     <div class="acciones">
-      <a class="a-primary" href="/gasolineras/mapa?action=geolocate">📍 Usar mi ubicación</a>
-      <a class="a-ghost" href="/gasolineras/mapa?action=route">🧭 Planificar una ruta</a>
-      <a class="a-ghost" href="/gasolineras/mapa">🗺️ Ver el mapa completo</a>
+      <button type="button" id="btn-geoloc" class="a-primary">📍 Usar mi ubicación</button>
     </div>
+    <p id="geo-status" class="geo-status" role="status" aria-live="polite" hidden></p>
 
     ${preciosCards ? `<h2>Precio medio del combustible hoy en España</h2>
     <div class="precios">${preciosCards}</div>` : ''}
@@ -226,9 +227,8 @@ export function buildGasolinerasLanding(
     <h2>Cómo encontrar la gasolinera más barata</h2>
     <div class="prosa">
       <p>Escribe tu municipio en el buscador y te llevamos a su página, con el mapa de estaciones
-        y el precio de cada combustible. Si estás de viaje, usa <b>tu ubicación</b> para ver las de
-        alrededor, o <b>planifica una ruta</b> y te mostramos las gasolineras del camino ordenadas
-        por precio.</p>
+        y el precio de cada combustible. Si estás de viaje, usa <b>tu ubicación</b> y te llevamos
+        directamente a las gasolineras de tu zona.</p>
       <p>Los precios proceden del Ministerio para la Transición Ecológica y se actualizan a diario.
         Pueden variar durante el día: confirma en la propia estación antes de repostar.</p>
     </div>
@@ -294,6 +294,62 @@ export function buildGasolinerasLanding(
       else if (e.key === 'Escape') { cerrar(); }
     });
     document.addEventListener('click', function (e) { if (e.target !== input && !box.contains(e.target)) cerrar(); });
+
+    // ---- "Usar mi ubicación": geolocaliza y abre el municipio más cercano ----
+    // Elige el municipio con la coordenada representativa más próxima (haversine)
+    // del propio índice que ya carga el buscador. Sin llamadas de red extra ni
+    // emparejamiento por nombre (robusto en municipios bilingües).
+    var geoBtn = document.getElementById('btn-geoloc');
+    var geoStatus = document.getElementById('geo-status');
+    function setGeoStatus(t, isErr) {
+      if (!geoStatus) return;
+      geoStatus.textContent = t || '';
+      geoStatus.hidden = !t;
+      geoStatus.classList.toggle('err', !!isErr);
+    }
+    function resetGeoBtn() { if (geoBtn) { geoBtn.disabled = false; geoBtn.textContent = '📍 Usar mi ubicación'; } }
+    function haversineKm(la1, lo1, la2, lo2) {
+      var R = 6371, toRad = function (d) { return d * Math.PI / 180; };
+      var dLa = toRad(la2 - la1), dLo = toRad(lo2 - lo1);
+      var s = Math.sin(dLa / 2) * Math.sin(dLa / 2) +
+        Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+    }
+    function goToNearest(lat, lng) {
+      var best = null, bestD = Infinity;
+      for (var i = 0; i < muni.length; i++) {
+        var m = muni[i];
+        if (typeof m.lat !== 'number' || typeof m.lng !== 'number') continue;
+        var d = haversineKm(lat, lng, m.lat, m.lng);
+        if (d < bestD) { bestD = d; best = m; }
+      }
+      if (best && best.u) { setGeoStatus('Te llevamos a ' + best.n + '…'); window.location.href = best.u; }
+      else { setGeoStatus('No hemos encontrado gasolineras cerca de tu ubicación. Prueba con el buscador.', true); resetGeoBtn(); }
+    }
+    if (geoBtn) {
+      geoBtn.addEventListener('click', function () {
+        if (!navigator.geolocation) { setGeoStatus('Tu navegador no permite geolocalización. Usa el buscador.', true); return; }
+        geoBtn.disabled = true;
+        geoBtn.textContent = '📍 Localizando…';
+        setGeoStatus('Pidiendo tu ubicación…');
+        cargar(); // asegura que el índice de municipios se está descargando
+        navigator.geolocation.getCurrentPosition(function (pos) {
+          var lat = pos.coords.latitude, lng = pos.coords.longitude;
+          if (loaded) { goToNearest(lat, lng); return; }
+          // Índice aún cargando: esperamos hasta ~5s a que 'loaded' sea true.
+          var tries = 0;
+          var iv = setInterval(function () {
+            if (loaded) { clearInterval(iv); goToNearest(lat, lng); }
+            else if (++tries > 50) { clearInterval(iv); setGeoStatus('No hemos podido cargar el listado. Usa el buscador.', true); resetGeoBtn(); }
+          }, 100);
+        }, function (err) {
+          setGeoStatus(err && err.code === 1
+            ? 'Has bloqueado el permiso de ubicación. Actívalo en el navegador o usa el buscador.'
+            : 'No hemos podido obtener tu ubicación. Usa el buscador.', true);
+          resetGeoBtn();
+        }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
+      });
+    }
   })();
   </script>
 </body>
@@ -327,7 +383,8 @@ export function gasolinerasLandingHeaders(nonce: string): Record<string, string>
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
-    'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
+    // geolocation=(self): la portada usa navigator.geolocation en "usar mi ubicación".
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
   }

@@ -26,6 +26,10 @@ export interface MunicipioEntry {
   stationCount: number
   /** Provincia a la que pertenece (INE id) */
   provinciaId: string
+  /** Coordenada representativa (1ª estación con coords válidas). Para "usar mi
+   *  ubicación": el cliente elige el municipio más cercano por distancia. */
+  lat?: number
+  lng?: number
 }
 
 /**
@@ -80,7 +84,7 @@ export function municipiosInProvincia(
   // Agrupamos por IDMunicipio. Conservamos la primera variante del nombre que
   // veamos (el dataset es consistente — mismo IDMunicipio siempre trae mismo
   // literal de Municipio).
-  const byId = new Map<string, { name: string; count: number }>()
+  const byId = new Map<string, { name: string; count: number; lat?: number; lng?: number }>()
   for (const s of snap.ListaEESSPrecio) {
     if (s.IDProvincia !== provinciaId) continue
     const id = s.IDMunicipio
@@ -89,6 +93,17 @@ export function municipiosInProvincia(
     const prev = byId.get(id)
     if (prev) { prev.count++ }
     else { byId.set(id, { name, count: 1 }) }
+    // Coordenada representativa: la primera estación del municipio con coords
+    // válidas. El dataset usa coma decimal ("40,4168") en Latitud / Longitud (WGS84).
+    const cur = byId.get(id)!
+    if (cur.lat === undefined) {
+      const lat = parseFloat(String(s['Latitud'] ?? '').replace(',', '.'))
+      const lng = parseFloat(String(s['Longitud (WGS84)'] ?? '').replace(',', '.'))
+      if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
+        cur.lat = Math.round(lat * 1e5) / 1e5
+        cur.lng = Math.round(lng * 1e5) / 1e5
+      }
+    }
   }
   const out: MunicipioEntry[] = []
   byId.forEach((v, id) => {
@@ -98,6 +113,8 @@ export function municipiosInProvincia(
       slug: slugifyMunicipio(v.name),
       stationCount: v.count,
       provinciaId,
+      lat: v.lat,
+      lng: v.lng,
     })
   })
   // Orden descendente por count, desempate alfabético para estabilidad.

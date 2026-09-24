@@ -12,8 +12,10 @@ test.describe('Portada España Útil (/)', () => {
     await page.goto('/')
     await expect(page).toHaveTitle(/España Útil/i)
 
-    // Cabecera de periódico: H1 de la marca.
-    await expect(page.getByRole('heading', { level: 1, name: /españa útil/i })).toBeVisible()
+    // H1 descriptivo (sr-only) con las verticales; existe en el DOM aunque no sea
+    // visible. La marca visible vive ahora en la cabecera como .mh-title (span).
+    await expect(page.getByRole('heading', { level: 1, name: /gasolineras/i })).toBeAttached()
+    await expect(page.locator('.mh-title')).toHaveText(/España Útil/i)
 
     // Menú de secciones con enlace a cada vertical.
     await expect(page.locator('.mh-nav a[href="/tiempo/"]')).toBeVisible()

@@ -161,6 +161,7 @@ app.get('/sitemap.xml', async c => {
     entries.push(`  <url><loc>${base}${ruta}</loc><changefreq>weekly</changefreq><priority>${e.tipo === 'autonomica' ? '0.6' : '0.8'}</priority></url>`)
   }
 
+  entries.push(`  <url><loc>${base}/acerca</loc><changefreq>monthly</changefreq><priority>0.4</priority></url>`)
   entries.push(`  <url><loc>${base}/privacidad</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   // /status es una pagina de estado tecnico (auto-refresh), sin intencion de
   // busqueda: fuera del sitemap y con noindex en su plantilla. Gastaba rastreo.
@@ -263,19 +264,21 @@ ${entries.join('\n')}
 // El nonce debe coincidir con el del header CSP — sin el atributo el <style>
 // inline es bloqueado (style-src no lleva ya 'unsafe-inline'). El caller de
 // la ruta es quien genera el nonce via genNonce() y lo pasa a ambos sitios.
-function legalPage(title: string, bodyHtml: string, nonce: string): string {
+function legalPage(title: string, bodyHtml: string, nonce: string, canonical = ''): string {
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${title} · ${BRAND}</title>
 <meta name="robots" content="index,follow"/>
 <meta name="description" content="${title} de ${BRAND}"/>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#x26FD;</text></svg>"/>
+${canonical ? `<link rel="canonical" href="${canonical}"/>` : ''}
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg"/>
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png"/>
 <style nonce="${nonce}">
   body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
   .legal-main{max-width:720px;margin:0 auto;padding:32px 20px}
   h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
   h2{color:#15803d;margin-top:28px}
-  a{color:#16a34a}
+  a{color:#15803d}
   code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
   .back{display:inline-block;margin-bottom:16px;color:#64748b;text-decoration:none}
   footer{margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:13px;color:#64748b}
@@ -286,7 +289,10 @@ ${mastheadHtml()}
 <main class="legal-main">
 <a class="back" href="/gasolineras/">← Volver</a>
 ${bodyHtml}
-<footer>${BRAND} · v${APP_VERSION} · Datos: Ministerio para la Transición Ecológica y el Reto Demográfico.</footer>
+<footer>
+<p><a href="/">Inicio</a> · <a href="/acerca">Acerca y fuentes</a> · <a href="/privacidad">Privacidad</a></p>
+<p>${BRAND} · v${APP_VERSION} · Datos oficiales de fuentes públicas.</p>
+</footer>
 </main>
 </body></html>`
 }
@@ -411,12 +417,60 @@ ${bodyHtml}
   })
 })
 
+// ---- /acerca: transparencia, metodologia y fuentes (E-E-A-T) ----
+// Google valora saber QUIEN esta detras, COMO se obtienen los datos y de QUE
+// fuentes. Para un dominio joven es una senal de confianza importante. HTML
+// simple reutilizando legalPage (masthead + main + footer, con CSP/nonce).
+app.get('/acerca', c => {
+  const nonce = genNonce()
+  const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
+  const html = legalPage('Acerca de España Útil · metodología y fuentes', `
+<h1>Acerca de España Útil</h1>
+<p><strong>España Útil</strong> reúne en un solo sitio información práctica y oficial
+de España: el tiempo por municipio, los precios de las gasolineras, las farmacias de
+guardia, las estaciones de ITV y las elecciones con sus sondeos. Todo <strong>gratis,
+sin registro y sin publicidad</strong>.</p>
+
+<h2>Cómo trabajamos</h2>
+<p>No inventamos datos ni los estimamos: tomamos la información de <strong>fuentes
+oficiales y públicas</strong>, la normalizamos y la presentamos de forma legible.
+Cada página indica de dónde sale el dato y, cuando aplica, su fecha de actualización.
+El código y los procesos que descargan los datos se ejecutan de forma automática varias
+veces al día.</p>
+
+<h2>De dónde salen los datos</h2>
+<ul>
+  <li><strong>Precios de carburantes</strong>: <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">API oficial del Ministerio para la Transición Ecológica y el Reto Demográfico</a>. Se actualiza a diario.</li>
+  <li><strong>El tiempo</strong>: <a href="https://www.aemet.es/" rel="noopener">AEMET</a> (Agencia Estatal de Meteorología), con <a href="https://open-meteo.com/" rel="noopener">Open-Meteo</a> como fuente de reserva. Predicción por municipio, actualizada a diario.</li>
+  <li><strong>Estaciones de ITV</strong>: datos de la <a href="https://www.dgt.es/" rel="noopener">Dirección General de Tráfico</a> y de los organismos autonómicos competentes.</li>
+  <li><strong>Farmacias de guardia</strong>: <a href="https://www.portalfarma.com/" rel="noopener">Colegios Oficiales de Farmacéuticos</a>, provincia por provincia. Los turnos los publica cada colegio y pueden cambiar.</li>
+  <li><strong>Elecciones y sondeos</strong>: encuestas recopiladas de <a href="https://es.wikipedia.org/" rel="noopener">Wikipedia</a> (CC BY-SA), con el resultado oficial del <a href="https://infoelectoral.interior.gob.es/" rel="noopener">Ministerio del Interior</a> como referencia.</li>
+</ul>
+
+<h2>Límites y avisos</h2>
+<p>Los datos pueden contener errores de origen o llegar con retraso respecto a la
+realidad. <strong>Confirma siempre la información crítica</strong> (horario de una
+farmacia, si una ITV necesita cita, el precio en el surtidor) antes de desplazarte.
+Durante la veda electoral no se difunden sondeos, conforme a la ley.</p>
+
+<h2>Contacto y correcciones</h2>
+<p>Si detectas un dato incorrecto o quieres proponer una mejora, puedes reportarlo
+desde la propia web (en las páginas de gasolineras hay un aviso de precio incorrecto)
+o abrir una incidencia en el repositorio del proyecto. Revisamos los avisos a mano.</p>
+`, nonce, site.origin + '/acerca')
+  return c.html(html, 200, {
+    ...pageHeaders(nonce, false),
+    'Cache-Control': 'public, max-age=3600',
+  })
+})
+
 app.get('/privacidad', c => {
   // Generamos nonce por request igual que en la home, y emitimos CSP completa
   // (antes /privacidad respondia sin Content-Security-Policy — un XSS en la
   // pagina legal habria tenido ejecucion libre). turnstile=false porque no hay
   // widget en la pagina legal.
   const nonce = genNonce()
+  const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
   const html = legalPage('Privacidad', `
 <h1>Política de privacidad</h1>
 <p><strong>Última actualización:</strong> ${new Date().toISOString().slice(0,10)}</p>
@@ -560,7 +614,7 @@ datos de tu navegador. Para cualquier otra petición, escríbenos.</p>
 <h2>Contacto</h2>
 <p>Para dudas o para pedir el borrado de tus datos, abre una incidencia en el
 repositorio del proyecto.</p>
-`, nonce)
+`, nonce, site.origin + '/privacidad')
   return c.html(html, 200, {
     ...pageHeaders(nonce, false),
     // pageHeaders fija Cache-Control: no-cache para rutas dinamicas con Turnstile,

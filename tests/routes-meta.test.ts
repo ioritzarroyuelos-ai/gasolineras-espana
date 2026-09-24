@@ -62,6 +62,21 @@ describe('rutas META/SEO tras extraer a src/routes/meta.ts (B1)', () => {
     expect(body).toMatch(/\/gasolineras\/<\/loc><lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/)
   })
 
+  it('/acerca -> 200 HTML con metodología y fuentes (E-E-A-T)', async () => {
+    const res = await app.request('/acerca', {}, { ASSETS: assets404() })
+    expect(res.status).toBe(200)
+    const body = await res.text()
+    expect(body).toContain('Acerca de España Útil')
+    expect(body).toContain('AEMET')
+    expect(body).toContain('Ministerio')
+  })
+
+  it('sitemap incluye /acerca', async () => {
+    const res = await app.request('/sitemap.xml', {}, { ASSETS: assets404() })
+    const body = await res.text()
+    expect(body).toContain('/acerca</loc>')
+  })
+
   it('sitemap-tiempo: municipios con changefreq weekly y sin lastmod global', async () => {
     const res = await app.request('/sitemap-tiempo.xml', {}, { ASSETS: assets404() })
     const body = await res.text()

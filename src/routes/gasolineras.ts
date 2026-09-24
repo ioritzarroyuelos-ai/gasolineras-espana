@@ -244,6 +244,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
     let munId: string | undefined
     let snapshotDate: string | undefined  // Ship 15
     let topStations: StationLite[] | undefined  // Ship 17
+    let municipios: Array<{ slug: string; name: string; stationCount: number }> | undefined
     try {
       const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
       if (snap && typeof snap.Fecha === 'string') snapshotDate = snap.Fecha
@@ -254,6 +255,14 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       const r = statsForMunicipio(snap, prov.id, mun.id)
       stats = Object.keys(r.stats).length > 0 ? r.stats : undefined
       stationCount = r.stationCount
+      // Municipios hermanos de la misma provincia (para malla interna): los mas
+      // grandes por nº de estaciones, excluyendo el actual. Antes solo la pagina
+      // de provincia enlazaba municipios; asi la ficha de municipio deja de ser
+      // un callejon sin salida horizontal.
+      municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 26, minStations: 5 })
+        .filter(m => m.slug !== munSlug)
+        .slice(0, 25)
+        .map(m => ({ slug: m.slug, name: m.name, stationCount: m.stationCount }))
       // Top-10 baratas dentro del municipio para ItemList/GasStation en JSON-LD.
       // Si el municipio tiene <10 estaciones con 95, devuelve las que haya; si
       // no tiene ninguna con 95, queda undefined (no emitimos ItemList).
@@ -282,6 +291,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
         stationCount: stationCount || undefined,
         topStations,
       },
+      municipios,
       snapshotDate,
       supportUrl: c.env.SUPPORT_URL,
       googleClientId: c.env.GOOGLE_CLIENT_ID,

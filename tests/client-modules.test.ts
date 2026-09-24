@@ -130,6 +130,10 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function applyFilters',    in: ['list'] },
     { name: 'function renderMarkers',   in: ['map'] },
     { name: 'function buildPopup',      in: ['map'] },
+    // Capa de electrolineras (se perdió una vez en el refactor B2: guardarla).
+    { name: 'function loadChargers',      in: ['map'] },
+    { name: 'function buildChargerPopup', in: ['map'] },
+    { name: 'function setChargersVisible', in: ['map'] },
     { name: 'function toggleCompare',   in: ['list'] },
     { name: 'function openCompareModal', in: ['list'] },
     { name: 'function renderCompareModal', in: ['list'] },

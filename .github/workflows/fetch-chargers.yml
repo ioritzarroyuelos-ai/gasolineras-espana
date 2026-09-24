@@ -1,21 +1,20 @@
 name: Fetch EV chargers snapshot
 
-# Ship 25.5 — Refresca public/data/chargers.json una vez por semana desde
-# OpenStreetMap via Overpass API. No tiene sentido hacerlo mas seguido: los
-# puntos de recarga no cambian de precio; solo cambian cuando se instalan
-# nuevos. Una vez por semana cubre el ritmo real.
+# Refresca public/data/chargers.json a diario desde el registro OFICIAL del
+# MITERD publicado por la DGT (DATEX2 v3, nacional, CC BY, actualizado cada
+# 24h). Si existe el secreto OCM_API_KEY, completa con Open Charge Map
+# (comunidad, CC BY-SA) los puntos que no esten en el registro oficial.
 #
 # Se puede disparar manual con workflow_dispatch para un refresh urgente.
 #
-# Fuente: OSM Overpass API (anonima, sin secretos). Probamos OCM inicialmente
-# pero devuelve 403 sin API key — no queremos depender de un secreto para
-# una data fuente que deberia ser libre.
+# El registro oficial se publica a diario, asi que corremos a diario para no
+# quedarnos con altas/bajas de estaciones desfasadas.
 
 on:
   schedule:
-    # Lunes 05:00 UTC = 06:00/07:00 Madrid. Hora baja de trafico para no
-    # interferir con el cron de precios (07:00 y 19:00 UTC).
-    - cron: '0 5 * * 1'
+    # 05:15 UTC = 06:15/07:15 Madrid. Hora baja de trafico para no interferir
+    # con el cron de precios (07:00 y 19:00 UTC).
+    - cron: '15 5 * * *'
   workflow_dispatch:
     inputs:
       force_deploy:
@@ -41,7 +40,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Fetch snapshot de OSM Overpass
+      - name: Fetch snapshot de electrolineras (DGT/MITERD + OCM opcional)
+        env:
+          # Opcional: si está definido en los secrets del repo, completa el
+          # registro oficial con Open Charge Map. Sin él, snapshot 100% oficial.
+          OCM_API_KEY: ${{ secrets.OCM_API_KEY }}
         run: node scripts/fetch-chargers.mjs
 
       - name: Commit snapshot si hay cambios

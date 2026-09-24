@@ -948,6 +948,18 @@ export function getStyles(nonce: string = ''): string {
       background: #166534; color: #fff; border-color: #052e16;
     }
 
+    /* Boton flotante #btn-electrolineras: debajo del de satelite. Color activo
+       azul (#2563eb), a juego con el cluster/pines de recarga electrica. */
+    .map-floating-btn--electrolineras { top: 132px; }
+    .map-floating-btn--electrolineras:hover { color: #2563eb; }
+    .map-floating-btn--electrolineras[aria-pressed="true"] {
+      background: #2563eb; color: #fff; border-color: #1d4ed8;
+    }
+    body.dark .map-floating-btn--electrolineras:hover { color: #93c5fd; }
+    body.dark .map-floating-btn--electrolineras[aria-pressed="true"] {
+      background: #2563eb; color: #fff; border-color: #1e40af;
+    }
+
     /* Recuadro de Canarias: mini-mapa en la esquina, al estilo de los mapas del
        tiempo. Permite que la peninsula ocupe toda la pantalla sin dejar fuera
        las islas. Elevado sobre el control de zoom (bottomright). */
@@ -1788,6 +1800,20 @@ export function getStyles(nonce: string = ''): string {
     .cluster-icon-count--fs9  { font-size: 9px; }
     .cluster-icon-count--fs11 { font-size: 11px; }
     .cluster-icon-price     { color: rgba(255,255,255,0.9); font-size: 8px; font-weight: 600; line-height: 1; }
+    /* Clúster de electrolineras: azul, para distinguirlo del de gasolineras. */
+    .cluster-icon--ev       { background: #2563eb; }
+
+    /* ---- Popup de electrolinera (capa de recarga eléctrica) ---- */
+    .ev-pop-title { font-weight: 700; font-size: 13px; color: #0f172a; margin: 0 0 2px; line-height: 1.25; }
+    body.dark .ev-pop-title { color: #e2e8f0; }
+    .ev-pop-op { font-size: 11px; color: #475569; margin: 0 0 6px; }
+    body.dark .ev-pop-op { color: #94a3b8; }
+    .ev-pop-stats { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 6px; }
+    .ev-chip { font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 10px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .ev-chip--kw { background: #ede9fe; color: #6d28d9; border-color: #ddd6fe; }
+    body.dark .ev-chip { background: #1e293b; color: #93c5fd; border-color: #334155; }
+    body.dark .ev-chip--kw { background: #2e1065; color: #c4b5fd; border-color: #4c1d95; }
+    .ev-pop-src { font-size: 9.5px; color: #94a3b8; margin: 2px 0 0; }
 
     /* list rows (station-list) */
     .row-info-flex          { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; padding-right: 22px; }

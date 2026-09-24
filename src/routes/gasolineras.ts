@@ -191,12 +191,11 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
             count: arr.length,
           }
         }
-        // Internal linking SEO: enlazamos TODOS los municipios con >=5 estaciones
-        // de la provincia, no solo el top-15. El sitemap ya declara indexables a
-        // todos esos municipios (meta.ts, minStations:5); con el top-15 quedaban
-        // ~127 municipios huerfanos (indexables pero sin ningun enlace HTML
+        // Internal linking SEO: enlazamos TODOS los municipios con al menos una
+        // gasolinera de la provincia (mismo minStations:1 que el sitemap), para que
+        // no queden paginas huerfanas (indexables pero sin ningun enlace HTML
         // rastreable). El limite alto (10000) equivale a "sin tope por provincia".
-        municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 10000, minStations: 5 })
+        municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 10000, minStations: 1 })
           .map(m => ({ slug: m.slug, name: m.name, stationCount: m.stationCount }))
       }
     } catch (err) {
@@ -261,7 +260,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       // grandes por nº de estaciones, excluyendo el actual. Antes solo la pagina
       // de provincia enlazaba municipios; asi la ficha de municipio deja de ser
       // un callejon sin salida horizontal.
-      municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 26, minStations: 5 })
+      municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 26, minStations: 1 })
         .filter(m => m.slug !== munSlug)
         .slice(0, 25)
         .map(m => ({ slug: m.slug, name: m.name, stationCount: m.stationCount }))

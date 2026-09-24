@@ -101,14 +101,18 @@ app.get('/sitemap.xml', async c => {
   // El portal de farmacias tampoco estaba declarado: sin esto, Google no tenia
   // ni una sola URL de farmacias por donde entrar.
   entries.push(`  <url><loc>${base}/precios-carburantes</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
-  entries.push(`  <url><loc>${base}/farmacias/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+  // Hubs semi-estaticos (buscadores): SIN lastmod. Un lastmod='today' recalculado
+  // en cada request es falso (el contenido no cambia a diario) y, segun Google,
+  // un lastmod poco fiable hace que ignore el lastmod de TODO el dominio. Mejor
+  // omitirlo aqui y dejarlo solo donde tenemos fecha real (gasolineras, ITV, guardias).
+  entries.push(`  <url><loc>${base}/farmacias/</loc><changefreq>daily</changefreq><priority>0.9</priority></url>`)
 
   // Indice y provincias de guardia: son el camino de enlaces hasta las 1.289
   // paginas de municipio, que hasta ahora eran huerfanas.
-  entries.push(`  <url><loc>${base}/farmacias/guardia</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+  entries.push(`  <url><loc>${base}/farmacias/guardia</loc><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   for (const p of PROVINCIAS) {
     if (guardiasFileForProvincia(p.slug)) {
-      entries.push(`  <url><loc>${base}/farmacias/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`)
+      entries.push(`  <url><loc>${base}/farmacias/${p.slug}</loc><changefreq>daily</changefreq><priority>0.7</priority></url>`)
     }
   }
 
@@ -116,15 +120,25 @@ app.get('/sitemap.xml', async c => {
   // que las guardias o los precios, el dato es estatico — decir "daily" aqui
   // solo gastaria presupuesto de rastreo en paginas que no cambian.
   try {
-    const todasItv = parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
+    const itvRaw = await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS)
+    const todasItv = parseItv(itvRaw)
+    // lastmod REAL del dato de ITV (generatedAt del fichero), no `today`. El dato
+    // es estatico: emitir `today` recalculado en cada request contradecia el
+    // changefreq=monthly y entrenaba a Google a ignorar el lastmod de todo el sitio.
+    // Si no hay generatedAt fiable, OMITIMOS el lastmod (mejor que una fecha ajena
+    // como la del snapshot de gasolineras, que no representa el cambio de esta pagina).
+    const itvDate = itvRaw && typeof itvRaw.generatedAt === 'string' && /^\d{4}-\d{2}-\d{2}/.test(itvRaw.generatedAt)
+      ? itvRaw.generatedAt.slice(0, 10)
+      : ''
+    const itvLm = itvDate ? `<lastmod>${itvDate}</lastmod>` : ''
     if (todasItv.length) {
-      entries.push(`  <url><loc>${base}/itv/</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>`)
+      entries.push(`  <url><loc>${base}/itv/</loc>${itvLm}<changefreq>monthly</changefreq><priority>0.8</priority></url>`)
       // Prioridad alta: es la pagina del vertical con opcion real de posicionar.
-      entries.push(`  <url><loc>${base}/itv/precios</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.9</priority></url>`)
+      entries.push(`  <url><loc>${base}/itv/precios</loc>${itvLm}<changefreq>monthly</changefreq><priority>0.9</priority></url>`)
       for (const p of provinciasConItv(todasItv)) {
-        entries.push(`  <url><loc>${base}/itv/${p.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`)
+        entries.push(`  <url><loc>${base}/itv/${p.slug}</loc>${itvLm}<changefreq>monthly</changefreq><priority>0.7</priority></url>`)
         for (const m of municipiosConItv(estacionesDeProvincia(todasItv, p.id))) {
-          entries.push(`  <url><loc>${base}/itv/${p.slug}/${m.slug}</loc><lastmod>${today}</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>`)
+          entries.push(`  <url><loc>${base}/itv/${p.slug}/${m.slug}</loc>${itvLm}<changefreq>monthly</changefreq><priority>0.6</priority></url>`)
         }
       }
     }
@@ -135,19 +149,19 @@ app.get('/sitemap.xml', async c => {
   // Tiempo: el hub va aqui (junto al resto de verticales); las ~8k paginas de
   // municipio viven en sitemap-tiempo.xml aparte (carga tiempo/municipios.json,
   // 1,5 MB — no queremos ese peso en el sitemap principal).
-  entries.push(`  <url><loc>${base}/tiempo/</loc><lastmod>${today}</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+  entries.push(`  <url><loc>${base}/tiempo/</loc><changefreq>daily</changefreq><priority>0.9</priority></url>`)
 
   // Política: hub + índice de autonómicas + una URL por elección (generales,
   // europeas y 19 territoriales). Vienen del catálogo (existen siempre, aunque
   // aún no haya sondeos). changefreq semanal: el contenido cambia con los sondeos.
-  entries.push(`  <url><loc>${base}/politica/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>`)
-  entries.push(`  <url><loc>${base}/politica/autonomicas/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>0.6</priority></url>`)
+  entries.push(`  <url><loc>${base}/politica/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>`)
+  entries.push(`  <url><loc>${base}/politica/autonomicas/</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>`)
   for (const e of ELECCIONES) {
     const ruta = e.tipo === 'autonomica' ? `/politica/autonomicas/${e.id}` : `/politica/${e.id}`
-    entries.push(`  <url><loc>${base}${ruta}</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>${e.tipo === 'autonomica' ? '0.6' : '0.8'}</priority></url>`)
+    entries.push(`  <url><loc>${base}${ruta}</loc><changefreq>weekly</changefreq><priority>${e.tipo === 'autonomica' ? '0.6' : '0.8'}</priority></url>`)
   }
 
-  entries.push(`  <url><loc>${base}/privacidad</loc><lastmod>${today}</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
+  entries.push(`  <url><loc>${base}/privacidad</loc><changefreq>yearly</changefreq><priority>0.3</priority></url>`)
   // /status es una pagina de estado tecnico (auto-refresh), sin intencion de
   // busqueda: fuera del sitemap y con noindex en su plantilla. Gastaba rastreo.
   const body = `<?xml version="1.0" encoding="UTF-8"?>
@@ -212,7 +226,6 @@ app.get('/sitemap-tiempo.xml', async c => {
   const host = resolveHost(c)
   const scheme = resolveScheme(c)
   const base = scheme + '://' + host
-  const today = new Date().toISOString().slice(0, 10)
   const entries: string[] = []
   let raw: { generado?: string; municipios?: MunicipioLista[] } | null = null
   try {
@@ -222,21 +235,22 @@ app.get('/sitemap-tiempo.xml', async c => {
     slog('warn', 'sitemap_tiempo.snapshot_failed', { err: String(err).slice(0, 200) })
   }
   const munis = (raw && raw.municipios) || []
-  // lastmod: fecha de generacion del maestro (fallback hoy).
-  const lastmod = raw && typeof raw.generado === 'string' && /^\d{4}-\d{2}-\d{2}/.test(raw.generado)
-    ? raw.generado.slice(0, 10)
-    : today
-  // Paginas de provincia (una por provinciaSlug distinto).
+  // SIN lastmod: el unico dato disponible aqui es `raw.generado` (fecha de la
+  // LISTA de municipios, semanas atras), no la de cada prediccion (que se
+  // refresca a diario en snapshots aparte). Un lastmod global y estatico con
+  // changefreq=daily es contradictorio, asi que lo omitimos.
+  // Paginas de provincia (una por provinciaSlug distinto): pocas y de mas valor.
   const provSeen = new Set<string>()
   for (const m of munis) {
     if (!m.provinciaSlug || provSeen.has(m.provinciaSlug)) continue
     provSeen.add(m.provinciaSlug)
-    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.7</priority></url>`)
+    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}</loc><changefreq>daily</changefreq><priority>0.6</priority></url>`)
   }
-  // Paginas de municipio (todas).
+  // Paginas de municipio (todas, ~8k): changefreq weekly para no competir por
+  // presupuesto de rastreo con las paginas de mayor valor (dominio joven).
   for (const m of munis) {
     if (!m.provinciaSlug || !m.slug) continue
-    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}/${m.slug}</loc><lastmod>${lastmod}</lastmod><changefreq>daily</changefreq><priority>0.5</priority></url>`)
+    entries.push(`  <url><loc>${base}/tiempo/${m.provinciaSlug}/${m.slug}</loc><changefreq>weekly</changefreq><priority>0.4</priority></url>`)
   }
   const body = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

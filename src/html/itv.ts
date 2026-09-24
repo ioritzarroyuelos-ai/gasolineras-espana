@@ -157,7 +157,7 @@ function jsonLdEstaciones(nombre: string, ests: EstacionITV[], provincia: string
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'Estaciones de ITV en ' + nombre,
-    numberOfItems: ests.length,
+    numberOfItems: items.length,   // debe cuadrar con los items emitidos (slice 15)
     itemListElement: items,
   }).replace(/</g, '\\u003c')
 }
@@ -398,7 +398,13 @@ export function buildItvPreciosPage(nonce: string, canonical: string): string {
 
   const conNota = ordenadas.filter(t => t.nota)
 
-  return envoltorio({ title, desc, canonical, nonce },
+  const origin = originFromCanonical(canonical)
+  return envoltorio({ title, desc, canonical, nonce,
+    breadcrumb: breadcrumbLd([
+      { name: 'Inicio', url: origin + '/' },
+      { name: 'ITV', url: origin + '/itv/' },
+      { name: 'Precios', url: canonical },
+    ]) },
     '<h1>Cuánto cuesta la ITV en 2026</h1>'
     + '<p class="sub">Precio final de una inspección periódica de turismo, ordenado de más barato a más caro. '
     + 'Incluye el impuesto de cada territorio y la tasa de Tráfico.</p>'

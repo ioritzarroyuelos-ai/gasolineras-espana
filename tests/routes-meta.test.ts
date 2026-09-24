@@ -49,4 +49,24 @@ describe('rutas META/SEO tras extraer a src/routes/meta.ts (B1)', () => {
     expect(body).toContain('Si inicias sesión con Google')
     expect(body).toContain('Alertas de precios por Telegram')
   })
+
+  it('sitemap: los hubs semi-estáticos NO emiten lastmod (evita lastmod falso)', async () => {
+    const res = await app.request('/sitemap.xml', {}, { ASSETS: assets404() })
+    const body = await res.text()
+    // Hubs sin fecha fiable: la URL va directa a <changefreq>, sin <lastmod> en medio.
+    expect(body).toMatch(/\/tiempo\/<\/loc><changefreq>/)
+    expect(body).toMatch(/\/farmacias\/<\/loc><changefreq>/)
+    expect(body).toMatch(/\/politica\/<\/loc><changefreq>/)
+    expect(body).toMatch(/\/privacidad<\/loc><changefreq>yearly/)
+    // Gasolineras SÍ mantiene lastmod (fecha real del snapshot; hoy como fallback).
+    expect(body).toMatch(/\/gasolineras\/<\/loc><lastmod>\d{4}-\d{2}-\d{2}<\/lastmod>/)
+  })
+
+  it('sitemap-tiempo: municipios con changefreq weekly y sin lastmod global', async () => {
+    const res = await app.request('/sitemap-tiempo.xml', {}, { ASSETS: assets404() })
+    const body = await res.text()
+    // Con ASSETS 404 no hay municipios, pero el documento es XML válido y vacío de urls.
+    expect(body).toContain('<urlset')
+    expect(body).not.toContain('<lastmod>')
+  })
 })

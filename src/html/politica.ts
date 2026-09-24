@@ -389,9 +389,12 @@ export function buildEleccionPage(o: EleccionOpts): string {
     + 'Resultado oficial: ' + esc(file.referencia.fuente) + '.</p>'
 
   const comunidad = cat.comunidad ? cat.comunidad + (cat.ciudadAutonoma ? ' (ciudad autónoma)' : '') : ''
+  // OJO: NO escapar aqui — envoltorio() ya hace esc() de title/desc. Escapar dos
+  // veces convertia '&'/'<' en '&amp;amp;' en title y description (mismo criterio
+  // que buildIndexPage/buildAutonomicasIndex, que pasan el texto en crudo).
   return envoltorio({
-    title: esc(cat.nombre) + ' · sondeos · España Útil',
-    desc: 'Todos los sondeos de ' + esc(cat.nombre) + (comunidad ? ' (' + esc(comunidad) + ')' : '') + ': escaños estimados por partido frente al resultado de la última elección.',
+    title: cat.nombre + ' · sondeos · España Útil',
+    desc: 'Todos los sondeos de ' + cat.nombre + (comunidad ? ' (' + comunidad + ')' : '') + ': escaños estimados por partido frente al resultado de la última elección.',
     canonical, nonce,
     breadcrumb: breadcrumbLd([
       { name: 'Inicio', url: origin + '/' },

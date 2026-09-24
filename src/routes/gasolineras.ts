@@ -190,10 +190,12 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
             count: arr.length,
           }
         }
-        // Ship 11: top municipios por nº de estaciones, para internal linking
-        // SEO y para ayudar a los crawlers a descubrir paginas municipio.
-        // Filtro de minimo 5 estaciones evita bloat con aldeas.
-        municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 15, minStations: 5 })
+        // Internal linking SEO: enlazamos TODOS los municipios con >=5 estaciones
+        // de la provincia, no solo el top-15. El sitemap ya declara indexables a
+        // todos esos municipios (meta.ts, minStations:5); con el top-15 quedaban
+        // ~127 municipios huerfanos (indexables pero sin ningun enlace HTML
+        // rastreable). El limite alto (10000) equivale a "sin tope por provincia".
+        municipios = topMunicipiosInProvincia(snap, prov.id, { limit: 10000, minStations: 5 })
           .map(m => ({ slug: m.slug, name: m.name, stationCount: m.stationCount }))
       }
     } catch (err) {

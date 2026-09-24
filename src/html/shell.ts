@@ -108,22 +108,24 @@ export function buildPage(
   // arriba: si no, la pagina tendria dos H1 con textos distintos (senal diluida).
   const hasSeoSummary = !!(geoLabel && seo?.stats
     && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)))
+  // Title: "Gasolineras en X: precios | España Útil" — mantiene el intent
+  // ("precios") y añade la marca al final (coherente con el resto de verticales).
   const pageTitle = geoLabel
-    ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
+    ? 'Gasolineras en ' + geoLabel + ': precios | ' + BRAND
     : BRAND + ' · Precios oficiales en tiempo real'
-  // Description enriquecida cuando hay stats: incluye precio min-max de 95 y
-  // numero de estaciones — mejora CTR en SERP y le da a Google material
-  // ranqueable ("precio gasolina madrid" matchea directamente).
+  // Description enriquecida cuando hay stats: incluye precio min de 95 y numero
+  // de estaciones — mejora CTR en SERP y da a Google material ranqueable
+  // ("precio gasolina madrid"). Recortada a <=~155 car. para no truncarse en SERP.
   const stats95 = seo?.stats?.['95']
   const pageDesc = geoLabel
     ? (stats95 && stats95.count >= 3
-        ? 'Precios actualizados de gasolina y diésel en ' + geoLabel +
-          '. Gasolina 95 desde ' + stats95.min.toFixed(3) + '€ hasta ' + stats95.max.toFixed(3) + '€ (media ' + stats95.avg.toFixed(3) + '€). ' +
-          (seo?.stationCount ? seo.stationCount + ' estaciones. ' : '') +
-          'Mapa interactivo y datos oficiales del Ministerio.'
-        : 'Precios actualizados de gasolina y diésel en ' + geoLabel + '. Mapa interactivo, comparador y favoritos con datos oficiales del Ministerio.'
+        ? 'Precios de gasolina y diésel en ' + geoLabel +
+          '. Gasolina 95 desde ' + stats95.min.toFixed(3) + '€' +
+          (seo?.stationCount ? ' · ' + seo.stationCount + ' estaciones' : '') +
+          '. Datos oficiales del Ministerio.'
+        : 'Precios actualizados de gasolina y diésel en ' + geoLabel + '. Mapa, comparador y favoritos con datos oficiales del Ministerio.'
       )
-    : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro, favoritos y modo offline. Datos del Ministerio para la Transición Ecológica.'
+    : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro y favoritos. Datos oficiales del Ministerio.'
   const ogTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
     : BRAND + ' · Precios en tiempo real'

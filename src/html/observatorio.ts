@@ -12,7 +12,7 @@
 
 import type { Observatorio, ProvinciaPrecio, MarcaPrecio } from '../lib/observatorio'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
-import { ogSocialTags, originFromCanonical } from './seo'
+import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 // El Ministerio da la fecha como "DD/MM/YYYY HH:mm:SS" (no ISO). schema.org
 // exige ISO 8601; en crudo, Search Console avisa y la ignora.
@@ -148,6 +148,10 @@ export function buildObservatorioPage(nonce: string, d: ObservatorioPageData): s
     + ogSocialTags(originFromCanonical(d.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd + '</script>'
+    + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + breadcrumbLd([
+        { name: 'Inicio', url: originFromCanonical(d.canonical) + '/' },
+        { name: 'Precios de carburantes', url: d.canonical },
+      ]) + '</script>'
     + '<style nonce="' + esc(nonce) + '">'
     + ':root{color-scheme:light;--v:#16a34a;--vd:#14532d;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc;--rd:#dc2626}'
     + '*{box-sizing:border-box}'

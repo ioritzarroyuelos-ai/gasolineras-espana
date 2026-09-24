@@ -168,7 +168,7 @@ function jsonLd(d: GuardiaPageData): string {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
     name: 'Farmacias de guardia en ' + d.municipioName,
-    numberOfItems: d.guardias.length,
+    numberOfItems: items.length,   // el nº declarado debe cuadrar con los items emitidos (slice 10)
     itemListElement: items,
   }
   return JSON.stringify(data).replace(/</g, '\\u003c')
@@ -322,6 +322,7 @@ function envoltorioIndice(nonce: string, title: string, desc: string, canonical:
     + '<meta property="og:description" content="' + esc(desc) + '" />'
     + '<meta property="og:type" content="website" />'
     + '<meta property="og:url" content="' + esc(canonical) + '" />'
+    + ogSocialTags(originFromCanonical(canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml('farmacias') + '<main>' + cuerpo + '</main>'

@@ -90,7 +90,7 @@ export function buildLandingPage(
 
   const canonical = origin + '/'
   const title = 'España Útil · Datos oficiales de España al instante'
-  const desc = 'Portal con servicios esenciales en España: el tiempo por municipio (AEMET), gasolineras con precios oficiales en tiempo real, farmacias de guardia y estaciones de ITV. Sin registro y gratis.'
+  const desc = 'El tiempo por municipio (AEMET), gasolineras con precios oficiales, farmacias de guardia, ITV y elecciones de España. Datos oficiales, sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
   // JSON-LD: WebSite + ItemList de servicios (Google lo usa para sitelinks).
@@ -99,21 +99,24 @@ export function buildLandingPage(
     '@graph': [
       {
         '@type': 'WebSite',
-        name: 'España Útil',
-        alternateName: 'España Útil — Datos oficiales de España',
+        '@id': origin + '/#website',
+        name: BRAND,
+        alternateName: BRAND + ' — Datos oficiales de España',
         url: origin,
         description: desc,
         inLanguage: 'es-ES',
-        publisher: {
-          '@type': 'Organization',
-          name: 'España Útil',
-          url: origin,
-          logo: logoUrl,
-        },
+        publisher: { '@id': origin + '/#organization' },
+      },
+      {
+        '@type': 'Organization',
+        '@id': origin + '/#organization',
+        name: BRAND,
+        url: origin,
+        logo: logoUrl,
       },
       {
         '@type': 'ItemList',
-        name: 'Servicios de España Útil',
+        name: 'Servicios de ' + BRAND,
         itemListElement: [
           {
             '@type': 'ListItem',
@@ -132,7 +135,7 @@ export function buildLandingPage(
             position: 2,
             item: {
               '@type': 'Service',
-              name: BRAND,
+              name: 'Gasolineras',
               description: 'Precios oficiales de carburantes en tiempo real en toda España.',
               url: origin + '/gasolineras/',
               serviceType: 'Consulta de precios de combustible',
@@ -190,7 +193,7 @@ export function buildLandingPage(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light" />
-  <meta name="theme-color" content="#166534" />
+  <meta name="theme-color" content="#16a34a" />
 
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(desc)}" />
@@ -214,9 +217,13 @@ export function buildLandingPage(
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
   <meta property="og:image" content="${esc(origin)}/static/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="España Útil · datos oficiales de España al instante" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />
+  <meta name="twitter:image" content="${esc(origin)}/static/og.png" />
 
   <meta name="robots" content="index,follow,max-image-preview:large" />
   <meta name="generator" content="España Útil v${APP_VERSION}" />
@@ -322,10 +329,12 @@ export function buildLandingPage(
     footer a:hover { text-decoration: none; }
     footer .foot-links { margin-bottom: 8px; }
     footer .foot-links a { margin: 0 8px; }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
   </style>
 </head>
 <body>
-  ${mastheadHtml(null, { brandAsH1: true })}
+  ${mastheadHtml(null, { brandAsH1: false })}
+  <h1 class="sr-only">El tiempo, gasolineras, farmacias, ITV y elecciones de España con datos oficiales</h1>
 
   <main>
     <section class="lead" aria-labelledby="t-tiempo">

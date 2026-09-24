@@ -129,9 +129,13 @@ export function buildGasolinerasLanding(
   <meta property="og:description" content="${esc(desc)}" />
   <meta property="og:url" content="${esc(canonical)}" />
   <meta property="og:image" content="${esc(origin)}/static/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="España Útil · datos oficiales de España al instante" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />
+  <meta name="twitter:image" content="${esc(origin)}/static/og.png" />
 
   <meta name="generator" content="España Útil v${APP_VERSION}" />
   ${jsonLdScript(jsonLd, nonce)}

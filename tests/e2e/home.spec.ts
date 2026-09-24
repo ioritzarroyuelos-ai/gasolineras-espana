@@ -74,7 +74,7 @@ test.describe('Mapa (/gasolineras/mapa)', () => {
 })
 
 test.describe('Portada gasolineras (/gasolineras/)', () => {
-  test('muestra el buscador y los accesos al mapa', async ({ page }) => {
+  test('muestra el buscador y el botón de ubicación', async ({ page }) => {
     await page.goto('/gasolineras/')
     await expect(page).toHaveTitle(/Gasolineras baratas en España/i)
 
@@ -82,10 +82,11 @@ test.describe('Portada gasolineras (/gasolineras/)', () => {
     await expect(page.locator('#q')).toBeVisible()
     await expect(page.locator('#map')).toHaveCount(0)
 
-    // Accesos: ubicacion, ruta y mapa completo apuntan a /gasolineras/mapa.
-    await expect(page.locator('a[href="/gasolineras/mapa?action=geolocate"]')).toBeVisible()
-    await expect(page.locator('a[href="/gasolineras/mapa?action=route"]')).toBeVisible()
-    await expect(page.locator('a[href="/gasolineras/mapa"]')).toBeVisible()
+    // "Usar mi ubicación" es un botón (geolocaliza en el navegador).
+    await expect(page.locator('#btn-geoloc')).toBeVisible()
+    // Los accesos retirados ya no existen: planificar ruta y "ver mapa completo".
+    await expect(page.locator('a[href="/gasolineras/mapa?action=route"]')).toHaveCount(0)
+    await expect(page.locator('a[href="/gasolineras/mapa"]')).toHaveCount(0)
   })
 
   test('el autocompletado lleva a la pagina del municipio', async ({ page }) => {

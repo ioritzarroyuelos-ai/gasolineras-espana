@@ -41,14 +41,16 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       return c.json(muniGasIndex.data, 200, CACHE)
     }
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    const out: Array<{ n: string; p: string; u: string }> = []
+    // Incluimos lat/lng (coord representativa del municipio) para que la portada
+    // pueda resolver "usar mi ubicación" → municipio más cercano sin llamadas extra.
+    const out: Array<{ n: string; p: string; u: string; lat?: number; lng?: number }> = []
     const seen = new Set<string>()
     for (const prov of PROVINCIAS) {
       for (const m of municipiosInProvincia(snap, prov.id)) {
         const u = '/gasolineras/' + prov.slug + '/' + m.slug
         if (seen.has(u)) continue
         seen.add(u)
-        out.push({ n: m.name, p: prov.name, u })
+        out.push({ n: m.name, p: prov.name, u, lat: m.lat, lng: m.lng })
       }
     }
     out.sort((a, b) => a.n.localeCompare(b.n, 'es'))

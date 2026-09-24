@@ -82,6 +82,24 @@ describe('municipiosInProvincia', () => {
     expect(municipiosInProvincia(null, '28')).toEqual([])
     expect(municipiosInProvincia(undefined, '28')).toEqual([])
   })
+  it('captura la coord representativa (1ª estación con coords válidas, coma decimal)', () => {
+    const conCoords = { ListaEESSPrecio: [
+      { IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Latitud: '40,4168', 'Longitud (WGS84)': '-3,7038' },
+      { IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Latitud: '40,50', 'Longitud (WGS84)': '-3,60' },
+    ] }
+    const out = municipiosInProvincia(conCoords, '28')
+    expect(out[0].lat).toBeCloseTo(40.4168, 3)
+    expect(out[0].lng).toBeCloseTo(-3.7038, 3)
+  })
+  it('lat/lng quedan undefined si ninguna estación tiene coords válidas (0,0 descartado)', () => {
+    const sinCoords = { ListaEESSPrecio: [
+      { IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid' },
+      { IDProvincia: '28', IDMunicipio: '281', Municipio: 'Madrid', Latitud: '0', 'Longitud (WGS84)': '0' },
+    ] }
+    const out = municipiosInProvincia(sinCoords, '28')
+    expect(out[0].lat).toBeUndefined()
+    expect(out[0].lng).toBeUndefined()
+  })
 })
 
 describe('topMunicipiosInProvincia', () => {

@@ -121,7 +121,6 @@ async function trimApiCache() {
 // Explicitamente NO cacheamos:
 //   - /api/ingest (POST)          -> escritura, sin sentido offline
 //   - /api/geocode/*              -> peticion puntual, cambia por query
-//   - /api/route                  -> OSRM ya cachea server-side 24h
 //   - /api/health                 -> debe reflejar estado actual
 function shouldCacheApi(url) {
   if (url.pathname.startsWith('/api/estaciones')) return true;

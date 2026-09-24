@@ -910,17 +910,38 @@ ${hasSeoSummary ? `
     </tbody>
   </table>
   <p class="seo-note">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabelH + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
+${seo?.topStations && seo.topStations.length ? `
+  <h2>Gasolineras más baratas en ${geoLabelH} (gasolina 95)</h2>
+  <p>Estaciones con la gasolina 95 más barata del ámbito, según el último dato oficial del Ministerio:</p>
+  <ol class="seo-cheap">
+    ${seo.topStations.slice(0, 10).map(s =>
+      '<li><span class="sc-price">' + s.price.toFixed(3) + ' €/L</span> '
+      + '<span class="sc-name">' + escapeHtml(s.name) + '</span>'
+      + (s.address ? ' · ' + escapeHtml(s.address) : '')
+      + (!seo.municipioName && s.municipio ? ' <span class="sc-mun">(' + escapeHtml(s.municipio) + ')</span>' : '')
+      + '</li>'
+    ).join('')}
+  </ol>` : ''}
+${seo?.provinciaSlug && seo?.provinciaName ? `
+  <h2>Otros servicios en la provincia de ${escapeHtml(seo.provinciaName)}</h2>
+  <ul class="seo-cross">
+    <li><a href="/tiempo/${seo.provinciaSlug}">El tiempo en ${escapeHtml(seo.provinciaName)}</a></li>
+    <li><a href="/farmacias/${seo.provinciaSlug}">Farmacias de guardia en ${escapeHtml(seo.provinciaName)}</a></li>
+    <li><a href="/itv/${seo.provinciaSlug}">ITV en ${escapeHtml(seo.provinciaName)}</a></li>
+    <li><a href="/precios-carburantes">Observatorio de precios de carburantes en España</a></li>
+  </ul>` : ''}
 </section>` : ''}
 
-${seo?.provinciaName && !seo?.municipioName && opts.municipios && opts.municipios.length > 0 ? `
-<!-- Enlace interno a municipios destacados de la provincia (Ship 11): mejora
-     la "internal linking" para SEO y ayuda a los crawlers a descubrir las
-     paginas municipio. Solo aparece en la pagina provincial. -->
+${seo?.provinciaName && opts.municipios && opts.municipios.length > 0 ? `
+<!-- Enlace interno a municipios de la provincia: en la pagina PROVINCIAL enlaza
+     todos los municipios >=5 estaciones (mata huerfanos); en la pagina de
+     MUNICIPIO enlaza los municipios hermanos (deja de ser un callejon sin salida
+     horizontal). Ayuda a los crawlers a recorrer la malla. -->
 <section class="seo-municipios" aria-labelledby="munis-h2">
-  <h2 id="munis-h2">Gasolineras por municipio en ${seo.provinciaName}</h2>
-  <p>Páginas dedicadas con precios y mapa de los municipios con más estaciones:</p>
+  <h2 id="munis-h2">${seo?.municipioName ? 'Otras localidades de ' + escapeHtml(seo.provinciaName) : 'Gasolineras por municipio en ' + escapeHtml(seo.provinciaName)}</h2>
+  <p>${seo?.municipioName ? 'Gasolineras en otros municipios de la provincia:' : 'Páginas dedicadas con precios y mapa por municipio:'}</p>
   <ul>
-    ${opts.municipios.map(m => `<li><a href="/gasolineras/${seo.provinciaSlug}/${m.slug}">${m.name} <span>(${m.stationCount})</span></a></li>`).join('')}
+    ${opts.municipios.map(m => `<li><a href="/gasolineras/${seo.provinciaSlug}/${m.slug}">${escapeHtml(m.name)} <span>(${m.stationCount})</span></a></li>`).join('')}
   </ul>
 </section>` : ''}
 

@@ -394,6 +394,7 @@ export function buildLandingPage(
       <a href="/itv/">ITV</a>·
       <a href="/politica/">Política</a>·
       <a href="/precios-carburantes">Precios</a>·
+      <a href="/acerca">Acerca y fuentes</a>·
       <a href="/privacidad">Privacidad</a>·
       <a href="/status">Estado del servicio</a>
     </div>

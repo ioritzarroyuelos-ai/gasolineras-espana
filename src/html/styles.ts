@@ -1897,6 +1897,13 @@ export function getStyles(nonce: string = ''): string {
     .seo-summary th:first-child{text-align:left}
     .seo-summary td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
     .seo-summary td:not(:first-child){text-align:right;font-family:ui-monospace,monospace}
+    .seo-summary h2{font-size:18px;color:#14532d;margin:28px 0 10px;font-weight:700}
+    .seo-summary .seo-cheap{margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.7;max-width:640px}
+    .seo-summary .seo-cheap .sc-price{font-family:ui-monospace,monospace;font-weight:700;color:#14532d}
+    .seo-summary .seo-cheap .sc-name{font-weight:600;color:#334155}
+    .seo-summary .seo-cheap .sc-mun{color:#94a3b8}
+    .seo-summary .seo-cross{list-style:none;padding:0;margin:4px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
+    .seo-summary .seo-cross a{font-size:14px;color:#15803d}
     .seo-municipios{padding:0 20px 48px;max-width:900px;margin:0 auto;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
     .seo-municipios #munis-h2{font-size:18px;color:#14532d;margin:0 0 12px}
     .seo-municipios p{margin:0 0 12px;color:#475569;font-size:14px}

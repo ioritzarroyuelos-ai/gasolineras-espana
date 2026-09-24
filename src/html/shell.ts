@@ -655,6 +655,20 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
       ${icon('satellite')}
     </button>
 
+    <!-- Toggle capa de electrolineras (puntos de recarga de coche eléctrico).
+         Datos oficiales del MITERD (DGT), complementados con Open Charge Map
+         si está disponible. Se carga bajo demanda al activarlo y recuerda la
+         preferencia en localStorage (gs_chargers). Apagado por defecto para no
+         saturar el mapa de gasolineras. -->
+    <button id="btn-electrolineras"
+            class="map-floating-btn map-floating-btn--electrolineras"
+            type="button"
+            aria-pressed="false"
+            aria-label="Mostrar electrolineras (puntos de recarga eléctrica)"
+            title="Electrolineras (puntos de recarga)">
+      ${icon('bolt')}
+    </button>
+
     <!-- Loading -->
     <div id="loading" role="status" aria-live="polite">
       <div class="loading-box">

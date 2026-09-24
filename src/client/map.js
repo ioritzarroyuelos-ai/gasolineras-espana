@@ -178,6 +178,12 @@ function initMap() {
     if (!isFinite(z) || z < 4) z = 4;
     if (z > 6) z = 6;
     map.setMinZoom(z);
+    // Restaurar la capa de electrolineras si el usuario la dejo activada.
+    try {
+      if (localStorage.getItem('gs_chargers') === '1') {
+        loadChargers(function() { setChargersVisible(true); });
+      }
+    } catch (_) {}
   }, 100);
 }
 
@@ -1776,6 +1782,158 @@ function highlightCard(idx) {
     card.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' });
   }
 }
+
+// ---- CAPA DE ELECTROLINERAS (puntos de recarga de coche electrico) ----
+// Datos: /data/chargers.json (robot fetch-chargers.mjs → registro oficial del
+// MITERD via DGT + Open Charge Map si hay key). Formato array-of-arrays; schema:
+//   [lat, lng, title, operator, maxKw, connectors(csv), points, fuente]
+// La capa es INDEPENDIENTE del cluster de gasolineras y de los filtros de
+// precio: se carga bajo demanda al pulsar el toggle y se puede ocultar. Vive
+// tanto en el mapa completo como en las paginas por provincia/municipio (misma
+// shell); el viewport de cada pagina ya acota lo que se ve.
+var chargersMain = null;    // markerClusterGroup en el mapa grande
+var chargersInset = null;   // markerClusterGroup en el recuadro de Canarias
+var chargersData = null;    // filas crudas cacheadas (una sola descarga)
+var chargersLoading = false;
+
+// Color del pin/cluster por velocidad de carga. Gama azul→morada, distinta del
+// verde/precio de las gasolineras para que no se confundan las dos capas.
+function evColor(kw) {
+  if (kw >= 100) return '#7c3aed';  // ultrarrapida (>=100 kW)
+  if (kw >= 22)  return '#2563eb';  // rapida (22-99 kW)
+  return '#0891b2';                 // normal/lenta (<22 kW)
+}
+
+// Pin en forma de gota con un rayo blanco. Color por potencia va como atributo
+// fill del SVG (no style inline: la CSP style-src sin unsafe-inline lo bloquea).
+function evIcon(kw) {
+  var col = evColor(kw);
+  var svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="34" viewBox="0 0 26 34">',
+    '<defs><filter id="evsh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1.5" stdDeviation="1.6" flood-color="rgba(0,0,0,0.4)"/></filter></defs>',
+    '<path filter="url(#evsh)" fill="' + col + '" stroke="#fff" stroke-width="1.5" d="M13 1C6.9 1 2 5.9 2 12c0 7.2 9.4 18.3 10.2 19.2 .4 .5 1.2 .5 1.6 0C14.6 30.3 24 19.2 24 12 24 5.9 19.1 1 13 1z"/>',
+    '<path fill="#fff" d="M14.2 6.2l-5 7.1h3.1l-1.3 5.3 5-7.4h-3.2z"/>',
+    '</svg>'
+  ].join('');
+  return L.divIcon({ html: svg, className: '', iconSize: [26, 34], iconAnchor: [13, 33], popupAnchor: [0, -30] });
+}
+
+// Icono de cluster EV (azul, con el conteo). Compartido por mapa e inset.
+function evClusterIcon(cluster) {
+  var count = cluster.getChildCount();
+  var sz = count > 200 ? 52 : count > 50 ? 44 : 36;
+  var fs = count > 99 ? 'cluster-icon-count--fs9' : 'cluster-icon-count--fs11';
+  return L.divIcon({
+    html: '<div class="cluster-icon cluster-icon--s' + sz + ' cluster-icon--ev">' +
+          '<span class="cluster-icon-count ' + fs + '">' + count + '</span></div>',
+    className: '', iconSize: [sz, sz], iconAnchor: [sz / 2, sz / 2]
+  });
+}
+
+function buildChargerPopup(row) {
+  var title = row[2], op = row[3], kw = row[4], conn = row[5], pts = row[6], src = row[7];
+  var chips = [];
+  if (kw > 0)  chips.push('<span class="ev-chip ev-chip--kw">' + kw + ' kW</span>');
+  if (pts > 0) chips.push('<span class="ev-chip">' + pts + (pts > 1 ? ' puntos' : ' punto') + '</span>');
+  (conn ? String(conn).split(',') : []).forEach(function(cc) {
+    if (cc) chips.push('<span class="ev-chip">' + esc(cc) + '</span>');
+  });
+  var srcLabel = src === 'ocm'
+    ? 'Open Charge Map (CC BY-SA)'
+    : 'MITERD · DGT (datos oficiales)';
+  return '<div class="ev-pop">' +
+    '<p class="ev-pop-title">' + esc(title || 'Punto de recarga') + '</p>' +
+    (op ? '<p class="ev-pop-op">' + esc(op) + '</p>' : '') +
+    '<div class="ev-pop-stats">' + chips.join('') + '</div>' +
+    '<p class="ev-pop-src">Fuente: ' + srcLabel + '</p>' +
+    '</div>';
+}
+
+// Crea (una vez) los cluster groups. El del inset solo si el recuadro existe.
+function ensureChargerLayers() {
+  if (!chargersMain) {
+    chargersMain = L.markerClusterGroup({
+      maxClusterRadius: function(z) { return z <= 5 ? 34 : z <= 7 ? 46 : 56; },
+      iconCreateFunction: evClusterIcon
+    });
+  }
+  if (!chargersInset && canariasMap) {
+    chargersInset = L.markerClusterGroup({ maxClusterRadius: 40, iconCreateFunction: evClusterIcon });
+  }
+}
+
+// Reparte los puntos en el cluster grande (peninsula/Baleares/Ceuta/Melilla) y
+// en el del recuadro (Canarias), igual que las gasolineras. Idempotente.
+function populateChargers() {
+  ensureChargerLayers();
+  if (!chargersMain || !chargersData) return;
+  chargersMain.clearLayers();
+  if (chargersInset) chargersInset.clearLayers();
+  for (var i = 0; i < chargersData.length; i++) {
+    var row = chargersData[i];
+    var lat = row[0], lng = row[1];
+    if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+    var m = L.marker([lat, lng], { icon: evIcon(row[4] || 0) });
+    m.bindPopup(buildChargerPopup(row), { maxWidth: 250, className: 'custom-popup' });
+    if (isCanarias(lat, lng) && chargersInset) chargersInset.addLayer(m);
+    else chargersMain.addLayer(m);
+  }
+}
+
+// Descarga /data/chargers.json una sola vez (cache-first) y puebla los cluster.
+function loadChargers(done) {
+  if (chargersData) { if (done) done(); return; }
+  if (chargersLoading) return;
+  chargersLoading = true;
+  fetch('/data/chargers.json', { cache: 'force-cache' })
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(d) {
+      chargersData = (d && d.chargers) || [];
+      populateChargers();
+      chargersLoading = false;
+      if (done) done();
+    })
+    .catch(function(e) {
+      chargersLoading = false;
+      if (typeof showToast === 'function') showToast('No se pudieron cargar las electrolineras.', 'error');
+      console.warn('[chargers] carga fallida:', (e && e.message) || e);
+    });
+}
+
+// Muestra u oculta la capa en el mapa grande y en el recuadro de Canarias.
+function setChargersVisible(show) {
+  if (typeof map === 'undefined' || !map) return;
+  if (show) {
+    ensureChargerLayers();
+    if (chargersMain && !map.hasLayer(chargersMain)) map.addLayer(chargersMain);
+    if (chargersInset && canariasMap && !canariasMap.hasLayer(chargersInset)) canariasMap.addLayer(chargersInset);
+  } else {
+    if (chargersMain && map.hasLayer(chargersMain)) map.removeLayer(chargersMain);
+    if (chargersInset && canariasMap && canariasMap.hasLayer(chargersInset)) canariasMap.removeLayer(chargersInset);
+  }
+}
+
+// Toggle #btn-electrolineras. Carga perezosa en la primera activacion; recuerda
+// la preferencia en localStorage.gs_chargers. La restauracion del estado
+// guardado la hace initMap() al final (cuando el mapa ya existe).
+(function() {
+  var btn = document.getElementById('btn-electrolineras');
+  if (!btn) return;
+  var saved = false;
+  try { saved = localStorage.getItem('gs_chargers') === '1'; } catch (_) {}
+  if (saved) {
+    btn.setAttribute('aria-pressed', 'true');
+    btn.setAttribute('aria-label', 'Ocultar electrolineras');
+  }
+  btn.addEventListener('click', function() {
+    var show = btn.getAttribute('aria-pressed') !== 'true';
+    if (show) loadChargers(function() { setChargersVisible(true); });
+    else setChargersVisible(false);
+    btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+    btn.setAttribute('aria-label', show ? 'Ocultar electrolineras' : 'Mostrar electrolineras (puntos de recarga eléctrica)');
+    try { localStorage.setItem('gs_chargers', show ? '1' : '0'); } catch (_) {}
+  });
+})();
 
 // ---- TOGGLE VISTA SATELITE ----
 // Alterna entre basemap normal (Liberty vector con toda la toponimia de OSM,

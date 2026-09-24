@@ -8,7 +8,7 @@
 // parámetro /politica/:eleccionId, o el :param se tragaría "autonomicas".
 import type { Hono } from 'hono'
 import type { Env } from '../index'
-import { loadSnapshot, genNonce, resolveScheme, resolveHost } from '../lib/runtime'
+import { loadSnapshot, genNonce, canonicalBase } from '../lib/runtime'
 import { enVeda, estadoEleccion } from '../lib/politica'
 import type { EleccionFile, IndexFile } from '../lib/politica-schemas'
 import { ELECCIONES, eleccionPorId } from '../../scripts/lib/politica-catalogo.mjs'
@@ -33,7 +33,7 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     const idx = await cargaIndex(c)
     if (!idx) return c.notFound()
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/politica/'
+    const canonical = canonicalBase(c) + '/politica/'
     return new Response(buildIndexPage(nonce, idx.elecciones, canonical), { headers: politicaHeaders(nonce) })
   })
 
@@ -44,7 +44,7 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!idx) return c.notFound()
     const auton = idx.elecciones.filter((e) => e.tipo === 'autonomica')
     const nonce = genNonce()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/politica/autonomicas/'
+    const canonical = canonicalBase(c) + '/politica/autonomicas/'
     return new Response(buildAutonomicasIndex(nonce, auton, canonical), { headers: politicaHeaders(nonce) })
   })
 
@@ -53,7 +53,7 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     const id = c.req.param('comunidad')
     const cat = eleccionPorId(id)
     if (!cat || cat.tipo !== 'autonomica') return c.notFound()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/politica/autonomicas/' + id
+    const canonical = canonicalBase(c) + '/politica/autonomicas/' + id
     return paginaEleccion(c, cat, canonical)
   })
 
@@ -63,7 +63,7 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     if (id === 'autonomicas') return c.redirect('/politica/autonomicas/', 301)
     const cat = eleccionPorId(id)
     if (!cat || cat.tipo === 'autonomica') return c.notFound()
-    const canonical = resolveScheme(c) + '://' + resolveHost(c) + '/politica/' + id
+    const canonical = canonicalBase(c) + '/politica/' + id
     return paginaEleccion(c, cat, canonical)
   })
 

@@ -46,15 +46,13 @@ app.get('/robots.txt', c => {
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
 })
 
-// ---- SEO: sitemap.xml (home + 52 provincias + TODOS los municipios >=5 + privacidad) ----
-// Ship 11: se añaden los top-10 municipios por provincia (filtrados a
-// estaciones >=5 para no contaminar el indice con aldeas).
-// Ship 18: expandimos a TODOS los municipios que pasen el minStations=5 (no
-// solo top-10). El dataset tiene ~2500 municipios con >=5 estaciones — muy
-// por debajo del limite de 50k URLs por sitemap, asi que cabe de sobra. El
-// motivo: dejabamos ~90% de las urls municipio sin indexar por el slicing,
-// y esas son justamente las paginas long-tail donde esta la mayor parte del
-// trafico SEO potencial ("gasolineras en [mi pueblo]").
+// ---- SEO: sitemap.xml (home + 52 provincias + TODOS los municipios con gasolinera + privacidad) ----
+// Se incluyen TODOS los municipios con al menos una gasolinera (minStations:1,
+// ~3.258 municipios) — decisión del usuario. Desde el Lote 2 cada ficha muestra
+// precio/dirección reales, así que hasta un pueblo con 1 gasolinera es contenido
+// útil. Sigue muy por debajo del límite de 50k URLs por sitemap. Es el long-tail
+// ("gasolineras en [mi pueblo]") donde está el grueso del tráfico SEO potencial.
+// Ship 18: `lastmod` usa la fecha real del snapshot (Ministerio) en vez de
 // Ship 18: `lastmod` usa la fecha real del snapshot (Ministerio) en vez de
 // `today`. Asi Googlebot solo re-crawlea cuando el contenido cambia
 // efectivamente — mejor crawl budget.
@@ -92,7 +90,10 @@ app.get('/sitemap.xml', async c => {
       // Ship 18: todos los municipios con >=5 estaciones, no solo top-10.
       // Usamos el limit alto (10k) efectivamente para decir "sin limite por
       // provincia". Sigue aplicando minStations=5.
-      const munis = topMunicipiosInProvincia(snap, p.id, { limit: 10000, minStations: 5 })
+      // minStations:1 → TODOS los municipios con al menos una gasolinera (decisión
+      // del usuario). Desde el Lote 2 cada ficha muestra precio/dirección reales,
+      // así que hasta un pueblo con 1 gasolinera tiene contenido útil e indexable.
+      const munis = topMunicipiosInProvincia(snap, p.id, { limit: 10000, minStations: 1 })
       for (const m of munis) {
         entries.push(`  <url><loc>${base}/gasolineras/${p.slug}/${m.slug}</loc><lastmod>${snapLastmod}</lastmod><changefreq>daily</changefreq><priority>0.6</priority></url>`)
       }

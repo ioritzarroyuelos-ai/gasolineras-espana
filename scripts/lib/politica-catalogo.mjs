@@ -19,7 +19,9 @@ export const ELECCIONES = [
     id: 'generales', tipo: 'generales', nombre: 'Elecciones generales de España',
     camara: { nombre: 'Congreso de los Diputados', escanos: 350, mayoria: 176 },
     ultimaFecha: '2023-07-23', proxima: { valor: null, confirmada: false },
-    wikiSondeos: es('Encuestas de opinión para las próximas elecciones generales españolas'),
+    // Wikipedia renombró el artículo a "…de 2026" (~oct 2026); el título viejo
+    // "…próximas…españolas" se borró sin redirect → el robot fallaba solo en generales.
+    wikiSondeos: es('Encuestas de opinión para las elecciones generales de España de 2026'),
     wikiResultados: es('Elecciones generales de España de 2023'),
   },
   {

@@ -23,6 +23,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
+      actions: write
     steps:
       - uses: actions/checkout@v5
 
@@ -33,25 +35,10 @@ jobs:
       - name: Descargar estaciones de ITV
         run: node scripts/fetch-itv.mjs
 
-      - name: Commit si hay cambios
+      - name: Publicar datos mediante PR validado
+        id: commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/data/itv.json
-          if git diff --cached --quiet; then
-            echo "Sin cambios en las estaciones de ITV"
-          else
-            git commit -m "chore(data): actualizar estaciones de ITV $(date -u +%Y-%m-%d)"
-            # Push resistente a carreras con otros robots (ver fetch-prices.yml):
-            # fusiona lo remoto con -X ours y reintenta para no fallar por un
-            # rechazo "fetch first" cuando otro robot pushea a la vez.
-            pushed=0
-            for i in 1 2 3; do
-              git fetch origin main || true
-              if git merge -X ours --no-edit origin/main && git push; then pushed=1; break; fi
-              echo "push intento $i fallo; reintento en 5s"
-              git merge --abort 2>/dev/null || true
-              sleep 5
-            done
-            if [ "$pushed" != "1" ]; then echo "::error::no se pudo pushear ITV tras 3 intentos"; exit 1; fi
-          fi
+          node scripts/publish-data.mjs itv

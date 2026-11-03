@@ -1,6 +1,17 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
+test('ITV conserva y muestra la fecha real del directorio en cada nivel', async ({ page }) => {
+  const data = await (await page.request.get('/data/itv.json')).json()
+  for (const url of ['/itv/', '/itv/madrid', '/itv/madrid/madrid']) {
+    await page.goto(url)
+    const aviso = page.getByRole('complementary', { name: 'Actualización del directorio' })
+    await expect(aviso.locator('time')).toHaveAttribute('datetime', data.generatedAt)
+    await expect(aviso.getByRole('link')).toHaveAttribute('href', 'https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/')
+    if (Date.now() - Date.parse(data.generatedAt) > 40 * 86400000) await expect(aviso).toContainText('Directorio pendiente de actualizar')
+  }
+})
+
 test('busca municipio, recuerda la selección entre secciones y permite olvidarla', async ({ page }) => {
   await page.goto('/')
   await page.getByLabel('Tu municipio', { exact: true }).fill('Madrid')
@@ -49,4 +60,7 @@ test('portada municipal móvil accesible y sin desbordamiento', async ({ page })
   const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze()
   expect(results.violations.filter(v => ['serious', 'critical'].includes(v.impact || ''))).toEqual([])
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  await page.screenshot({ path: test.info().outputPath('portada-movil.png'), fullPage: true })
+  await page.setViewportSize({ width: 1366, height: 900 })
+  await page.screenshot({ path: test.info().outputPath('portada-escritorio.png'), fullPage: true })
 })

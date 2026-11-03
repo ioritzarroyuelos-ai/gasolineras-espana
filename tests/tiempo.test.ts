@@ -25,6 +25,10 @@ describe('frescuraTiempo', () => {
     expect(frescuraTiempo(null, ahora).fiable).toBe(false)
     expect(frescuraTiempo(undefined, ahora).fiable).toBe(false)
   })
+  it('interpreta la hora oficial de Madrid y rechaza fechas futuras', () => {
+    expect(frescuraTiempo('2026-09-06T13:00:00', ahora).horas).toBeCloseTo(1)
+    expect(frescuraTiempo('2026-09-07T13:00:00', ahora).fiable).toBe(false)
+  })
   it('el umbral es 12 horas', () => {
     expect(TIEMPO_STALE_HORAS).toBe(12)
   })

@@ -9,7 +9,7 @@
     "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-client-bundle.mjs && node scripts/gen-sw.mjs && node scripts/gen-service-manifest.mjs && node scripts/gen-localidades.mjs",
     "build": "vite build",
     "preview": "wrangler pages dev",
-    "deploy": "npm run build && wrangler pages deploy",
+    "deploy": "node scripts/ship.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

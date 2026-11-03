@@ -20,6 +20,17 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
+export function avisoDirectorio(updatedAt?: string, now = Date.now()): string {
+  const date = updatedAt ? Date.parse(updatedAt) : NaN
+  const valid = Number.isFinite(date) && date <= now + 300000
+  const stale = !valid || now - date > 40 * 86400000
+  const fecha = valid ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' }).format(date) : null
+  return '<aside class="aviso" aria-label="Actualización del directorio">'
+    + (stale ? '<strong>Directorio pendiente de actualizar.</strong> ' : '')
+    + (fecha ? 'Última copia de datos: <time datetime="' + esc(updatedAt) + '">' + esc(fecha) + '</time>. ' : 'Fecha de los datos no disponible. ')
+    + 'Consulta el <a href="https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/" target="_blank" rel="noopener">directorio oficial de la DGT</a> y confirma con la estación antes de acudir.</aside>'
+}
+
 const CSS =
   ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
   + '*{box-sizing:border-box}'
@@ -167,7 +178,7 @@ const AVISO = '<p class="aviso">Los precios de la ITV los fija cada comunidad au
   + 'antes de desplazarte: muchas estaciones solo atienden con reserva.</p>'
 
 // ---- Indice nacional: /itv/ ----
-export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string): string {
+export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string, updatedAt?: string): string {
   const title = 'Estaciones de ITV en España por provincia | España Útil'
   const desc = 'Directorio de las ' + total + ' estaciones de ITV de España: direccion, telefono y como llegar, '
     + 'organizadas por provincia y municipio.'
@@ -273,6 +284,7 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
     breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'ITV', url: origin + '/itv/' }]) },
     '<h1>Estaciones de ITV en España</h1>'
     + '<p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
+    + avisoDirectorio(updatedAt)
     + buscador
     + '<p><a class="btn" href="/itv/precios">Cuánto cuesta la ITV en cada comunidad</a></p>'
     + '<h2>Todas las provincias</h2>'
@@ -284,6 +296,7 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
 
 // ---- Provincia: /itv/:provincia ----
 export interface ItvProvinciaData {
+  updatedAt?: string
   provinciaSlug: string
   provinciaName: string
   estaciones: EstacionITV[]
@@ -316,6 +329,7 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
     '<h1>ITV en ' + esc(d.provinciaName) + '</h1>'
     + '<p class="sub">' + n + ' estacion' + (n === 1 ? '' : 'es') + ' en ' + d.municipios.length + ' municipio'
     + (d.municipios.length === 1 ? '' : 's') + '</p>'
+    + avisoDirectorio(d.updatedAt)
     + bloquePrecioProvincia(d.tarifa, d.provinciaName)
     + (d.municipios.length ? '<h2>Por municipio</h2><nav class="lista"><ul>' + lista + '</ul></nav>' : '')
     + AVISO
@@ -325,6 +339,7 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
 
 // ---- Municipio: /itv/:provincia/:municipio ----
 export interface ItvMunicipioData {
+  updatedAt?: string
   provinciaSlug: string
   provinciaName: string
   municipioName: string
@@ -356,6 +371,7 @@ export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): strin
       ]) },
     '<h1>ITV en ' + esc(d.municipioName) + '</h1>'
     + '<p class="sub">' + esc(d.provinciaName) + ' &middot; ' + n + ' estacion' + (n === 1 ? '' : 'es') + '</p>'
+    + avisoDirectorio(d.updatedAt)
     + d.estaciones.map(e => tarjeta(e, d.municipioName)).join('')
     + AVISO
     + '<p><a class="btn" href="/itv/' + esc(d.provinciaSlug) + '">Ver toda la provincia de ' + esc(d.provinciaName) + '</a></p>'

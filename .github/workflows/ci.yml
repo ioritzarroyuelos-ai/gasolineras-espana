@@ -9,7 +9,7 @@ on:
   # Los pushes hechos con GITHUB_TOKEN no disparan push. Este evento sí valida
   # los datos publicados por los robots, incluidos tiempo e ITV.
   workflow_run:
-    workflows: ['Fetch fuel prices snapshot', 'Fetch guardias farmacias snapshot', 'Fetch political polls', 'Fetch snapshot del tiempo', 'Fetch estaciones de ITV', 'Fetch EV chargers snapshot']
+    workflows: ['Fetch fuel prices snapshot', 'Fetch guardias farmacias snapshot', 'Fetch political polls', 'Fetch snapshot del tiempo', 'Fetch estaciones de ITV', 'Fetch EV chargers snapshot', 'Gen tiempo municipios']
     types: [completed]
     branches: [main]
 

@@ -8,11 +8,6 @@ on:
     # viejo. Es barato y nos avisa antes de que /api/health devuelva 503.
     - cron: '30 */12 * * *'
   workflow_dispatch:
-    inputs:
-      force_deploy:
-        description: 'Forzar deploy a Pages aunque no haya cambios en el snapshot'
-        type: boolean
-        default: false
 
 concurrency:
   group: fetch-prices
@@ -29,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
+      actions: write
     # 'changed' lo expone el step de commit: "true" si hubo cambios reales en
     # el snapshot, "false" si el Ministerio devolvio lo mismo que ya teniamos.
     # Solo desplegamos cuando cambia (evita crear deploys duplicados en Pages).
@@ -60,33 +57,13 @@ jobs:
             git checkout -- public/data/history
           fi
 
-      - name: Commit snapshot si hay cambios
+      - name: Publicar datos mediante PR validado
         id: commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/gasolineras-resumen.json public/data/history
-          if git diff --cached --quiet; then
-            echo "Sin cambios en el snapshot"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            git commit -m "chore(data): actualizar snapshot de precios $(date -u +%Y-%m-%dT%H:%MZ)"
-            # Otro robot (guardias, cargadores, ITV) puede pushear durante este
-            # pase y dejar el push en "! [rejected] (fetch first)": el job fallaria
-            # y NO se desplegaria, dejando la web con datos viejos. Fusiona lo
-            # remoto quedandonos con NUESTROS ficheros si hay conflicto (-X ours)
-            # y reintenta 3 veces. Mismo patron que fetch-guardias.yml.
-            pushed=0
-            for i in 1 2 3; do
-              git fetch origin main || true
-              if git merge -X ours --no-edit origin/main && git push; then pushed=1; break; fi
-              echo "push intento $i fallo; reintento en 5s"
-              git merge --abort 2>/dev/null || true
-              sleep 5
-            done
-            if [ "$pushed" != "1" ]; then echo "::error::no se pudo pushear el snapshot de precios tras 3 intentos"; exit 1; fi
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          node scripts/publish-data.mjs prices
 
   dead-man:
     runs-on: ubuntu-latest

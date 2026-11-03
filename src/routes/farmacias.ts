@@ -76,14 +76,20 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const out: Array<{ n: string; p: string; u: string }> = []
     const seen = new Set<string>()
     const cache = new Map<string, GuardiasFile | null>()
+    const files = [...new Set(Object.keys(GUARDIAS_TERRITORIO_BY_PROVINCIA)
+      .map(guardiasFileForProvincia).filter((file): file is string => !!file))]
+    // En frío, 47 lecturas consecutivas retrasaban el autocompletado >5 s.
+    // Se leen en grupos acotados, una vez por fichero (CLM se comparte).
+    for (let i = 0; i < files.length; i += 6) {
+      await Promise.all(files.slice(i, i + 6).map(async file => {
+        try { cache.set(file, await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)) }
+        catch { cache.set(file, null) }
+      }))
+    }
     for (const provSlug of Object.keys(GUARDIAS_TERRITORIO_BY_PROVINCIA)) {
       const prov = provinciaBySlug(provSlug)
       const file = guardiasFileForProvincia(provSlug)
       if (!prov || !file) continue
-      if (!cache.has(file)) {
-        try { cache.set(file, await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)) }
-        catch { cache.set(file, null) }
-      }
       const raw = cache.get(file)
       if (!raw) continue
       const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)

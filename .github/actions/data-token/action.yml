@@ -1,0 +1,25 @@
+name: Identidad del robot de datos
+description: Token temporal de la GitHub App limitado a este repositorio.
+inputs:
+  client-id:
+    description: Client ID de la GitHub App privada.
+    required: true
+  private-key:
+    description: Clave privada guardada en los secretos del repositorio.
+    required: true
+outputs:
+  token:
+    description: Token temporal, revocado al terminar el trabajo.
+    value: ${{ steps.app.outputs.token }}
+runs:
+  using: composite
+  steps:
+    - name: Emitir token limitado al repositorio actual
+      id: app
+      uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3
+      with:
+        client-id: ${{ inputs.client-id }}
+        private-key: ${{ inputs.private-key }}
+        permission-contents: write
+        permission-pull-requests: write
+        permission-actions: read

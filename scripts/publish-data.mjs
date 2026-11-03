@@ -11,6 +11,7 @@ const files = git(['diff', '--cached', '--name-only']).split('\n').filter(Boolea
 const output = value => { if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'changed=' + value + '\n') }
 if (!files.length) { output(false); console.log('Sin cambios en los datos'); process.exit(0) }
 if (files.some(f => !f.startsWith('public/data/'))) throw Error('El robot intentó publicar un fichero fuera de public/data')
+if (!process.env.GH_TOKEN) throw Error('Falta la identidad de la aplicación del robot')
 const branch = `datos/${kind}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT || '1'}`
 git(['config', 'user.name', 'github-actions[bot]'])
 git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
@@ -18,14 +19,16 @@ git(['switch', '-c', branch])
 const title = `chore(data): actualizar ${kind} ${new Date().toISOString().slice(0, 16)}Z`
 git(['commit', '-m', title])
 const sha = git(['rev-parse', 'HEAD'])
+// checkout no conserva GITHUB_TOKEN. Git y gh usan la misma identidad de la App.
+run('gh', ['auth', 'setup-git', '--hostname', 'github.com'])
 git(['push', '--set-upstream', 'origin', branch])
 const url = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body', 'Actualización automática de datos oficiales. Solo se incorpora tras superar CI (tipos, pruebas, navegador y rendimiento) y Security. Si falla una fuente, se conserva su última copia válida.'])
 console.log('Propuesta de datos: ' + url)
-// Los eventos push/PR de GITHUB_TOKEN no lanzan otros workflows. El dispatch sí.
-for (const workflow of ['ci.yml', 'security.yml']) gh(['workflow', 'run', workflow, '--ref', branch])
+// La App dispara pull_request de forma nativa. Los checks de workflow_dispatch
+// no satisfacen las reglas de una rama protegida, aunque salgan verdes.
 for (let intento = 0; intento < 120; intento++) {
   const checks = ['ci.yml', 'security.yml'].map(workflow => {
-    const rows = JSON.parse(gh(['run', 'list', '--workflow', workflow, '--branch', branch, '--commit', sha, '--event', 'workflow_dispatch', '--limit', '1', '--json', 'status,conclusion,databaseId']))
+    const rows = JSON.parse(gh(['run', 'list', '--workflow', workflow, '--branch', branch, '--commit', sha, '--event', 'pull_request', '--limit', '1', '--json', 'status,conclusion,databaseId']))
     return rows[0]
   })
   const failed = checks.find(c => c?.status === 'completed' && c.conclusion !== 'success')

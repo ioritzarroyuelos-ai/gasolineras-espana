@@ -22,12 +22,12 @@ import { publicGuardiasSource, GUARDIAS_PUBLIC_SOURCES } from '../lib/guardias-r
 export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get('/api/guardias/fuente/:territorio', async c => {
     const territorio = c.req.param('territorio')
-    if (!GUARDIAS_PUBLIC_SOURCES[territorio]) return c.notFound()
+    if (!Object.hasOwn(GUARDIAS_PUBLIC_SOURCES, territorio)) return c.notFound()
     try {
       const data = await publicGuardiasSource(territorio)
       return c.json(data, 200, { 'Cache-Control': 'public, max-age=300', 'X-Robots-Tag': 'noindex' })
-    } catch {
-      return c.json({ error: 'La fuente oficial no responde; no se ha sustituido por datos antiguos' }, 502, { 'Cache-Control': 'no-store' })
+    } catch (e) {
+      return c.json({ error: 'La fuente oficial no responde; no se ha sustituido por datos antiguos', detail: e instanceof Error ? e.message.slice(0, 200) : 'Error de conexión' }, 502, { 'Cache-Control': 'no-store' })
     }
   })
 

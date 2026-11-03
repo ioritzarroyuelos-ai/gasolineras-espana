@@ -42,6 +42,33 @@ describe('rutas /farmacias/* tras extraer a src/routes/farmacias.ts (B1)', () =>
     expect(Array.isArray(await res.json())).toBe(true)
   })
 
+  it('el índice carga en paralelo con límite, comparte CLM y tolera una fuente caída', async () => {
+    let activas = 0, maximas = 0
+    const llamadas: string[] = []
+    const ASSETS = { fetch: async (req: Request) => {
+      const file = new URL(req.url).pathname.split('/').pop()!
+      llamadas.push(file)
+      maximas = Math.max(maximas, ++activas)
+      try {
+        await new Promise(resolve => setTimeout(resolve, 5))
+        if (file === 'guardias-asturias.json') throw new Error('fuente no disponible')
+        const territorio = file === 'guardias-clm.json' ? 'clm' : 'madrid'
+        const guardias = file === 'guardias-clm.json'
+          ? [[0, 0, 'Calle 1', 'Toledo', '', '', '', '', '45'], [0, 0, 'Calle 2', 'Cuenca', '', '', '', '', '16']]
+          : file === 'guardias-madrid.json' ? [[0, 0, 'Calle 3', 'Madrid', '', '', '', '']] : null
+        return guardias ? Response.json({ territorio, guardias, count: guardias.length }) : new Response(null, { status: 404 })
+      } finally { activas-- }
+    } }
+    const res = await app.request('/api/guardias/municipios', {}, { ASSETS })
+    const data = await res.json() as Array<{ n: string; p: string; u: string }>
+    expect(res.status).toBe(200)
+    expect(maximas).toBeGreaterThan(1)
+    expect(maximas).toBeLessThanOrEqual(6)
+    expect(llamadas).toHaveLength(47)
+    expect(new Set(llamadas).size).toBe(47)
+    expect(data.map(m => m.u)).toEqual(['/farmacias/cuenca/cuenca', '/farmacias/madrid/madrid', '/farmacias/toledo/toledo'])
+  })
+
   it('/farmacias/:prov -> 404 si la provincia no existe', async () => {
     const res = await app.request('/farmacias/provincia-que-no-existe', {}, { ASSETS: assets404() })
     expect(res.status).toBe(404)

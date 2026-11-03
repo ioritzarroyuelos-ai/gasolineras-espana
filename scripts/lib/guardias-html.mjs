@@ -3,16 +3,28 @@ import { desplazaFecha, rangoGuardia, texto } from './guardias-fetch.mjs'
 
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
-export function parseAvila(html, fecha) {
+function tablaAvila(html, fecha) {
   const [year, month, day] = fecha.split('-').map(Number)
   const doc = parse(html)
-  const table = doc.querySelectorAll('table').find(t => /Farmacia de Guardia nocturna/.test(t.text))
-  if (!table || !new RegExp(`\\b${day} de ${MESES[month - 1]} de ${year}\\b`, 'i').test(texto(table.text))) throw new Error('Ávila: el colegio no ha publicado la guardia de la fecha solicitada')
+  const fechaEsperada = new RegExp(`\\b0?${day} de ${MESES[month - 1]} de ${year}\\b`, 'i')
+  return doc.querySelectorAll('table').find(t => /Farmacia de Guardia nocturna/.test(t.text) && fechaEsperada.test(texto(t.text)))
+}
+
+export function fechaAvilaPublicada(html, hoy) {
+  // La noche publicada el día anterior puede seguir siendo la última ficha
+  // después de medianoche. Conservamos su fecha, sin inferir que siga abierta.
+  for (const fecha of [hoy, desplazaFecha(hoy, -1)]) if (tablaAvila(html, fecha)) return fecha
+  throw new Error('Ávila: no hay un listado fechado de hoy ni del día anterior')
+}
+
+export function parseAvila(html, fecha) {
+  const table = tablaAvila(html, fecha)
+  if (!table) throw new Error('Ávila: el colegio no ha publicado la guardia de la fecha solicitada')
   const rows = []
   for (const tr of table.querySelectorAll('tr').slice(2)) {
     const cells = tr.querySelectorAll('td').map(c => texto(c.text))
     if (cells.length !== 3 || !cells[0] || !cells[1]) throw new Error('Ávila: fila incompleta')
-    rows.push([0, 0, cells[1], cells[0] === 'Ávila Capital' ? 'Ávila' : cells[0], cells[2], '', '', 'Guardia nocturna: confirmar horario con la farmacia'])
+    rows.push([0, 0, cells[1], cells[0] === 'Ávila Capital' ? 'Ávila' : cells[0], cells[2], '', '', `Guardia nocturna publicada para el ${fecha.split('-').reverse().join('/')}. Horario por confirmar: llama antes de acudir.`])
   }
   return rows
 }

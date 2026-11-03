@@ -97,9 +97,19 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
       expect(body.territorio, `territorio field del json ${t}`).toBe(t)
       expect(Array.isArray(body.guardias), `${t} guardias array`).toBe(true)
       expect(body.count, `${t} count > 0`).toBeGreaterThan(0)
-      expect(body.schema).toEqual([
+      expect([8, 9]).toContain(body.schema.length)
+      expect(body.schema.slice(0, 8)).toEqual([
         'lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc',
       ])
+      if (body.schema.length === 9) {
+        expect(body.schema[8]).toBe('provinciaId')
+        for (const row of body.guardias) {
+          // La columna opcional identifica cada una de las cinco provincias
+          // de CLM; las otras fuentes pueden omitirla y usar su territorio.
+          if (t === 'clm') expect(['02', '13', '16', '19', '45']).toContain(row[8])
+          else if (row[8] !== undefined) expect(String(row[8])).toMatch(/^\d{2}$/)
+        }
+      }
     }
   })
 

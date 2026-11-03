@@ -3,7 +3,7 @@ import asturiasHTML from './fixtures/guardias/asturias.html?raw'
 import avilaHTML from './fixtures/guardias/avila.html?raw'
 import ceutaHTML from './fixtures/guardias/ceuta.html?raw'
 import { parseAlicante, parseCLM, parseCantabria, parseAlmeria } from '../scripts/lib/guardias-fuentes.mjs'
-import { parseAsturias, parseAvila, parseCeuta } from '../scripts/lib/guardias-html.mjs'
+import { parseAsturias, parseAvila, parseCeuta, fechaAvilaPublicada } from '../scripts/lib/guardias-html.mjs'
 import { fechaMadrid, rangoGuardia } from '../scripts/lib/guardias-fetch.mjs'
 import { parseGuardias, guardiasForProvincia } from '../src/lib/guardias'
 import alicante from './fixtures/guardias/alicante.json'
@@ -63,6 +63,19 @@ describe('fuentes oficiales de guardias', () => {
     expect(rows[0][3]).toBe('Ávila')
     expect(rows.every(r => String(r[7]).includes('nocturna'))).toBe(true)
     expect(() => parseAvila(html('avila'), '2026-11-04')).toThrow()
+  })
+  it('Ávila conserva la fecha de la noche anterior al cruzar medianoche, sin afirmar apertura', () => {
+    const publicada = fechaAvilaPublicada(html('avila'), '2026-11-04')
+    expect(publicada).toBe('2026-11-03')
+    const rows = parseAvila(html('avila'), publicada)
+    expect(rows.every(r => r[6] === '' && String(r[7]).includes('03/11/2026') && String(r[7]).includes('Horario por confirmar'))).toBe(true)
+    expect(() => fechaAvilaPublicada(html('avila'), '2026-11-05')).toThrow()
+    expect(() => fechaAvilaPublicada(html('avila'), '2026-11-02')).toThrow()
+  })
+  it('Ávila selecciona la tabla del día aunque haya varias noches publicadas', () => {
+    const varias = html('avila') + html('avila').replace('Martes 3 de noviembre', 'Miércoles 04 de noviembre')
+    expect(fechaAvilaPublicada(varias, '2026-11-04')).toBe('2026-11-04')
+    expect(parseAvila(varias, '2026-11-04')).toHaveLength(9)
   })
   it('Ceuta conserva los turnos día/noche sin convertir un festivo en laborable', () => {
     const rows = parseCeuta(html('ceuta'), fecha)

@@ -8,6 +8,7 @@ on:
       - '.github/workflows/verify-guardias.yml'
 permissions:
   contents: read
+  actions: read
 jobs:
   fuente:
     name: Fuente oficial · ${{ matrix.territorio }}
@@ -24,6 +25,23 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - name: Esperar al respaldo del preview para las fuentes con problemas de red
+        if: github.event_name == 'pull_request' && (matrix.territorio == 'asturias' || matrix.territorio == 'ceuta')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for ATTEMPT in $(seq 1 24); do
+            RESULT=$(gh run list --workflow=deploy-preview.yml --commit="$PR_SHA" --limit=1 --json status,conclusion --repo "$GITHUB_REPOSITORY")
+            if echo "$RESULT" | jq -e '.[0].status == "completed" and .[0].conclusion == "success"' >/dev/null; then
+              BRANCH=$(printf '%s' "$GITHUB_HEAD_REF" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g;s/--*/-/g;s/^-//' | cut -c1-28 | sed 's/-*$//')
+              echo "GUARDIAS_RELAY_ORIGIN=https://${BRANCH}.webapp-3ft.pages.dev" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::El preview de este commit no estuvo listo para verificar el respaldo'
+          exit 1
       - name: Consultar fuente real sin modificar los datos publicados
         env:
           GUARDIAS_OUT_DIR: ${{ runner.temp }}/guardias-verificadas

@@ -7,7 +7,7 @@ export const GUARDIAS_PUBLIC_SOURCES: Readonly<Record<string, string>> = {
 export async function publicGuardiasSource(territorio: string, request = fetch) {
   const url = Object.hasOwn(GUARDIAS_PUBLIC_SOURCES, territorio) ? GUARDIAS_PUBLIC_SOURCES[territorio] : null
   if (!url) return null
-  const response = await request(url, { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'EspanaUtil/1.8 (+https://webapp-3ft.pages.dev/acerca)' }, redirect: 'error' })
+  const response = await request(url, { signal: AbortSignal.timeout(20_000), headers: { 'User-Agent': 'EspanaUtil/1.8 (+https://webapp-3ft.pages.dev/acerca)' }, redirect: 'manual' })
   if (!response.ok || !response.body) throw new Error('Fuente no disponible: HTTP ' + response.status)
   const reader = response.body.getReader(), chunks: Uint8Array[] = []
   let length = 0

@@ -131,7 +131,8 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
       horario:     str(row[6]),
       horarioDesc: str(row[7]),
       provinciaId: str(row[8]) || undefined,
-      coordenadasFiables: file.coordenadasOficiales === true && lat >= 27 && lat <= 44 && lng >= -19 && lng <= 5,
+      // Madrid ya publicaba coordenadas nativas verificadas antes de añadir la marca.
+      coordenadasFiables: (file.coordenadasOficiales === true || (file.territorio === 'madrid' && file.source === 'cofm.es')) && lat >= 27 && lat <= 44 && lng >= -19 && lng <= 5,
     })
   }
   return out

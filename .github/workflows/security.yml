@@ -107,9 +107,8 @@ jobs:
         with:
           scan-args: |-
             --recursive
-            --skip-git
             --format=sarif
-            --output=osv-results.sarif
+            --output-file=osv-results.sarif
             ./
 
       - name: Upload SARIF to Code scanning

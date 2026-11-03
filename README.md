@@ -16,13 +16,13 @@ PWA para consultar precios oficiales de gasolineras en España en tiempo real. D
 - **Comparador de ahorro**: calcula €/depósito vs. mediana de la zona.
 - **Favoritos** con sparkline histórico en localStorage.
 - **PWA**: instalable, offline-ready con snapshot diario como fallback.
-- Accesibilidad AAA (navegación por teclado, ARIA, `prefers-reduced-motion`).
+- Accesibilidad (navegación por teclado, ARIA, `prefers-reduced-motion`).
 - Atajos de teclado: `/` buscar, `g` geolocalizar, `d` tema, `f` lugar, `?` ayuda.
 
 ## Stack
 
 - **Hono** sobre **Cloudflare Pages Functions** (Workers runtime).
-- **Vite** 6 con `@hono/vite-build` para SSR bundle.
+- **Vite** 8 con `@hono/vite-build` para SSR bundle.
 - **TypeScript** strict.
 - **Vitest** (tests unitarios) + **Playwright** + **axe-core** (E2E + a11y).
 - **Lighthouse CI** con budgets de performance/SEO/accesibilidad.
@@ -45,6 +45,12 @@ Para desarrollo con HMR:
 ```bash
 npm run dev            # vite → http://127.0.0.1:5173
 ```
+
+## Dependencias y seguridad
+
+`security.yml` ejecuta npm audit, gitleaks y OSV de forma obligatoria. OSV analiza el lockfile completo, incluidas las herramientas de desarrollo, y sube el informe SARIF aunque encuentre problemas. No se silencian sus errores.
+
+Las versiones mínimas de `overrides` cubren avisos pendientes en dependencias transitivas de desarrollo: el adaptador Hono, minimatch/glob, chrome-launcher y basic-ftp. Lighthouse CI 0.16 utiliza Lighthouse 13 y requiere Node 22.19 o posterior. Tras modificar estas versiones se deben comprobar también el servidor de desarrollo y los presupuestos Lighthouse, además de las pruebas de aplicación.
 
 ## Tests E2E
 

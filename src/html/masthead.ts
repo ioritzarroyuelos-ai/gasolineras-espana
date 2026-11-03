@@ -60,12 +60,17 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + item('/itv/', 'itv', 'ITV')
     + item('/politica/', 'politica', 'Política')
     + '</nav>'
+    + '<div class="mh-local"><form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
+    + '<a id="municipio-elegido" hidden></a><ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></div>'
+    + '<script src="/static/municipio.js" defer></script>'
     + '</header>'
 }
 
 // Estilos de la cabecera. Todo cuelga de `.masthead` y usa variables --mh-*
 // propias, así se puede inyectar en cualquier página sin colisiones.
 export const MASTHEAD_CSS =
+  '.masthead .mh-local{max-width:720px;margin:0 auto;padding:12px 0;font-size:14px}.masthead form{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}.masthead input{font:inherit;padding:9px;border:1px solid #697586;border-radius:5px;min-width:0;max-width:100%}.masthead button{font:inherit;padding:10px 16px;background:#166534;color:#fff;border:0;border-radius:5px;cursor:pointer}.masthead .mh-local a{color:#166534}.masthead #municipio-resultados{padding:0;list-style:none;margin:4px 0}.masthead #municipio-resultados a{display:block;padding:8px}.masthead #municipio-elegido{margin-top:8px}'
+  +
   '.masthead{--mh-paper:#faf8f4;--mh-ink:#1a1a1a;--mh-muted:#5b6470;--mh-brand:#16a34a;'
   + '--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9;'
   + 'background:var(--mh-paper);color:var(--mh-ink);text-align:center;padding:22px 20px 0;'

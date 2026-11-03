@@ -9,6 +9,7 @@
 // Umbral de frescura de la predicción: si el dato tiene más de estas horas, la web
 // avisa de que puede no estar actualizado (mismo espíritu que la red de seguridad de
 // guardias). El tiempo se refresca varias veces al día, así que 12 h es holgado.
+import { instanteLocal } from './fechas.mjs'
 export const TIEMPO_STALE_HORAS = 12
 
 /**
@@ -18,9 +19,9 @@ export const TIEMPO_STALE_HORAS = 12
  * @returns {{ fiable: boolean, horas: number }}
  */
 export function frescuraTiempo(ts, ahora = Date.now()) {
-  const t = ts ? Date.parse(ts) : NaN
+  const t = instanteLocal(ts)
   const horas = Number.isFinite(t) ? (ahora - t) / 3600000 : Infinity
-  return { fiable: horas <= TIEMPO_STALE_HORAS, horas }
+  return { fiable: horas >= -5 / 60 && horas <= TIEMPO_STALE_HORAS, horas }
 }
 
 // ---- Adaptadores: respuesta cruda -> modelo normalizado comun -------------

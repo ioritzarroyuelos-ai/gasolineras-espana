@@ -28,7 +28,7 @@ test('ordena distancias con permiso y no guarda la ubicación', async ({ page, c
 
 test('denegar ubicación conserva la lista y permite reintentar', async ({ page, context }) => {
   const cdp = await context.newCDPSession(page)
-  await cdp.send('Browser.setPermission', { permission: { name: 'geolocation' }, setting: 'denied', origin: 'http://127.0.0.1:8788' })
+  await cdp.send('Browser.setPermission', { permission: { name: 'geolocation' }, setting: 'denied', origin: String(test.info().project.use.baseURL) })
   await page.goto('/farmacias/madrid/madrid')
   const total = await page.locator('.g-card').count()
   await page.getByRole('button', { name: 'Ordenar por cercanía' }).click()

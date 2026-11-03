@@ -12,7 +12,7 @@ import { loadSnapshot, genNonce, canonicalBase } from '../lib/runtime'
 import { enVeda, estadoEleccion } from '../lib/politica'
 import type { EleccionFile, IndexFile } from '../lib/politica-schemas'
 import { ELECCIONES, eleccionPorId } from '../../scripts/lib/politica-catalogo.mjs'
-import { buildIndexPage, buildAutonomicasIndex, buildEleccionPage, politicaHeaders } from '../html/politica'
+import { buildIndexPage, buildAutonomicasIndex, buildEleccionPage, politicaHeaders, SONDEOS_POR_PAGINA } from '../html/politica'
 
 const rutaFichero = (id: string, tipo: string) => (tipo === 'autonomica' ? 'politica/autonomicas/' + id + '.json' : 'politica/' + id + '.json')
 
@@ -76,12 +76,17 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!file) return new Response('No disponible', { status: 503 })
     const ahoraISO = new Date().toISOString()
     const veda = enVeda(ahoraISO, cat.proxima)
+    const rawPagina = new URL(c.req.url).searchParams.get('pagina') || '1'
+    const pagina = Number(rawPagina)
+    const maxPagina = veda ? 1 : Math.max(1, Math.ceil(file.sondeos.length / SONDEOS_POR_PAGINA))
+    if (!/^[1-9]\d{0,4}$/.test(rawPagina) || pagina > maxPagina) return new Response('Página no encontrada', { status: 404 })
+    if (pagina > 1) canonical += '?pagina=' + pagina
     const estado = veda
       ? 'ok'
       : estadoEleccion({ tieneSondeos: (file.sondeos || []).length > 0, ultimaComprobacionOk: (file as { ultimaComprobacionOk?: string }).ultimaComprobacionOk }, ahoraISO)
     const nonce = genNonce()
     return new Response(
-      buildEleccionPage({ nonce, cat, file, estado, enVeda: veda, ahoraISO, canonical }),
+      buildEleccionPage({ nonce, cat, file, estado, enVeda: veda, ahoraISO, canonical, pagina }),
       { headers: politicaHeaders(nonce) },
     )
   }

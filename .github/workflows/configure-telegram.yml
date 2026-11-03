@@ -43,6 +43,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: configure-telegram
@@ -61,6 +62,11 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+
+      - name: Comprobar que existe un artefacto validado antes de cambiar la configuración
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/dispatch-deploy.mjs --check
 
       - name: Safety check — abortar si ya hay bot salvo force=true
         run: |
@@ -134,21 +140,10 @@ jobs:
           # automaticamente (sin --yes).
           npx wrangler@4 d1 migrations apply gasolineras-history --remote
 
-      - name: Re-build y re-deploy para que las env vars entren en efecto
+      - name: Publicar por el despliegue centralizado y esperar su verificación
         env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # Las env vars recien seteadas NO aplican a deployments existentes;
-          # solo a nuevos. Forzamos un deploy del HEAD actual.
-          npm run icons
-          npm run build
-          test -f dist/_worker.js || { echo "::error::build fallo — _worker.js missing"; exit 1; }
-          npx wrangler@4 pages deploy dist \
-            --project-name="${PROJECT}" \
-            --branch=main \
-            --commit-dirty=true \
-            --commit-hash="${{ github.sha }}"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/dispatch-deploy.mjs
 
       - name: Registrar webhook en Telegram
         env:

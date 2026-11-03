@@ -34,8 +34,7 @@ jobs:
           for ATTEMPT in $(seq 1 24); do
             RESULT=$(gh run list --workflow=deploy-preview.yml --commit="$PR_SHA" --limit=1 --json status,conclusion --repo "$GITHUB_REPOSITORY")
             if echo "$RESULT" | jq -e '.[0].status == "completed" and .[0].conclusion == "success"' >/dev/null; then
-              BRANCH=$(printf '%s' "$GITHUB_HEAD_REF" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g;s/--*/-/g;s/^-//' | cut -c1-28 | sed 's/-*$//')
-              echo "GUARDIAS_RELAY_ORIGIN=https://${BRANCH}.webapp-3ft.pages.dev" >> "$GITHUB_ENV"
+              echo "GUARDIAS_RELAY_ORIGIN=https://espana-util-guardias-pr-${{ github.event.pull_request.number }}.ioritz-arroyuelos.workers.dev" >> "$GITHUB_ENV"
               exit 0
             fi
             sleep 10

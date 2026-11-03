@@ -22,6 +22,8 @@
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { BRAND } from '../lib/brand'
+import { localidadHtml, LOCALIDAD_CSS } from './localidades'
+import type { Localidad, LocalidadIndex } from '../lib/localidades'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 /** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
@@ -37,6 +39,9 @@ export interface LandingTiempo {
 /** Datos frescos que el handler de `/` inyecta en la portada. Todo opcional:
  *  si falta algo, ese bloque degrada sin romper la página. */
 export interface LandingData {
+  localidad?: Localidad
+  encontrados?: LocalidadIndex[]
+  query?: string
   gasolina?: { g95?: number; diesel?: number } // media nacional €/L
   tiempo?: LandingTiempo[]                      // ciudades grandes con dato fresco
 }
@@ -330,6 +335,7 @@ export function buildLandingPage(
     footer .foot-links { margin-bottom: 8px; }
     footer .foot-links a { margin: 0 8px; }
     .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+    ${LOCALIDAD_CSS}
   </style>
 </head>
 <body>
@@ -337,6 +343,7 @@ export function buildLandingPage(
   <h1 class="sr-only">El tiempo, gasolineras, farmacias, ITV y elecciones de España con datos oficiales</h1>
 
   <main>
+    ${localidadHtml(data.localidad, data.encontrados, data.query)}
     <section class="lead" aria-labelledby="t-tiempo">
       <p class="kicker">Hoy en España</p>
       <h2 id="t-tiempo">El tiempo hoy</h2>

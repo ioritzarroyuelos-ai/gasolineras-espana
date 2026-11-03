@@ -34,6 +34,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: configure-support
@@ -52,6 +53,11 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+
+      - name: Comprobar que existe un artefacto validado antes de cambiar la configuración
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/dispatch-deploy.mjs --check
 
       - name: Validar URL — formato, allowlist y reachability
         env:
@@ -124,22 +130,10 @@ jobs:
           echo -n "$URL" | npx wrangler@4 pages secret put SUPPORT_URL --project-name="$PROJECT"
           echo "SUPPORT_URL puesto OK"
 
-      - name: Re-build y re-deploy para que la env var entre en efecto
+      - name: Publicar por el despliegue centralizado y esperar su verificación
         env:
-          CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          # Las env vars recien seteadas NO aplican a deployments existentes;
-          # solo a nuevos. Forzamos deploy del HEAD actual (mismo patron que
-          # configure-telegram).
-          npm run icons
-          npm run build
-          test -f dist/_worker.js || { echo "::error::build fallo — _worker.js missing"; exit 1; }
-          npx wrangler@4 pages deploy dist \
-            --project-name="${PROJECT}" \
-            --branch=main \
-            --commit-dirty=true \
-            --commit-hash="${{ github.sha }}"
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/dispatch-deploy.mjs
 
       - name: Verificar que el boton aparece en el HTML de prod
         env:
@@ -147,7 +141,7 @@ jobs:
         run: |
           # CF Pages tarda ~15-30s en propagar el deploy a la URL canonica.
           sleep 30
-          HTML=$(curl -fsS --max-time 20 --retry 3 --retry-delay 10 "${PUBLIC_ORIGIN}/")
+          HTML=$(curl -fsS --max-time 20 --retry 3 --retry-delay 10 "${PUBLIC_ORIGIN}/gasolineras/mapa")
           # El template literal de shell.ts renderiza el <a> multi-linea:
           #   <a href="..."
           #      class="kofi-support"

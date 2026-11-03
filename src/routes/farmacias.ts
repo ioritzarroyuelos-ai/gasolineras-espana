@@ -17,20 +17,8 @@ import {
   GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
 } from '../lib/guardias'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
-import { publicGuardiasSource, GUARDIAS_PUBLIC_SOURCES } from '../lib/guardias-relay'
 
 export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
-  app.get('/api/guardias/fuente/:territorio', async c => {
-    const territorio = c.req.param('territorio')
-    if (!Object.hasOwn(GUARDIAS_PUBLIC_SOURCES, territorio)) return c.notFound()
-    try {
-      const data = await publicGuardiasSource(territorio)
-      return c.json(data, 200, { 'Cache-Control': 'public, max-age=300', 'X-Robots-Tag': 'noindex' })
-    } catch (e) {
-      return c.json({ error: 'La fuente oficial no responde; no se ha sustituido por datos antiguos', detail: e instanceof Error ? e.message.slice(0, 200) : 'Error de conexión' }, 502, { 'Cache-Control': 'no-store' })
-    }
-  })
-
   // ---- Farmacias (Fase 1 MVP nacional) ----
   // `/farmacias` sin barra -> 301 a `/farmacias/` (misma canonicalizacion que
   // hacemos con /gasolineras para evitar duplicado SEO).

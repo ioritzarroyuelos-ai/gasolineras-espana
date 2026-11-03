@@ -40,6 +40,7 @@ jobs:
     if: >-
       github.event.action != 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
       github.event.pull_request.draft == false
     environment:
       name: preview-pr-${{ github.event.pull_request.number }}
@@ -227,7 +228,7 @@ jobs:
     if: >-
       github.event.action == 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'dependabot[bot]'
+      github.event.pull_request.user.login != 'dependabot[bot]'
     permissions:
       contents: read
     steps:

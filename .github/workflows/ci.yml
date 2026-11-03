@@ -14,7 +14,9 @@ on:
     branches: [main]
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Un robot fallido/cancelado omite quality: no debe cancelar un CI válido
+  # de main antes de evaluar el condicional del job.
+  group: ci-${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 # Todas las actions estan pineadas a versiones que corren sobre Node 24

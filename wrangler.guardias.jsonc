@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "espana-util-guardias",
+  "main": "workers/guardias.mjs",
+  "compatibility_date": "2026-04-05",
+  "placement": { "region": "aws:eu-south-2" },
+  "workers_dev": true,
+  "env": { "preview": { "name": "espana-util-guardias-preview" } }
+}

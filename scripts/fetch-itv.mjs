@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
+const DATA_DIR = process.env.ITV_OUT_DIR || resolve(ROOT, 'public', 'data')
 
 const DGT_URL = 'https://services3.arcgis.com/TXNiwnLDifb5lMaR/ArcGIS/rest/services/ITV/FeatureServer/0/query'
   + '?where=1%3D1&outFields=*&f=geojson&outSR=4326'
@@ -87,7 +87,7 @@ async function fetchConReintento(url, intentos = 4, tipo = 'json') {
   let ultimo
   for (let i = 1; i <= intentos; i++) {
     try {
-      const res = await fetch(url, { headers: { 'Accept': tipo === 'json' ? 'application/json' : 'text/csv' } })
+      const res = await fetch(url, { headers: { 'Accept': tipo === 'json' ? 'application/json' : 'text/csv' }, signal: AbortSignal.timeout(30000) })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       return tipo === 'json' ? await res.json() : await res.text()
     } catch (e) {

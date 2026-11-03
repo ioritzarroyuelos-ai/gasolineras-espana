@@ -5,12 +5,8 @@ name: error-monitor — chequea errores del cliente y notifica Telegram
 # Elegidos para cubrir madrugada (detectar errores nocturnos), manana y tarde
 # sin saturar el chat de Telegram con cada deploy.
 #
-# El workflow:
-#   1. Pide al endpoint admin los errores con notified_at IS NULL.
-#   2. Si hay 0 -> manda a Telegram "cero errores". Si hay >0 -> manda resumen.
-#   3. Marca los enviados como notificados para que el siguiente tick no los
-#      reenvie. Errores recurrentes que vuelvan a ocurrir solo se re-notifican
-#      si se limpia notified_at manualmente.
+# Comprueba los cinco servicios y errores nuevos/recurrentes (máximo un aviso diario por firma).
+# Conserva las tres confirmaciones diarias configuradas.
 #
 # Secrets requeridos (repo Settings -> Secrets and variables -> Actions):
 #   CRON_TOKEN             shared secret con el Pages project (ya existe)
@@ -44,7 +40,13 @@ jobs:
         with:
           sparse-checkout: |
             scripts/error-monitor.sh
+            scripts/error-monitor.mjs
+            scripts/lib/monitor-message.mjs
           sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
 
       - name: Check & notify
         env:

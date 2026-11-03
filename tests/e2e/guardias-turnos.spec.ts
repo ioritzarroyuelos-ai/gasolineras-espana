@@ -1,0 +1,38 @@
+import { test, expect } from '@playwright/test'
+test('filtra turnos y permite volver a todos sin perder teléfono ni fuente', async ({ page }) => {
+  await page.goto('/farmacias/madrid/madrid')
+  const total = await page.locator('.g-card').count()
+  expect(total).toBeGreaterThan(0)
+  await page.getByRole('link', { name: 'Abierta ahora', exact: true }).click()
+  await expect(page).toHaveURL(/turno=ahora/)
+  await expect(page.getByRole('link', { name: 'Abierta ahora', exact: true })).toHaveAttribute('aria-current', 'page')
+  expect(await page.locator('.g-card').count()).toBeLessThanOrEqual(total)
+  await expect(page.getByText(/Según el horario publicado/)).toBeVisible()
+  await page.getByRole('link', { name: 'Todos los turnos', exact: true }).click()
+  await expect(page.locator('.g-card')).toHaveCount(total)
+  await expect(page.locator('.g-card a[href^="tel:"]').first()).toBeVisible()
+  await expect(page.getByRole('link', { name: /Consultar la fuente oficial/ })).toBeVisible()
+})
+
+test('ordena distancias con permiso y no guarda la ubicación', async ({ page, context }) => {
+  await context.setGeolocation({ latitude: 40.4168, longitude: -3.7038, accuracy: 30 })
+  await context.grantPermissions(['geolocation'])
+  await page.goto('/farmacias/madrid/madrid')
+  await page.getByRole('button', { name: 'Ordenar por cercanía' }).click()
+  await expect(page.locator('#g-ubicacion')).toContainText('Ordenadas por distancia')
+  const distances = (await page.locator('.g-distancia').allTextContents()).map(s => parseFloat(s))
+  expect(distances.length).toBeGreaterThan(0)
+  expect(distances).toEqual([...distances].sort((a,b) => a-b))
+  expect(await page.evaluate(() => localStorage.length)).toBe(0)
+})
+
+test('denegar ubicación conserva la lista y permite reintentar', async ({ page, context }) => {
+  const cdp = await context.newCDPSession(page)
+  await cdp.send('Browser.setPermission', { permission: { name: 'geolocation' }, setting: 'denied', origin: String(test.info().project.use.baseURL) })
+  await page.goto('/farmacias/madrid/madrid')
+  const total = await page.locator('.g-card').count()
+  await page.getByRole('button', { name: 'Ordenar por cercanía' }).click()
+  await expect(page.locator('#g-ubicacion')).toContainText('No se pudo obtener')
+  await expect(page.locator('.g-card')).toHaveCount(total)
+  await expect(page.getByRole('button', { name: 'Ordenar por cercanía' })).toBeEnabled()
+})

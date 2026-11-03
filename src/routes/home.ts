@@ -11,6 +11,7 @@ import { buildLandingPage, landingHeaders, type LandingData, type LandingTiempo 
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from '../html/observatorio'
 import { frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
+import { buscaLocalidades, serviciosLocalidad, type Localidad, type LocalidadIndex } from '../lib/localidades'
 
 // Franja "El tiempo hoy" de la portada: las ciudades más pobladas (municipios
 // "importantes") que tengan predicción de AEMET fresca en el snapshot. Cargamos
@@ -54,6 +55,21 @@ async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<Land
 }
 
 export function registerHomeRoutes(app: Hono<{ Bindings: Env }>): void {
+  const cargaLocalidad = async (c: { req: { url: string }; env: Env }, ine: string) => {
+    if (!/^\d{5}$/.test(ine)) return undefined
+    const all = await loadSnapshot<Localidad[]>(c.req.url, 'localidades/' + ine.slice(0, 2) + '.json', c.env.ASSETS)
+    return all?.find(m => m.ine === ine)
+  }
+  app.get('/api/localidades', async c => {
+    const all = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS)
+    if (!all) return c.json({ error: 'Búsqueda temporalmente no disponible' }, 503)
+    return c.json(buscaLocalidades(all, c.req.query('q') || ''))
+  })
+  app.get('/api/localidad/:ine', async c => {
+    const m = await cargaLocalidad(c, c.req.param('ine'))
+    if (!m) return c.json({ error: 'Municipio no encontrado' }, 404)
+    return c.json({ ine: m.ine, nombre: m.nombre, provinciaNombre: m.provinciaNombre, servicios: serviciosLocalidad(m) }, 200, { 'Cache-Control': 'no-store' })
+  })
   // Ship 28: `/` sirve la portada "periódico" con dato fresco (fecha, media
   // nacional de carburantes y el tiempo de hoy de las ciudades grandes). Todo el
   // IO va en try/catch: si un snapshot falla, la portada degrada sin romperse.
@@ -65,6 +81,16 @@ export function registerHomeRoutes(app: Hono<{ Bindings: Env }>): void {
     }
     const nonce = genNonce()
     const data: LandingData = {}
+    const ine = url.searchParams.get('municipio')
+    if (ine) {
+      data.localidad = await cargaLocalidad(c, ine)
+      if (!data.localidad) return c.notFound()
+    }
+    const query = url.searchParams.get('q')
+    if (query) {
+      data.query = query.slice(0, 70)
+      data.encontrados = buscaLocalidades(await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS) || [], query)
+    }
     try {
       // M5: media nacional desde el resumen precomputado (KB). Solo parseamos
       // stations.json (12 MB) si el resumen falta o no valida (fallback).

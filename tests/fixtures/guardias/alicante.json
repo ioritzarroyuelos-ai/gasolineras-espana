@@ -1,0 +1,61 @@
+{
+  "data": {
+    "query_datetime": "2026-11-03 21:19",
+    "pharmacies": [
+      {
+        "code": "100002",
+        "name": "MUD GADEA, FERNANDO",
+        "location": "Ondara",
+        "address": "C/ ADSUBIA, 9D",
+        "pc": "03760",
+        "schedule": "De 09:00:00 a 22:00:00",
+        "from": "09:00",
+        "until": "22:00",
+        "phone": "",
+        "alternative_phone": "",
+        "image": "https://www.cofalicante.com/ficheros/planosfarmacias/100002.JPG",
+        "open": "today",
+        "state": "opened",
+        "time_in_state": "12:19",
+        "time_to_next_state": "00:41",
+        "is_delegated": false
+      },
+      {
+        "code": "100139",
+        "name": "FERRERES TARRASO, JAVIER",
+        "location": "Denia",
+        "address": "C/ CONSTITUCION, Nº3",
+        "pc": "03700",
+        "schedule": "De 09:30:00 a 09:30:00",
+        "from": "09:30",
+        "until": "09:30",
+        "phone": "",
+        "alternative_phone": "",
+        "image": "https://www.cofalicante.com/ficheros/planosfarmacias/100139.JPG",
+        "open": "today",
+        "state": "opened",
+        "time_in_state": "11:49",
+        "time_to_next_state": "12:11",
+        "is_delegated": false
+      },
+      {
+        "code": "130146",
+        "name": "GARCIA COSTA, FRANCISCO JOSE",
+        "location": "Denia",
+        "address": "C/ MIGUEL HERNANDEZ ESQ. CAMI DEL LAVAOR",
+        "pc": "03700",
+        "schedule": "De 09:30:00 a 09:30:00",
+        "from": "09:30",
+        "until": "09:30",
+        "phone": "",
+        "alternative_phone": "",
+        "image": "https://www.cofalicante.com/ficheros/planosfarmacias/130146.JPG",
+        "open": "yesterday",
+        "state": "closed",
+        "time_in_state": "11:49",
+        "time_to_next_state": null,
+        "is_delegated": false
+      }
+    ]
+  }
+}

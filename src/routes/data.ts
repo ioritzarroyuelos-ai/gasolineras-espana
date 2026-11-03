@@ -10,12 +10,18 @@ import {
 } from '../lib/runtime'
 import { validateId, isValidProvinciaId, sanitizeLatLng, tokensEqualConstTime } from '../lib/pure'
 import { APP_VERSION } from '../lib/version'
+import { evaluateServices, type ServiceManifest } from '../lib/service-status'
 import { DATA_SCHEMA_VER } from '../lib/schemas'   // M2: versiona la clave de caché persistente
 
 type MunicipiosSnapshot = { Fecha?: string; Data: Record<string, Array<{ IDMunicipio: string; Municipio: string; IDProvincia: string }>> }
 type SnapshotMeta = { fetchedAt?: string; ministryDate?: string; stationCount?: number; source?: string }
 
 export function registerDataRoutes(app: Hono<{ Bindings: Env }>): void {
+app.get('/api/status', async c => {
+  const manifest = await loadSnapshot<ServiceManifest>(c.req.url, 'service-manifest.json', c.env.ASSETS)
+  const status = evaluateServices(manifest)
+  return c.json(status, status.ok ? 200 : 503, { 'Cache-Control': 'no-store' })
+})
 app.get('/api/provincias', async c => {
   try {
     return c.json(await proxiedFetch('/Listados/Provincias/'), 200, { 'Cache-Control': 'public, max-age=3600' })
@@ -177,13 +183,13 @@ app.get('/api/health', async c => {
   const meta = await loadSnapshot<SnapshotMeta>(c.req.url, 'snapshot-meta.json', c.env.ASSETS)
   const now = Date.now()
   let snapshotAgeMs: number | null = null
-  let stale = false
+  let stale = true
 
   if (meta?.fetchedAt) {
     const t = Date.parse(meta.fetchedAt)
     if (Number.isFinite(t)) {
       snapshotAgeMs = now - t
-      stale = snapshotAgeMs > SNAPSHOT_STALE_MS
+      stale = snapshotAgeMs < -300_000 || snapshotAgeMs > SNAPSHOT_STALE_MS
     }
   } else {
     // Sin meta significa que no hay snapshot: lo consideramos stale por
@@ -206,6 +212,7 @@ app.get('/api/health', async c => {
     ts: new Date().toISOString(),
     version: APP_VERSION,
     stale,
+    scope: 'gasolineras',
   }
   const body = isAdmin
     ? {

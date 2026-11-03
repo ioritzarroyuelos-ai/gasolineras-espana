@@ -12,7 +12,7 @@ import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/ru
 import {
   parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
   estacionesDeProvincia, estacionesDeMunicipio,
-  type EstacionITV, type ItvFile,
+  type ItvFile,
 } from '../lib/itv'
 import {
   buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, buildItvPreciosPage, itvHeaders,
@@ -21,8 +21,9 @@ import { tarifaPorProvincia } from '../lib/itv-tarifas'
 
 export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
 
-  async function cargaItv(c: { req: { url: string }; env: Env }): Promise<EstacionITV[]> {
-    return parseItv(await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS))
+  async function cargaItv(c: { req: { url: string }; env: Env }): Promise<{ estaciones: ReturnType<typeof parseItv>; updatedAt?: string }> {
+    const file = await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS)
+    return { estaciones: parseItv(file), updatedAt: file?.generatedAt }
   }
 
   // Indice ligero de municipios con ITV para el autocompletado de /itv/.
@@ -31,11 +32,11 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
   let itvMuniIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
 
   app.get('/api/itv/municipios', async c => {
-    const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
+    const CACHE = { 'Cache-Control': 'public, max-age=300, s-maxage=300' }
     if (itvMuniIndex && Date.now() - itvMuniIndex.ts < MUNI_INDEX_TTL) {
       return c.json(itvMuniIndex.data, 200, CACHE)
     }
-    const todas = await cargaItv(c)
+    const { estaciones: todas, updatedAt } = await cargaItv(c)
     const out: Array<{ n: string; p: string; u: string }> = []
     const seen = new Set<string>()
     for (const prov of provinciasConItv(todas)) {
@@ -52,12 +53,12 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
   })
 
   app.get('/itv/', async c => {
-    const todas = await cargaItv(c)
+    const { estaciones: todas, updatedAt } = await cargaItv(c)
     if (!todas.length) return c.notFound()
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/itv/'
     return new Response(
-      buildItvIndexPage(nonce, provinciasConItv(todas), todas.length, canonical),
+      buildItvIndexPage(nonce, provinciasConItv(todas), todas.length, canonical, updatedAt),
       { headers: itvHeaders(nonce) },
     )
   })
@@ -82,13 +83,15 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaPorSlug(provSlug)
     if (!prov) return c.notFound()
 
-    const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
+    const { estaciones, updatedAt } = await cargaItv(c)
+    const deProvincia = estacionesDeProvincia(estaciones, prov.id)
     // Sin estaciones no se publica pagina: mejor un 404 que una URL vacia en el indice.
     if (!deProvincia.length) return c.notFound()
 
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/itv/' + provSlug
     return new Response(buildItvProvinciaPage(nonce, {
+      updatedAt,
       provinciaSlug: provSlug,
       provinciaName: prov.name,
       estaciones: deProvincia,
@@ -104,7 +107,8 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaPorSlug(provSlug)
     if (!prov) return c.notFound()
 
-    const deProvincia = estacionesDeProvincia(await cargaItv(c), prov.id)
+    const { estaciones, updatedAt } = await cargaItv(c)
+    const deProvincia = estacionesDeProvincia(estaciones, prov.id)
     if (!deProvincia.length) return c.notFound()
 
     const municipios = municipiosConItv(deProvincia)
@@ -114,6 +118,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/itv/' + provSlug + '/' + munSlug
     return new Response(buildItvMunicipioPage(nonce, {
+      updatedAt,
       provinciaSlug: provSlug,
       provinciaName: prov.name,
       municipioName: munEntry.name,

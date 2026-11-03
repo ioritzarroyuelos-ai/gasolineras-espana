@@ -22,6 +22,17 @@ function fileCon(empresa: string): EleccionFile {
 const base = { nonce: 'n1', cat, estado: 'ok', ahoraISO: '2026-09-23T00:00:00Z', canonical: 'https://x/politica/autonomicas/madrid' }
 
 describe('buildEleccionPage', () => {
+  it('permite recorrer todos los sondeos sin repetirlos y limita también la gráfica', () => {
+    const file = fileCon('X')
+    file.sondeos = Array.from({ length: 61 }, (_, i) => ({ ...file.sondeos[0], empresa: 'Encuesta-' + String(i).padStart(3, '0'), campoFin: new Date(Date.UTC(2026, 0, i + 1)).toISOString().slice(0, 10) }))
+    const pages = [1, 2, 3].map(pagina => buildEleccionPage({ ...base, file, enVeda: false, pagina }))
+    expect(pages.map(p => (p.match(/class="empn"/g) || []).length)).toEqual([25, 25, 11])
+    for (const sondeo of file.sondeos) expect(pages.filter(p => p.includes(sondeo.empresa))).toHaveLength(1)
+    expect(pages[0]).not.toContain('Encuesta-000')
+    expect(pages[0]).toContain('?pagina=2')
+    expect(pages[2]).toContain('Sondeos 51–61 de 61')
+    expect(buildEleccionPage({ ...base, file, enVeda: true, pagina: 2 })).not.toContain('Encuesta-')
+  })
   it('escapa texto que viene de Wikipedia (seguridad)', () => {
     const html = buildEleccionPage({ ...base, file: fileCon('<script>alert(1)</script>'), enVeda: false })
     expect(html).not.toContain('<script>alert(1)')

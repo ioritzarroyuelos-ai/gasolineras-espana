@@ -226,6 +226,7 @@ export function buildAutonomicasIndex(nonce: string, auton: IndexEntry[], canoni
 
 // ---- Página de una elección ----
 interface EleccionOpts {
+  pagina?: number
   nonce: string
   cat: EleccionCatalogo
   file: EleccionFile
@@ -332,7 +333,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
   // Resultado de la última elección como barra de escaños.
   cuerpo += barraResultado(file, colores)
   // Mantiene el texto que esperan los tests aunque no haya barra (referencia vacía).
-  if (!file.referencia.escanos.length) cuerpo += '<p class="cap" style="display:none">Resultado de la última elección</p>'
+  if (!file.referencia.escanos.length) cuerpo += '<p class="cap" hidden>Resultado de la última elección</p>'
 
   if (enVeda) {
     cuerpo += '<div class="veda"><span class="ic">🗳️</span><div><b>Veda electoral (jornada de reflexión).</b> '
@@ -341,21 +342,31 @@ export function buildEleccionPage(o: EleccionOpts): string {
   } else if (!file.sondeos.length) {
     cuerpo += '<p class="aviso">Todavía no hay sondeos publicados para esta elección. Se mostrarán aquí en cuanto las casas encuestadoras empiecen a publicarlos.</p>'
   } else {
+    const CAP = SONDEOS_POR_PAGINA
+    const orden = [...file.sondeos].sort((a, b) => String(b.campoFin || '').localeCompare(String(a.campoFin || '')))
+    const paginas = Math.max(1, Math.ceil(orden.length / CAP))
+    const pagina = Math.max(1, Math.min(paginas, Math.trunc(o.pagina || 1)))
+    const muestra = orden.slice((pagina - 1) * CAP, pagina * CAP)
+    const ruta = new URL(canonical).pathname
+    const enlacePagina = (p: number) => ruta + (p > 1 ? '?pagina=' + p : '')
+    const navegacion = '<nav aria-label="Páginas de sondeos"><p>'
+      + (pagina > 1 ? '<a rel="prev" href="' + esc(enlacePagina(pagina - 1)) + '">← Más recientes</a> · ' : '')
+      + 'Página ' + pagina + ' de ' + paginas
+      + (pagina < paginas ? ' · <a rel="next" href="' + esc(enlacePagina(pagina + 1)) + '">Más antiguos →</a>' : '')
+      + '</p></nav>'
     // Gráfica de evolución.
     cuerpo += '<div class="chart"><h3>Evolución de los sondeos</h3>'
-      + '<p class="hint">Escaños estimados por cada sondeo (un punto por encuesta). La línea une las estimaciones de cada partido; es orientativa.</p>'
-      + graficaEvolucionSvg(file, topIds, colores)
+      + '<p class="hint">Sondeos de esta página: ' + fmtFecha(muestra.at(-1)?.campoFin) + ' – ' + fmtFecha(muestra[0]?.campoFin) + '. Escaños estimados por cada sondeo (un punto por encuesta). La línea une las estimaciones de cada partido; es orientativa.</p>'
+      + graficaEvolucionSvg({ ...file, sondeos: muestra }, topIds, colores)
       + '<div class="leyenda">' + topIds.map((id) => {
         const info = colores.get(id)
         return '<span><i class="sw-' + esc(id) + '"></i>' + esc(info?.siglas || id) + '</span>'
       }).join('') + '</div></div>'
       + chartTooltipScript(nonce)
 
-    // Tabla (los más recientes primero; cap para no inflar la página).
-    const CAP = 40
-    const orden = [...file.sondeos].sort((a, b) => String(b.campoFin || '').localeCompare(String(a.campoFin || '')))
-    const muestra = orden.slice(0, CAP)
+    // La tabla y la gráfica cubren el mismo intervalo; todo el histórico es accesible.
     cuerpo += '<h2>Todos los sondeos</h2>'
+    cuerpo += navegacion
     cuerpo += '<div class="tabla-wrap"><table class="s"><thead><tr>'
       + '<th class="emp">Encuestadora</th><th>Fecha</th>'
       + topIds.map((id) => '<th><span class="pdot sw-' + esc(id) + '"></span>' + esc(colores.get(id)?.siglas || id) + '</th>').join('')
@@ -380,7 +391,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
       cuerpo += '</tr>'
     }
     cuerpo += '</tbody></table></div>'
-    if (orden.length > CAP) cuerpo += '<p class="fuente">Se muestran los ' + CAP + ' sondeos más recientes de ' + orden.length + ' recopilados.</p>'
+    cuerpo += '<p class="fuente">Sondeos ' + ((pagina - 1) * CAP + 1) + '–' + Math.min(pagina * CAP, orden.length) + ' de ' + orden.length + ' recopilados.</p>' + navegacion
   }
 
   const pro = file.procedencia
@@ -404,6 +415,8 @@ export function buildEleccionPage(o: EleccionOpts): string {
     ]),
   }, cuerpo)
 }
+
+export const SONDEOS_POR_PAGINA = 25
 
 // Gráfica de evolución: una línea (orientativa) por partido a lo largo del tiempo
 // + puntos por sondeo. Rejilla horizontal, línea de mayoría y ticks de año.

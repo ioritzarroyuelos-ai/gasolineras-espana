@@ -1,0 +1,65 @@
+name: Verificar fuentes de guardias
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/fetch-guardias-*.mjs'
+      - 'scripts/lib/guardias-*.mjs'
+      - '.github/workflows/verify-guardias.yml'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  fuente:
+    name: Fuente oficial · ${{ matrix.territorio }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        territorio: [alicante, almeria, asturias, avila, cantabria, ceuta, clm]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Esperar al respaldo del preview para las fuentes con problemas de red
+        if: github.event_name == 'pull_request' && (matrix.territorio == 'asturias' || matrix.territorio == 'ceuta')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for ATTEMPT in $(seq 1 24); do
+            RESULT=$(gh run list --workflow=deploy-preview.yml --commit="$PR_SHA" --limit=1 --json status,conclusion --repo "$GITHUB_REPOSITORY")
+            if echo "$RESULT" | jq -e '.[0].status == "completed" and .[0].conclusion == "success"' >/dev/null; then
+              echo "GUARDIAS_RELAY_ORIGIN=https://espana-util-guardias-pr-${{ github.event.pull_request.number }}.ioritz-arroyuelos.workers.dev" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::El preview de este commit no estuvo listo para verificar el respaldo'
+          exit 1
+      - name: Consultar fuente real sin modificar los datos publicados
+        env:
+          GUARDIAS_OUT_DIR: ${{ runner.temp }}/guardias-verificadas
+        run: node scripts/fetch-guardias-${{ matrix.territorio }}.mjs
+      - name: Diagnóstico de conexión si falla la consulta
+        if: failure() && (matrix.territorio == 'asturias' || matrix.territorio == 'ceuta')
+        env:
+          TERRITORIO: ${{ matrix.territorio }}
+        run: |
+          if [ "$TERRITORIO" = 'asturias' ]; then
+            URL='https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp?IdMenu=355'
+          else
+            URL='https://ipsi.ceuta.es:8443/sanidad/farmacia/controlfarmacia?cmd=guardias-nuevo'
+          fi
+          for FAMILY in 4 6; do
+            curl -"$FAMILY" --max-time 15 --connect-timeout 10 --output /dev/null --silent --show-error --write-out 'IPv%{http_version} HTTP=%{http_code} IP=%{remote_ip} TLS=%{ssl_verify_result}\n' "$URL" || true
+          done
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fuente-${{ matrix.territorio }}
+          path: ${{ runner.temp }}/guardias-verificadas/*.json
+          retention-days: 3

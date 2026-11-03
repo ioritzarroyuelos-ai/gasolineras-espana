@@ -1,0 +1,469 @@
+{
+  "farmacias": [
+    {
+      "n": 86,
+      "nombre": "MUÑOZ GARCÍA, MARÍA ANTONIA",
+      "direccion": "Calle FERNANDO DE LOS RIOS, 52",
+      "cp": "39006",
+      "localidad": "SANTANDER",
+      "telefono": "942 21 39 69",
+      "lat": 43.469417,
+      "lng": -3.799762,
+      "maps": "https://maps.app.goo.gl/jimZc8qXbzPeYRi68",
+      "horario": "Ampliado: Válido desde 15/06/2025 hasta 30/09/2025: De lunes a viernes de 9:00 a 14:00 y de 16:30 a 20:30. Sábado de 9:30 a 14:00\nHabitual: De lunes a viernes de 9:30 a 14:00 y de 16:30 a 20:00. Sábado de 9:30 a 14:00",
+      "horarioHabitual": "De lunes a viernes de 9:30 a 14:00 y de 16:30 a 20:00. Sábado de 9:30 a 14:00",
+      "semana": {
+        "0": [
+          [
+            570,
+            840
+          ],
+          [
+            990,
+            1200
+          ]
+        ],
+        "1": [
+          [
+            570,
+            840
+          ],
+          [
+            990,
+            1200
+          ]
+        ],
+        "2": [
+          [
+            570,
+            840
+          ],
+          [
+            990,
+            1200
+          ]
+        ],
+        "3": [
+          [
+            570,
+            840
+          ],
+          [
+            990,
+            1200
+          ]
+        ],
+        "4": [
+          [
+            570,
+            840
+          ],
+          [
+            990,
+            1200
+          ]
+        ],
+        "5": [
+          [
+            570,
+            840
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": []
+    },
+    {
+      "n": 111,
+      "nombre": "MAZA RUIZ, FRANCISCO DE ASÍS DE LA",
+      "direccion": "Calle SAN FERNANDO, 36 (ESQUINA PERINES)",
+      "cp": "39010",
+      "localidad": "SANTANDER",
+      "telefono": "942 23 20 45",
+      "lat": 43.45999,
+      "lng": -3.821644,
+      "maps": "https://maps.app.goo.gl/ENQYFKAQz3ZzXwcv8",
+      "horario": "De lunes a viernes de 9:00 a 21:00. Sábado de 9:30 a 14:00",
+      "horarioHabitual": "De lunes a viernes de 9:00 a 21:00. Sábado de 9:30 a 14:00",
+      "semana": {
+        "0": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "1": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "2": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "3": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "4": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "5": [
+          [
+            570,
+            840
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": [
+        "vih",
+        "pij",
+        "kit",
+        "covid"
+      ]
+    },
+    {
+      "n": 177,
+      "nombre": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+      "direccion": "Calle LOS MARTIRES, 17",
+      "cp": "39300",
+      "localidad": "TORRELAVEGA",
+      "telefono": "942 89 20 21",
+      "lat": 43.352469,
+      "lng": -4.048571,
+      "maps": "https://maps.app.goo.gl/8Cr7cSPziVXWGarMA",
+      "horario": "De lunes a viernes de 24 HO a 24 HO. Sábado de 24 HO a 24 HO. Domingo de 24 HO a 24 HO",
+      "horarioHabitual": "De lunes a viernes de 24 HO a 24 HO. Sábado de 24 HO a 24 HO. Domingo de 24 HO a 24 HO",
+      "semana": {
+        "0": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "1": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "2": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "3": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "4": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "5": [
+          [
+            0,
+            1440
+          ]
+        ],
+        "6": [
+          [
+            0,
+            1440
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": [
+        "vih",
+        "kit"
+      ]
+    },
+    {
+      "n": 184,
+      "nombre": "MARTÍNEZ-VAQUERO LÓPEZ, BERNARDO",
+      "direccion": "Calle FLORANES, 51",
+      "cp": "39010",
+      "localidad": "SANTANDER",
+      "telefono": "942 23 34 98",
+      "lat": 43.460047,
+      "lng": -3.823981,
+      "maps": "https://maps.app.goo.gl/bxUKmCjqUxsEzMMB9",
+      "horario": "De lunes a viernes de 9:00 a 21:00. Sábado de 9:00 a 14:30",
+      "horarioHabitual": "De lunes a viernes de 9:00 a 21:00. Sábado de 9:00 a 14:30",
+      "semana": {
+        "0": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "1": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "2": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "3": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "4": [
+          [
+            540,
+            1260
+          ]
+        ],
+        "5": [
+          [
+            540,
+            870
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": [
+        "covid"
+      ]
+    },
+    {
+      "n": 221,
+      "nombre": "PINEDO TESTA, IGNACIO",
+      "direccion": "Calle CONCHA ESPINA, 8-F (VALDENOJA)",
+      "cp": "39012",
+      "localidad": "SANTANDER",
+      "telefono": "942 39 03 13",
+      "lat": 43.47846,
+      "lng": -3.799142,
+      "maps": "https://maps.app.goo.gl/XkbNA4T5vANALYhe6",
+      "horario": "De lunes a viernes de 9:45 a 13:30 y de 16:00 a 20:00. Sábado de 9:45 a 13:30",
+      "horarioHabitual": "De lunes a viernes de 9:45 a 13:30 y de 16:00 a 20:00. Sábado de 9:45 a 13:30",
+      "semana": {
+        "0": [
+          [
+            585,
+            810
+          ],
+          [
+            960,
+            1200
+          ]
+        ],
+        "1": [
+          [
+            585,
+            810
+          ],
+          [
+            960,
+            1200
+          ]
+        ],
+        "2": [
+          [
+            585,
+            810
+          ],
+          [
+            960,
+            1200
+          ]
+        ],
+        "3": [
+          [
+            585,
+            810
+          ],
+          [
+            960,
+            1200
+          ]
+        ],
+        "4": [
+          [
+            585,
+            810
+          ],
+          [
+            960,
+            1200
+          ]
+        ],
+        "5": [
+          [
+            585,
+            810
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": []
+    },
+    {
+      "n": 264,
+      "nombre": "FARMACIA MARRÓN SOUTO, C.B.",
+      "direccion": "Barrio IRUZ, 84",
+      "cp": "39008",
+      "localidad": "IRUZ",
+      "telefono": "942 59 60 14",
+      "lat": 43.275343,
+      "lng": -3.939395,
+      "maps": "https://maps.app.goo.gl/Nmk2HCbzigYLL5f88",
+      "horario": "De lunes a viernes de 9:15 a 14:00 y de 16:15 a 20:30. Sábado de 9:30 a 14:00",
+      "horarioHabitual": "De lunes a viernes de 9:15 a 14:00 y de 16:15 a 20:30. Sábado de 9:30 a 14:00",
+      "semana": {
+        "0": [
+          [
+            555,
+            840
+          ],
+          [
+            975,
+            1230
+          ]
+        ],
+        "1": [
+          [
+            555,
+            840
+          ],
+          [
+            975,
+            1230
+          ]
+        ],
+        "2": [
+          [
+            555,
+            840
+          ],
+          [
+            975,
+            1230
+          ]
+        ],
+        "3": [
+          [
+            555,
+            840
+          ],
+          [
+            975,
+            1230
+          ]
+        ],
+        "4": [
+          [
+            555,
+            840
+          ],
+          [
+            975,
+            1230
+          ]
+        ],
+        "5": [
+          [
+            570,
+            840
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": [
+        "vih",
+        "covid"
+      ]
+    },
+    {
+      "n": 269,
+      "nombre": "AMORÓS GONZÁLEZ, JOSÉ FRANCISCO",
+      "direccion": "Barrio SORRIBERO, 15 - BAJO (LOCAL 2)",
+      "cp": "39300",
+      "localidad": "RENEDO DE PIÉLAGOS",
+      "telefono": "942 30 82 54",
+      "lat": 43.35637,
+      "lng": -3.957336,
+      "maps": "https://maps.app.goo.gl/PB6oKpjuv53616EB7",
+      "horario": "De lunes a viernes de 8:30 a 22:00. Sábado de 9:00 a 22:00. Domingo de 9:00 a 22:00",
+      "horarioHabitual": "De lunes a viernes de 8:30 a 22:00. Sábado de 9:00 a 22:00. Domingo de 9:00 a 22:00",
+      "semana": {
+        "0": [
+          [
+            510,
+            1320
+          ]
+        ],
+        "1": [
+          [
+            510,
+            1320
+          ]
+        ],
+        "2": [
+          [
+            510,
+            1320
+          ]
+        ],
+        "3": [
+          [
+            510,
+            1320
+          ]
+        ],
+        "4": [
+          [
+            510,
+            1320
+          ]
+        ],
+        "5": [
+          [
+            540,
+            1320
+          ]
+        ],
+        "6": [
+          [
+            540,
+            1320
+          ]
+        ]
+      },
+      "ampliados": [],
+      "abreFestivos": false,
+      "servicios": [
+        "covid"
+      ]
+    }
+  ]
+}

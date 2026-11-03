@@ -21,10 +21,10 @@ permissions:
 # (que aun es Node 20) - asi no tenemos dependencias con la @v4 de esa accion.
 
 # Evita deploys concurrentes pisandose. Si entra otro push mientras este corre,
-# el nuevo cancela al antiguo (queremos el ultimo commit en prod, no mezcla).
+# se espera al activo. Nunca se interrumpe una subida ni se publica un SHA anterior.
 concurrency:
   group: deploy-production
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -37,7 +37,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_branch == 'main' &&
-       github.event.workflow_run.event == 'push')
+       contains(fromJSON('["push","workflow_run","workflow_dispatch"]'), github.event.workflow_run.event))
     environment:
       name: production
       url: https://webapp-3ft.pages.dev
@@ -58,6 +58,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          CURRENT_SHA=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             RUN_ID="${{ github.event.workflow_run.id }}"
             HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
@@ -67,7 +68,7 @@ jobs:
             LATEST=$(gh run list \
               --workflow=ci.yml \
               --branch=main \
-              --event=push \
+              --commit="$CURRENT_SHA" \
               --status=success \
               --limit=1 \
               --json databaseId,headSha \
@@ -80,6 +81,12 @@ jobs:
             HEAD_SHA=$(echo "$LATEST" | jq -r '.[0].headSha')
             SOURCE="workflow_dispatch (manual, ultimo CI verde)"
           fi
+          if [ "$HEAD_SHA" != "$CURRENT_SHA" ]; then
+            echo "::notice::Se omite un artefacto anterior al main actual."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "current=true" >> "$GITHUB_OUTPUT"
           echo "Origen: $SOURCE"
           echo "  run_id:   $RUN_ID"
           echo "  head_sha: $HEAD_SHA"
@@ -89,11 +96,13 @@ jobs:
       # Checkout del commit exacto que validó CI. Lo necesitamos para que
       # `wrangler d1 migrations apply` lea migrations/ y wrangler.jsonc.
       - name: Checkout repo @ commit validado
+        if: steps.ci.outputs.current == 'true'
         uses: actions/checkout@v5
         with:
           ref: ${{ steps.ci.outputs.head_sha }}
 
       - name: Descargar dist del CI run
+        if: steps.ci.outputs.current == 'true'
         # Usa el SHA y run_id resueltos arriba. Asi deployamos exactamente el
         # mismo artefacto validado por CI (no reconstruimos = sin sorpresas).
         # Si el artefacto ya expiro (>7d de retention), GHA falla con
@@ -107,6 +116,7 @@ jobs:
           run-id: ${{ steps.ci.outputs.run_id }}
 
       - name: Sanity check del artefacto
+        if: steps.ci.outputs.current == 'true'
         run: |
           test -f dist/_worker.js || { echo "::error::dist/_worker.js no existe"; exit 1; }
           test -f dist/manifest.json || { echo "::error::dist/manifest.json no existe"; exit 1; }
@@ -115,6 +125,7 @@ jobs:
       # wrangler 4.x requiere Node >=22. El runner ya no garantiza esa version
       # por defecto, asi que la fijamos explicitamente antes de invocar wrangler.
       - name: Usar Node.js 22 (requerido por wrangler 4.x)
+        if: steps.ci.outputs.current == 'true'
         uses: actions/setup-node@v5
         with:
           node-version: '22'
@@ -125,35 +136,40 @@ jobs:
       # d1_migrations y solo ejecuta los .sql nuevos. Si no hay pendientes,
       # termina en ~2s sin tocar datos. Es seguro correrlo en cada deploy.
       #
-      # Requiere que CLOUDFLARE_API_TOKEN tenga el permiso "Workers D1: Edit"
-      # (el de "Pages: Edit" no basta para D1). Si el token no lo tiene, el
-      # comando retorna code 7403; el script lo convierte en warning y deja
-      # el deploy continuar. Cuando llegue una migracion schema-breaking, el
-      # smoke test /api/health fallara y el deploy quedara rojo — asi el
-      # drift nunca llega silencioso a prod.
+      # Los permisos Pages, D1 y Workers Scripts son obligatorios. Un error de
+      # migración bloquea la publicación para evitar un esquema desincronizado.
       - name: Aplicar migraciones D1 pendientes
+        if: steps.ci.outputs.current == 'true'
         env:
           CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set +e
-          OUT=$(npx --yes wrangler@4 d1 migrations apply gasolineras-history --remote 2>&1)
-          RC=$?
-          echo "$OUT"
-          if [ $RC -ne 0 ]; then
-            if echo "$OUT" | grep -q 'code: 7403'; then
-              echo "::warning::D1 migrations skipped: CLOUDFLARE_API_TOKEN sin permiso 'Workers D1: Edit'. Regenera el token con ambos permisos (Pages + D1) y vuelve a guardarlo en GHA. El deploy de assets continua."
-              exit 0
-            fi
-            echo "::error::wrangler d1 migrations apply fallo con exit $RC"
-            exit $RC
-          fi
+        run: npx --yes wrangler@4 d1 migrations apply gasolineras-history --remote
 
       # wrangler-action@v3 aun corre en Node 20. Como `npx wrangler` ya existe
       # en el runner, lo llamamos directamente: mismo resultado sin JS action
       # de Node 20. `--commit-dirty=true` silencia el aviso de que el directorio
       # venga sin .git (estamos deployando un tar de dist/ descargado, no el repo).
+      - name: Confirmar que main no avanzó durante la preparación
+        if: steps.ci.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATED_SHA: ${{ steps.ci.outputs.head_sha }}
+        run: |
+          CURRENT_SHA=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          if [ "$CURRENT_SHA" != "$VALIDATED_SHA" ]; then
+            echo "::error::Main avanzó; el siguiente CI publicará su propio artefacto."
+            exit 1
+          fi
+
+      - name: Desplegar respaldo regional de guardias validado
+        if: steps.ci.outputs.current == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4 deploy --config wrangler.guardias.jsonc
+
       - name: Deploy a Cloudflare Pages
+        if: steps.ci.outputs.current == 'true'
         env:
           CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -169,7 +185,7 @@ jobs:
       # de re-run con un revert antes de que el cliente note nada. El sleep
       # da margen para propagacion global del edge (~5-15s empiricamente).
       - name: Smoke test /api/health en prod
-        if: success()
+        if: success() && steps.ci.outputs.current == 'true'
         run: |
           sleep 15
           STATUS=$(curl -fsS --max-time 10 \
@@ -189,7 +205,7 @@ jobs:
           echo "Prod healthy: $(cat /tmp/health.json)"
 
       - name: Resumen
-        if: success()
+        if: success() && steps.ci.outputs.current == 'true'
         run: |
           echo "### Deploy OK" >> $GITHUB_STEP_SUMMARY
           echo "Commit: \`${{ steps.ci.outputs.head_sha }}\`" >> $GITHUB_STEP_SUMMARY
@@ -207,7 +223,7 @@ jobs:
       # de fallar el deploy — la app YA esta arriba, no queremos rojo solo por
       # no haber podido avisar.
       - name: Notify Telegram (deploy OK)
-        if: success()
+        if: success() && steps.ci.outputs.current == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}

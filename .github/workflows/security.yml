@@ -12,11 +12,12 @@
 #     blast radius es directo.
 #   - gitleaks: cualquier hallazgo falla el job. Un secret commited es critico
 #     aunque despues se rote — el historial git lo preserva para siempre.
-#   - osv-scanner: falla si hay al menos una vuln de nivel HIGH/CRITICAL.
+#   - osv-scanner: cualquier vulnerabilidad o error del análisis bloquea el job.
 
 name: Security
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master ]
   pull_request:
@@ -106,14 +107,12 @@ jobs:
         with:
           scan-args: |-
             --recursive
-            --skip-git
             --format=sarif
-            --output=osv-results.sarif
+            --output-file=osv-results.sarif
             ./
-        continue-on-error: true
 
       - name: Upload SARIF to Code scanning
         uses: github/codeql-action/upload-sarif@v4
-        if: hashFiles('osv-results.sarif') != ''
+        if: always() && hashFiles('osv-results.sarif') != ''
         with:
           sarif_file: osv-results.sarif

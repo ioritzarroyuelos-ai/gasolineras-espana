@@ -78,9 +78,16 @@ jobs:
           test -f dist/manifest.json || { echo "::error::dist/manifest.json no existe"; exit 1; }
           echo "artefacto OK ($(du -sh dist | cut -f1))"
 
+      - name: Desplegar respaldo regional de guardias (preview)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.guardias.jsonc --env preview --name espana-util-guardias-pr-${{ github.event.pull_request.number }}
+
       - name: Deploy a Cloudflare Pages (preview)
         id: deploy
         env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           CLOUDFLARE_API_TOKEN:  ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
@@ -88,7 +95,7 @@ jobs:
           # chars). Hacemos el mismo slugify localmente para construir la URL
           # del comment del PR. `tr` + `sed` son suficientes — no necesitamos
           # unicode transliteration, el branch vendra en ASCII.
-          RAW_BRANCH="${{ github.event.pull_request.head.ref }}"
+          RAW_BRANCH="$PR_BRANCH"
           SAFE_BRANCH=$(echo "$RAW_BRANCH" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
@@ -203,10 +210,12 @@ jobs:
 
       - name: Resumen
         if: always()
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
         run: |
           echo "### Preview deploy" >> $GITHUB_STEP_SUMMARY
           echo "- PR: #${{ github.event.pull_request.number }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Rama: \`${{ github.event.pull_request.head.ref }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Rama: \`$PR_BRANCH\`" >> $GITHUB_STEP_SUMMARY
           echo "- Slug: \`${{ steps.deploy.outputs.safe_branch }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- URL: ${{ steps.deploy.outputs.preview_url }}" >> $GITHUB_STEP_SUMMARY
           echo "- Smoke: ${{ steps.smoke.outputs.smoke_status || 'n/a' }}" >> $GITHUB_STEP_SUMMARY

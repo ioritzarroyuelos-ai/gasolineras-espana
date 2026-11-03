@@ -1,12 +1,12 @@
-# Gasolineras España
+# España Útil
 
-[![CI](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
-[![Snapshot](https://github.com/YOUR_USER/YOUR_REPO/actions/workflows/fetch-prices.yml/badge.svg)](../../actions/workflows/fetch-prices.yml)
+[![CI](https://github.com/ioritzarroyuelos-ai/gasolineras-espana/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![Snapshot](https://github.com/ioritzarroyuelos-ai/gasolineras-espana/actions/workflows/fetch-prices.yml/badge.svg)](../../actions/workflows/fetch-prices.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
 PWA para consultar precios oficiales de gasolineras en España en tiempo real. Datos del **Ministerio para la Transición Ecológica y el Reto Demográfico**.
 
-> **Producción**: https://gasolineras.pages.dev (reemplaza por tu URL real)
+> **Producción**: https://webapp-3ft.pages.dev
 
 ## Qué hace
 
@@ -16,13 +16,13 @@ PWA para consultar precios oficiales de gasolineras en España en tiempo real. D
 - **Comparador de ahorro**: calcula €/depósito vs. mediana de la zona.
 - **Favoritos** con sparkline histórico en localStorage.
 - **PWA**: instalable, offline-ready con snapshot diario como fallback.
-- Accesibilidad AAA (navegación por teclado, ARIA, `prefers-reduced-motion`).
+- Accesibilidad (navegación por teclado, ARIA, `prefers-reduced-motion`).
 - Atajos de teclado: `/` buscar, `g` geolocalizar, `d` tema, `f` lugar, `?` ayuda.
 
 ## Stack
 
 - **Hono** sobre **Cloudflare Pages Functions** (Workers runtime).
-- **Vite** 6 con `@hono/vite-build` para SSR bundle.
+- **Vite** 8 con `@hono/vite-build` para SSR bundle.
 - **TypeScript** strict.
 - **Vitest** (tests unitarios) + **Playwright** + **axe-core** (E2E + a11y).
 - **Lighthouse CI** con budgets de performance/SEO/accesibilidad.
@@ -32,9 +32,9 @@ PWA para consultar precios oficiales de gasolineras en España en tiempo real. D
 ## Arranque en local
 
 ```bash
-# Node 20+
+# Node 22+
 npm ci                 # instalar deps exactas
-npm run test           # 27 tests unitarios
+npm run test           # pruebas unitarias
 npm run typecheck      # tsc --noEmit
 npm run build          # genera iconos PNG + bundle en dist/
 npm run preview        # wrangler pages dev → http://127.0.0.1:8788
@@ -45,6 +45,12 @@ Para desarrollo con HMR:
 ```bash
 npm run dev            # vite → http://127.0.0.1:5173
 ```
+
+## Dependencias y seguridad
+
+`security.yml` ejecuta npm audit, gitleaks y OSV de forma obligatoria. OSV analiza el lockfile completo, incluidas las herramientas de desarrollo, y sube el informe SARIF aunque encuentre problemas. No se silencian sus errores.
+
+Las versiones mínimas de `overrides` cubren avisos pendientes en dependencias transitivas de desarrollo: el adaptador Hono, minimatch/glob, chrome-launcher y basic-ftp. Lighthouse CI 0.16 utiliza Lighthouse 13 y requiere Node 22.19 o posterior. Tras modificar estas versiones se deben comprobar también el servidor de desarrollo y los presupuestos Lighthouse, además de las pruebas de aplicación.
 
 ## Tests E2E
 
@@ -60,45 +66,30 @@ npm run test:e2e -- --headed                  # con navegador visible
 
 El endpoint `/api/*` proxea al Ministerio en tiempo real, pero si la API está caída se sirve un snapshot estático de fallback desde `public/data/stations.json`. Ese fichero se actualiza automáticamente dos veces al día por [`.github/workflows/fetch-prices.yml`](.github/workflows/fetch-prices.yml) (07:00 y 19:00 UTC). Si falla 3 ejecuciones seguidas, el **watchdog de freshness** marca el dataset como obsoleto y la UI muestra un banner amarillo.
 
-Actualizar manualmente:
+Para actualizar datos manualmente, lanza el workflow correspondiente desde `main`. Los robots generan una rama de datos, abren un PR, ejecutan CI y Security, y solo fusionan el commit comprobado. No se escriben datos a mano ni se suben directamente a `main`.
+
+## Publicación validada en Cloudflare Pages
+
+Los cambios de código se preparan en una rama y se revisan mediante PR. Antes de fusionar deben pasar tipos, pruebas, navegador, accesibilidad, presupuestos móviles y seguridad. `main` exige estas comprobaciones y rechaza pushes directos, borrado y reescritura de historial.
+
+Tras la fusión, CI construye y verifica el `main` resultante. El único workflow de producción es `deploy.yml`: descarga ese artefacto exacto, comprueba que sigue siendo el commit actual, aplica migraciones, actualiza el respaldo regional y publica Pages. Los despliegues se serializan y comprueban `/api/health` al terminar.
+
+Para volver a publicar el `main` ya validado, sin cambios locales:
 
 ```bash
-node scripts/fetch-prices.mjs
-git add public/data && git commit -m "chore(data): snapshot manual"
+npm run ship
+# Equivalente: npm run deploy
 ```
 
-## Deploy a Cloudflare Pages
+También se puede lanzar `deploy.yml` manualmente. Se rechazará si el `main` actual aún no tiene CI verde; no publica una compilación local ni un commit antiguo.
 
-**Flujo normal — un solo comando:**
+### Guardias, estado y fechas reales
 
-```bash
-npm run ship -- "feat: lo que acabo de cambiar"
-```
-
-Eso hace commit + push + espera CI + espera Deploy + sonda `/api/health`. Sale con exit 0 cuando prod esta verificada viva; exit != 0 si rompe cualquier paso. Tiempo tipico: ~3 min.
-
-Si invocas `npm run ship` sin mensaje hace empty commit + redeploy — util para forzar un nuevo build cuando solo cambiaste una env var o un secret en Cloudflare.
-
-**Debajo del capo** (por si quieres pipelinearlo tu):
-
-1. `git push origin main`
-2. CI corre (typecheck + tests + build + E2E + Lighthouse) y sube `dist/` como artefacto
-3. Si CI verde, Deploy workflow se dispara via `workflow_run`: aplica migraciones D1 pendientes, deploya `dist/` a Pages y valida con `GET /api/health`
-4. Si alguna etapa falla, el run queda rojo y el Deploy no ocurre
-
-**Redeploy manual sin cambios** (alternativa a `npm run ship` sin args):
-
-```bash
-gh workflow run deploy.yml --ref main   # resuelve y despliega el ultimo CI verde
-```
-
-**Deploy one-shot desde local** (solo emergencias / CI caido):
-
-```bash
-wrangler login                          # una vez
-npm run build
-npm run deploy                          # wrangler pages deploy ./dist
-```
+- `/status` y `/api/status` indican el estado de gasolineras, farmacias, tiempo, ITV y política a partir de las fechas de sus copias. Una fuente atrasada mantiene el aviso aunque el despliegue sea reciente.
+- Asturias y Ceuta disponen de un respaldo de descarga en España (`wrangler.guardias.jsonc`), limitado a sus dos fuentes oficiales. Los PR usan un Worker de prueba independiente.
+- Almería muestra los turnos con duración ambigua como «Horario por confirmar» y los excluye de «Abierta ahora» y «24 horas».
+- Si la DGT no permite descargar el directorio ITV, se conserva la última copia con su fecha, un aviso y el enlace oficial. No se cambia la fecha al fallar la descarga.
+- Los avisos recurrentes de Telegram tienen una espera de 24 horas; solo se marcan como notificados tras confirmar la entrega.
 
 Variables de entorno opcionales (define en el dashboard de Cloudflare Pages):
 
@@ -119,7 +110,7 @@ El proyecto esta disenado para que no haya trabajo manual recurrente. Todo lo qu
 |---|---|---|---|
 | Push a `main` | `ci.yml` | `push` | Typecheck, tests, build, E2E, Lighthouse. Sube `dist` como artefacto. |
 | CI verde en `main` | `deploy.yml` | `workflow_run(CI)` | Aplica migraciones D1, deploya a Pages, smoke test `/api/health`. |
-| Dos veces al dia | `fetch-prices.yml` | `cron 0 7,19 * * *` | Snapshot del Ministerio -> commit + auto-deploy si cambia. |
+| Dos veces al dia | `fetch-prices.yml` | `cron 0 7,19 * * *` | Snapshot del Ministerio → PR con pruebas → CI de main → Deploy si cambia. |
 | Cada 12h | `fetch-prices.yml` (dead-man) | `cron 30 */12 * * *` | Falla el workflow si el snapshot lleva >26h sin actualizar. |
 | Diario 20:00 UTC | `cron-ingest.yml` | `cron 0 20 * * *` | `POST /api/cron/ingest` -> upsertea precios del dia a D1. |
 | Domingos 03:00 UTC | `cron-purge.yml` | `cron 0 3 * * 0` | `POST /api/cron/purge` -> borra filas >2 anos. |
@@ -152,7 +143,7 @@ Cosas que **no** se automatizan porque son one-shot o requieren credenciales nue
 
 1. `npx wrangler d1 create gasolineras-history` + pegar `database_id` en `wrangler.jsonc`
 2. Secretos en Cloudflare Pages y GitHub Actions:
-   - `CLOUDFLARE_API_TOKEN` (GHA) con permisos **Cloudflare Pages: Edit** + **Workers D1: Edit** (sin D1 el step de migraciones queda en warning en cada deploy).
+   - `CLOUDFLARE_API_TOKEN` (GHA) con permisos **Cloudflare Pages: Edit** + **D1: Edit** + **Workers Scripts: Edit** + **Account Settings: Read** (limitados a la cuenta que contiene `webapp`; si faltan, el despliegue se detiene).
    - `CLOUDFLARE_ACCOUNT_ID` (GHA)
    - `CRON_TOKEN` (Pages + GHA, mismo valor)
    - `HEALTH_ADMIN_TOKEN` (Pages, opcional)
@@ -255,7 +246,7 @@ scripts/
   gen-icons.mjs          # Pre-build: SVG → PNG (apple-touch-icon, 192, 512, og)
   fetch-prices.mjs       # Fetch snapshot del Ministerio
 tests/
-  pure.test.ts           # 27 tests unitarios
+  pure.test.ts           # pruebas unitarias
   e2e/                   # Playwright + axe-core
 .github/workflows/
   ci.yml                 # typecheck · test · build · Lighthouse · E2E

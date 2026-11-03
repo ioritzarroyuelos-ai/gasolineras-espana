@@ -1,11 +1,13 @@
 // Rutas META/SEO: /robots.txt, /sitemap.xml, /sitemap-guardias.xml, /sitemap-tiempo.xml,
 // /status y /privacidad. Extraido de index.tsx (B1). Importa infra de runtime. Los
 // sitemaps agregan datos de TODOS los verticales (no es modulo hoja). legalPage vive
-// anidado (solo lo usa /privacidad). SnapshotMeta se redefine local (no exportado).
+// anidado (solo lo usa /privacidad).
 import type { Hono } from 'hono'
 import type { Env, MinistryResponse } from '../index'
-import { loadSnapshot, genNonce, resolveHost, resolveScheme, pageHeaders, slog, SNAPSHOT_STALE_MS } from '../lib/runtime'
+import { loadSnapshot, genNonce, resolveHost, resolveScheme, pageHeaders, slog } from '../lib/runtime'
 import { APP_VERSION } from '../lib/version'
+import { evaluateServices, type ServiceManifest } from '../lib/service-status'
+import { serviceStatusHtml } from '../html/service-status'
 import { BRAND } from '../lib/brand'
 import { mastheadHtml, MASTHEAD_CSS } from '../html/masthead'
 import { canonicalSite } from '../lib/pure'
@@ -19,8 +21,6 @@ import {
 } from '../lib/guardias'
 import type { MunicipioLista } from '../../scripts/lib/tiempo.mjs'
 import { ELECCIONES } from '../../scripts/lib/politica-catalogo.mjs'
-
-type SnapshotMeta = { fetchedAt?: string; ministryDate?: string; stationCount?: number; source?: string }
 
 export function registerMetaRoutes(app: Hono<{ Bindings: Env }>): void {
 app.get('/robots.txt', c => {
@@ -309,112 +309,10 @@ ${bodyHtml}
 // sin JS. Datos se calculan server-side en cada request.
 app.get('/status', async c => {
   const nonce = genNonce()
-  const meta = await loadSnapshot<SnapshotMeta>(c.req.url, 'snapshot-meta.json', c.env.ASSETS)
-  const now = Date.now()
-  let ageMs: number | null = null
-  let fetchedAtFmt = '—'
-  let stale = true   // sin meta = stale por precaucion
-  if (meta?.fetchedAt) {
-    const t = Date.parse(meta.fetchedAt)
-    if (Number.isFinite(t)) {
-      ageMs = now - t
-      stale = ageMs > SNAPSHOT_STALE_MS
-      fetchedAtFmt = new Date(t).toISOString().replace('T', ' ').slice(0, 16) + ' UTC'
-    }
-  }
-  const ageTxt = ageMs == null ? '—'
-    : ageMs < 60_000       ? Math.round(ageMs / 1000) + 's'
-    : ageMs < 3_600_000    ? Math.round(ageMs / 60_000) + ' min'
-    : ageMs < 86_400_000   ? Math.round(ageMs / 3_600_000) + ' h'
-    : Math.round(ageMs / 86_400_000) + ' d'
-  const statusLabel = stale ? 'DEGRADADO' : 'OPERATIVO'
-  const statusClass = stale ? 'down' : 'up'
-  const stationCount = typeof meta?.stationCount === 'number' ? meta.stationCount.toLocaleString('es-ES') : '—'
-  const ministryDate = meta?.ministryDate ?? '—'
-  // Esc HTML muy simple — las piezas vienen de nuestro meta JSON y son strings
-  // muy cortas (fechas, numeros), pero defensivo por si el snapshot cambia.
-  const esc = (v: string): string => v
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-
-  const bodyHtml = `
-<style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
-  .status-main{max-width:720px;margin:0 auto;padding:32px 20px}
-  h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px;margin-bottom:8px}
-  h2{color:#15803d;margin-top:28px;font-size:18px}
-  a{color:#16a34a}
-  .back{display:inline-block;margin-bottom:16px;color:#64748b;text-decoration:none}
-  .status-hero{display:flex;align-items:center;gap:14px;padding:20px;border-radius:10px;border:2px solid;margin:8px 0 24px}
-  .status-hero.up{background:#dcfce7;border-color:#16a34a;color:#14532d}
-  .status-hero.down{background:#fef2f2;border-color:#b91c1c;color:#7f1d1d}
-  .status-dot{width:14px;height:14px;border-radius:50%;display:inline-block}
-  .status-dot.up{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.2)}
-  .status-dot.down{background:#b91c1c;box-shadow:0 0 0 4px rgba(185,28,28,.2)}
-  .status-label{font-size:22px;font-weight:700;letter-spacing:.02em}
-  .status-sub{font-size:13px;opacity:.8;margin-top:2px}
-  table{width:100%;border-collapse:collapse;margin:8px 0}
-  th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #e5e7eb;font-size:14px}
-  th{color:#64748b;font-weight:500;width:40%}
-  td{font-family:ui-monospace,Consolas,Menlo,monospace;color:#0f172a}
-  .foot{margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;font-size:12px;color:#64748b}
-  .muted{color:#64748b;font-size:13px}
-  ${MASTHEAD_CSS}
-</style>
-${mastheadHtml()}
-<main class="status-main">
-<a class="back" href="/gasolineras/">← Volver</a>
-<h1>Estado del servicio</h1>
-<p class="muted">Esta pagina se actualiza automaticamente cada 60 segundos.</p>
-
-<div class="status-hero ${statusClass}">
-  <span class="status-dot ${statusClass}" aria-hidden="true"></span>
-  <div>
-    <div class="status-label">${statusLabel}</div>
-    <div class="status-sub">${stale ? 'Snapshot del Ministerio desactualizado — el servicio sigue respondiendo con los ultimos datos disponibles.' : 'Todos los sistemas operativos. Datos actualizados.'}</div>
-  </div>
-</div>
-
-<h2>Datos del ultimo snapshot</h2>
-<table>
-  <tbody>
-    <tr><th>Ultima ingesta</th><td>${esc(fetchedAtFmt)}</td></tr>
-    <tr><th>Edad del snapshot</th><td>${esc(ageTxt)}</td></tr>
-    <tr><th>Fecha Ministerio</th><td>${esc(ministryDate)}</td></tr>
-    <tr><th>Estaciones cargadas</th><td>${esc(stationCount)}</td></tr>
-    <tr><th>Version</th><td>v${APP_VERSION}</td></tr>
-  </tbody>
-</table>
-
-<h2>Endpoints de salud</h2>
-<table>
-  <tbody>
-    <tr><th><code>/api/health</code></th><td>JSON publico (ok, stale, version)</td></tr>
-    <tr><th><code>/data/snapshot-meta.json</code></th><td>Meta del ultimo snapshot</td></tr>
-    <tr><th><code>/api/export</code></th><td>CSV publico de precios</td></tr>
-  </tbody>
-</table>
-
-<p class="foot">Datos origen: <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help">API oficial del Ministerio</a>.
-El snapshot se re-ingesta 1 vez al dia (20:00 UTC) por cron en GitHub Actions.
-Si ves "DEGRADADO" mas de 48h seguidas, hay un problema — abre una issue.</p>
-</main>
-`
-  const html = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Estado · ${BRAND}</title>
-<meta name="robots" content="noindex,follow"/>
-<meta name="description" content="Estado del servicio ${BRAND}: health, freshness del snapshot del Ministerio, numero de estaciones cargadas."/>
-<meta http-equiv="refresh" content="60"/>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${stale ? '&#x26A0;' : '&#x2705;'}</text></svg>"/>
-</head><body>
-${bodyHtml}
-</body></html>`
-  return c.html(html, stale ? 503 : 200, {
-    ...pageHeaders(nonce, false),
-    // Cache muy corto: la pagina misma necesita recomputarse en cada req con
-    // el meta fresco, pero 30s de edge ayuda ante un hit masivo de monitors.
-    'Cache-Control': 'public, max-age=30',
+  const manifest = await loadSnapshot<ServiceManifest>(c.req.url, 'service-manifest.json', c.env.ASSETS)
+  const status = evaluateServices(manifest)
+  return c.html(serviceStatusHtml(status, nonce), status.ok ? 200 : 503, {
+    ...pageHeaders(nonce, false), 'Cache-Control': 'no-store',
   })
 })
 

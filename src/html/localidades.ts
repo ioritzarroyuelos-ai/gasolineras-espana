@@ -1,0 +1,11 @@
+import { serviciosLocalidad, type Localidad, type LocalidadIndex } from '../lib/localidades'
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+export function localidadHtml(m?: Localidad, encontrados?: LocalidadIndex[], query = '') {
+  return '<section class="localidad" aria-labelledby="localidad-titulo" data-localidad="' + esc(m?.ine || '') + '">'
+    + '<h2 id="localidad-titulo">' + (m ? 'Tu municipio: ' + esc(m.nombre) : 'Qué necesitas en tu municipio') + '</h2>'
+    + '<p id="localidad-info">' + (m ? esc(m.provinciaNombre) : 'Busca tu municipio en la cabecera para consultar precios, guardias, tiempo e ITV.') + '</p>'
+    + '<div id="localidad-servicios" class="localidad-servicios">' + (m ? serviciosLocalidad(m).map(s => '<a href="' + esc(s.url) + '"><strong>' + esc(s.titulo) + '</strong><span>' + esc(s.detalle) + '</span></a>').join('') : '') + '</div>'
+    + (encontrados ? '<p>Resultados para «' + esc(query) + '»:</p><ul>' + (encontrados.length ? encontrados.map(x => '<li><a href="/?municipio=' + x.ine + '">' + esc(x.nombre + ' · ' + x.provinciaNombre) + '</a></li>').join('') : '<li>No hay coincidencias. Prueba con el nombre completo del municipio.</li>') + '</ul>' : '')
+    + '<p class="localidad-nota">El municipio elegido se recuerda solo en este navegador. <button type="button" id="localidad-olvidar" hidden>Olvidar municipio</button></p></section>'
+}
+export const LOCALIDAD_CSS = '.localidad{padding:22px 0;border-bottom:1px solid var(--rule);margin-bottom:24px}.localidad h2{margin:0 0 8px}.localidad-servicios{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.localidad-servicios a{padding:16px;border:1px solid #d9d4c9;border-radius:8px;color:#166534;text-decoration:none;background:#faf8f4}.localidad-servicios strong,.localidad-servicios span{display:block}.localidad-servicios span{font-size:14px;color:#374151;margin-top:6px}.localidad-nota{font-size:12px;color:#5b6470}.localidad-nota button{font:inherit;color:#166534;background:none;border:0;text-decoration:underline;cursor:pointer}.localidad a:focus-visible{outline:3px solid #166534;outline-offset:2px}@media(min-width:900px){.localidad-servicios{grid-template-columns:repeat(4,minmax(0,1fr))}}'

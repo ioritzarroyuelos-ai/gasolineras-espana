@@ -2,14 +2,14 @@
   "name": "webapp",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/gen-client-bundle.mjs && vite",
+    "dev": "node scripts/gen-localidades.mjs && node scripts/gen-client-bundle.mjs && vite",
     "icons": "node scripts/gen-icons.mjs",
     "client": "node scripts/gen-client-bundle.mjs",
     "sw": "node scripts/gen-sw.mjs",
-    "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-client-bundle.mjs && node scripts/gen-sw.mjs",
+    "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-client-bundle.mjs && node scripts/gen-sw.mjs && node scripts/gen-service-manifest.mjs && node scripts/gen-localidades.mjs",
     "build": "vite build",
     "preview": "wrangler pages dev",
-    "deploy": "npm run build && wrangler pages deploy",
+    "deploy": "node scripts/ship.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -19,17 +19,17 @@
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "backfill:d1": "node scripts/backfill-d1.mjs",
     "ship": "node scripts/ship.mjs",
-    "postinstall": "git rev-parse --git-dir >/dev/null 2>&1 && git config --local core.hooksPath .githooks || true"
+    "postinstall": "node scripts/setup-hooks.mjs"
   },
   "dependencies": {
     "hono": "^4.13.14",
-    "zod": "^3.25.76"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.26.1",
-    "@lhci/cli": "^0.15.1",
+    "@lhci/cli": "^0.16.0",
     "@napi-rs/canvas": "^1.0.13",
     "@playwright/test": "^1.64.1",
     "@resvg/resvg-js": "^2.6.2",
@@ -43,6 +43,12 @@
     "wrangler": "^4.156.0"
   },
   "overrides": {
-    "@hono/node-server": ">=1.19.13"
+    "@hono/node-server": "^2.1.6",
+    "@hono/vite-dev-server": {
+      "minimatch": "^11.0.1"
+    },
+    "chrome-launcher": "^1.2.2",
+    "glob": "^14.0.3",
+    "basic-ftp": "^6.2.1"
   }
 }

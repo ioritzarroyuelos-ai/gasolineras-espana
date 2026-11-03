@@ -1,0 +1,3 @@
+export function parseAsturias(html: string, fecha: string): unknown[][]
+export function parseAvila(html: string, fecha: string): unknown[][]
+export function parseCeuta(html: string, fecha: string): unknown[][]

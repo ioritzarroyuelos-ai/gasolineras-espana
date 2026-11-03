@@ -10,6 +10,8 @@
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { ministryFixture } from './ministry-fixture'
+test.beforeEach(async ({ page, request }, info) => { await ministryFixture(page, request, info.config.metadata.live === true) })
 
 test.describe('Mapa (/gasolineras/mapa)', () => {
   test('carga el shell y muestra la barra superior', async ({ page }) => {

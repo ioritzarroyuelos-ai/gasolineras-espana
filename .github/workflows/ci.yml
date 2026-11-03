@@ -5,6 +5,13 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+  # Los pushes hechos con GITHUB_TOKEN no disparan push. Este evento sí valida
+  # los datos publicados por los robots, incluidos tiempo e ITV.
+  workflow_run:
+    workflows: ['Fetch fuel prices snapshot', 'Fetch guardias farmacias snapshot', 'Fetch political polls', 'Fetch snapshot del tiempo', 'Fetch estaciones de ITV', 'Fetch EV chargers snapshot']
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -18,6 +25,7 @@ concurrency:
 jobs:
   quality:
     name: typecheck · test · build
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,6 +40,9 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Comprobar dependencias de producción
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Tests (Vitest)
         run: npm test -- --reporter=verbose
@@ -105,10 +116,7 @@ jobs:
     name: E2E Playwright + axe
     needs: quality
     runs-on: ubuntu-latest
-    # E2E es informativo mientras estabilizamos: si el Ministerio esta caido
-    # durante la hora del CI run, los tests que esperan listado de provincias
-    # fallan. Pasamos a required tras 2 semanas de verde sostenido.
-    continue-on-error: true
+    # Obligatorio: los recorridos usan la copia del artefacto y no dependen del Ministerio.
     steps:
       - uses: actions/checkout@v5
 
@@ -143,6 +151,8 @@ jobs:
 
       - name: Run Playwright tests
         run: npm run test:e2e
+        env:
+          E2E_SKIP_BUILD: '1'
 
       - name: Upload Playwright report
         # Playwright solo genera playwright-report/ y test-results/ cuando hay

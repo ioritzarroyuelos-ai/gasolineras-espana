@@ -16,6 +16,7 @@ const IS_CI = !!process.env.CI
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  metadata: { live: process.env.E2E_LIVE === '1' },
   timeout: 30_000,
   expect: { timeout: 5_000 },
   fullyParallel: true,
@@ -51,7 +52,7 @@ export default defineConfig({
   // Solo arrancamos el servidor si el usuario no lo levantó ya.
   // reuseExistingServer evita conflictos durante desarrollo local.
   webServer: process.env.E2E_BASE_URL ? undefined : {
-    command: 'npm run build && npx wrangler pages dev --port=' + PORT + ' --ip=127.0.0.1 dist',
+    command: (process.env.E2E_SKIP_BUILD === '1' ? '' : 'npm run build && ') + 'npx wrangler pages dev --port=' + PORT + ' --ip=127.0.0.1 dist',
     url: BASE_URL,
     reuseExistingServer: !IS_CI,
     timeout: 120_000,

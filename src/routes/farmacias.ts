@@ -145,12 +145,12 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!municipios.length) {
       if (!all.length) return c.notFound()
       return new Response(
-        buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical),
+        buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical, raw),
         { headers: hdrs },
       )
     }
     return new Response(
-      buildGuardiaProvinciaPage(nonce, provSlug, prov.name, municipios, raw.ts, canonical),
+      buildGuardiaProvinciaPage(nonce, provSlug, prov.name, municipios, raw.ts, canonical, raw),
       { headers: hdrs },
     )
   })
@@ -185,6 +185,8 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
       otrosMunicipios: municipios.filter(m => m.slug !== munSlug),
       actualizado: raw.ts,
       fuente: raw.source,
+      metadatos: raw,
+      turno: c.req.query('turno') === 'ahora' ? 'ahora' : c.req.query('turno') === '24h' ? '24h' : 'todas',
       canonical,
     }), { headers: hdrs })
   })

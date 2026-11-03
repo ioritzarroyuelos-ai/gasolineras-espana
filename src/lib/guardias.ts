@@ -16,6 +16,7 @@
 // Baleares y Huesca no traen municipio, asi que solo admiten pagina provincial.
 
 import { slugifyMunicipio } from './municipios'
+import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 
 export interface Guardia {
   lat: number
@@ -27,6 +28,7 @@ export interface Guardia {
   horario: string      // "2026-07-17 09:30-2026-07-17 23:00"
   horarioDesc: string  // "Guardia de hoy 09:30 - 23:00"
   provinciaId?: string // Código INE explícito cuando la fuente no publica CP.
+  coordenadasFiables?: boolean
 }
 
 export interface GuardiasFile {
@@ -38,6 +40,7 @@ export interface GuardiasFile {
   sourceUrl?: string
   cobertura?: string
   incidencias?: string[]
+  coordenadasOficiales?: boolean
   guardias?: unknown[][]
 }
 
@@ -128,6 +131,7 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
       horario:     str(row[6]),
       horarioDesc: str(row[7]),
       provinciaId: str(row[8]) || undefined,
+      coordenadasFiables: file.coordenadasOficiales === true && lat >= 27 && lat <= 44 && lng >= -19 && lng <= 5,
     })
   }
   return out
@@ -149,21 +153,53 @@ export const GUARDIA_STALE_HORAS = 30
 
 export interface GuardiaFrescura {
   fiable: boolean   // dato del ultimo pase diario: se puede mostrar
-  esHoy: boolean    // capturado hoy (UTC): se puede decir "de guardia hoy"
+  esHoy: boolean    // capturado hoy en la zona del territorio
   fecha: string     // YYYY-MM-DD de captura (para etiquetar), '' si no hay ts
   horas: number     // antiguedad en horas (Infinity si no hay ts valido)
 }
 
 // ahora se inyecta en los tests; en produccion es new Date().
-export function frescuraGuardia(ts: string | undefined, ahora: Date = new Date()): GuardiaFrescura {
+export function frescuraGuardia(ts: string | undefined, ahora: Date = new Date(), zona = 'Europe/Madrid'): GuardiaFrescura {
   if (!ts) return { fiable: false, esHoy: false, fecha: '', horas: Infinity }
   const t = Date.parse(ts)
   if (!Number.isFinite(t)) return { fiable: false, esHoy: false, fecha: '', horas: Infinity }
   const horas = (ahora.getTime() - t) / 3600000
-  const fecha = new Date(t).toISOString().slice(0, 10)
-  const hoy = ahora.toISOString().slice(0, 10)
-  const fiable = horas <= GUARDIA_STALE_HORAS
+  const fecha = fechaHoraLocal(new Date(t), zona).slice(0, 10)
+  const hoy = fechaHoraLocal(ahora, zona).slice(0, 10)
+  const fiable = horas >= -5 / 60 && horas <= GUARDIA_STALE_HORAS
   return { fiable, esHoy: fiable && fecha === hoy, fecha, horas }
+}
+
+export function zonaGuardia(provinciaSlug: string): string {
+  return ['las-palmas', 'santa-cruz-de-tenerife'].includes(provinciaSlug) ? 'Atlantic/Canary' : 'Europe/Madrid'
+}
+
+export function estadoGuardia(g: Guardia, actualizado?: string, ahora = new Date(), zona = 'Europe/Madrid') {
+  const unknown = { conocida: false, abierta: false, todoElDia: false }
+  if (!frescuraGuardia(actualizado, ahora, zona).fiable || /localizada|no presencial|por confirmar|confirmar horario/i.test(g.horarioDesc)) return unknown
+  const m = g.horario.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$/)
+  if (!m) return unknown
+  const start = instanteLocal(m[1], zona), end = instanteLocal(m[2], zona)
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return unknown
+  const abierta = ahora.getTime() >= start && ahora.getTime() < end
+  // Turno completo según las horas del colegio, incluso el día del cambio de hora.
+  const horasTurno = (Date.parse(m[2].replace(' ', 'T') + ':00Z') - Date.parse(m[1].replace(' ', 'T') + ':00Z')) / 3600000
+  return { conocida: true, abierta, todoElDia: abierta && horasTurno >= 24 }
+}
+
+const FUENTES_RECUPERADAS: Record<string, string> = {
+  alicante: 'https://www.cofalicante.com/farmacias-de-guardia/',
+  almeria: 'https://www.cofalmeria.com/buscador-de-farmacias/?activo_guardias=on',
+  asturias: 'https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp?IdMenu=355',
+  avila: 'https://www.cofavila.com/index.php/servicio-de-guardia-nocturno/',
+  cantabria: 'https://cofcantabria.org/abiertas/',
+  ceuta: 'https://ipsi.ceuta.es:8443/sanidad/farmacia/controlfarmacia?cmd=guardias-nuevo',
+  clm: 'https://farmaciasdeguardia.cofcam.es/',
+}
+export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile): string | null {
+  const known = FUENTES_RECUPERADAS[GUARDIAS_TERRITORIO_BY_PROVINCIA[provinciaSlug]]
+  const value = known || file?.sourceUrl || (file?.source && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(file.source) ? 'https://' + file.source : '')
+  try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null } catch { return null }
 }
 
 // Filtra las guardias que pertenecen a una provincia concreta. Solo hace falta

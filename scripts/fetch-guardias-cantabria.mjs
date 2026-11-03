@@ -8,6 +8,6 @@ async function main() {
     descargarJSON('https://cofcantabria.org/datos/guardias.json'),
     descargarJSON('https://cofcantabria.org/datos/farmacias.json'),
   ])
-  guardarGuardias('cantabria', 'cofcantabria.org', parseCantabria(calendario, listado, fecha), { fecha, min: 10, max: 500, sourceUrl: 'https://cofcantabria.org/abiertas/' })
+  guardarGuardias('cantabria', 'cofcantabria.org', parseCantabria(calendario, listado, fecha), { fecha, coordenadasOficiales: true, min: 10, max: 500, sourceUrl: 'https://cofcantabria.org/abiertas/' })
 }
 main().catch(e => { console.error('ERROR:', e.message); process.exitCode = 1 })

@@ -39,13 +39,13 @@ export async function descargar(url, options = {}) {
   }
 }
 export async function descargarJSON(url, options) { return (await descargar(url, options)).json() }
-export function guardarGuardias(territorio, source, guardias, { fecha = fechaMadrid(), min = 1, max = 1000, sourceUrl, incidencias = [], cobertura } = {}) {
+export function guardarGuardias(territorio, source, guardias, { fecha = fechaMadrid(), min = 1, max = 1000, sourceUrl, incidencias = [], cobertura, coordenadasOficiales = false } = {}) {
   if (guardias.length < min || guardias.length > max || guardias.some(r => !r[2] || !r[3])) {
     throw new Error(`Datos de ${territorio} incompletos: ${guardias.length} turnos; se conserva el último fichero`)
   }
   const dir = process.env.GUARDIAS_OUT_DIR || resolve(dirname(fileURLToPath(import.meta.url)), '../../public/data')
   const target = resolve(dir, `guardias-${territorio}.json`)
-  const data = { ts: new Date().toISOString(), fecha, source, sourceUrl, territorio, incidencias, cobertura, count: guardias.length,
+  const data = { ts: new Date().toISOString(), fecha, source, sourceUrl, territorio, incidencias, cobertura, coordenadasOficiales, count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc', 'provinciaId'], guardias }
   mkdirSync(dir, { recursive: true })
   writeFileSync(target + '.tmp', JSON.stringify(data))

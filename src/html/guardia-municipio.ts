@@ -10,7 +10,7 @@
 // fuera a los competidores en varias provincias, ya lo resuelve el OCR del
 // workflow fetch-guardias.
 
-import { frescuraGuardia } from '../lib/guardias'
+import { frescuraGuardia, estadoGuardia, zonaGuardia, fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
@@ -25,6 +25,9 @@ export interface GuardiaPageData {
   actualizado?: string
   fuente?: string
   canonical: string
+  metadatos?: GuardiasFile
+  turno?: 'todas' | 'ahora' | '24h'
+  ahora?: Date
 }
 
 function esc(s: unknown): string {
@@ -33,10 +36,44 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
+function fuenteHtml(provinciaSlug: string, metadatos?: GuardiasFile): string {
+  const url = fuenteGuardia(provinciaSlug, metadatos)
+  return (url ? '<p class="g-nota"><a href="' + esc(url) + '" target="_blank" rel="noopener">Consultar la fuente oficial y sus últimos avisos</a></p>' : '')
+    + (metadatos?.cobertura ? '<p class="g-nota">' + esc(metadatos.cobertura) + '</p>' : '')
+    + (metadatos?.incidencias?.length ? '<p class="g-nota">' + metadatos.incidencias.map(esc).join(' · ') + '</p>' : '')
+}
+
+// La ubicación se usa únicamente en este navegador; no se envía ni se guarda.
+const CERCANIA_JS = `
+document.getElementById('g-cerca').addEventListener('click',function(){
+  var message=document.getElementById('g-ubicacion'),button=this;
+  if(!navigator.geolocation){message.textContent='Este navegador no permite obtener tu ubicación.';return;}
+  button.disabled=true;message.textContent='Buscando tu ubicación…';
+  navigator.geolocation.getCurrentPosition(function(pos){
+    var lat=pos.coords.latitude,lng=pos.coords.longitude,r=Math.PI/180;
+    if(pos.coords.accuracy>5000){message.textContent='La ubicación es demasiado imprecisa para ordenar las farmacias. Inténtalo de nuevo.';button.disabled=false;return;}
+    var cards=Array.from(document.querySelectorAll('#g-resultados .g-card'));
+    cards.forEach(function(card){
+      if(!card.dataset.lat){card.distance=Infinity;return;}
+      var a=Number(card.dataset.lat),b=Number(card.dataset.lng);
+      var h=Math.sin((a-lat)*r/2)**2+Math.cos(lat*r)*Math.cos(a*r)*Math.sin((b-lng)*r/2)**2;
+      card.distance=6371*2*Math.asin(Math.sqrt(Math.min(1,h)));
+      var label=card.querySelector('.g-distancia');
+      if(!label){label=document.createElement('p');label.className='g-distancia';card.appendChild(label);}
+      label.textContent=card.distance.toFixed(1)+' km en línea recta';
+    });
+    cards.sort(function(a,b){return a.distance-b.distance;}).forEach(function(card){document.getElementById('g-resultados').appendChild(card);});
+    message.textContent='Ordenadas por distancia aproximada. Las fichas sin coordenadas verificadas aparecen al final. Tu ubicación no se guarda.';button.disabled=false;
+  },function(){message.textContent='No se pudo obtener tu ubicación. Puedes seguir consultando todos los turnos.';button.disabled=false;},{timeout:10000,maximumAge:60000});
+});`
+
 // "2026-07-17 09:30-2026-07-17 23:00" -> "09:30 - 23:00". Si no encaja con el
 // formato, se devuelve tal cual: los colegios publican formatos muy dispares y
 // preferimos ensenar el texto original a ensenar nada.
 function horarioLegible(g: Guardia): string {
+  if (!g.horario) return g.horarioDesc || 'Consultar horario'
+  const dated = g.horario.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})-(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/)
+  if (dated) return dated[1].slice(5).split('-').reverse().join('/') + ' ' + dated[2] + ' → ' + dated[3].slice(5).split('-').reverse().join('/') + ' ' + dated[4] + (g.horarioDesc ? ' · ' + g.horarioDesc : '')
   if (g.horarioDesc) return g.horarioDesc
   const m = g.horario.match(/(\d{1,2}:\d{2}).*?(\d{1,2}:\d{2})/)
   return m ? m[1] + ' - ' + m[2] : (g.horario || 'Consultar horario')
@@ -82,7 +119,7 @@ function telHref(t: string): string {
 }
 
 function mapsHref(g: Guardia): string {
-  if (isFinite(g.lat) && isFinite(g.lng) && g.lat !== 0) {
+  if (g.coordenadasFiables) {
     return 'https://www.google.com/maps/dir/?api=1&destination=' + g.lat + ',' + g.lng
   }
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(g.direccion + ' ' + g.municipio)
@@ -93,7 +130,7 @@ function mapsHref(g: Guardia): string {
 // arriesgar las 1.289 paginas que ya funcionan.
 function guardiaCard(g: Guardia, localidad: string): string {
   const tel = telHref(g.telefono)
-  return '<article class="g-card">'
+  return '<article class="g-card"' + (g.coordenadasFiables ? ' data-lat="' + g.lat + '" data-lng="' + g.lng + '"' : '') + '>'
     + '<h3 class="g-dir">' + esc(g.direccion || 'Farmacia de guardia') + '</h3>'
     + '<p class="g-hora"><strong>' + esc(horarioLegible(g)) + '</strong></p>'
     + (g.cp ? '<p class="g-meta">' + esc(g.cp) + ' ' + esc(localidad) + '</p>' : '')
@@ -108,9 +145,9 @@ function guardiaCard(g: Guardia, localidad: string): string {
 // en vez de un 404, se listan todas las guardias de la provincia directamente.
 export function buildGuardiaProvinciaFlatPage(
   nonce: string, provinciaSlug: string, provinciaName: string,
-  guardias: Guardia[], actualizado: string | undefined, canonical: string,
+  guardias: Guardia[], actualizado: string | undefined, canonical: string, metadatos?: GuardiasFile,
 ): string {
-  const fr = frescuraGuardia(actualizado)
+  const fr = frescuraGuardia(actualizado, new Date(), zonaGuardia(provinciaSlug))
   const p = piezasFrescura(fr, provinciaName)
   const n = p.mostrarCards ? guardias.length : 0
   const title = 'Farmacia de guardia en ' + provinciaName + (n && p.hoy ? ' hoy' : '') + ' | España Útil'
@@ -128,6 +165,7 @@ export function buildGuardiaProvinciaFlatPage(
         ? '<p class="sub">' + n + ' farmacia' + (n === 1 ? '' : 's') + ' de guardia'
           + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>' + p.nota
         : '')
+    + fuenteHtml(provinciaSlug, metadatos)
     + cards
     + '<p class="aviso">Los turnos los publica el Colegio Oficial de Farmaceuticos y pueden cambiar. '
     + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. '
@@ -155,7 +193,7 @@ function jsonLd(d: GuardiaPageData): string {
         addressCountry: 'ES',
       },
       telephone: g.telefono || undefined,
-      geo: (isFinite(g.lat) && g.lat !== 0)
+      geo: g.coordenadasFiables
         ? { '@type': 'GeoCoordinates', latitude: g.lat, longitude: g.lng }
         : undefined,
       // openingHours omitido a proposito: horarioLegible() da texto libre
@@ -175,9 +213,13 @@ function jsonLd(d: GuardiaPageData): string {
 }
 
 export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): string {
-  const fr = frescuraGuardia(d.actualizado)
+  const ahora = d.ahora || new Date()
+  const zona = zonaGuardia(d.provinciaSlug)
+  const fr = frescuraGuardia(d.actualizado, ahora, zona)
+  const turno = d.turno || 'todas'
+  const visibles = d.guardias.filter(g => { const s = estadoGuardia(g, d.actualizado, ahora, zona); return turno === 'todas' || (turno === 'ahora' ? s.abierta : s.todoElDia) })
   const p = piezasFrescura(fr, d.municipioName)
-  const n = p.mostrarCards ? d.guardias.length : 0
+  const n = p.mostrarCards ? visibles.length : 0
   const hoyTxt = (n && p.hoy) ? ' hoy' : ''
   const title = n
     ? 'Farmacia de guardia en ' + d.municipioName + hoyTxt + ' | España Útil'
@@ -188,19 +230,15 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     : 'Consulta las farmacias de guardia en ' + d.municipioName + ' (' + d.provinciaName + ').'
   const fecha = fechaLegible(d.actualizado)
 
-  const cards = !p.mostrarCards ? p.banner : (d.guardias.length ? d.guardias.map(g => {
-    const tel = telHref(g.telefono)
-    return '<article class="g-card">'
-      + '<h3 class="g-dir">' + esc(g.direccion || 'Farmacia de guardia') + '</h3>'
-      + '<p class="g-hora"><strong>' + esc(horarioLegible(g)) + '</strong></p>'
-      + (g.cp ? '<p class="g-meta">' + esc(g.cp) + ' ' + esc(d.municipioName) + '</p>' : '')
-      + '<div class="g-acciones">'
-      + (tel ? '<a class="g-btn g-btn--tel" href="' + esc(tel) + '">Llamar ' + esc(g.telefono) + '</a>' : '')
-      + '<a class="g-btn" href="' + esc(mapsHref(g)) + '" target="_blank" rel="noopener">Como llegar</a>'
-      + '</div>'
-      + '</article>'
-  }).join('') : '<p class="g-vacio">No hay farmacia de guardia publicada ahora mismo para ' + esc(d.municipioName)
-      + '. Consulta el <a href="/farmacias/">mapa de farmacias</a> o el municipio mas cercano.</p>')
+  const cards = !p.mostrarCards ? p.banner : (visibles.length
+    ? visibles.map(g => guardiaCard(g, d.municipioName)).join('')
+    : '<p class="g-vacio">No tenemos resultados confirmados para este filtro. Puedes ver todos los turnos, llamar a una farmacia o consultar la fuente oficial.</p>')
+  const filtros = p.mostrarCards ? '<nav class="g-filtros" aria-label="Filtrar turnos">' +
+    ([['todas', 'Todos los turnos'], ['ahora', 'Abierta ahora'], ['24h', 'Turno de 24 h']] as const).map(([id, label]) =>
+      '<a class="g-btn"' + (turno === id ? ' aria-current="page"' : '') + ' href="?turno=' + id + '">' + label + '</a>').join('') + '</nav>' +
+    '<p class="g-nota">Según el horario publicado, a las ' + ahora.toLocaleTimeString('es-ES', { timeZone: zona, hour: '2-digit', minute: '2-digit' }) + ' (hora local). Los horarios por confirmar y las guardias localizadas no entran en «Abierta ahora». Llama antes de acudir.</p>' : ''
+  const cercania = p.mostrarCards && visibles.some(g => g.coordenadasFiables)
+    ? '<button class="g-btn" type="button" id="g-cerca">Ordenar por cercanía</button><p id="g-ubicacion" role="status"></p>' : ''
 
   const otros = d.otrosMunicipios.length
     ? '<nav class="g-otros"><h2>Otros municipios de ' + esc(d.provinciaName) + '</h2><ul>'
@@ -224,7 +262,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '<meta property="og:url" content="' + esc(d.canonical) + '" />'
     + ogSocialTags(originFromCanonical(d.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + (p.mostrarCards && d.guardias.length ? '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd(d) + '</script>' : '')
+    + (p.mostrarCards && d.guardias.length ? '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + jsonLd({ ...d, guardias: visibles }) + '</script>' : '')
     + '<script type="application/ld+json" nonce="' + esc(nonce) + '">' + breadcrumbLd([
         { name: 'Inicio', url: originFromCanonical(d.canonical) + '/' },
         { name: 'Farmacias de guardia', url: originFromCanonical(d.canonical) + '/farmacias/' },
@@ -243,7 +281,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + '.g-dir{font-size:16px;margin:0 0 6px}'
     + '.g-hora{margin:0 0 6px;color:var(--vd)}'
     + '.g-meta{margin:0 0 10px;color:var(--mu);font-size:13px}'
-    + '.g-acciones{display:flex;gap:8px;flex-wrap:wrap}'
+    + '.g-acciones,.g-filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}.g-btn[aria-current]{outline:2px solid #15803d}.g-distancia{color:#14532d;font-weight:600}'
     + '.g-btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
     + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
     + '.g-btn--tel{background:#15803d;border-color:#15803d;color:#fff}'
@@ -266,15 +304,18 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
     + (d.fuente ? ' &middot; fuente: ' + esc(d.fuente) : '')
     + '</p>'
     + p.nota
-    + cards
+    + fuenteHtml(d.provinciaSlug, d.metadatos)
+    + filtros + cercania
+    + '<div id="g-resultados">' + cards + '</div>'
     + '<p class="g-aviso">Los turnos los publica el Colegio Oficial de Farmaceuticos y pueden cambiar. '
     + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre. '
     + 'Si vas a desplazarte, confirma antes por telefono.</p>'
-    + '<p><a class="g-btn" href="/farmacias/">Ver el mapa de farmacias</a></p>'
+    + '<p><a class="g-btn" href="/farmacias/">Buscar en otro municipio</a></p>'
     + otros
     + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmaceuticos. '
     + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
+    + (cercania ? '<script nonce="' + esc(nonce) + '">' + CERCANIA_JS + '</script>' : '')
     + '</body></html>'
 }
 
@@ -350,16 +391,16 @@ export function buildGuardiaIndexPage(nonce: string, provincias: ProvinciaGuardi
     + '<nav class="lista"><ul>' + lista + '</ul></nav>'
     + '<p class="aviso">Los turnos los publica cada Colegio Oficial de Farmaceuticos y pueden cambiar. '
     + 'Algunas farmacias de guardia atienden a puerta cerrada: llama al timbre.</p>'
-    + '<p><a class="btn" href="/farmacias/">Ver el mapa de farmacias</a></p>'
+    + '<p><a class="btn" href="/farmacias/">Buscar en otro municipio</a></p>'
   )
 }
 
 // /farmacias/:provincia — municipios de esa provincia con guardia.
 export function buildGuardiaProvinciaPage(
   nonce: string, provinciaSlug: string, provinciaName: string,
-  municipios: MunicipioGuardia[], actualizado: string | undefined, canonical: string,
+  municipios: MunicipioGuardia[], actualizado: string | undefined, canonical: string, metadatos?: GuardiasFile,
 ): string {
-  const fr = frescuraGuardia(actualizado)
+  const fr = frescuraGuardia(actualizado, new Date(), zonaGuardia(provinciaSlug))
   const p = piezasFrescura(fr, provinciaName)
   const title = 'Farmacia de guardia en ' + provinciaName + (p.hoy ? ' hoy' : '') + ' | España Útil'
   const desc = 'Farmacias de guardia en los ' + municipios.length + ' municipios de '
@@ -372,12 +413,12 @@ export function buildGuardiaProvinciaPage(
   return envoltorioIndice(nonce, title, desc, canonical,
     '<h1>Farmacia de guardia en ' + esc(provinciaName) + '</h1>'
     + p.banner
+    + fuenteHtml(provinciaSlug, metadatos)
     + '<p class="sub">' + municipios.length + ' municipio' + (municipios.length === 1 ? '' : 's')
     + ' con guardia publicada' + (fecha ? ' &middot; actualizado el ' + esc(fecha) : '') + '</p>'
     + p.nota
     + '<nav class="lista"><ul>' + lista + '</ul></nav>'
-    + '<p class="aviso">Si tu municipio no aparece, su colegio no publica turno o no hay guardia hoy. '
-    + 'Consulta el municipio mas cercano.</p>'
+    + '<p class="aviso">Si tu municipio no aparece, no tenemos un turno publicado para él. Consulta la fuente oficial o el municipio más cercano.</p>'
     + '<p><a class="btn" href="/farmacias/guardia">Ver todas las provincias</a></p>',
     p.noindex,
   )
@@ -408,9 +449,9 @@ export function guardiaHeaders(nonce: string): Record<string, string> {
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
-    'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     // Los turnos cambian a diario: cache corta en CDN y revalidacion.
-    'Cache-Control': 'public, max-age=600, s-maxage=1800',
+    'Cache-Control': 'no-store',
   }
 }

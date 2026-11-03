@@ -123,6 +123,7 @@ async function main() {
   const out = {
     ts: new Date().toISOString(),
     source: 'cofm.es',
+    coordenadasOficiales: true,
     territorio: 'madrid',
     count: guardias.length,
     // Schema documentado para que el frontend no adivine orden.

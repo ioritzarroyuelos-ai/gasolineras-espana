@@ -28,6 +28,19 @@ jobs:
         env:
           GUARDIAS_OUT_DIR: ${{ runner.temp }}/guardias-verificadas
         run: node scripts/fetch-guardias-${{ matrix.territorio }}.mjs
+      - name: Diagnóstico de conexión si falla la consulta
+        if: failure() && (matrix.territorio == 'asturias' || matrix.territorio == 'ceuta')
+        env:
+          TERRITORIO: ${{ matrix.territorio }}
+        run: |
+          if [ "$TERRITORIO" = 'asturias' ]; then
+            URL='https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp?IdMenu=355'
+          else
+            URL='https://ipsi.ceuta.es:8443/sanidad/farmacia/controlfarmacia?cmd=guardias-nuevo'
+          fi
+          for FAMILY in 4 6; do
+            curl -"$FAMILY" --max-time 15 --connect-timeout 10 --output /dev/null --silent --show-error --write-out 'IPv%{http_version} HTTP=%{http_code} IP=%{remote_ip} TLS=%{ssl_verify_result}\n' "$URL" || true
+          done
       - uses: actions/upload-artifact@v6
         with:
           name: fuente-${{ matrix.territorio }}

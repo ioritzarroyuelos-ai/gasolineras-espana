@@ -1,0 +1,1 @@
+export function localDB(migrations: string[]): { exec(sql: string): void; close(): void; prepare(sql: string): { bind(...values: (string | number)[]): { all(): Promise<{ results: unknown[] }>; run(): Promise<{ meta: { changes: number } }> } } }

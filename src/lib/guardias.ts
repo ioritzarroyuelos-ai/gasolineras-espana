@@ -26,6 +26,7 @@ export interface Guardia {
   cp: string
   horario: string      // "2026-07-17 09:30-2026-07-17 23:00"
   horarioDesc: string  // "Guardia de hoy 09:30 - 23:00"
+  provinciaId?: string // Código INE explícito cuando la fuente no publica CP.
 }
 
 export interface GuardiasFile {
@@ -33,6 +34,10 @@ export interface GuardiasFile {
   source?: string
   territorio?: string
   count?: number
+  fecha?: string
+  sourceUrl?: string
+  cobertura?: string
+  incidencias?: string[]
   guardias?: unknown[][]
 }
 
@@ -122,6 +127,7 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
       cp:          str(row[5]),
       horario:     str(row[6]),
       horarioDesc: str(row[7]),
+      provinciaId: str(row[8]) || undefined,
     })
   }
   return out
@@ -166,7 +172,7 @@ export function frescuraGuardia(ts: string | undefined, ahora: Date = new Date()
 // porque el CP suele estar vacio y filtrar dejaria la pagina sin resultados.
 export function guardiasForProvincia(rows: Guardia[], provinciaId: string, territorio?: string): Guardia[] {
   if (territorio !== 'clm') return rows
-  return rows.filter(g => g.cp.length >= 2 && g.cp.slice(0, 2) === provinciaId)
+  return rows.filter(g => g.provinciaId ? g.provinciaId === provinciaId : g.cp.length >= 2 && g.cp.slice(0, 2) === provinciaId)
 }
 
 export interface MunicipioGuardia {

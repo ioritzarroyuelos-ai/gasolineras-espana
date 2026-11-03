@@ -28,6 +28,7 @@ public/sw.js
 # app.js: bundle del cliente (B2), generado por scripts/gen-client-bundle.mjs en
 # prebuild y `npm run dev` a partir de src/client/*.js. Artefacto de build.
 public/static/app.js
+public/data/service-manifest.json
 
 # env
 .env

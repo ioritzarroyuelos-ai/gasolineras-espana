@@ -209,6 +209,7 @@ app.post('/api/client-error', async c => {
 // El cron de GitHub Actions llama a este endpoint cada 8h para saber si hay
 // errores nuevos que notificar. unnotified=1 filtra notified_at IS NULL.
 app.get('/api/admin/errors', async c => {
+  const queriedAt = Date.now()
   const auth = await authorizeCron(c)
   if (!auth.ok) return c.json(auth.body, auth.status as 401 | 503, { 'Cache-Control': 'no-store' })
   if (!c.env.DB) return c.json({ error: 'db not configured' }, 503)
@@ -225,7 +226,11 @@ app.get('/api/admin/errors', async c => {
                     module, breadcrumbs, context
              FROM client_errors WHERE count >= ?`
   const binds: Array<string | number> = [minCount]
-  if (unnotified) sql += ' AND notified_at IS NULL'
+  // Reavisar si volvió a ocurrir tras el aviso anterior, como máximo una vez al día.
+  if (unnotified) {
+    sql += ' AND (notified_at IS NULL OR (last_seen > notified_at AND notified_at <= ?))'
+    binds.push(Date.now() - 24 * 3600_000)
+  }
   if (autofixFilter === 'null') sql += ' AND autofix_status IS NULL'
   else if (autofixFilter) { sql += ' AND autofix_status = ?'; binds.push(autofixFilter) }
   if (moduleFilter) { sql += ' AND module = ?'; binds.push(moduleFilter) }
@@ -233,7 +238,7 @@ app.get('/api/admin/errors', async c => {
   binds.push(limit)
 
   const { results } = await c.env.DB.prepare(sql).bind(...binds).all()
-  return c.json({ errors: results || [], ts: new Date().toISOString() }, 200, { 'Cache-Control': 'no-store' })
+  return c.json({ errors: results || [], ts: new Date(queriedAt).toISOString() }, 200, { 'Cache-Control': 'no-store' })
 })
 
 // POST /api/admin/errors/ack?fingerprints=a,b,c — marca fingerprints como
@@ -250,9 +255,12 @@ app.post('/api/admin/errors/ack', async c => {
 
   const placeholders = fps.map(() => '?').join(',')
   const now = Date.now()
+  const before = c.req.query('before')
+  const notifiedAt = before ? Number(before) : now
+  if (!Number.isSafeInteger(notifiedAt) || notifiedAt > now || notifiedAt < now - 86400_000) return c.json({ error: 'bad timestamp' }, 400)
   const res = await c.env.DB.prepare(
     `UPDATE client_errors SET notified_at = ? WHERE fingerprint IN (${placeholders})`
-  ).bind(now, ...fps).run()
+  ).bind(notifiedAt, ...fps).run()
   return c.json({ acknowledged: res.meta?.changes ?? 0 }, 200, { 'Cache-Control': 'no-store' })
 })
 

@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "fecha": "2026-11-03",
+  "total": 2,
+  "fuente": "database",
+  "filtro_hora": null,
+  "data": [
+    {
+      "id": 3709,
+      "numero_farmacia": "1",
+      "nombre": "MILLAN NAVAJAS, JOAQUÍN",
+      "zona": "301",
+      "localidad": "ABENOJAR",
+      "domicilio": "DEL RIO, 29",
+      "direccion": "DEL RIO, 29, ABENOJAR",
+      "telefono": "926835016",
+      "telefono2": "",
+      "lat": "38.87918253",
+      "lng": "-4.35516023",
+      "fecha_inicio": "2026-11-02",
+      "fecha_fin": "2026-11-03",
+      "hora_inicio": "10:00",
+      "hora_fin": "10:00",
+      "guardia_localizada": false,
+      "provincia": "Ciudad Real"
+    },
+    {
+      "id": 3610,
+      "numero_farmacia": "TO-0001-F",
+      "nombre": "JUAN VICENTE LUMBRERAS SÁNCHEZ",
+      "zona": "SONSECA",
+      "localidad": "AJOFRÍN",
+      "domicilio": "C/ CAJEROS, 3",
+      "direccion": "C/ CAJEROS, 3, AJOFRÍN",
+      "telefono": "925218030",
+      "telefono2": "",
+      "lat": "39.71113020",
+      "lng": "-3.98115000",
+      "fecha_inicio": "2026-11-03",
+      "fecha_fin": "2026-11-03",
+      "hora_inicio": "09:45",
+      "hora_fin": "21:45",
+      "guardia_localizada": false,
+      "provincia": "Toledo"
+    }
+  ]
+}

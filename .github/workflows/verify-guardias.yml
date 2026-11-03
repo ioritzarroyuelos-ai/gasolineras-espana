@@ -1,0 +1,35 @@
+name: Verificar fuentes de guardias
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/fetch-guardias-*.mjs'
+      - 'scripts/lib/guardias-*.mjs'
+      - '.github/workflows/verify-guardias.yml'
+permissions:
+  contents: read
+jobs:
+  fuente:
+    name: Fuente oficial · ${{ matrix.territorio }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        territorio: [alicante, almeria, asturias, avila, cantabria, ceuta, clm]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Consultar fuente real sin modificar los datos publicados
+        env:
+          GUARDIAS_OUT_DIR: ${{ runner.temp }}/guardias-verificadas
+        run: node scripts/fetch-guardias-${{ matrix.territorio }}.mjs
+      - uses: actions/upload-artifact@v6
+        with:
+          name: fuente-${{ matrix.territorio }}
+          path: ${{ runner.temp }}/guardias-verificadas/*.json
+          retention-days: 3

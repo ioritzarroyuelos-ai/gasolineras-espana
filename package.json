@@ -6,7 +6,7 @@
     "icons": "node scripts/gen-icons.mjs",
     "client": "node scripts/gen-client-bundle.mjs",
     "sw": "node scripts/gen-sw.mjs",
-    "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-client-bundle.mjs && node scripts/gen-sw.mjs",
+    "prebuild": "node scripts/gen-icons.mjs && node scripts/gen-client-bundle.mjs && node scripts/gen-sw.mjs && node scripts/gen-service-manifest.mjs",
     "build": "vite build",
     "preview": "wrangler pages dev",
     "deploy": "npm run build && wrangler pages deploy",

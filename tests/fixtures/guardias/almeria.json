@@ -1,0 +1,179 @@
+{
+  "success": true,
+  "data": {
+    "data": {
+      "informacion": [
+        {
+          "titulo": "Abrirán pronto",
+          "contenido": [
+            {
+              "uuid": "452b527f-32e8-44d0-bbdd-05f7cbfa95c9",
+              "nombre": "SANIGER BERNAL, Mª LUISA",
+              "estado": {
+                "uuid": "37785b4b-cbb8-11f1-871e-86e098cc8db1",
+                "codigo": "cerrada_guardia_presencial_abre_cierra",
+                "estado": "Cerrada con guardia presencial sin finalizar",
+                "color": "#C4DCFF",
+                "nombre": "Abrirá por guardia a partir de las 00:00 hasta las 08:00",
+                "nombre_traduccion": "",
+                "descripcion": "La farmacia tiene una guardia presencial que inicia y finaliza hoy pero en este momento todavía no está disponible",
+                "grupo": "Abrirán pronto",
+                "visible": true
+              },
+              "coordenadas": null,
+              "telefono": "950482862",
+              "direccion": "AV. OASIS, 37 BIS",
+              "nota_localizacion": null,
+              "municipio": "El Ejido",
+              "codigo_postal": "04700",
+              "hora_inicio_m": "",
+              "hora_fin_m": "",
+              "hora_inicio_t": "",
+              "hora_fin_t": "",
+              "guardias_telefono": null,
+              "guardias": [
+                {
+                  "tipo_guardia": "presencial",
+                  "guardia_hora_inicio": "00:00",
+                  "guardia_hora_fin": "08:00",
+                  "guardia_horario_fecha_inicio": "2026-11-03 00:00:00",
+                  "guardia_horario_fecha_fin": "2026-11-03 08:00:00"
+                }
+              ],
+              "distancia": null
+            },
+            {
+              "uuid": "a7877a36-c1a2-4b2f-a9cb-0738a23a3e95",
+              "nombre": "LAHRECH BELHASSAN, MYRIAM",
+              "estado": {
+                "uuid": "37740c27-cbb8-11f1-871e-86e098cc8db1",
+                "codigo": "cerrada_guardia_presencial_abre",
+                "estado": "Cerrada con guardia presencial sin finalizar",
+                "color": "#C4DCFF",
+                "nombre": "Abrirá por guardia a partir de las 07:00",
+                "nombre_traduccion": "",
+                "descripcion": "La farmacia tiene una guardia presencial que inicia hoy pero en este momento todavía no está disponible",
+                "grupo": "Abrirán pronto",
+                "visible": true
+              },
+              "coordenadas": null,
+              "telefono": "950489373",
+              "direccion": "AV. BULEVAR, 412 ESQ. GLORIETA MENDIZÁBAL",
+              "nota_localizacion": null,
+              "municipio": "El Ejido",
+              "codigo_postal": "04700",
+              "hora_inicio_m": "",
+              "hora_fin_m": "",
+              "hora_inicio_t": "",
+              "hora_fin_t": "",
+              "guardias_telefono": null,
+              "guardias": [
+                {
+                  "tipo_guardia": "presencial",
+                  "guardia_hora_inicio": "07:00",
+                  "guardia_hora_fin": "00:00 (+1)",
+                  "guardia_horario_fecha_inicio": "2026-11-03 07:00:00",
+                  "guardia_horario_fecha_fin": "2026-11-04 00:00:00"
+                }
+              ],
+              "distancia": null
+            },
+            {
+              "uuid": "3e4c3448-8fa5-44b3-a6c4-fe4ce28948a9",
+              "nombre": "PEREZ FERNANDEZ, MARIA DE LA O",
+              "estado": {
+                "uuid": "37785b4b-cbb8-11f1-871e-86e098cc8db1",
+                "codigo": "cerrada_guardia_presencial_abre_cierra",
+                "estado": "Cerrada con guardia presencial sin finalizar",
+                "color": "#C4DCFF",
+                "nombre": "Abrirá por guardia a partir de las 07:30 hasta las 21:00",
+                "nombre_traduccion": "",
+                "descripcion": "La farmacia tiene una guardia presencial que inicia y finaliza hoy pero en este momento todavía no está disponible",
+                "grupo": "Abrirán pronto",
+                "visible": true
+              },
+              "coordenadas": null,
+              "telefono": "950322671",
+              "direccion": "C/LABRADORES ESQ. C/ LA MOLINA",
+              "nota_localizacion": null,
+              "municipio": "Roquetas de Mar",
+              "codigo_postal": "04740",
+              "hora_inicio_m": "",
+              "hora_fin_m": "",
+              "hora_inicio_t": "",
+              "hora_fin_t": "",
+              "guardias_telefono": null,
+              "guardias": [
+                {
+                  "tipo_guardia": "presencial",
+                  "guardia_hora_inicio": "07:30",
+                  "guardia_hora_fin": "21:00",
+                  "guardia_horario_fecha_inicio": "2026-11-03 07:30:00",
+                  "guardia_horario_fecha_fin": "2026-11-03 21:00:00"
+                }
+              ],
+              "distancia": null
+            },
+            {
+              "uuid": "00dde697-38b9-420c-a201-a5b0d7855a22",
+              "nombre": "BERNAL ASENSIO, AMBROSIO",
+              "estado": {
+                "uuid": "37785b4b-cbb8-11f1-871e-86e098cc8db1",
+                "codigo": "cerrada_guardia_presencial_abre_cierra",
+                "estado": "Cerrada con guardia presencial sin finalizar",
+                "color": "#C4DCFF",
+                "nombre": "Abrirá por guardia a partir de las 08:30 hasta las 21:30",
+                "nombre_traduccion": "",
+                "descripcion": "La farmacia tiene una guardia presencial que inicia y finaliza hoy pero en este momento todavía no está disponible",
+                "grupo": "Abrirán pronto",
+                "visible": true
+              },
+              "coordenadas": null,
+              "telefono": "950470014",
+              "direccion": "PLAZA CONSTITUCION, 5",
+              "nota_localizacion": null,
+              "municipio": "Huercal-overa",
+              "codigo_postal": "04600",
+              "hora_inicio_m": "",
+              "hora_fin_m": "",
+              "hora_inicio_t": "",
+              "hora_fin_t": "",
+              "guardias_telefono": null,
+              "guardias": [
+                {
+                  "tipo_guardia": "presencial",
+                  "guardia_hora_inicio": "08:30",
+                  "guardia_hora_fin": "21:30",
+                  "guardia_horario_fecha_inicio": "2026-11-03 08:30:00",
+                  "guardia_horario_fecha_fin": "2026-11-03 21:30:00"
+                },
+                {
+                  "tipo_guardia": "presencial",
+                  "guardia_hora_inicio": "09:00",
+                  "guardia_hora_fin": "09:00",
+                  "guardia_horario_fecha_inicio": "2026-11-03 09:00:00",
+                  "guardia_horario_fecha_fin": "2026-11-03 09:00:00"
+                }
+              ],
+              "distancia": null
+            }
+          ]
+        }
+      ],
+      "metadatos": {
+        "paginacion": {
+          "offset": 0,
+          "limit": 0,
+          "paginaActual": 1,
+          "totalPaginas": 1,
+          "totalElementos": 4
+        },
+        "numero_farmacias": {
+          "abiertas": 0,
+          "proximas_abrir": 111,
+          "cerradas": 0
+        }
+      }
+    }
+  }
+}

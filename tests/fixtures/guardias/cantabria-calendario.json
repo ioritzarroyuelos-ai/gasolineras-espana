@@ -1,0 +1,160 @@
+{
+  "zones": [
+    {
+      "id": "altopas",
+      "sourceKey": "ALTOPAS",
+      "name": "Alto Pas",
+      "center": {
+        "lat": 43.183,
+        "lng": -3.761
+      },
+      "schedule": {
+        "2026-11-02": [
+          {
+            "name": "FARMACIA MARRÓN SOUTO, C.B.",
+            "address": "(IRUZ) Bº IRUZ, 84",
+            "hours": "09:00 — 00:00",
+            "overnight": true,
+            "phone": null,
+            "n": 264
+          },
+          {
+            "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+            "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+            "hours": "00:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 177
+          }
+        ],
+        "2026-11-03": [
+          {
+            "name": "FARMACIA MARRÓN SOUTO, C.B.",
+            "address": "(IRUZ) Bº IRUZ, 84",
+            "hours": "09:00 — 00:00",
+            "overnight": true,
+            "phone": null,
+            "n": 264
+          },
+          {
+            "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+            "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+            "hours": "00:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 177
+          }
+        ]
+      }
+    },
+    {
+      "id": "bajopas",
+      "sourceKey": "BAJOPAS",
+      "name": "Bajo Pas",
+      "center": {
+        "lat": 43.392,
+        "lng": -3.965
+      },
+      "schedule": {
+        "2026-11-02": [
+          {
+            "name": "MARTÍNEZ-VAQUERO LÓPEZ, BERNARDO",
+            "address": "(SANTANDER) CL. FLORANES, 51",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 184
+          },
+          {
+            "name": "MUÑOZ GARCÍA, MARÍA ANTONIA",
+            "address": "(SANTANDER) CL. FERNANDO DE LOS RIOS, 52",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 86
+          },
+          {
+            "name": "AMORÓS GONZÁLEZ, JOSÉ FRANCISCO",
+            "address": "(RENEDO DE PIÉLAGOS) Bº SORRIBERO, 15 - BAJO (LOCAL 2)",
+            "hours": "09:00 — 22:00",
+            "overnight": false,
+            "phone": null,
+            "n": 269
+          },
+          {
+            "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+            "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 177
+          }
+        ],
+        "2026-11-03": [
+          {
+            "name": "PINEDO TESTA, IGNACIO",
+            "address": "(SANTANDER) CL. CONCHA ESPINA, 8-F (VALDENOJA)",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 221
+          },
+          {
+            "name": "MAZA RUIZ, FRANCISCO DE ASÍS DE LA",
+            "address": "(SANTANDER) CL. SAN FERNANDO, 36 (ESQUINA PERINES)",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 111
+          },
+          {
+            "name": "AMORÓS GONZÁLEZ, JOSÉ FRANCISCO",
+            "address": "(RENEDO DE PIÉLAGOS) Bº SORRIBERO, 15 - BAJO (LOCAL 2)",
+            "hours": "09:00 — 22:00",
+            "overnight": false,
+            "phone": null,
+            "n": 269
+          },
+          {
+            "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+            "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+            "hours": "22:00 — 09:00",
+            "overnight": true,
+            "phone": null,
+            "n": 177
+          }
+        ]
+      }
+    }
+  ],
+  "annualFixedDuties": {
+    "altopas": [
+      {
+        "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+        "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+        "hours": "00:00 — 09:00",
+        "overnight": true,
+        "phone": null,
+        "n": 177
+      }
+    ],
+    "bajopas": [
+      {
+        "name": "AMORÓS GONZÁLEZ, JOSÉ FRANCISCO",
+        "address": "(RENEDO DE PIÉLAGOS) Bº SORRIBERO, 15 - BAJO (LOCAL 2)",
+        "hours": "09:00 — 22:00",
+        "overnight": false,
+        "phone": null,
+        "n": 269
+      },
+      {
+        "name": "RUIZ DE SALAZAR FERNÁNDEZ-ABASCAL, JULIO",
+        "address": "(TORRELAVEGA) CL. LOS MARTIRES, 17",
+        "hours": "22:00 — 09:00",
+        "overnight": true,
+        "phone": null,
+        "n": 177
+      }
+    ]
+  }
+}

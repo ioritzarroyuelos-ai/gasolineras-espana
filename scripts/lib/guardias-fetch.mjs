@@ -38,7 +38,19 @@ export async function descargar(url, options = {}) {
     }
   }
 }
-export async function descargarJSON(url, options) { return (await descargar(url, options)).json() }
+export async function descargarJSON(url, options) {
+  // Algunas fuentes devuelven una página HTML de error con HTTP 200.
+  // Repetimos solo la respuesta ilegible, nunca aceptamos HTML como datos.
+  for (let intento = 0; intento < 3; intento++) {
+    const response = await descargar(url, options)
+    try { return await response.json() }
+    catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      if (intento === 2) throw new Error('Respuesta JSON inválida de ' + new URL(url).hostname, { cause: error })
+      await new Promise(resolve => setTimeout(resolve, (intento + 1) * 1500))
+    }
+  }
+}
 export async function descargarGuardiaHTML(territorio, url, encoding = 'utf-8') {
   try { return new TextDecoder(encoding).decode(await (await descargar(url)).arrayBuffer()) }
   catch (primaryError) {

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
 import { ministryFixture } from './ministry-fixture'
 
 test.beforeEach(async ({ page, request }, info) => {
@@ -100,18 +101,25 @@ test('la búsqueda distingue un fallo temporal de un municipio inexistente y rei
   expect(attempts).toBe(2)
 })
 
-test('tendencias: muestra variaciones pequeñas con ambas fechas', async ({ page }, info) => {
-  test.skip(info.config.metadata.live === true, 'La comprobación publicada utiliza las capturas oficiales, sin sustituir datos.')
-  await page.route('**/data/trends.json', route => route.fulfill({ json: {
-    current: { ts: new Date().toISOString(), sourceAt: new Date().toISOString(), ministryDate: '04/11/2026 19:55:00', medians: { g95: 1.509, diesel: 1.802 } },
-    previous: { ts: new Date(Date.now() - 12 * 3600000).toISOString(), sourceAt: new Date(Date.now() - 12 * 3600000).toISOString(), ministryDate: '04/11/2026 7:55:00', medians: { g95: 1.510, diesel: 1.799 } },
-  } }))
-  await page.goto('/gasolineras/mapa')
-  await expect(page.locator('#trend-strip')).toBeVisible()
-  await expect(page.locator('#trend-g95')).toContainText('↓ 0,1 cént./L')
-  await expect(page.locator('#trend-diesel')).toContainText('↑ 0,3 cént./L')
-  await expect(page.locator('#trend-period')).toContainText('frente a')
-})
+for (const flat of [false, true]) {
+  test('tendencias: ' + (flat ? 'sin cambio' : 'bajadas pequeñas') + ', subidas y contraste claro/oscuro', async ({ page }, info) => {
+    test.skip(info.config.metadata.live === true, 'La comprobación publicada utiliza las capturas oficiales, sin sustituir datos.')
+    await page.route('**/data/trends.json', route => route.fulfill({ json: {
+      current: { ts: new Date().toISOString(), sourceAt: new Date().toISOString(), ministryDate: '04/11/2026 19:55:00', medians: { g95: flat ? 1.510 : 1.509, diesel: 1.802 } },
+      previous: { ts: new Date(Date.now() - 12 * 3600000).toISOString(), sourceAt: new Date(Date.now() - 12 * 3600000).toISOString(), ministryDate: '04/11/2026 7:55:00', medians: { g95: 1.510, diesel: 1.799 } },
+    } }))
+    await page.goto('/gasolineras/mapa')
+    await expect(page.locator('#trend-strip')).toBeVisible()
+    await expect(page.locator('#trend-g95')).toContainText(flat ? '↔ sin cambio' : '↓ 0,1 cént./L')
+    await expect(page.locator('#trend-diesel')).toContainText('↑ 0,3 cént./L')
+    await expect(page.locator('#trend-period')).toContainText('frente a')
+    for (const dark of [false, true]) {
+      await page.evaluate(value => document.body.classList.toggle('dark', value), dark)
+      const result = await new AxeBuilder({ page }).include('#trend-strip').withTags(['wcag2a', 'wcag2aa']).analyze()
+      expect(result.violations, dark ? 'Tendencias en oscuro' : 'Tendencias en claro').toEqual([])
+    }
+  })
+}
 
 test('municipio, alrededores y actualizar son elecciones distintas', async ({ page }) => {
   let downloads = 0

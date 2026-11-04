@@ -31,14 +31,7 @@
 // Umbral defensivo:
 //   - Si <20 farmacias unicas tras dedupe → abort.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
-const OUT_FILE = resolve(DATA_DIR, 'guardias-valencia.json')
+import { guardarGuardias } from './lib/guardias-fetch.mjs'
 
 const PAGE_URL = 'https://www.micof.es/ver/124/'
 const USER_AGENT = 'cercaya-guardias/1.20 (+https://webapp-3ft.pages.dev)'
@@ -65,6 +58,7 @@ async function fetchPageWithCookie(attempts = 4) {
       const res = await fetch(PAGE_URL, {
         headers: { 'User-Agent': USER_AGENT, 'Accept': 'text/html' },
         redirect: 'follow',
+        signal: AbortSignal.timeout(20_000),
       })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const html = await res.text()
@@ -104,6 +98,7 @@ async function fetchLocalidad(loc, palabra, cookie) {
       ...(cookie ? { 'Cookie': cookie } : {}),
     },
     redirect: 'follow',
+    signal: AbortSignal.timeout(20_000),
   })
   if (!res.ok) throw new Error('HTTP ' + res.status)
   return await res.text()
@@ -168,7 +163,7 @@ function farmaciaId(urlPath) {
 async function main() {
   console.log('Obteniendo cookie + palabra captcha del portal MICOF...')
   const { cookie, palabra } = await fetchPageWithCookie()
-  console.log(`  cookie=${cookie ? 'OK' : 'vacio'} palabra=${palabra}`)
+  console.log(`  sesión pública: ${cookie ? 'OK' : 'sin cookie'}`)
 
   console.log(`Iterando ${LOCALIDADES.length} localidades cabecera...`)
   const dedupe = new Map()
@@ -212,8 +207,13 @@ async function main() {
   if (dedupe.size < 20) {
     throw new Error(`Solo ${dedupe.size} farmacias unicas. Esperado >40. La estructura del HTML cambio?`)
   }
-  if (dedupe.size > 600) {
-    throw new Error(`Sospechoso: ${dedupe.size} farmacias. Max razonable ~250. Abortamos.`)
+  // El buscador oficial incluye urgencias y farmacias abiertas: de día
+  // puede superar 600 resultados. Este techo es defensivo, no un censo.
+  if (dedupe.size > 2000) {
+    throw new Error(`Sospechoso: ${dedupe.size} farmacias. Límite de validación: 2000. Abortamos.`)
+  }
+  if (totalErr > LOCALIDADES.length * 0.5) {
+    throw new Error(`Demasiadas consultas fallidas (${totalErr}/${LOCALIDADES.length}); se conserva el último fichero.`)
   }
 
   const guardias = []
@@ -231,18 +231,11 @@ async function main() {
     ])
   }
 
-  const out = {
-    ts: new Date().toISOString(),
-    source: 'micof.es',
-    territorio: 'valencia',
-    count: guardias.length,
-    schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
-    guardias,
-  }
-
-  mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(OUT_FILE, JSON.stringify(out))
-  console.log(`OK — ${guardias.length} guardias guardadas en ${OUT_FILE}`)
+  guardarGuardias('valencia', 'micof.es', guardias, {
+    min: 20, max: 2000, sourceUrl: PAGE_URL,
+    cobertura: 'Farmacias de urgencia y abiertas publicadas por el MICOF al consultar las localidades cabecera. Confirma por teléfono antes de acudir.',
+    incidencias: totalErr ? [`Cobertura parcial: ${totalErr} de ${LOCALIDADES.length} consultas de localidades no se pudieron completar.`] : [],
+  })
 }
 
 main().catch(e => {

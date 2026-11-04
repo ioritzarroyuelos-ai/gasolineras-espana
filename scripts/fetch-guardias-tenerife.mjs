@@ -23,14 +23,8 @@
 // Schema output (compatible con el resto de guardias-*.json):
 //   [lat, lng, direccion, poblacion, telefono, cp, horarioGuardia, horarioGuardiaDesc]
 
-import { writeFileSync, mkdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
-const OUT_FILE = resolve(DATA_DIR, 'guardias-tenerife.json')
+import { guardarGuardias } from './lib/guardias-fetch.mjs'
+import { leerListadoTenerife } from './lib/guardias-tenerife.mjs'
 
 const API_BASE = 'https://www.coftenerife.es/farmacias/controller/server.php/api'
 const REFERER = 'https://www.coftenerife.es/farmacias/'
@@ -47,13 +41,12 @@ const HEADERS = {
   'Authorization': '', // vacío pero presente — el cliente JS lo manda asi
 }
 
-async function fetchJson(url, attempts = 3) {
+async function fetchJson(url, permitirSinResultados = false, attempts = 3) {
   let lastErr
   for (let i = 1; i <= attempts; i++) {
     try {
-      const res = await fetch(url, { headers: HEADERS })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return await res.json()
+      const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(20_000) })
+      return await leerListadoTenerife(res, permitirSinResultados)
     } catch (e) {
       lastErr = e
       if (i < attempts) await new Promise(r => setTimeout(r, i * 1000))
@@ -71,6 +64,7 @@ async function main() {
   console.log('Descargando guardias Tenerife — coftenerife.es API JSON...')
 
   const municipios = await fetchJson(`${API_BASE}/municipios`)
+  if (!Array.isArray(municipios)) throw new Error('Listado de municipios inválido')
   console.log(`  ${municipios.length} municipios detectados`)
   if (municipios.length < 30) {
     throw new Error(`Solo ${municipios.length} municipios. La estructura cambio?`)
@@ -81,11 +75,11 @@ async function main() {
 
   const dedupe = new Map()
   let descartadas = 0
-  let errores = 0
+  const errores = []
   for (const m of municipios) {
     try {
-      const farmacias = await fetchJson(`${API_BASE}/municipios/${m.IdTermino}/open/now`)
-      if (!Array.isArray(farmacias)) continue
+      const farmacias = await fetchJson(`${API_BASE}/municipios/${m.IdTermino}/open/now`, true)
+      if (!Array.isArray(farmacias)) throw new Error('Respuesta de farmacias inválida')
       for (const f of farmacias) {
         const lat = parseFloat(f.latitud)
         const lng = parseFloat(f.longitud)
@@ -97,16 +91,17 @@ async function main() {
         dedupe.set(id, { ...f, lat, lng })
       }
     } catch (e) {
-      errores++
-      // Fallos individuales toleramos — solo abortamos si caen todos.
+      const nombre = String(m.Termino || m.IdTermino)
+      errores.push(nombre)
+      console.error(`    ${nombre}: ${e.message}`)
     }
     // Pausa minima para no martillear el backend.
     await new Promise(r => setTimeout(r, 80))
   }
-  console.log(`  ${dedupe.size} farmacias unicas, ${descartadas} fuera bbox, ${errores} municipios con error`)
+  console.log(`  ${dedupe.size} farmacias unicas, ${descartadas} fuera bbox, ${errores.length} municipios con error`)
 
-  if (errores > municipios.length * 0.5) {
-    throw new Error(`Demasiados errores (${errores}/${municipios.length}). API caida?`)
+  if (errores.length > municipios.length * 0.5) {
+    throw new Error(`Demasiados errores (${errores.length}/${municipios.length}). API caida?`)
   }
   if (dedupe.size < 5) {
     throw new Error(`Solo ${dedupe.size} farmacias validas. Abortamos.`)
@@ -132,18 +127,15 @@ async function main() {
     ])
   }
 
-  const out = {
-    ts: new Date().toISOString(),
-    source: 'coftenerife.es',
-    territorio: 'tenerife',
-    count: guardias.length,
-    schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
-    guardias,
-  }
-
-  mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(OUT_FILE, JSON.stringify(out))
-  console.log(`OK — ${guardias.length} guardias guardadas en ${OUT_FILE}`)
+  guardarGuardias('tenerife', 'coftenerife.es', guardias, {
+    min: 5, sourceUrl: REFERER,
+    fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'Atlantic/Canary', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+    cobertura: 'Farmacias abiertas o de guardia publicadas por el COF de Santa Cruz de Tenerife en el momento de la consulta. Confirma por teléfono antes de acudir.',
+    incidencias: [
+      ...(errores.length ? [`Cobertura parcial: ${errores.length} de ${municipios.length} municipios no se pudieron comprobar (${errores.join(', ')}).`] : []),
+      ...(descartadas ? [`${descartadas} fichas omitidas por coordenadas inválidas.`] : []),
+    ],
+  })
 }
 
 main().catch(e => {

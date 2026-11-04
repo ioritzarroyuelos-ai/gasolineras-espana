@@ -1343,7 +1343,7 @@ export function getStyles(nonce: string = ''): string {
         display: flex; align-items: center; justify-content: center;
       }
       /* En sobre-override para modales que definen max-width mayor
-         (comparador/favoritos/diario) — en movil todos son full-width. */
+         (comparador/favoritos) — en movil todos son full-width. */
       #modal-compare .modal, #modal-favs .modal,
       #modal-history .modal, #modal-report .modal {
         max-width: 100%;

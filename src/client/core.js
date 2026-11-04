@@ -582,11 +582,6 @@ function setProfile(p) {
   return profile;
 }
 function getRefuelLitres() { return getProfile().litres; }
-function setRefuelLitres(litres) {
-  var profile = getProfile();
-  profile.litres = litres;
-  return setProfile(profile).litres;
-}
 
 // ---- FAVORITOS (localStorage) ----
 var FAV_KEY = 'gs_favs_v1';

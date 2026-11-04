@@ -721,8 +721,8 @@ ${gClientId ? `
 <!-- Se abre desde el boton estrella del header. Solo contiene la lista de
      gasolineras favoritas. Al hacer click en una, el modal cierra y el
      cliente navega (provincia + municipio + texto de busqueda) para dejar en
-     el mapa unicamente esa estacion. Alertas (navegador/email) se dejan
-     para un release posterior; el flujo actual es 100% navegacion. -->
+     el mapa unicamente esa estacion. Las alertas se gestionan por Telegram
+     en el panel que aparece debajo de la lista. -->
 <div id="modal-favs" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="favs-title">
   <div class="modal">
     <div class="modal-header modal-header-row">

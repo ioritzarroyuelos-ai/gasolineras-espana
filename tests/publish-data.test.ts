@@ -10,6 +10,7 @@ async function ejecuta({ ref = 'refs/heads/main', files = 'public/data/itv.json'
   vi.stubEnv('GITHUB_RUN_ID', '1234')
   vi.stubEnv('GITHUB_RUN_ATTEMPT', '1')
   vi.stubEnv('GITHUB_OUTPUT', '')
+  vi.stubEnv('GH_TOKEN', 'identidad-simulada-no-secreta')
   vi.spyOn(process, 'argv', 'get').mockReturnValue(['node', 'publish-data.mjs', 'itv'])
   vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('fin correcto') })
   calls.length = 0
@@ -42,7 +43,11 @@ describe('robot de datos protegido', () => {
   })
   it('fusiona solo el commit comprobado por CI y Security', async () => {
     await expect(ejecuta()).rejects.toThrow('fin correcto')
-    expect(calls.filter(c => c[1] === 'workflow' && c[2] === 'run')).toHaveLength(2)
+    expect(calls.filter(c => c[1] === 'workflow' && c[2] === 'run')).toHaveLength(0)
+    const comprobaciones = calls.filter(c => c[1] === 'run' && c[2] === 'list')
+    expect(comprobaciones).toHaveLength(2)
+    expect(comprobaciones.every(c => c.includes('pull_request') && c.includes('sha-validado'))).toBe(true)
+    expect(calls.some(c => c[1] === 'auth' && c[2] === 'setup-git')).toBe(true)
     expect(calls.find(c => c[1] === 'pr' && c[2] === 'merge')).toContain('--match-head-commit')
     expect(calls.find(c => c[1] === 'pr' && c[2] === 'merge')).toContain('sha-validado')
     expect(calls.some(c => c[0] === 'git' && c[1] === 'push' && c.at(-1) === 'main')).toBe(false)

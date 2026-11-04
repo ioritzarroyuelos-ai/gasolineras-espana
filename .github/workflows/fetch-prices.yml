@@ -23,9 +23,7 @@ jobs:
     if: github.event.schedule != '30 */12 * * *'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      actions: write
+      contents: read
     # 'changed' lo expone el step de commit: "true" si hubo cambios reales en
     # el snapshot, "false" si el Ministerio devolvio lo mismo que ya teniamos.
     # Solo desplegamos cuando cambia (evita crear deploys duplicados en Pages).
@@ -33,6 +31,8 @@ jobs:
       changed: ${{ steps.commit.outputs.changed }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v5
         with:
@@ -57,10 +57,17 @@ jobs:
             git checkout -- public/data/history
           fi
 
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+
       - name: Publicar datos mediante PR validado
         id: commit
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
         run: |
           git add public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/gasolineras-resumen.json public/data/history
           node scripts/publish-data.mjs prices

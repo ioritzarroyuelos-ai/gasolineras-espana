@@ -6,17 +6,10 @@ on:
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
-  # Los pushes hechos con GITHUB_TOKEN no disparan push. Este evento sí valida
-  # los datos publicados por los robots, incluidos tiempo e ITV.
-  workflow_run:
-    workflows: ['Fetch fuel prices snapshot', 'Fetch guardias farmacias snapshot', 'Fetch political polls', 'Fetch snapshot del tiempo', 'Fetch estaciones de ITV', 'Fetch EV chargers snapshot', 'Gen tiempo municipios']
-    types: [completed]
-    branches: [main]
 
+# La App de datos dispara push al fusionar, igual que un cambio de código.
 concurrency:
-  # Un robot fallido/cancelado omite quality: no debe cancelar un CI válido
-  # de main antes de evaluar el condicional del job.
-  group: ci-${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'success' && github.run_id || github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 # Todas las actions estan pineadas a versiones que corren sobre Node 24
@@ -27,7 +20,6 @@ concurrency:
 jobs:
   quality:
     name: typecheck · test · build
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

@@ -68,6 +68,10 @@ El endpoint `/api/*` proxea al Ministerio en tiempo real, pero si la API está c
 
 Para actualizar datos manualmente, lanza el workflow correspondiente desde `main`. Los robots generan una rama de datos, abren un PR, ejecutan CI y Security, y solo fusionan el commit comprobado. No se escriben datos a mano ni se suben directamente a `main`.
 
+Los robots usan una GitHub App privada instalada únicamente en este repositorio: Contents y Pull requests con escritura, Actions con lectura y Metadata con lectura implícita. Guarda su Client ID en la variable `DATA_APP_CLIENT_ID` y su clave privada en el secreto `DATA_APP_PRIVATE_KEY`. Cada publicación obtiene un token de una hora, limitado al repositorio actual y revocado al terminar; el token se crea después de descargar los datos. No necesita acceso a la administración ni permiso para modificar workflows.
+
+La App dispara las comprobaciones nativas de `pull_request` y el `push` posterior a la fusión. Esto es necesario porque los [checks de `workflow_dispatch` no satisfacen las reglas de rama](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/troubleshooting-required-status-checks#checks-from-some-workflow-jobs-are-not-evaluated) y los PR creados con `GITHUB_TOKEN` requieren aprobación manual para ejecutarlas. Una identidad ausente o unas pruebas fallidas dejan los datos sin publicar; nunca se utiliza un bypass de `main`.
+
 ## Publicación validada en Cloudflare Pages
 
 Los cambios de código se preparan en una rama y se revisan mediante PR. Antes de fusionar deben pasar tipos, pruebas, navegador, accesibilidad, presupuestos móviles y seguridad. `main` exige estas comprobaciones y rechaza pushes directos, borrado y reescritura de historial.

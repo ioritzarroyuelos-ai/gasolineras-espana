@@ -5,6 +5,7 @@ export const GUARDIAS_PUBLIC_SOURCES: Readonly<Record<string, string>> = {
   asturias: 'https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp?IdMenu=355',
   ceuta: 'https://ipsi.ceuta.es:8443/sanidad/farmacia/controlfarmacia?cmd=guardias-nuevo',
   almeria: ALMERIA_SOURCE,
+  avila: 'https://www.cofavila.com/index.php/servicio-de-guardia-nocturno/',
 }
 interface PublicGuardiasResponse { source: string; fetchedAt: string; html?: string; fecha?: string; data?: unknown }
 async function leerFuente(url: string, request: typeof fetch, encoding: string, init: RequestInit = {}) {

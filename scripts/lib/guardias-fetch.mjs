@@ -54,7 +54,7 @@ export async function descargarJSON(url, options) {
 export async function descargarGuardiaHTML(territorio, url, encoding = 'utf-8') {
   try { return new TextDecoder(encoding).decode(await (await descargar(url)).arrayBuffer()) }
   catch (primaryError) {
-    if (!['asturias', 'ceuta'].includes(territorio)) throw primaryError
+    if (!['asturias', 'ceuta', 'avila'].includes(territorio)) throw primaryError
     console.warn(`${territorio}: la conexión directa falla; comprobamos el respaldo de Cloudflare`)
     const data = await descargarRespaldo(territorio, url)
     if (typeof data.html !== 'string') throw new Error('Respaldo sin listado HTML')
@@ -62,7 +62,7 @@ export async function descargarGuardiaHTML(territorio, url, encoding = 'utf-8') 
   }
 }
 export async function descargarRespaldo(territorio, source) {
-  if (!['asturias', 'ceuta', 'almeria'].includes(territorio)) throw new Error('Territorio de respaldo no permitido')
+  if (!['asturias', 'ceuta', 'almeria', 'avila'].includes(territorio)) throw new Error('Territorio de respaldo no permitido')
   const origin = process.env.GUARDIAS_RELAY_ORIGIN || 'https://espana-util-guardias.ioritz-arroyuelos.workers.dev'
   if (!/^https:\/\/espana-util-guardias(?:-pr-\d+|-preview)?\.ioritz-arroyuelos\.workers\.dev$/.test(origin)) throw new Error('Origen de respaldo no permitido')
   const data = await descargarJSON(origin + '/' + territorio)

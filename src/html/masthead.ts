@@ -37,21 +37,21 @@ function fechaHoy(): string {
   }
 }
 
-export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: boolean } = {}): string {
+export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: boolean; hideMunicipioSearch?: boolean; compact?: boolean } = {}): string {
   const fecha = fechaHoy()
   const titulo = opts.brandAsH1
     ? '<h1 class="mh-title">España Útil</h1>'
     : '<span class="mh-title">España Útil</span>'
   const item = (href: string, key: SeccionActiva, label: string): string =>
     '<a href="' + href + '"' + (active === key ? ' class="mh-on" aria-current="page"' : '') + '>' + label + '</a>'
-  return '<header class="masthead">'
+  return '<header class="masthead' + (opts.compact ? ' masthead--compact' : '') + '">'
     + '<div class="mh-inner">'
-    + (fecha ? '<p class="mh-date">' + esc(fecha) + ' · España</p>' : '')
+    + (fecha && !opts.compact ? '<p class="mh-date">' + esc(fecha) + ' · España</p>' : '')
     + '<a href="/" class="mh-brand" aria-label="España Útil — inicio">'
     + '<img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" decoding="async" />'
     + titulo
     + '</a>'
-    + '<p class="mh-tag">Datos oficiales de España al instante · sin registro y gratis</p>'
+    + (opts.compact ? '' : '<p class="mh-tag">Datos oficiales de España al instante · sin registro y gratis</p>')
     + '</div>'
     + '<nav class="mh-nav" aria-label="Secciones">'
     + item('/tiempo/', 'tiempo', 'El tiempo')
@@ -60,9 +60,9 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + item('/itv/', 'itv', 'ITV')
     + item('/politica/', 'politica', 'Política')
     + '</nav>'
-    + '<div class="mh-local"><form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
+    + (opts.hideMunicipioSearch ? '' : '<div class="mh-local"><form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
     + '<a id="municipio-elegido" hidden></a><ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></div>'
-    + '<script src="/static/municipio.js" defer></script>'
+    + '<script src="/static/municipio.js" defer></script>')
     + '</header>'
 }
 

@@ -26,7 +26,7 @@ export function getStyles(nonce: string = ''): string {
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     /* Iconos SVG inline (sprite). Heredan color via currentColor y tamaño via
        font-size (height:1em), como hacían los <i> de FontAwesome. */
-    .ic { height: 1em; width: auto; display: inline-block; vertical-align: -0.125em; fill: currentColor; flex: none; }
+    .ic { height: 1em; width: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; flex: none; }
     /* Scroll vertical habilitado en body (antes era overflow:hidden en html/body
        lo que hacia el contenido SEO bajo el app inalcanzable — ver .seo-summary
        / .seo-faq / .seo-municipios). Ahora el "primer pliegue" sigue siendo el
@@ -419,6 +419,32 @@ export function getStyles(nonce: string = ''): string {
     .header-badge { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:600; border-radius:9999px; padding:3px 12px; white-space:nowrap; }
     .header-update { color:rgba(255,255,255,0.65); font-size:11px; white-space:nowrap; }
 
+    .masthead.masthead--compact { padding: 10px 12px 0; }
+    .masthead.masthead--compact .mh-brand { display: inline-flex; align-items: center; gap: 8px; }
+    .masthead.masthead--compact .mh-logo { width: 24px; height: 24px; margin: 0; }
+    .masthead.masthead--compact .mh-title { font-size: 22px; }
+    .masthead.masthead--compact .mh-nav { margin-top: 8px; border-top: 1px solid var(--mh-rule); }
+    .masthead.masthead--compact .mh-nav a { padding: 9px 12px; font-size: 11px; }
+    .btn-favs-open { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; border: 1px solid rgba(255,255,255,.6); background: transparent; color: #fff; padding: 7px 9px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer; }
+    .btn-favs-open:hover { background: rgba(255,255,255,.15); }
+    .btn-favs-open:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+    #sidebar-filters .header-update { color: #475569; white-space: normal; line-height: 1.5; margin-bottom: 10px; }
+    .form-help { display: block; font-size: 12px; line-height: 1.45; color: #475569; margin-top: 4px; }
+    #refuel-litres-group[hidden], #fuel-unit-note[hidden], #area-group[hidden], #search-origin-note[hidden] { display: none !important; }
+    .btn-refresh { border: 1px solid #cbd5e1; background: #fff; color: #166534; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
+    .btn-refresh:disabled { opacity: .6; cursor: wait; }
+    .fav-row-date { display: block; max-width: 130px; font-size: 10px; line-height: 1.4; color: #64748b; margin-top: 4px; }
+    .popup-distance { display: block; margin-top: 5px; font-size: 11px; }
+    .savings-sub { display: block; margin-top: 3px; line-height: 1.4; }
+    .ev-pop-note { margin-top: 7px; color: #475569; font-size: 11px; line-height: 1.45; }
+    .ev-pop-directions { margin-top: 8px; font-weight: 600; }
+    @media (max-width: 639px) {
+      .masthead.masthead--compact .mh-nav a { padding: 8px 7px; font-size: 10px; letter-spacing: .02em; }
+      .header-logo-img { display: none; }
+      #app-header .user-chip { max-width: 90px; }
+      #app-header .user-name { max-width: 48px; }
+    }
+
     /* ===== ROW LAYOUTS ===== */
     .row { display:flex; gap:8px; align-items:flex-end; }
     .row .flex-1 { flex:1; min-width:0; }
@@ -520,7 +546,7 @@ export function getStyles(nonce: string = ''): string {
       .header-logo  { font-size: 18px; margin-right: 5px; }
       .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .header-sub   { display: none; }
-      #lbl-count, #lbl-update { display: none !important; }
+      #lbl-count { display: none !important; }
     }
 
     /* ---- Muy compacto < 380px (iPhone SE, mini) ---- */
@@ -1317,9 +1343,9 @@ export function getStyles(nonce: string = ''): string {
         display: flex; align-items: center; justify-content: center;
       }
       /* En sobre-override para modales que definen max-width mayor
-         (comparador/favoritos/diario) — en movil todos son full-width. */
-      #modal-compare .modal, #modal-favs .modal, #modal-diary .modal,
-      #modal-history .modal, #modal-report .modal, #modal-onboarding .modal {
+         (comparador/favoritos) — en movil todos son full-width. */
+      #modal-compare .modal, #modal-favs .modal,
+      #modal-history .modal, #modal-report .modal {
         max-width: 100%;
       }
     }

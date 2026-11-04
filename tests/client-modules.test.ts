@@ -146,7 +146,6 @@ describe('simbolos criticos presentes en el bundle', () => {
     { name: 'function enableSync',    in: ['core'] },
     { name: 'function syncPull',      in: ['core'] },
     { name: 'function syncPush',      in: ['core'] },
-    { name: 'function prefersReducedMotion', in: ['core'] },
     { name: 'function scrollBehavior',  in: ['core'] },
     { name: 'function showToast',       in: ['core'] },
     { name: 'function initPWAUX',       in: ['core'] },

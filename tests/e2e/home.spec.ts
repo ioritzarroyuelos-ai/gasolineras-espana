@@ -141,9 +141,11 @@ test.describe('Encuadre por zona (SEO)', () => {
     expect(view.lng).toBeLessThan(-3.0)
   })
 
-  test('la pagina de municipio muestra un radio (mas que solo el municipio)', async ({ page }) => {
+  test('la pagina de municipio permite ampliar a un radio al elegir También cerca', async ({ page }) => {
     await page.goto('/gasolineras/madrid/alcorcon')
     await expect(page.locator('#app-header')).toBeVisible()
+    await expect(page.locator('#sel-area')).toBeVisible({ timeout: 20_000 })
+    await page.locator('#sel-area').selectOption('cerca')
     await expect(page.locator('#radius-group')).toBeVisible({ timeout: 20_000 })
     await expect
       .poll(async () => page.evaluate(() => { try { return ((window as unknown as { filteredStations?: unknown[] }).filteredStations || []).length } catch { return 0 } }), { timeout: 20_000 })

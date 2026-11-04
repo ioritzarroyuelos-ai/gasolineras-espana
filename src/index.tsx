@@ -92,7 +92,7 @@ export type Env = {
   // con HMAC-SHA256. Si falta, /api/auth/* responde 503.
   SESSION_SECRET?: string
   // USER_DATA: KV namespace para sincronizar datos del usuario (favoritas,
-  // diario, rutas, perfil). Si falta, /api/sync/* responde 503 pero el login
+  // perfil). Si falta, /api/sync/* responde 503 pero el login
   // sigue funcionando sin persistencia cross-device.
   USER_DATA?: KVNamespace
 }

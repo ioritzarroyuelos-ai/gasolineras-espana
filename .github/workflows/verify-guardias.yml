@@ -26,7 +26,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Esperar al respaldo del preview para las fuentes con problemas de red
-        if: github.event_name == 'pull_request' && (matrix.territorio == 'asturias' || matrix.territorio == 'ceuta')
+        if: github.event_name == 'pull_request' && contains(fromJSON('["asturias","ceuta","almeria","avila"]'), matrix.territorio)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_SHA: ${{ github.event.pull_request.head.sha }}

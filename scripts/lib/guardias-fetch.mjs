@@ -38,19 +38,37 @@ export async function descargar(url, options = {}) {
     }
   }
 }
-export async function descargarJSON(url, options) { return (await descargar(url, options)).json() }
+export async function descargarJSON(url, options) {
+  // Algunas fuentes devuelven una página HTML de error con HTTP 200.
+  // Repetimos solo la respuesta ilegible, nunca aceptamos HTML como datos.
+  for (let intento = 0; intento < 3; intento++) {
+    const response = await descargar(url, options)
+    try { return await response.json() }
+    catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+      if (intento === 2) throw new Error('Respuesta JSON inválida de ' + new URL(url).hostname, { cause: error })
+      await new Promise(resolve => setTimeout(resolve, (intento + 1) * 1500))
+    }
+  }
+}
 export async function descargarGuardiaHTML(territorio, url, encoding = 'utf-8') {
   try { return new TextDecoder(encoding).decode(await (await descargar(url)).arrayBuffer()) }
   catch (primaryError) {
-    if (!['asturias', 'ceuta'].includes(territorio)) throw primaryError
-    const origin = process.env.GUARDIAS_RELAY_ORIGIN || 'https://espana-util-guardias.ioritz-arroyuelos.workers.dev'
-    if (!/^https:\/\/espana-util-guardias(?:-pr-\d+|-preview)?\.ioritz-arroyuelos\.workers\.dev$/.test(origin)) throw new Error('Origen de respaldo no permitido')
+    if (!['asturias', 'ceuta', 'avila'].includes(territorio)) throw primaryError
     console.warn(`${territorio}: la conexión directa falla; comprobamos el respaldo de Cloudflare`)
-    const data = await descargarJSON(origin + '/' + territorio)
-    const age = Date.now() - Date.parse(data?.fetchedAt)
-    if (data?.source !== url || typeof data.html !== 'string' || !Number.isFinite(age) || age < -300000 || age > 900000) throw new Error('Respaldo sin origen o fecha válidos')
+    const data = await descargarRespaldo(territorio, url)
+    if (typeof data.html !== 'string') throw new Error('Respaldo sin listado HTML')
     return data.html
   }
+}
+export async function descargarRespaldo(territorio, source) {
+  if (!['asturias', 'ceuta', 'almeria', 'avila'].includes(territorio)) throw new Error('Territorio de respaldo no permitido')
+  const origin = process.env.GUARDIAS_RELAY_ORIGIN || 'https://espana-util-guardias.ioritz-arroyuelos.workers.dev'
+  if (!/^https:\/\/espana-util-guardias(?:-pr-\d+|-preview)?\.ioritz-arroyuelos\.workers\.dev$/.test(origin)) throw new Error('Origen de respaldo no permitido')
+  const data = await descargarJSON(origin + '/' + territorio)
+  const age = Date.now() - Date.parse(data?.fetchedAt)
+  if (data?.source !== source || !Number.isFinite(age) || age < -300000 || age > 900000) throw new Error('Respaldo sin origen o fecha válidos')
+  return data
 }
 export function guardarGuardias(territorio, source, guardias, { fecha = fechaMadrid(), min = 1, max = 1000, sourceUrl, incidencias = [], cobertura, coordenadasOficiales = false } = {}) {
   if (guardias.length < min || guardias.length > max || guardias.some(r => !r[2] || !r[3])) {

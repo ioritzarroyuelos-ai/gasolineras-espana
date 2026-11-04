@@ -115,6 +115,11 @@ on:
         type: boolean
         default: false
         required: false
+      solo_almeria:
+        description: Volver a consultar solo Almería
+        type: boolean
+        default: false
+        required: false
 
 concurrency:
   group: fetch-guardias
@@ -141,6 +146,12 @@ jobs:
       # importan paquetes (pdf-parse en granada/huelva/jaen/leon/palencia/
       # segovia/sevilla, pdfjs-dist en jaen) fallaban con ERR_MODULE_NOT_FOUND
       # y sus territorios quedaban sin refrescar (aviso de caducado en la web).
+      - name: Validar selección manual
+        if: inputs.solo_avila && inputs.solo_almeria
+        run: |
+          echo "::error::Selecciona solo una fuente para la consulta individual."
+          exit 1
+
       - name: Install deps
         run: npm ci --no-audit --no-fund
 
@@ -149,38 +160,38 @@ jobs:
       # de commit hace que commiteemos lo que tengamos aunque alguno falle.
       - name: Guardias Madrid (COFM)
         id: madrid
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         run: node scripts/fetch-guardias-madrid.mjs
 
       - name: Guardias Bizkaia (COF Bizkaia)
         id: bizkaia
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         run: node scripts/fetch-guardias-bizkaia.mjs
 
       - name: Guardias Gipuzkoa (COF Gipuzkoa)
         id: gipuzkoa
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 8
         run: node scripts/fetch-guardias-gipuzkoa.mjs
 
       - name: Guardias Araba (COF Alava)
         id: alava
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         run: node scripts/fetch-guardias-alava.mjs
 
       - name: Guardias A Coruña (COF A Coruña)
         id: coruna
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         run: node scripts/fetch-guardias-coruna.mjs
 
       - name: Guardias Murcia (COF Region de Murcia)
         id: murcia
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         run: node scripts/fetch-guardias-murcia.mjs
 
@@ -193,91 +204,91 @@ jobs:
 
       - name: Guardias Girona (COF Girona)
         id: girona
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 5
         run: node scripts/fetch-guardias-girona.mjs
 
       - name: Guardias Tarragona (COF Tarragona)
         id: tarragona
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 8
         run: node scripts/fetch-guardias-tarragona.mjs
 
       - name: Guardias Córdoba (COF Córdoba)
         id: cordoba
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 6
         run: node scripts/fetch-guardias-cordoba.mjs
 
       - name: Guardias Cantabria (COF Cantabria API REST)
         id: cantabria
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-cantabria.mjs
 
       - name: Guardias Pontevedra (COF Pontevedra API)
         id: pontevedra
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-pontevedra.mjs
 
       - name: Guardias Las Palmas (COF Las Palmas API WordPress)
         id: laspalmas
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-laspalmas.mjs
 
       - name: Guardias Alicante (COF Alicante REST API)
         id: alicante
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 8
         run: node scripts/fetch-guardias-alicante.mjs
 
       - name: Guardias Cádiz (COF Cádiz vcomm API)
         id: cadiz
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-cadiz.mjs
 
       - name: Guardias Ceuta (COF Ceuta vcomm API)
         id: ceuta
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-ceuta.mjs
 
       - name: Guardias Valencia (MICOF portal HTML)
         id: valencia
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 5
         run: node scripts/fetch-guardias-valencia.mjs
 
       - name: Guardias Castilla-La Mancha (SESCAM backend)
         id: clm
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 8
         run: node scripts/fetch-guardias-clm.mjs
 
       - name: Guardias Ourense (COF Ourense vcomm API)
         id: ourense
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         timeout-minutes: 3
         run: node scripts/fetch-guardias-ourense.mjs
 
       - name: Guardias Huesca (COF Huesca)
         id: huesca
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Geocodifica con Nominatim (~30 farmacias). Estimado ~1 min.
         timeout-minutes: 5
@@ -285,7 +296,7 @@ jobs:
 
       - name: Guardias Barcelona (farmaguia.net)
         id: barcelona
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Coords nativas en HTML. Estimado <1 min.
         timeout-minutes: 5
@@ -293,7 +304,7 @@ jobs:
 
       - name: Guardias Baleares (COFIB ASMX)
         id: baleares
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # SOAP con coords nativas. <30s.
         timeout-minutes: 3
@@ -301,7 +312,7 @@ jobs:
 
       - name: Guardias Navarra (Datos Abiertos CKAN)
         id: navarra
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CKAN datastore JSON con coords. <30s.
         timeout-minutes: 3
@@ -309,7 +320,7 @@ jobs:
 
       - name: Guardias Castellón (COF Castellón JSP)
         id: castellon
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # JSP + JSESSIONID. Geocoding Nominatim. ~2 min.
         timeout-minutes: 8
@@ -317,7 +328,7 @@ jobs:
 
       - name: Guardias Asturias (farmasturias.org)
         id: asturias
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Geocoding Nominatim ~70 farmacias. ~2 min.
         timeout-minutes: 8
@@ -325,7 +336,7 @@ jobs:
 
       - name: Guardias Rioja (riojasalud.es)
         id: rioja
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Geocoding Nominatim ~10 farmacias. ~1 min.
         timeout-minutes: 5
@@ -333,7 +344,7 @@ jobs:
 
       - name: Guardias Cáceres (COF Cáceres Laravel)
         id: caceres
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CSRF + sesion. Geocoding Nominatim. ~2 min.
         timeout-minutes: 8
@@ -341,7 +352,7 @@ jobs:
 
       - name: Guardias Lleida (COF Lleida ASP)
         id: lleida
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # ASP IIS + iteracion 16 iniciales. Coords nativas. ~3 min.
         timeout-minutes: 8
@@ -349,7 +360,7 @@ jobs:
 
       - name: Guardias Soria (cofsoria.es)
         id: soria
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Coords nativas en L.map.setView. <1 min.
         timeout-minutes: 5
@@ -357,7 +368,7 @@ jobs:
 
       - name: Guardias Zamora (cofzamora.es)
         id: zamora
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Tabla home + Nominatim. ~1 min.
         timeout-minutes: 5
@@ -365,7 +376,7 @@ jobs:
 
       - name: Guardias Málaga (CGCOF id=29)
         id: malaga
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF + Nominatim ~50 farmacias. ~3 min.
         timeout-minutes: 10
@@ -373,7 +384,7 @@ jobs:
 
       - name: Guardias Zaragoza (CGCOF id=50)
         id: zaragoza
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF + Nominatim ~95 farmacias. ~5 min con back-off.
         timeout-minutes: 15
@@ -381,7 +392,7 @@ jobs:
 
       - name: Guardias Badajoz (CGCOF id=06)
         id: badajoz
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF + Nominatim ~70 farmacias. ~3 min.
         timeout-minutes: 10
@@ -389,7 +400,7 @@ jobs:
 
       - name: Guardias Valladolid (COF Valladolid markers JS)
         id: valladolid
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # HTML expone markers JS con lat/lng pre-geocodificadas. <30s.
         timeout-minutes: 3
@@ -397,7 +408,7 @@ jobs:
 
       - name: Guardias Melilla (CGCOF id=52)
         id: melilla
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF — 1 zona, 2-3 farmacias guardia. <1 min.
         timeout-minutes: 5
@@ -405,6 +416,7 @@ jobs:
 
       - name: Guardias Ávila (COF Ávila, listado nocturno)
         id: avila
+        if: inputs.solo_almeria != true
         continue-on-error: true
         # Listado oficial fechado de hoy o ayer, siempre sin inferir apertura.
         timeout-minutes: 8
@@ -412,7 +424,7 @@ jobs:
 
       - name: Guardias Burgos (CGCOF id=09)
         id: burgos
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF — 25 zonas. ~16 farmacias guardia. Geocoding Nominatim. ~3 min.
         timeout-minutes: 10
@@ -420,7 +432,7 @@ jobs:
 
       - name: Guardias Salamanca (CGCOF id=37)
         id: salamanca
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # CGCOF — 17 zonas. ~13 farmacias guardia. Geocoding Nominatim. ~2 min.
         timeout-minutes: 8
@@ -428,7 +440,7 @@ jobs:
 
       - name: Guardias Tenerife (COF Tenerife API JSON)
         id: tenerife
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # API JSON con coords nativas. 53 municipios x 1 GET. ~1 min.
         timeout-minutes: 5
@@ -436,7 +448,7 @@ jobs:
 
       - name: Guardias Teruel (COF Teruel listado HTML)
         id: teruel
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # Listado WP + ficha por slug + Nominatim. ~20 farmacias. ~2 min.
         timeout-minutes: 8
@@ -444,7 +456,7 @@ jobs:
 
       - name: Guardias Segovia (COF Segovia PDF anual capital)
         id: segovia
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # PDF anual capital + Nominatim. 2 farmacias/dia (diurna+nocturna). ~30s.
         timeout-minutes: 5
@@ -452,7 +464,7 @@ jobs:
 
       - name: Guardias Granada (COF Granada PDF AJAX capital)
         id: granada
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # AJAX → PDF + parser DIURNO/NOCTURNO + Nominatim. ~30 farmacias. ~2 min.
         timeout-minutes: 8
@@ -460,7 +472,7 @@ jobs:
 
       - name: Guardias Palencia (COF Palencia PDF semanal capital)
         id: palencia
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # HTML menu → PDF semanal + parser por dia + Nominatim. 3 farmacias/dia.
         timeout-minutes: 5
@@ -468,7 +480,7 @@ jobs:
 
       - name: Guardias Huelva (COF Huelva PDF mensual + localizador)
         id: huelva
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # PDF mensual con FARMACIAS 24H + match con localizador (lat/lng nativos).
         timeout-minutes: 5
@@ -476,7 +488,7 @@ jobs:
 
       - name: Guardias Jaén (COF Jaén PDF mensual capital)
         id: jaen
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # PDF mensual capital + parser por dia + Nominatim. 5 farmacias/dia (3 diurnas + 2 nocturnas).
         timeout-minutes: 5
@@ -507,7 +519,7 @@ jobs:
 
       - name: Guardias Sevilla (COF Sevilla 9 PDFs trimestrales por zona)
         id: sevilla
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # 9 PDFs trimestrales (Aljarafe + 8 zonas). 4 texto + Sevilla capital +
         # alcaladeguadaira texto + 5 zonas escaneadas con pipeline OCR
@@ -518,7 +530,7 @@ jobs:
 
       - name: Guardias León (Ayto La Bañeza PDF policia local)
         id: leon
-        if: inputs.solo_avila != true
+        if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
         # PDF anual del Ayto de La Bañeza con calendario de guardias rotando entre
         # 5 farmacias. Cobertura SOLO La Bañeza — capital y Ponferrada sin fuente.
@@ -609,7 +621,8 @@ jobs:
       # de GHA lo detecte. Si al menos uno hizo commit, job OK.
       - name: Fallar si todos los scrapers fallaron
         if: |
-          (inputs.solo_avila && steps.avila.outcome == 'failure') || (
+          (inputs.solo_avila && steps.avila.outcome == 'failure') ||
+          (inputs.solo_almeria && steps.almeria.outcome == 'failure') || (
           steps.madrid.outcome == 'failure' &&
           steps.bizkaia.outcome == 'failure' &&
           steps.gipuzkoa.outcome == 'failure' &&

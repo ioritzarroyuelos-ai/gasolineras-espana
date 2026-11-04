@@ -376,7 +376,8 @@ function cardHTML(s, i, fuel, fuelLabel) {
   // (el modal saldria vacio y confundiria: mejor no ofrecerlo).
   var histBtn = price ? '<button class="card-hist-btn" data-hist-open="' + i + '" aria-label="Ver historial de precios" title="Historial de precios">📈</button>' : '';
 
-  return '<div class="station-card" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
+  var activeClass = typeof selectedStationId !== 'undefined' && String(stationId(s)) === selectedStationId ? ' active' : '';
+  return '<div class="station-card' + activeClass + '" data-idx="' + i + '" data-zoom="1" role="listitem" tabindex="0" aria-label="' + esc((s['Rotulo']||'Gasolinera')+' en '+(s['Municipio']||'')+(price?', '+priceText:'')) + '">'
     + '<button class="fav-btn' + (fav ? ' active' : '') + '" data-fav-id="' + esc(id) + '" aria-label="' + (fav ? 'Quitar de favoritas' : 'Añadir a favoritas') + '" aria-pressed="' + fav + '">'
     + (fav ? '★' : '☆') + '</button>'
     + '<div class="row-info-flex">'
@@ -494,16 +495,13 @@ function renderList(stations) {
 
 function zoomTo(idx) {
   var s = filteredStations[idx];
+  if (!s || typeof map === 'undefined' || !map) return;
   var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
   var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
   if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
     map.setView([lat, lng], 17);
-    clusterGroup.eachLayer(function(layer) {
-      var lpos = layer.getLatLng();
-      if (Math.abs(lpos.lat - lat) < 0.0002 && Math.abs(lpos.lng - lng) < 0.0002) {
-        layer.openPopup();
-      }
-    });
+    // El identificador distingue incluso dos estaciones en las mismas coordenadas.
+    openStationDetailById(stationId(s), { focus: true });
   }
   highlightCard(idx);
   // Close sidebar on mobile

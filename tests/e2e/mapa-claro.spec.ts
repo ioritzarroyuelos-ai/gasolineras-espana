@@ -1,0 +1,223 @@
+import { test, expect, type Page, type Locator } from '@playwright/test'
+import AxeBuilder from '@axe-core/playwright'
+import { ministryFixture } from './ministry-fixture'
+
+test.beforeEach(async ({ page, request }, info) => {
+  await ministryFixture(page, request, info.config.metadata.live === true)
+})
+
+// Datos deliberadamente pequeños: dos estaciones comparten coordenadas y no
+// deben confundirse. Solo se usan en CI/local; nunca sustituyen producción LIVE.
+const sampleStations = [
+  { IDEESS: '900001', 'Rótulo': 'Estación A', 'Precio Gasolina 95 E5': '1,432', 'Precio Gasoleo A': '1,651' },
+  { IDEESS: '900002', 'Rótulo': 'Estación B', 'Precio Gasolina 95 E5': '1,289', 'Precio Gasoleo A': '1,423' },
+  { IDEESS: '900003', 'Rótulo': 'Estación sin 95', 'Precio Gasolina 95 E5': '', 'Precio Gasoleo A': '1,532' },
+].map((station, index) => ({
+  ...station, IDProvincia: '28', IDMunicipio: '28079', Municipio: 'Madrid', Provincia: 'MADRID',
+  'Dirección': 'Calle de prueba, ' + (index + 1), Horario: 'L-D: 24H',
+  Latitud: '40,416800', 'Longitud (WGS84)': '-3,703800',
+}))
+async function smallSnapshot(page: Page) {
+  await page.route('**/api/estaciones/provincia/28', route => route.fulfill({ json: {
+    Fecha: '04/11/2026 19:19:24', ListaEESSPrecio: sampleStations,
+  } }))
+  await page.route('**/api/history/**', route => route.fulfill({ json: { series: {}, median: [] } }))
+  await page.route('**/api/predict/**', route => route.fulfill({ json: { verdict: null } }))
+}
+function cardFor(page: Page, id: string) {
+  return page.locator('.station-card').filter({ has: page.locator('[data-fav-id="' + id + '"]') })
+}
+async function expectUncovered(locator: Locator) {
+  await expect(locator).toBeVisible()
+  await expect.poll(() => locator.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+    return !!hit && (hit === element || element.contains(hit))
+  })).toBe(true)
+}
+
+test('los grupos muestran cantidad y precio mínimo exactos; un precio ausente no se convierte en cero', async ({ page }, info) => {
+  test.skip(info.config.metadata.live === true, 'Caso límite controlado; producción conserva sus datos oficiales.')
+  await smallSnapshot(page)
+  await page.goto('/gasolineras/mapa?prov=28')
+  const group = page.locator('#map .station-cluster-marker').first()
+  await expect(group).toContainText('3 gasolineras', { timeout: 20000 })
+  await expect(group).toContainText('desde 1,289 €')
+  await group.click()
+  // Leaflet puede separar puntos coincidentes sin cambiar el zoom; lo que
+  // importa es poder ver y elegir cada estación, no el mecanismo de cámara.
+  await expect(page.locator('#map .station-price-marker')).toHaveCount(3)
+  await expect(page.locator('[data-station-id="900001"].station-price-marker')).toContainText('1,432 €')
+  await expect(page.locator('[data-station-id="900002"].station-price-marker')).toContainText('1,289 €')
+  await expect(page.locator('[data-station-id="900003"].station-price-marker')).toContainText('Sin precio')
+})
+
+test('la selección distingue IDs en las mismas coordenadas y Escape devuelve el foco', async ({ page }, info) => {
+  test.skip(info.config.metadata.live === true, 'Caso límite controlado; producción conserva sus datos oficiales.')
+  await smallSnapshot(page)
+  await page.goto('/gasolineras/mapa?prov=28')
+  const first = cardFor(page, '900001'), second = cardFor(page, '900002')
+  await expect(first).toBeVisible({ timeout: 20000 })
+  await first.click()
+  const detail = page.locator('#station-detail')
+  await expect(detail).toHaveAttribute('data-station-id', '900001')
+  await expect(detail.locator('.popup-price-main')).toContainText('1,432')
+  await second.click()
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  await expect(detail).toHaveAttribute('data-station-id', '900002')
+  await expect(detail.locator('.popup-header-title')).toContainText('Estación B')
+  await expect(detail.locator('[data-pop-share]')).toHaveAttribute('data-pop-share', '900002')
+  await expect(page.locator('.station-price-marker.is-selected')).toHaveCount(1)
+  await expect(page.locator('.station-price-marker.is-selected')).toHaveAttribute('data-station-id', '900002')
+  await expect(page.locator('#map .station-cluster-marker')).toHaveCount(1)
+  await expect(page.locator('#map .station-cluster-marker')).toContainText('2 gasolineras')
+  await expect(page.locator('#map .station-price-marker')).toHaveCount(1)
+  await expectUncovered(page.locator('.station-price-marker.is-selected'))
+  await page.keyboard.press('Escape')
+  await expect(detail).toBeHidden()
+  await expect(second).toBeFocused()
+  await expect(page.locator('.station-price-marker.is-selected')).toHaveCount(0)
+  // Al cerrar, la estación vuelve a su grupo. Se abre con teclado antes de
+  // elegir su marcador: no depende de que quedase separado por la selección.
+  const group = page.locator('#map .station-cluster-marker').first()
+  await expect(group).toContainText('3 gasolineras')
+  await group.focus()
+  await group.press('Enter')
+  const marker = page.locator('.station-price-marker[data-station-id="900002"]')
+  await expect(marker).toBeVisible()
+  await marker.focus()
+  await marker.press('Enter')
+  await expect(detail).toBeVisible()
+  await expect(page.locator('#btn-station-detail-close')).toBeFocused()
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  await page.keyboard.press('Escape')
+  await expect(detail).toBeHidden()
+  // Ese marcador deja de existir cuando vuelve a agruparse; el mapa conserva
+  // el foco para continuar navegando en lugar de perderlo en el documento.
+  await expect(page.locator('#map')).toBeFocused()
+})
+
+test('la ficha conserva estación al cambiar combustible y se cierra si se abandona su zona', async ({ page }, info) => {
+  test.skip(info.config.metadata.live === true, 'Caso límite controlado; producción conserva sus datos oficiales.')
+  await smallSnapshot(page)
+  await page.goto('/gasolineras/mapa?prov=28')
+  const card = cardFor(page, '900001')
+  await expect(card).toBeVisible({ timeout: 20000 })
+  await card.click()
+  const detail = page.locator('#station-detail')
+  await expect(detail.locator('.popup-price-main')).toContainText('1,432')
+  await page.locator('#sel-combustible').selectOption('Precio Gasoleo A')
+  await expect(detail).toHaveAttribute('data-station-id', '900001')
+  await expect(detail.locator('.popup-price-main')).toContainText('1,651')
+  await expect(detail.locator('.popup-price-main')).toContainText('€/L')
+  await expect(page.locator('.station-price-marker.is-selected')).toContainText('1,651')
+  await page.locator('#sel-provincia').selectOption('08')
+  await expect(page.locator('.station-card').first()).toBeVisible({ timeout: 20000 })
+  await expect(detail).toBeHidden({ timeout: 20000 })
+  await expect(page.locator('.station-price-marker.is-selected')).toHaveCount(0)
+})
+
+test('el estilo vectorial real se aplica y satélite conserva selección y precios', async ({ page }) => {
+  test.setTimeout(45000)
+  const mapErrors: string[] = []
+  page.on('pageerror', error => mapErrors.push(error.message))
+  page.on('console', message => {
+    if (/\[liberty\].*(no aplicado|error)|style.*(?:validation|invalid)/i.test(message.text())) mapErrors.push(message.text())
+  })
+  await page.goto('/gasolineras/madrid/madrid')
+  await expect(page.locator('.station-card').first()).toBeVisible({ timeout: 20000 })
+  // No basta ver un mapa: el raster de respaldo ocultaría errores del estilo.
+  await expect.poll(() => page.evaluate(() => {
+    const layer = (window as any).mapLayers.light
+    return layer.getMaplibreMap?.().getStyle()?.layers.find((item: any) => item.type === 'background')?.paint?.['background-color']
+  }), { timeout: 15000, message: 'Debe estar aplicado el estilo vectorial, no el raster de respaldo' }).toBe('#f3f5f6')
+  const hierarchy = await page.evaluate(() => {
+    const layers = (window as any).mapLayers.light.getMaplibreMap().getStyle().layers
+    return {
+      city: layers.filter((layer: any) => /^label_city/.test(layer.id)).map((layer: any) => layer.maxzoom),
+      minorRoad: layers.find((layer: any) => layer.id === 'highway-name-minor')?.minzoom,
+      poi: layers.filter((layer: any) => layer['source-layer'] === 'poi').map((layer: any) => layer.minzoom),
+    }
+  })
+  expect(hierarchy.city.length).toBeGreaterThan(0)
+  expect(hierarchy.city.every((zoom: number) => zoom <= 16)).toBe(true)
+  expect(hierarchy.minorRoad).toBeGreaterThanOrEqual(15)
+  expect(hierarchy.poi.length).toBeGreaterThan(0)
+  expect(hierarchy.poi.every((zoom: number) => zoom >= 17)).toBe(true)
+  await page.locator('.station-card').first().click()
+  const detail = page.locator('#station-detail')
+  const id = await detail.getAttribute('data-station-id')
+  const price = await detail.locator('.popup-price-main').innerText()
+  await page.locator('#btn-satellite').click()
+  await expect.poll(() => page.evaluate(() => (window as any).map.hasLayer((window as any).mapLayers.satellite))).toBe(true)
+  await expect(detail).toHaveAttribute('data-station-id', id!)
+  await expect(detail.locator('.popup-price-main')).toHaveText(price)
+  await page.locator('#btn-satellite').click()
+  await expect.poll(() => page.evaluate(() => (window as any).map.hasLayer((window as any).mapLayers.light))).toBe(true)
+  await expect(detail).toHaveAttribute('data-station-id', id!)
+  expect(mapErrors).toEqual([])
+})
+
+for (const width of [390, 320]) {
+  test('móvil ' + width + 'px: ficha y filtros dejan controles accesibles y no desbordan', async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/gasolineras/madrid/madrid')
+    await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
+    await page.locator('#btn-sheet-toggle').click()
+    const card = page.locator('.station-card').first()
+    await expect(card).toBeVisible({ timeout: 20000 })
+    await expect(page.locator('#filter-fields')).toBeHidden()
+    await page.locator('#btn-toggle-filters').click()
+    await expect(page.locator('#sel-combustible')).toBeVisible()
+    await page.locator('#btn-toggle-filters').click()
+    await expect(page.locator('#filter-fields')).toBeHidden()
+    await expect(card).toBeVisible()
+    await card.click()
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+    const detail = page.locator('#station-detail')
+    await expect(detail).toBeVisible()
+    await expect(page.locator('#sidebar')).not.toHaveClass(/\bopen\b/)
+    const panelBox = await detail.boundingBox(), mapBox = await page.locator('#map-container').boundingBox()
+    expect(panelBox).not.toBeNull()
+    expect(mapBox).not.toBeNull()
+    expect(panelBox!.height).toBeLessThanOrEqual(mapBox!.height * 0.76)
+    expect(panelBox!.x).toBeGreaterThanOrEqual(0)
+    expect(panelBox!.x + panelBox!.width).toBeLessThanOrEqual(width)
+    expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(844)
+    await expectUncovered(page.locator('#btn-station-detail-close'))
+    await expectUncovered(page.locator('#btn-map-location'))
+    await expectUncovered(page.locator('#map-navigation .leaflet-control-zoom-in'))
+    await expectUncovered(page.locator('#map-navigation .leaflet-control-zoom-out'))
+    const accessible = await new AxeBuilder({ page }).include('#station-detail').include('#map-navigation').withTags(['wcag2a', 'wcag2aa']).analyze()
+    expect(accessible.violations.filter(item => item.impact === 'serious' || item.impact === 'critical')).toEqual([])
+    await page.locator('#btn-station-detail-close').click()
+    await expect(detail).toBeHidden()
+    await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  })
+}
+
+test('el control de ubicación explica la denegación y permite volver a intentarlo sin enviar coordenadas al servidor', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.geolocation, 'getCurrentPosition', { configurable: true, value: (success: (p: unknown) => void, failure: (e: unknown) => void) => {
+      if ((window as any).__gpsAllowed) success({ coords: { latitude: 40.4168, longitude: -3.7038, accuracy: 10 } })
+      else failure({ code: 1 })
+    } })
+  })
+  const leaks: string[] = []
+  page.on('request', request => { if (/40\.4168|-3\.7038/.test(request.url())) leaks.push(request.url()) })
+  await page.goto('/gasolineras/mapa?prov=28')
+  await expect(page.locator('.station-card').first()).toBeVisible({ timeout: 20000 })
+  await page.locator('#btn-map-location').click()
+  await expect(page.locator('#map-location-status')).toBeVisible()
+  await expect(page.locator('#map-location-status')).toContainText(/permiso|bloquead|permit/i)
+  await expect(page.locator('#btn-map-location')).toBeEnabled()
+  expect(new URL(page.url()).hash).toBe('')
+  await page.evaluate(() => { (window as any).__gpsAllowed = true })
+  await page.locator('#btn-map-location').click()
+  await expect(page).toHaveURL(/#near=/)
+  await expect(page.locator('#search-origin-note')).toContainText('tu ubicación')
+  await expect(page.locator('.station-card').first()).toBeVisible()
+  expect(new URL(page.url()).hash.slice('#near='.length).split(',').map(Number)).toEqual([40.4168, -3.7038])
+  expect(leaks).toEqual([])
+})

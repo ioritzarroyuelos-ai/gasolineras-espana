@@ -27,6 +27,8 @@ export function getStyles(nonce: string = ''): string {
     /* Iconos SVG inline (sprite). Heredan color via currentColor y tamaño via
        font-size (height:1em), como hacían los <i> de FontAwesome. */
     .ic { height: 1em; width: 1em; display: inline-block; vertical-align: -0.125em; fill: currentColor; flex: none; }
+    /* El sprite define iconos, pero no debe crear una línea vacía sobre la cabecera. */
+    .fuel-map-page > svg[width="0"][height="0"] { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
     /* Scroll vertical habilitado en body (antes era overflow:hidden en html/body
        lo que hacia el contenido SEO bajo el app inalcanzable — ver .seo-summary
        / .seo-faq / .seo-municipios). Ahora el "primer pliegue" sigue siendo el
@@ -50,10 +52,10 @@ export function getStyles(nonce: string = ''): string {
        reservaba padding-top:60px; ahora sticky ocupa su hueco en el flujo). */
     #app-header {
       position: sticky; top: 0; left: 0; right: 0;
-      height: 60px; z-index: 1000;
-      background: linear-gradient(135deg, #14532d 0%, #166534 40%, #16a34a 100%);
+      height: 48px; z-index: 1000;
+      background: #166534;
       display: flex; align-items: center; padding: 0 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.25);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
     }
     /* app-body ocupa 1 viewport menos el header. Encima va la cabecera de
        periodico (.masthead, en flujo) que se desplaza con la pagina; al bajar,
@@ -63,8 +65,10 @@ export function getStyles(nonce: string = ''): string {
        mapa (banners, widget de media, sidebar movil) para que sigan al header. */
     #app-body {
       position: relative;
-      height: calc(100vh - 60px);
-      display: flex; overflow: hidden;
+      height: calc(100vh - var(--map-chrome-height, 142px));
+      height: calc(100dvh - var(--map-chrome-height, 142px));
+      min-height: 0;
+      display: flex; overflow: hidden; overflow: clip;
     }
 
     /* ===== SIDEBAR ===== */
@@ -77,13 +81,12 @@ export function getStyles(nonce: string = ''): string {
       box-shadow: 2px 0 8px rgba(0,0,0,0.06);
       z-index: 100;
     }
-    /* Sidebar filters: tras simplificar el mapa solo quedan 3 selects + la
-       barra de radio, asi que el panel es corto y toma su altura natural.
-       station-list (flex:1) ocupa todo el espacio vertical restante. */
+    .sidebar-content { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+    .sheet-handle { display: none; }
     #sidebar-filters {
       padding: 12px; background: #f8fafc;
       border-bottom: 1px solid #e2e8f0;
-      overflow-y: auto;
+      overflow-y: auto; max-height: calc(100% - 272px);
       flex: 0 0 auto;
     }
     #stats-bar {
@@ -92,7 +95,7 @@ export function getStyles(nonce: string = ''): string {
       flex-shrink: 0; display: none;
     }
     #station-list {
-      flex: 1 1 auto; min-height: 180px; overflow-y: auto;
+      flex: 1 1 0; min-height: 200px; overflow-y: auto;
     }
     /* Ship 21: pull-to-refresh.
        El indicador esta colapsado (height:0) por defecto. El listener touch
@@ -332,10 +335,10 @@ export function getStyles(nonce: string = ''): string {
 
     /* Zoom control — estilo Google Maps: botones mas grandes (40px), sombra
        mas pronunciada, margen desde el borde, y simbolos +/- mas legibles. */
-    .leaflet-control-zoom { margin: 0 10px 6px 0 !important; }
+    .leaflet-control-zoom { margin: 0 !important; }
     .leaflet-control-zoom a {
       font-size: 22px !important; font-weight: 400 !important;
-      width: 40px !important; height: 40px !important; line-height: 40px !important;
+      width: 44px !important; height: 44px !important; line-height: 44px !important;
       color: #5f6368 !important; background: #fff !important;
     }
     .leaflet-control-zoom a:hover { background: #f1f3f4 !important; color: #202124 !important; }
@@ -398,33 +401,24 @@ export function getStyles(nonce: string = ''): string {
     ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
 
     /* ===== SIDEBAR TOGGLE ===== */
-    #btn-toggle-sidebar { display:block; cursor:pointer; background:none; border:none; padding:6px; border-radius:6px; transition:background 0.15s; margin-right:4px; }
+    #btn-toggle-sidebar { display:block; cursor:pointer; background:none; border:none; width:44px; height:44px; flex:none; border-radius:6px; transition:background 0.15s; margin-right:4px; }
     #btn-toggle-sidebar:hover { background:rgba(255,255,255,0.15); }
     #sidebar { transition: width 0.28s ease, min-width 0.28s ease; }
-
-    /* ===== BACKDROP MOBILE ===== */
-    /* z-index alto para cubrir controles Leaflet (z-index:1000 por defecto)
-       cuando el sidebar esta abierto en overlay. El sidebar queda encima
-       (z-index 1100 en la media query), el backdrop justo debajo. */
-    #sidebar-backdrop {
-      display:none; position:fixed; inset:0; z-index:1050;
-      background:rgba(0,0,0,0.45); backdrop-filter:blur(2px);
-    }
-    #sidebar-backdrop.show { display:block; }
 
     /* ===== HEADER ELEMENTS ===== */
     .header-logo { font-size:22px; margin-right:8px; flex-shrink:0; }
     .header-title { color:#fff; font-weight:700; font-size:15px; line-height:1.2; }
-    .header-sub { color:rgba(255,255,255,0.7); font-size:11px; line-height:1.2; }
+    .header-sub { color:#dcfce7; font-size:11px; line-height:1.2; }
     .header-badge { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:600; border-radius:9999px; padding:3px 12px; white-space:nowrap; }
     .header-update { color:rgba(255,255,255,0.65); font-size:11px; white-space:nowrap; }
 
-    .masthead.masthead--compact { padding: 10px 12px 0; }
+    .masthead.masthead--compact { padding: 0 12px; display: flex; align-items: center; gap: 20px; min-height: 44px; }
+    .masthead.masthead--compact .mh-inner { margin: 0; flex: none; }
     .masthead.masthead--compact .mh-brand { display: inline-flex; align-items: center; gap: 8px; }
     .masthead.masthead--compact .mh-logo { width: 24px; height: 24px; margin: 0; }
-    .masthead.masthead--compact .mh-title { font-size: 22px; }
-    .masthead.masthead--compact .mh-nav { margin-top: 8px; border-top: 1px solid var(--mh-rule); }
-    .masthead.masthead--compact .mh-nav a { padding: 9px 12px; font-size: 11px; }
+    .masthead.masthead--compact .mh-title { font-size: 20px; }
+    .masthead.masthead--compact .mh-nav { margin: 0 0 0 auto; border: 0; }
+    .masthead.masthead--compact .mh-nav a { padding: 14px 12px; font-size: 11px; }
     .btn-favs-open { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; border: 1px solid rgba(255,255,255,.6); background: transparent; color: #fff; padding: 7px 9px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer; }
     .btn-favs-open:hover { background: rgba(255,255,255,.15); }
     .btn-favs-open:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
@@ -433,13 +427,23 @@ export function getStyles(nonce: string = ''): string {
     #refuel-litres-group[hidden], #fuel-unit-note[hidden], #area-group[hidden], #search-origin-note[hidden] { display: none !important; }
     .btn-refresh { border: 1px solid #cbd5e1; background: #fff; color: #166534; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
     .btn-refresh:disabled { opacity: .6; cursor: wait; }
+    .filter-toggle { display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: #166534; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; min-height: 40px; }
+    .filter-toggle-state { font-size: 11px; color: #475569; font-weight: 400; }
+    #filter-fields[hidden] { display: none !important; }
+    #btn-toggle-sidebar:focus-visible, .filter-toggle:focus-visible, .sheet-handle:focus-visible { outline: 3px solid #2563eb; outline-offset: -3px; }
+    body.dark .filter-toggle { color: #86efac; }
+    body.dark .filter-toggle-state { color: #cbd5e1; }
     .fav-row-date { display: block; max-width: 130px; font-size: 10px; line-height: 1.4; color: #64748b; margin-top: 4px; }
     .popup-distance { display: block; margin-top: 5px; font-size: 11px; }
     .savings-sub { display: block; margin-top: 3px; line-height: 1.4; }
     .ev-pop-note { margin-top: 7px; color: #475569; font-size: 11px; line-height: 1.45; }
     .ev-pop-directions { margin-top: 8px; font-weight: 600; }
     @media (max-width: 639px) {
-      .masthead.masthead--compact .mh-nav a { padding: 8px 7px; font-size: 10px; letter-spacing: .02em; }
+      .masthead.masthead--compact { flex-direction: column; gap: 0; padding: 5px 8px 0; }
+      .masthead.masthead--compact .mh-title { font-size: 17px; }
+      .masthead.masthead--compact .mh-logo { width: 18px; height: 18px; }
+      .masthead.masthead--compact .mh-nav { margin: 0; width: 100%; justify-content: space-between; flex-wrap: nowrap; }
+      .masthead.masthead--compact .mh-nav a { padding: 10px 3px; font-size: 10px; letter-spacing: .01em; }
       .header-logo-img { display: none; }
       #app-header .user-chip { max-width: 90px; }
       #app-header .user-name { max-width: 48px; }
@@ -453,42 +457,32 @@ export function getStyles(nonce: string = ''): string {
        RESPONSIVE
        ================================================= */
 
-    /* ---- Sidebar overlay: todo < 1024px ---- */
+    /* Lista inferior: el asa permite abrir, cerrar o deslizar el panel. */
     @media (max-width: 1023px) {
       #sidebar {
-        position: fixed !important;
-        top: 0; left: 0;
-        height: 100dvh;
-        width: min(340px, 92vw) !important;
+        position: absolute !important;
+        top: auto; bottom: 0; left: 0;
+        height: 58px;
+        width: 100% !important;
         min-width: 0 !important;
-        /* z-index 1100: por encima de controles Leaflet (1000) y del header (1000).
-           Cajon fixed a pantalla completa (top:0, 100dvh): siempre visible al
-           abrirlo, sin importar el scroll (la cabecera de periodico queda encima
-           en flujo). El backdrop cubre el resto y cierra al tocarlo. */
-        z-index: 1100;
-        transform: translateX(-110%);
-        transition: transform 0.28s ease !important;
-        box-shadow: none;
-        /* Scroll unico en movil: filtros + favs + stats + lista fluyen en
-           una misma columna scroleable. El usuario hace scroll hacia abajo y
-           ve todo (filtros arriba, lista de gasolineras debajo) — mismo
-           comportamiento visual que en escritorio pero adaptado al viewport
-           vertical del movil. */
-        overflow-y: auto !important;
-        overflow-x: hidden !important;
-        -webkit-overflow-scrolling: touch;
+        z-index: 900;
+        border: 1px solid #cbd5e1; border-bottom: 0; border-radius: 20px 20px 0 0;
+        transform: none !important;
+        transition: height 0.28s ease !important;
+        box-shadow: 0 -3px 20px rgba(15,23,42,.15);
+        overflow: hidden !important;
       }
       #sidebar.open {
-        transform: translateX(0) !important;
-        box-shadow: 4px 0 24px rgba(0,0,0,0.22);
+        height: min(72%, calc(100% - 164px));
       }
-      /* El mapa ocupa todo el ancho */
+      #sidebar:not(.open) .sidebar-content { display: none; }
       #app-body { flex-direction: column; }
       #map-container { flex: 1; }
-
-      /* En movil, filtros y lista no scrollean por separado — lo hace el
-         sidebar entero. Quitamos overflow/flex internos para que se
-         comporten como bloques estaticos uno encima del otro. */
+      .sheet-handle { position: relative; display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; min-height: 56px; flex: none; padding: 16px 16px 8px; border: 0; background: #fff; color: #334155; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; touch-action: none; }
+      .sheet-grip { position: absolute; top: 7px; left: calc(50% - 20px); width: 40px; height: 4px; border-radius: 4px; background: #94a3b8; }
+      .sheet-chevron { font-size: 22px; }
+      #sidebar.open .sheet-chevron { transform: rotate(180deg); }
+      .sidebar-content { overflow-y: auto; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom); }
       #sidebar-filters {
         flex: 0 0 auto !important;
         max-height: none !important;
@@ -499,14 +493,8 @@ export function getStyles(nonce: string = ''): string {
         min-height: 0 !important;
         overflow: visible !important;
       }
-
-
-      /* NOTA: NO tocar el hamburger (#btn-toggle-sidebar) aqui. Crecerlo a
-         40x40 comprime el resto del header (titulo + geocoder) en iPhone
-         y "Gasolineras España" se rompe en dos lineas. Queda con su
-         padding:6px original — es un icono de 16px, con target ~28x28,
-         suficiente ya que esta pegado al borde izquierdo (zona de Fitts
-         amplia) y es el unico elemento clickable en esa esquina. */
+      body.dark .sheet-handle { background: #1e293b; color: #e2e8f0; }
+      body.station-detail-open #sidebar { visibility: hidden; }
     }
 
     /* ---- Sidebar inline: desktop >= 1024px ---- */
@@ -518,10 +506,9 @@ export function getStyles(nonce: string = ''): string {
         transition: width 0.28s ease, min-width 0.28s ease !important;
         overflow: hidden;
       }
-      /* Colapso a tira de 48px: contenido desaparece, botón sigue en header */
       #sidebar.collapsed {
-        width: 48px !important;
-        min-width: 48px !important;
+        width: 0 !important;
+        min-width: 0 !important; border: 0;
       }
       #sidebar.collapsed #sidebar-filters,
       #sidebar.collapsed #station-list,
@@ -536,13 +523,11 @@ export function getStyles(nonce: string = ''): string {
         opacity: 1;
         transition: opacity 0.2s 0.1s;
       }
-      #sidebar-backdrop { display: none !important; }
     }
 
     /* ---- Header compacto < 640px ---- */
     @media (max-width: 639px) {
-      #app-header { height: 50px; padding: 0 10px; }
-      #app-body   { height: calc(100vh - 50px); }
+      #app-header { height: 48px; padding: 0 6px; }
       .header-logo  { font-size: 18px; margin-right: 5px; }
       .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .header-sub   { display: none; }
@@ -1038,6 +1023,97 @@ export function getStyles(nonce: string = ''): string {
     .btn-volver-peninsula:hover, .btn-volver-peninsula:focus-visible { background: #ffffff; }
     body.dark .canarias-expand, body.dark .btn-volver-peninsula {
       background: rgba(15,23,42,0.92); color: #86efac; border-color: #334155;
+    }
+
+    /* Controles del callejero: ubicación y zoom juntos; capas con nombre. */
+    .map-navigation { position: absolute; top: 12px; right: 12px; z-index: 850; width: 44px; display: flex; flex-direction: column; gap: 8px; }
+    .map-location-btn { width: 44px; height: 44px; display: grid; place-items: center; background: #fff; color: #334155; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 2px 8px #0f172a24; cursor: pointer; }
+    .location-icon { width: 22px; height: 22px; }
+    .map-location-btn[aria-busy="true"] { color: #166534; cursor: wait; }
+    #map-zoom-controls .leaflet-control { float: none; margin: 0; clear: none; }
+    #map-zoom-controls .leaflet-bar { border: 1px solid #cbd5e1 !important; border-radius: 10px !important; overflow: hidden; }
+    #map-zoom-controls .leaflet-bar a { width: 42px !important; }
+    .map-location-status { position: absolute; top: 12px; right: 68px; z-index: 950; max-width: min(300px, calc(100% - 80px)); padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; color: #334155; background: #fff; box-shadow: 0 2px 8px #0f172a24; font-size: 13px; }
+    .map-location-status[hidden] { display: none; }
+    .map-floating-btn--satellite { top: auto; bottom: 24px; left: 12px; width: 86px; height: 76px; padding: 4px; border: 1px solid #cbd5e1; border-radius: 12px; flex-direction: column; gap: 3px; font-size: 12px; font-weight: 650; box-shadow: 0 2px 8px #0f172a24; }
+    .satellite-preview { display: grid; place-items: center; width: 100%; height: 43px; border-radius: 8px; background: linear-gradient(30deg,#567448 25%,#b8c39a 25%,#b8c39a 34%,#466d3d 34%,#466d3d 63%,#8a9a68 63%); color: #fff; font-size: 22px; text-shadow: 0 1px 4px #000; }
+    .map-floating-btn--satellite[aria-pressed="true"] .satellite-preview { background: linear-gradient(35deg,#dfe5da 38%,#fff 38%,#fff 47%,#b7d8ea 47%,#b7d8ea 58%,#e7e9e4 58%); color: #334155; }
+    .map-floating-btn--electrolineras { top: 12px; left: 12px; height: 44px; width: auto; max-width: calc(100% - 82px); padding: 0 12px; gap: 7px; border: 1px solid #cbd5e1; border-radius: 22px; font-size: 13px; font-weight: 600; }
+    .btn-volver-peninsula { top: 66px; min-height: 44px; }
+    #legend { bottom: 24px; left: 108px; padding: 0; min-width: 0; max-width: calc(100% - 120px); border-radius: 10px; }
+    #legend summary { padding: 12px; min-height: 44px; font-size: 12px; font-weight: 600; color: #334155; cursor: pointer; }
+    .legend-content { padding: 0 12px 12px; }
+    .canarias-inset { bottom: 24px; border: 1px solid #94a3b8; border-radius: 10px; }
+    .canarias-expand { min-height: 32px; }
+    body.dark .map-location-btn, body.dark .map-location-status { color: #e2e8f0; background: #1e293b; border-color: #475569; }
+    body.dark #legend summary { color: #e2e8f0; }
+    .map-navigation :focus-visible, .map-floating-btn:focus-visible, #legend summary:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+
+    /* Precios legibles: el color compara, el azul identifica la selección. */
+    .station-price-pill, .station-cluster-pill { background: #fff; color: #1e293b; border: 1px solid #cbd5e1; box-shadow: 0 2px 5px #0f172a30; font-family: system-ui,sans-serif; }
+    .station-price-pill { height: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; gap: 4px; font-weight: 750; font-size: 14px; white-space: nowrap; }
+    .station-price-pill::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #64748b; flex: none; }
+    [data-price-color="green"] .station-price-pill::before, .station-price-pill[data-price-color="green"]::before { background: #15803d; }
+    [data-price-color="yellow"] .station-price-pill::before, .station-price-pill[data-price-color="yellow"]::before { background: #a16207; }
+    [data-price-color="red"] .station-price-pill::before, .station-price-pill[data-price-color="red"]::before { background: #b91c1c; }
+    .station-price-pill.is-selected, .is-selected .station-price-pill { background: #1e40af; color: #fff; border-color: #fff; box-shadow: 0 0 0 3px #1e40af,0 3px 10px #0f172a40; }
+    .station-price-pill.is-selected::before, .is-selected .station-price-pill::before { background: #fff; }
+    .station-price-marker:focus-visible .station-price-pill, .station-cluster-marker:focus-visible .station-cluster-pill { outline: 3px solid #2563eb; outline-offset: 3px; }
+    .station-cluster-pill { height: 100%; min-height: 44px; border-radius: 14px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; padding: 4px 7px; white-space: nowrap; }
+    .station-cluster-count { font-size: 11px; font-weight: 600; color: #475569; }
+    .station-cluster-from { font-size: 13px; font-weight: 750; }
+
+    /* La ficha tiene su propio scroll; el mapa y sus controles siguen libres. */
+    .station-detail { position: absolute; top: 12px; right: 68px; bottom: 12px; width: min(350px,calc(100% - 92px)); z-index: 840; display: flex; flex-direction: column; border: 1px solid #cbd5e1; border-radius: 16px; background: #fff; box-shadow: 0 4px 20px #0f172a2e; overflow: hidden; }
+    .station-detail[hidden] { display: none !important; }
+    .station-detail-toolbar { display: flex; flex: none; align-items: center; justify-content: space-between; padding-left: 16px; min-height: 44px; color: #475569; font-size: 12px; font-weight: 600; border-bottom: 1px solid #e2e8f0; }
+    #btn-station-detail-close { background: transparent; border: 0; width: 44px; height: 44px; font-size: 26px; color: #475569; cursor: pointer; }
+    #btn-station-detail-close:focus-visible { outline: 3px solid #2563eb; outline-offset: -4px; }
+    #station-detail-content.leaflet-popup-content { margin: 0; min-width: 0; max-width: none; width: 100%; flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+    #station-detail-content .popup-root { min-width: 0; max-height: none; overflow: visible; padding-bottom: 18px; }
+    #station-detail-content .popup-header { border-radius: 0; background: #fff; color: #1e293b; padding-top: 14px; padding-bottom: 10px; }
+    #station-detail-content .popup-header-title { font-size: 19px; padding-right: 0; }
+    #station-detail-content .popup-header-sub { font-size: 13px; opacity: 1; color: #475569; line-height: 1.5; }
+    #station-detail-content .popup-price-main { font-size: 25px; }
+    .popup-nav-title { font-size: 13px; font-weight: 650; color: #334155; margin-top: 12px; }
+    body.dark .popup-nav-title { color: #e2e8f0; }
+    #station-detail-content .popup-nav-btn { min-height: 44px; display: flex; justify-content: center; align-items: center; }
+    #station-detail-content .popup-actions { flex-wrap: wrap; }
+    #station-detail-content .popup-actions button { min-height: 40px; }
+    #station-detail-content .popup-price-main--green, #station-detail-content .popup-h24 { color: #15803d; }
+    #station-detail-content .popup-price-main--yellow { color: #92400e; }
+    #station-detail-content .popup-alert-btn, #station-detail-content .hist-toggle.active { background: #15803d; color: #fff; border-color: #15803d; }
+    #station-detail-content .popup-alert-btn[aria-pressed="true"] { background: #fff; color: #15803d; }
+    #station-detail-content .popup-nav-google { background: #1d4ed8; }
+    #station-detail-content .popup-report-link, #station-detail-content .popup-muted, #station-detail-content .popup-price-none { color: #475569; }
+    #station-detail-content .popup-actions button:hover { color: #15803d; }
+    #station-detail-content .savings-sub { opacity: 1; }
+    #station-detail-content .savings-badge--negative { color: #92400e; }
+    body.station-detail-open .canarias-inset { visibility: hidden; }
+    body.dark .station-detail, body.dark #station-detail-content .popup-header { background: #1e293b; color: #f1f5f9; border-color: #475569; }
+    body.dark .station-detail-toolbar, body.dark #btn-station-detail-close, body.dark #station-detail-content .popup-header-sub { color: #cbd5e1; border-color: #475569; }
+    body.dark #station-detail-content .popup-price-main--green, body.dark #station-detail-content .popup-h24 { color: #86efac; }
+    body.dark #station-detail-content .popup-price-main--yellow, body.dark #station-detail-content .savings-badge--negative { color: #fcd34d; }
+    body.dark #station-detail-content .popup-price-main--red { color: #fca5a5; }
+    body.dark #station-detail-content .popup-report-link, body.dark #station-detail-content .popup-muted, body.dark #station-detail-content .popup-price-none, body.dark #station-detail-content .popup-fuel-label,
+    body.dark #station-detail-content .popup-seg-day, body.dark #station-detail-content .popup-seg-hrs, body.dark #station-detail-content .hist-stat-label, body.dark #station-detail-content .hist-legend,
+    body.dark #station-detail-content .hist-loading, body.dark #station-detail-content .hist-empty, body.dark #station-detail-content .hist-error { color: #cbd5e1; }
+    body.dark #station-detail-content .popup-actions button:hover { color: #86efac; }
+    @media (min-width: 640px) and (max-width: 1023px) {
+      .masthead.masthead--compact { gap: 8px; }
+      .masthead.masthead--compact .mh-nav a { padding: 14px 6px; font-size: 10px; }
+    }
+    @media (max-width: 1023px) {
+      .station-detail { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: min(72%, calc(100% - 164px)); border-radius: 20px 20px 0 0; z-index: 920; }
+      #station-detail-content { padding-bottom: env(safe-area-inset-bottom); }
+      .map-floating-btn--satellite { bottom: 76px; }
+      .canarias-inset { bottom: 76px; width: 148px; height: 76px; }
+      #legend { bottom: 160px; left: 12px; max-width: calc(100% - 80px); }
+      .map-navigation { z-index: 930; }
+      .station-detail-open .map-floating-btn--satellite, .station-detail-open #legend { visibility: hidden; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #sidebar { transition: none !important; }
     }
 
         .form-help { font-size:11px; color:#64748b; margin-top:4px; }

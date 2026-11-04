@@ -454,7 +454,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 
   ${getStyles(nonce)}
 </head>
-<body>
+<body class="fuel-map-page">
 ${ICON_SPRITE}
 
 <!-- Cabecera de periódico común a todo el portal (misma que el resto de
@@ -472,7 +472,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
-  <button id="btn-toggle-sidebar" title="Abrir filtros" aria-label="Abrir panel de filtros">
+  <button id="btn-toggle-sidebar" type="button" title="Filtros y lista" aria-label="Mostrar filtros y lista" aria-controls="sidebar" aria-expanded="true">
     ${icon('bars', 'u-c-white u-fs-16')}
   </button>
 
@@ -548,18 +548,24 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 <div id="app-body">
 
   <!-- ======= SIDEBAR ======= -->
-  <aside id="sidebar">
+  <aside id="sidebar" aria-label="Buscar gasolineras y ver resultados">
+    <button id="btn-sheet-toggle" class="sheet-handle" type="button" aria-controls="sidebar-content" aria-expanded="false">
+      <span class="sheet-grip" aria-hidden="true"></span>
+      <span id="sheet-toggle-label">Ver lista y filtros</span>
+      <span class="sheet-chevron" aria-hidden="true">⌃</span>
+    </button>
+    <div id="sidebar-content" class="sidebar-content">
 
     <!-- FILTROS -->
     <div id="sidebar-filters">
       <div class="search-heading-row">
-        <span class="search-heading">
-          ${icon('sliders', 'u-c-green')} Búsqueda
-        </span>
+        <button id="btn-toggle-filters" class="filter-toggle" type="button" aria-controls="filter-fields" aria-expanded="true">
+          ${icon('sliders')} <span>Filtros</span><span class="filter-toggle-state">Ocultar</span>
+        </button>
         <button id="btn-refresh" class="btn-refresh" type="button">Actualizar</button>
       </div>
       <span id="lbl-update" class="header-update u-hide" aria-live="polite"></span>
-
+      <div id="filter-fields">
       <div class="form-group">
         <label class="form-label" for="sel-provincia">Provincia</label>
         <select id="sel-provincia" class="form-select">
@@ -612,6 +618,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
           <span class="range-val" id="lbl-radius">10 km</span>
         </div>
       </div>
+      </div><!-- filter-fields -->
     </div>
 
     <!-- STATS -->
@@ -641,14 +648,28 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
       </div>
     </div>
 
+    </div><!-- sidebar-content -->
   </aside>
-
-  <!-- Backdrop mobile -->
-  <div id="sidebar-backdrop"></div>
 
   <!-- ======= MAPA ======= -->
   <div id="map-container">
     <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
+
+    <div id="map-navigation" class="map-navigation" role="group" aria-label="Mover y acercar el mapa">
+      <button id="btn-map-location" class="map-location-btn" type="button" aria-label="Buscar gasolineras cerca de mi ubicación" title="Mi ubicación">
+        <svg class="location-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
+      </button>
+      <div id="map-zoom-controls"></div>
+    </div>
+    <p id="map-location-status" class="map-location-status" role="status" aria-live="polite" hidden></p>
+
+    <aside id="station-detail" class="station-detail" aria-label="Ficha de la gasolinera" hidden>
+      <div class="station-detail-toolbar">
+        <span>Gasolinera seleccionada</span>
+        <button id="btn-station-detail-close" type="button" aria-label="Cerrar ficha de la gasolinera">&times;</button>
+      </div>
+      <div id="station-detail-content" class="leaflet-popup-content"></div>
+    </aside>
 
     <!-- Botones flotantes sobre el mapa. Apilados verticalmente en la esquina
          superior-izquierda (por encima del control de escala, por debajo del
@@ -656,18 +677,15 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
          por su ID para que el stacking sea explícito (en vez de depender del
          orden DOM o de un flex wrapper que complicaría el layout mobile). -->
 
-    <!-- Toggle basemap satelite: alterna entre mapa (Voyager/Liberty) y
-         ortofoto (Esri World Imagery + etiquetas CARTO). Recuerda la
-         preferencia en localStorage (gs_basemap). Icono globo con puntos
-         para evocar "vista aerea/satelite" siguiendo la convencion de
-         Google Maps. -->
+    <!-- Alterna el callejero y la fotografía aérea oficial del IGN. -->
     <button id="btn-satellite"
             class="map-floating-btn map-floating-btn--satellite"
             type="button"
             aria-pressed="false"
             aria-label="Ver mapa en vista satélite"
             title="Vista satélite (ortofoto + etiquetas)">
-      ${icon('satellite')}
+      <span class="satellite-preview" aria-hidden="true">${icon('satellite')}</span>
+      <span class="satellite-button-label">Satélite</span>
     </button>
 
     <!-- Toggle capa de electrolineras (puntos de recarga de coche eléctrico).
@@ -681,7 +699,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
             aria-pressed="false"
             aria-label="Mostrar electrolineras (puntos de recarga eléctrica)"
             title="Electrolineras (puntos de recarga)">
-      ${icon('bolt')}
+      ${icon('bolt')} <span>Recarga eléctrica</span>
     </button>
 
     <!-- Loading -->
@@ -694,13 +712,15 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
     </div>
 
     <!-- LEYENDA -->
-    <div id="legend" aria-label="Leyenda de precios">
-      <h4>LEYENDA</h4>
+    <details id="legend" aria-label="Leyenda de precios">
+      <summary>Colores de precios</summary>
+      <div class="legend-content">
       <div class="legend-item"><span class="legend-dot dot-green" aria-hidden="true"></span> Más barato</div>
       <div class="legend-item"><span class="legend-dot dot-orange" aria-hidden="true"></span> Intermedio</div>
       <div class="legend-item"><span class="legend-dot dot-red" aria-hidden="true"></span> Más caro</div>
       <div class="legend-item u-mb-0"><span class="legend-dot dot-gray" aria-hidden="true"></span> No vende este combustible</div>
-    </div>
+      </div>
+    </details>
   </div>
 
 </div><!-- end app-body -->
@@ -749,7 +769,7 @@ ${gClientId ? `
       <div id="favs-list-wrap">
         <div id="favs-empty" class="favs-empty">
           ${icon('star-o')}
-          Aun no tienes favoritas. Pulsa la estrella en el popup de una gasolinera para guardarla.
+          Aún no tienes favoritas. Pulsa «Guardar» en la ficha de una gasolinera para añadirla.
         </div>
         <div id="favs-list"></div>
       </div>

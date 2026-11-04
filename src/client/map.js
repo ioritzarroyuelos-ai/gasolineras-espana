@@ -6,11 +6,6 @@
 var map;
 var mapLayers = {};
 
-// Ultimos bounds aplicados por renderMarkers. Los guardamos para que el toggle
-// del sidebar (ui.ts) pueda re-encajar las gasolineras con la padding correcta
-// tras cambiar el ancho del contenedor.
-var lastFitBounds = null;
-
 function initMap() {
   // El mapa arranca SIEMPRE en claro (modo oscuro retirado).
 
@@ -88,12 +83,12 @@ function initMap() {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
     subdomains: 'abcd', maxZoom: 19, minZoom: 5, noWrap: true
   });
-  // Capa satelite — ortofoto de Esri World Imagery (gratis sin API key). SIN
+  // Capa satelite — ortofoto oficial IGN PNOA. SIN
   // overlay de etiquetas ajeno: el intento inicial con CARTO voyager_only_labels
   // trajo nombres en ingles ("SPAIN", "Seville", "Lisbon", "Morocco"...) y
   // ademas cubrian paises que no son Espana. La toponimia la ponemos con
   // labelLayer (SPAIN_LABELS, ya esta en castellano y filtrada a Espana).
-  // maxZoom de Esri es 19 — limite del proveedor.
+  // maxZoom 19 — ultimo nivel con datos PNOA de esta fuente.
   mapLayers.satellite = L.tileLayer('https://tms-pnoa-ma.idee.es/1.0.0/pnoa-ma/{z}/{x}/{y}.jpeg', {
     attribution: '<a href="https://www.scne.es">CC BY 4.0 scne.es</a>',
     tms: true,   // el TMS del IGN tiene el eje Y invertido
@@ -118,7 +113,10 @@ function initMap() {
   // zoom DESPUES — asi DOM queda [zoom, scale] y visualmente zoom arriba,
   // escala pegada al borde inferior.
   L.control.scale({ position: 'bottomright', imperial: false, maxWidth: 120 }).addTo(map);
-  L.control.zoom({ position: 'bottomright' }).addTo(map);
+  var zoomControl = L.control.zoom({ position: 'topright' }).addTo(map);
+  var zoomHost = document.getElementById('map-zoom-controls');
+  if (zoomHost) zoomHost.appendChild(zoomControl.getContainer());
+  initStationDetail();
 
   // Capa de etiquetas propias — CCAA + ciudades principales en castellano.
   // Funciona como FALLBACK garantizado: mientras MapLibre GL carga (async) y
@@ -186,8 +184,7 @@ function initMap() {
 // Carga la mascara de mar (Espana recortada de un rectangulo) y las provincias.
 // Encadenado para garantizar orden de pintado: primero la mascara, luego las
 // provincias encima. Ambas en el pane 'spainMask' y no interactivas.
-var SEA_COLOR = '#cfe6f7';   // azul del mar (mapa de atlas)
-var LAND_COLOR = '#5ecfa5';  // verde de los paises vecinos (Portugal, Francia, Marruecos)
+var SEA_COLOR = '#d6e7ef';
 // A partir de este zoom el recorte se OCULTA. La silueta es vectorial a escala
 // nacional: al acercarse no puede seguir la costa real y se comeria tierra
 // (bahias, rias, puertos). En vista pais/region es donde aporta — quitar
@@ -200,7 +197,6 @@ function addSpainOverlay() {
   // por eso las islas dejan ver el satelite. El stroke dibuja la linea de costa;
   // el borde del rectangulo exterior cae fuera del viewport (maxBounds).
   var maskStyle = function(){ return { stroke: false, fillColor: SEA_COLOR, fillOpacity: 1 }; };
-  var vecinosStyle = function(){ return { stroke: true, color: '#3fae87', weight: 0.8, fillColor: LAND_COLOR, fillOpacity: 1 }; };
   var lineStyle = function(){ return { fill: false, color: '#ffffff', weight: 0.9, opacity: 0.7 }; };
   function addLayer(url, style){
     return fetch(url).then(function(r){ return r.json(); }).then(function(gj){
@@ -209,11 +205,7 @@ function addSpainOverlay() {
       if (map.getZoom() <= MASK_MAX_ZOOM) layer.addTo(map);
     });
   }
-  // Orden de pintado, de abajo a arriba:
-  //   1) mascara: mar liso tapando TODO lo que no es Espana (adios satelite de
-  //      Francia y Africa, que es lo que sobraba),
-  //   2) vecinos: Portugal, Francia, Marruecos... en verde plano encima del mar,
-  //   3) provincias: divisiones internas.
+  // Primero la mascara de mar; despues, las divisiones provinciales.
   // Dentro de Espana no se pinta nada, asi que se ve el satelite.
   // Sin capa de vecinos: su geometria viene de otra fuente (menos precisa que
   // el contorno del IGN) y en la frontera terrestre dejaba una franja de "mar"
@@ -330,19 +322,8 @@ function initCanariasInset() {
   }).catch(function(){});
 
   canariasCluster = L.markerClusterGroup({
-    maxClusterRadius: 38,
-    iconCreateFunction: function(cluster) {
-      var children = cluster.getAllChildMarkers();
-      var cPrices  = children.map(function(m) { return m.options._price; }).filter(function(p) { return p > 0; });
-      var cMin     = cPrices.length ? Math.min.apply(null, cPrices) : null;
-      var cColor   = cMin ? priceColor(cMin) : 'gray';
-      var count    = cluster.getChildCount();
-      return L.divIcon({
-        html: '<div class="cluster-icon cluster-icon--s36 cluster-icon--' + cColor + '">' +
-              '<span class="cluster-icon-count cluster-icon-count--fs11">' + count + '</span></div>',
-        className: '', iconSize: [36, 36], iconAnchor: [18, 18]
-      });
-    }
+    maxClusterRadius: 120,
+    iconCreateFunction: stationClusterIcon
   });
   canariasMap.addLayer(canariasCluster);
   setTimeout(function(){ if (canariasMap) canariasMap.invalidateSize(); }, 200);
@@ -425,6 +406,63 @@ var SPAIN_GEOMETRY = {
 //   2) filter    -> ["all", originalFilter, ["within", SPAIN_GEOMETRY]]  — solo
 //      renderiza texto si la feature cae DENTRO de Espana. Portugal, Francia,
 //      Marruecos, Argelia, Andorra, Gibraltar quedan sin ningun label.
+function applyMapVisualHierarchy(style) {
+  if (!style || !Array.isArray(style.layers)) return style;
+  style.layers.forEach(function(layer) {
+    var id = layer.id || '', source = layer['source-layer'];
+    var paint = layer.paint || (layer.paint = {});
+    if (layer.type === 'background') paint['background-color'] = '#f3f5f6';
+    if (id === 'natural_earth') paint['raster-opacity'] = 0.12;
+    if (layer.type === 'fill') {
+      if (source === 'water') paint['fill-color'] = SEA_COLOR;
+      else if (source === 'park' || /wood|grass|cemetery|pitch/.test(id)) paint['fill-color'] = '#e2ecdf';
+      else if (source === 'landcover') paint['fill-color'] = '#edf0e8';
+      else if (source === 'landuse' || source === 'aeroway') paint['fill-color'] = '#ecefef';
+      else if (source === 'building') paint['fill-color'] = '#e0e5e7';
+    }
+    if (layer.type === 'fill-extrusion' && source === 'building') {
+      paint['fill-extrusion-color'] = '#e0e5e7';
+      paint['fill-extrusion-opacity'] = 0.7;
+    }
+    if (layer.type === 'line') {
+      if (source === 'waterway') paint['line-color'] = '#bbd6e3';
+      else if (source === 'park') paint['line-color'] = '#d3dfd0';
+      else if (source === 'boundary') paint['line-color'] = '#c5ced3';
+      else if (source === 'transportation' && !/rail/.test(id)) {
+        var major = /motorway|trunk|primary/.test(id), casing = /casing/.test(id);
+        paint['line-color'] = major ? (casing ? '#d8d2c1' : '#f5edd9') : (casing ? '#dfe4e6' : '#ffffff');
+      }
+    }
+    if (layer.type !== 'symbol') return;
+    var layout = layer.layout || (layer.layout = {});
+    if (layout['text-field']) {
+      paint['text-color'] = '#56636d';
+      paint['text-halo-color'] = '#ffffff';
+      paint['text-halo-width'] = 1.5;
+      layout['text-allow-overlap'] = false;
+      layout['text-ignore-placement'] = false;
+      layout['text-padding'] = 3;
+    }
+    if (/^label_city/.test(id)) {
+      layer.maxzoom = 16;
+      paint['text-color'] = '#354651';
+      layout['text-size'] = ['interpolate', ['linear'], ['zoom'], 5, 11, 12, 15, 16, 16];
+    } else if (id === 'label_town') layer.minzoom = Math.max(layer.minzoom || 0, 8);
+    else if (id === 'label_village') layer.minzoom = Math.max(layer.minzoom || 0, 11);
+    else if (id === 'label_other') layer.minzoom = Math.max(layer.minzoom || 0, 14);
+    else if (id === 'highway-name-major') layer.minzoom = 11;
+    else if (id === 'highway-name-minor') layer.minzoom = Math.max(layer.minzoom || 0, 15);
+    else if (id === 'highway-name-path') layer.minzoom = Math.max(layer.minzoom || 0, 17);
+    else if (source === 'poi') {
+      layer.minzoom = Math.max(layer.minzoom || 0, id === 'poi_r20' ? 18 : 17);
+      layout['icon-allow-overlap'] = false;
+      layout['icon-ignore-placement'] = false;
+      paint['icon-opacity'] = 0.75;
+    } else if (id === 'airport') layer.minzoom = Math.max(layer.minzoom || 0, 12);
+  });
+  return style;
+}
+
 async function applyLibertyLanguage() {
   // Esperamos a que los scripts MapLibre carguen (son defer, asi que pueden
   // no estar listos cuando initMap() corre).
@@ -447,7 +485,7 @@ async function applyLibertyLanguage() {
     });
     if (libTid) clearTimeout(libTid);
     if (!resp.ok) return;
-    var style = await resp.json();
+    var style = applyMapVisualHierarchy(await resp.json());
 
     // Recorte de Espana DENTRO del style, no como overlay encima del mapa.
     // Motivo: un overlay de Leaflet se pinta sobre TODO y cortaba los nombres
@@ -598,7 +636,7 @@ async function applyLibertyLanguage() {
     //
     // Para conseguirlo construimos un style derivado del Liberty parcheado
     // que:
-    //   1) Anade una source raster con Esri World Imagery.
+    //   1) Anade una source raster con IGN PNOA.
     //   2) Mete al principio de layers una raster layer que pinta el
     //      satelite como fondo.
     //   3) Elimina las layers background/fill/fill-extrusion/line de
@@ -615,9 +653,7 @@ async function applyLibertyLanguage() {
     // la vez, asi que funciona.
     var satStyle = JSON.parse(JSON.stringify(style));
     satStyle.sources = satStyle.sources || {};
-    // Ortofoto oficial del IGN (PNOA Maxima Actualidad) en lugar de Esri:
-    //  - 25 cm/pixel reales (z19 = 22,9 cm/px a 40 grados) frente a los ~50 cm
-    //    de Esri: se distingue la acera de una calle.
+    // Ortofoto oficial del IGN (PNOA Maxima Actualidad):
     //  - Solo cubre Espana; fuera devuelve tesela TRANSPARENTE. Es decir, el
     //    recorte del pais lo da la propia fuente con precision oficial, sin
     //    poligonos que corten muelles y puertos.
@@ -689,9 +725,9 @@ async function applyLibertyLanguage() {
       style: satStyle,
       minZoom: 4,
       maxZoom: 19,
-      attribution: 'Tiles &copy; Esri &mdash; &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://openfreemap.org/">OpenFreeMap</a>'
+      attribution: '<a href="https://www.scne.es">IGN PNOA · CC BY 4.0 scne.es</a> &mdash; &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://openfreemap.org/">OpenFreeMap</a>'
     });
-    // Swap la referencia mapLayers.satellite (raster Esri original) por el
+    // Swap la referencia mapLayers.satellite (raster PNOA inicial) por el
     // nuevo vector-hibrido. Si el usuario ya tenia satelite activo, hacemos
     // el swap en vivo (quitar raster, anadir hibrido).
     var wasSat = map.hasLayer(mapLayers.satellite);
@@ -917,37 +953,200 @@ function fmtPriceUnit(price, fuel) {
 }
 
 // ---- ICONS - price badge pill ----
-var CLRS = { green:'#16a34a', yellow:'#d97706', red:'#dc2626', gray:'#64748b' };
-
-function makeIcon(color, price) {
-  var bg  = CLRS[color] || CLRS.gray;
-  var txt = price ? price.toFixed(3) : 'N/D';
-  var w = price ? 58 : 44;
-  var h = 26;
-  var tip = 7;
-  var r = 10;
-
-  var svg = [
-    '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + (h + tip) + '" viewBox="0 0 ' + w + ' ' + (h + tip) + '">',
-    '  <defs>',
-    '    <filter id="dp" x="-30%" y="-30%" width="160%" height="160%">',
-    '      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="rgba(0,0,0,0.35)"/>',
-    '    </filter>',
-    '  </defs>',
-    '  <rect x="1" y="1" width="' + (w-2) + '" height="' + (h-2) + '" rx="' + r + '" fill="' + bg + '" filter="url(#dp)"/>',
-    '  <polygon points="' + (w/2-5) + ',' + h + ' ' + (w/2+5) + ',' + h + ' ' + (w/2) + ',' + (h+tip) + '" fill="' + bg + '"/>',
-    '  <text x="' + (w/2) + '" y="' + (h/2+4.5) + '" text-anchor="middle" font-size="11.5" font-weight="700" font-family="system-ui,sans-serif" fill="#fff" letter-spacing="0.3">' + txt + '</text>',
-    '  <rect x="1" y="1" width="' + (w-2) + '" height="' + (h-2) + '" rx="' + r + '" fill="none" stroke="rgba(255,255,255,0.45)" stroke-width="1.2"/>',
-    '</svg>'
-  ].join('');
-
+function makeIcon(color, price, selected) {
+  var txt = price ? price.toFixed(3).replace('.', ',') + ' €' : 'Sin precio';
   return L.divIcon({
-    html: svg,
-    className: '',
-    iconSize:    [w, h + tip],
-    iconAnchor:  [w / 2, h + tip],
-    popupAnchor: [0, -(h + tip + 2)]
+    html: '<div class="station-price-pill' + (selected ? ' is-selected' : '') + '" data-price-color="' + color + '">'
+      + '<span class="station-price-amount">' + txt + '</span></div>',
+    className: 'station-price-marker' + (selected ? ' is-selected' : ''),
+    iconSize: [78, 36], iconAnchor: [39, 18]
   });
+}
+
+function stationClusterIcon(cluster) {
+  var prices = cluster.getAllChildMarkers().map(function(marker) { return marker.options._price; })
+    .filter(function(price) { return typeof price === 'number' && isFinite(price) && price > 0; });
+  var cheapest = prices.length ? Math.min.apply(null, prices) : null;
+  var count = cluster.getChildCount();
+  return L.divIcon({
+    html: '<div class="station-cluster-pill">'
+      + '<span class="station-cluster-count">' + count + ' gasolineras</span>'
+      + '<span class="station-cluster-from">' + (cheapest == null ? 'Sin precio publicado' : 'desde ' + cheapest.toFixed(3).replace('.', ',') + ' €') + '</span></div>',
+    className: 'station-cluster-marker', iconSize: [124, 44], iconAnchor: [62, 22]
+  });
+}
+
+// La seleccion pertenece a la estacion, no a sus coordenadas: dos estaciones
+// distintas pueden compartir punto y deben conservar sus propios botones/datos.
+var selectedStationId = '';
+var markerByStationId = Object.create(null);
+var stationDetailReturnFocus = null;
+function updateStationMarkerSelection(marker, selected) {
+  if (!marker) return;
+  marker.setIcon(makeIcon(marker.options._priceColor, marker.options._price, selected));
+  marker.setZIndexOffset(selected ? 1000 : 0);
+  var node = marker.getElement();
+  if (node) {
+    node.setAttribute('aria-pressed', String(selected));
+    node.setAttribute('data-station-id', marker.options._stationId);
+  }
+}
+function releaseStationMarker(marker) {
+  if (!marker || !marker._detailStandalone) return;
+  map.removeLayer(marker);
+  marker._detailStandalone = false;
+  if (marker.options._region === mapRegion && clusterGroup) clusterGroup.addLayer(marker);
+  else if (marker.options._region === 'canarias' && canariasCluster) canariasCluster.addLayer(marker);
+}
+function showSelectedStationMarker(marker) {
+  if (!marker || marker._detailStandalone) return;
+  // Una seleccion no debe desaparecer dentro de un grupo al mover el mapa.
+  // Separarla del grupo tambien resuelve estaciones con coordenadas identicas.
+  if (clusterGroup && clusterGroup.hasLayer(marker)) clusterGroup.removeLayer(marker);
+  if (canariasCluster && canariasCluster.hasLayer(marker)) canariasCluster.removeLayer(marker);
+  marker._detailStandalone = true;
+  marker.addTo(map);
+}
+function initStationDetail() {
+  var close = document.getElementById('btn-station-detail-close');
+  if (close && !close.dataset.bound) {
+    close.dataset.bound = '1';
+    close.addEventListener('click', function() { closeStationDetail(); });
+    document.addEventListener('keydown', function(event) {
+      var target = event.target;
+      var marker = target && target.closest && target.closest('.station-price-marker, .station-cluster-marker');
+      if (marker && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        event.stopPropagation();
+        // Los divIcon tienen role=button, pero un div no activa click con el
+        // teclado por si solo. Usamos el mismo camino que el clic del raton.
+        if (!event.repeat) marker.click();
+        return;
+      }
+      if (event.key !== 'Escape' || event.defaultPrevented || !selectedStationId) return;
+      if (document.querySelector('.modal-backdrop.show, #login-modal:not([hidden])')) return;
+      event.preventDefault();
+      closeStationDetail();
+    });
+  }
+}
+function closeStationDetail(restoreFocus) {
+  var selected = markerByStationId[selectedStationId];
+  var returnFocus = stationDetailReturnFocus && stationDetailReturnFocus.isConnected
+    ? stationDetailReturnFocus : selected && selected.getElement();
+  if (returnFocus && returnFocus.closest && returnFocus.closest('[inert]')) {
+    returnFocus = selected && selected.getElement() || document.getElementById('btn-sheet-toggle');
+  }
+  selectedStationId = '';
+  updateStationMarkerSelection(selected, false);
+  releaseStationMarker(selected);
+  var detail = document.getElementById('station-detail');
+  if (detail) { detail.hidden = true; delete detail.dataset.stationId; }
+  document.body.classList.remove('station-detail-open');
+  document.querySelectorAll('.station-card.active').forEach(function(card) { card.classList.remove('active'); });
+  if (restoreFocus !== false && (!returnFocus || !returnFocus.isConnected)) returnFocus = map && map.getContainer();
+  if (restoreFocus !== false && returnFocus && returnFocus.isConnected) {
+    try { returnFocus.focus({ preventScroll: true }); } catch (_) {}
+  }
+  stationDetailReturnFocus = null;
+}
+function keepStationVisible(marker) {
+  var detail = document.getElementById('station-detail');
+  if (!map || !marker || !detail || detail.hidden) return;
+  var mapRect = map.getContainer().getBoundingClientRect();
+  var panel = detail.getBoundingClientRect();
+  var left = 24, top = 32, right = 24, bottom = 32;
+  if (window.innerWidth >= 1024) {
+    right = Math.min(Math.max(24, mapRect.right - panel.left + 24), Math.max(24, mapRect.width - 180));
+    var sidebar = document.getElementById('sidebar');
+    if (sidebar && !sidebar.classList.contains('collapsed')) {
+      var side = sidebar.getBoundingClientRect();
+      if (side.left <= mapRect.left + 2) left = Math.max(24, side.right - mapRect.left + 24);
+    }
+  } else {
+    bottom = Math.min(Math.max(32, mapRect.bottom - panel.top + 24), Math.max(32, mapRect.height - 140));
+  }
+  // Solo al abrir. Arrastrar el mapa sigue siendo libre y no se recentra solo.
+  map.panInside(marker.getLatLng(), { paddingTopLeft: [left, top], paddingBottomRight: [right, bottom], animate: false });
+}
+function hydrateStationDetail(node, station, fuel, historyDays) {
+  var id = String(stationId(station));
+  markVisited(id);
+  var price = parsePrice(station[fuel]);
+  if (price) pushHistoryPoint(id, fuel, price);
+  applyPercentileMarkerPos(node);
+  var history = node.querySelector('[data-hist-station]');
+  if (history) renderHistoryPanel(history, historyDays || 30);
+  var prediction = node.querySelector('[data-predict-station]');
+  if (prediction) {
+    var current = parseFloat(prediction.getAttribute('data-predict-current') || '');
+    fetchPredict(id, prediction.getAttribute('data-predict-fuel'), isFinite(current) ? current : null).then(function(result) {
+      // La promesa solo conserva este nodo. No puede escribir sobre otra ficha.
+      if (prediction.isConnected) prediction.innerHTML = result ? predictBadgeHTML(result) : '';
+    });
+  }
+  var alert = node.querySelector('[data-pop-alert]');
+  if (alert && typeof setPopupAlertBtnState === 'function') {
+    setPopupAlertBtnState(alert, isTelegramFavActive(id, alert.getAttribute('data-pop-alert-fuel')));
+  }
+}
+function openStationDetailById(id, options) {
+  options = options || {};
+  id = String(id);
+  var index = filteredStations.findIndex(function(station) { return String(stationId(station)) === id; });
+  if (index < 0) return false;
+  var station = filteredStations[index];
+  var coords = stationLatLng(station);
+  var region = coords && isCanarias(coords.lat, coords.lng) ? 'canarias' : 'peninsula';
+  if (map && region !== mapRegion) setMapRegion(region);
+  var detail = document.getElementById('station-detail');
+  var content = document.getElementById('station-detail-content');
+  if (!detail || !content) return false;
+  var wasOpen = !detail.hidden;
+  var sameStation = wasOpen && detail.dataset.stationId === id;
+  var scrollTop = sameStation ? content.scrollTop : 0;
+  var history = sameStation && content.querySelector('[data-hist-days]');
+  var historyDays = history ? parseInt(history.getAttribute('data-hist-days'), 10) : 30;
+  var focusedAction = null;
+  if (options.focus === false && content.contains(document.activeElement)) {
+    var focused = document.activeElement;
+    ['data-pop-fav', 'data-pop-share', 'data-pop-copy', 'data-pop-compare', 'data-pop-alert', 'data-hist-range'].some(function(attribute) {
+      if (!focused.hasAttribute(attribute)) return false;
+      focusedAction = { attribute: attribute, value: focused.getAttribute(attribute) };
+      return true;
+    });
+  }
+  if (!wasOpen || options.focus !== false) stationDetailReturnFocus = document.activeElement;
+  var previousMarker = markerByStationId[selectedStationId];
+  updateStationMarkerSelection(previousMarker, false);
+  if (selectedStationId !== id) releaseStationMarker(previousMarker);
+  selectedStationId = id;
+  var marker = markerByStationId[id];
+  if (marker && map) showSelectedStationMarker(marker);
+  updateStationMarkerSelection(marker, true);
+  if (typeof closeMobileSidebar === 'function') closeMobileSidebar();
+  detail.hidden = false;
+  detail.dataset.stationId = id;
+  detail.setAttribute('aria-label', 'Gasolinera ' + (station.Rotulo || '') + ', ' + (station.Municipio || ''));
+  document.body.classList.add('station-detail-open');
+  content.innerHTML = buildPopup(station);
+  content.scrollTop = scrollTop;
+  highlightCard(index);
+  var fuel = document.getElementById('sel-combustible').value;
+  try { hydrateStationDetail(content, station, fuel, historyDays); }
+  catch (error) { console.warn('[ficha] No se pudo completar el contenido adicional:', error); }
+  if (options.focus !== false) {
+    var close = document.getElementById('btn-station-detail-close');
+    if (close) close.focus({ preventScroll: true });
+  } else if (focusedAction) {
+    content.querySelectorAll('[' + focusedAction.attribute + ']').forEach(function(control) {
+      if (control.getAttribute(focusedAction.attribute) === focusedAction.value) control.focus({ preventScroll: true });
+    });
+  }
+  if (options.pan !== false && marker && map) {
+    requestAnimationFrame(function() { if (selectedStationId === id) keepStationVisible(marker); });
+  }
+  return true;
 }
 
 // ---- UTILS ----
@@ -1371,7 +1570,7 @@ function buildPercentileHistogram(info) {
   // IMPORTANTE: no usamos style="left:X%" inline porque el CSP (style-src sin
   // 'unsafe-inline') los bloquea y el marcador acaba en left:auto = 0 (extremo
   // izquierdo, zona verde) aunque el precio sea el mas caro. En su lugar
-  // guardamos el porcentaje en data-pct y el handler de popupopen aplica
+  // guardamos el porcentaje en data-pct y hydrateStationDetail aplica
   // element.style.left en runtime (asignacion JS no cae bajo style-src).
   // Ver commit que corrige este bug para contexto completo.
   return '<div class="popup-percentile" aria-label="' + esc(label) + '">'
@@ -1384,8 +1583,7 @@ function buildPercentileHistogram(info) {
 }
 
 // Ship 25.6 (fix) — Aplica el left:X% del marcador via JS una vez que el
-// popup esta en el DOM. Se llama desde el handler de popupopen en
-// renderMarkers/features. Esta separacion existe porque CSP con style-src sin
+// contenido de la ficha esta en el DOM. Lo llama hydrateStationDetail. Esta separacion existe porque CSP con style-src sin
 // 'unsafe-inline' strippea los style inline del HTML y el marcador acabaria
 // siempre en la zona verde (left default=0) aunque el precio fuese el mas caro.
 function applyPercentileMarkerPos(popupNode) {
@@ -1401,11 +1599,11 @@ function applyPercentileMarkerPos(popupNode) {
 function buildNavigationLinks(lat, lng, name) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return '';
   var coords = lat.toFixed(6) + ',' + lng.toFixed(6);
-  return '<div class="popup-nav-row">'
+  return '<div class="popup-nav-section"><h3 class="popup-nav-title">Cómo llegar</h3><div class="popup-nav-row">'
     + '<a class="popup-nav-btn popup-nav-google" href="https://www.google.com/maps/dir/?api=1&amp;destination=' + coords + '&amp;travelmode=driving" target="_blank" rel="noopener">Google Maps</a>'
     + '<a class="popup-nav-btn popup-nav-waze" href="https://www.waze.com/ul?ll=' + coords + '&amp;navigate=yes" target="_blank" rel="noopener">Waze</a>'
     + '<a class="popup-nav-btn popup-nav-apple" href="https://maps.apple.com/?daddr=' + coords + '&amp;q=' + encodeURIComponent(name || 'Destino') + '&amp;dirflg=d" target="_blank" rel="noopener">Apple Maps</a>'
-    + '</div>';
+    + '</div></div>';
 }
 
 function buildPopup(s) {
@@ -1459,10 +1657,10 @@ function buildPopup(s) {
     }
   }
 
-  // Predictor: placeholder que carga asincrono en popupopen. Solo si hay
+  // Predictor: placeholder que carga al abrir la ficha. Solo si hay
   // mainPrice (si la estacion no tiene precio publicado, no hay nada que
   // predecir). Marcamos el contenedor con data-predict-* para que el
-  // listener de popupopen dispare fetchPredict. Siempre pinta el combustible
+  // hidratador de la ficha dispare fetchPredict. Siempre pinta el combustible
   // como codigo corto (95/98/diesel/diesel_plus) — el cliente filtra los que
   // no estan en FUEL_CODES_BY_LABEL.
   var predictPlaceholder = '';
@@ -1474,8 +1672,8 @@ function buildPopup(s) {
   }
 
   // Panel de historico asincrono. Renderizamos el placeholder en el HTML del
-  // popup; el fetch (y la pintura del sparkline) ocurren en popupopen cuando
-  // Leaflet inserta el DOM. Esto evita bloquear la apertura del popup y nos
+  // contenido; el fetch (y la pintura del sparkline) empiezan despues de
+  // insertarlo en la ficha. Esto evita bloquear la apertura y nos
   // deja variar el rango (7/30/90/1a) sin rebuild completo.
   // Si la estacion no vende este combustible (mainPrice null), no pintamos
   // el panel de historico — "Sin datos suficientes" sonaria a dato roto cuando
@@ -1572,9 +1770,8 @@ function buildPopup(s) {
     + '  <span class="popup-fuel-label">' + esc(fuelLabel) + '</span>'
     + '  ' + priceDisplay
     + '</div>'
-    + percentileHtml
-    + reportLink
-    + predictPlaceholder
+    + navBtns
+    + actionBtns
     + savingsHtml
     + alertRow
     // Horario (uso --mb4 porque la caption del horario lleva mb:4 a diferencia
@@ -1584,9 +1781,9 @@ function buildPopup(s) {
     + horarioPopup(s['Horario'])
     + '</div>'
     + sparkHtml
-    // Botones nav + acciones
-    + navBtns
-    + actionBtns
+    + percentileHtml
+    + predictPlaceholder
+    + reportLink
     + '</div>';
 }
 
@@ -1597,7 +1794,10 @@ function renderMarkers(stations) {
   // Bailamos silenciosamente: el banner de fallo del mapa ya esta visible,
   // la lista y los filtros siguen funcionando sin pins.
   if (typeof map === 'undefined' || !map) return;
+  var previousSelection = markerByStationId[selectedStationId];
+  if (previousSelection && previousSelection._detailStandalone) map.removeLayer(previousSelection);
   if (clusterGroup) map.removeLayer(clusterGroup);
+  markerByStationId = Object.create(null);
   if (canariasCluster) canariasCluster.clearLayers();  // el recuadro se repuebla abajo
 
   var fuel = document.getElementById('sel-combustible').value;
@@ -1605,104 +1805,38 @@ function renderMarkers(stations) {
   minP = prices.length ? Math.min.apply(null, prices) : 0;
   maxP = prices.length ? Math.max.apply(null, prices) : 0;
 
-  // Cluster personalizado: muestra precio minimo del grupo.
-  // maxClusterRadius como funcion del zoom: a zoom 4-5 (pais entero) un radio
-  // alto fusiona todas las estaciones en 4-5 grumos en el centro-sur y el
-  // resto del pais (Galicia, Cantabrico, Cataluna, Andalucia occidental)
-  // aparenta estar vacio. Bajamos el radio a 30 cuando vemos Espana completa
-  // para obtener ~15-20 clusters repartidos por CCAA. A zoom medio/alto
-  // mantenemos 55 para no spammear la vista con clusters de 2-3 estaciones.
+  // Los grupos reservan espacio para cantidad + precio minimo sin superponerse.
   clusterGroup = L.markerClusterGroup({
-    maxClusterRadius: function(zoom) {
-      if (zoom <= 5) return 30;
-      if (zoom <= 7) return 45;
-      return 55;
-    },
-    iconCreateFunction: function(cluster) {
-      var children = cluster.getAllChildMarkers();
-      var cPrices  = children.map(function(m) { return m.options._price; }).filter(function(p) { return p > 0; });
-      var cMin     = cPrices.length ? Math.min.apply(null, cPrices) : null;
-      var cColor   = cMin ? priceColor(cMin) : 'gray';
-      var count    = cluster.getChildCount();
-      var sz       = count > 200 ? 52 : count > 50 ? 44 : 36;
-      var szCls    = 'cluster-icon--s' + sz;           // s36/s44/s52
-      var fsCls    = count > 99 ? 'cluster-icon-count--fs9' : 'cluster-icon-count--fs11';
-      // La divIcon de Leaflet inserta el HTML sin hook post-render, asi que
-      // no podemos setear estilos via CSSOM post-insertion; expresamos todos
-      // los valores dinamicos (tamano, color, tamano de fuente) con clases
-      // modificadoras — ambos sets son discretos, cuesta 9 clases en el CSS.
-      return L.divIcon({
-        html: [
-          '<div class="cluster-icon ' + szCls + ' cluster-icon--' + cColor + '">',
-          '  <span class="cluster-icon-count ' + fsCls + '">' + count + '</span>',
-          cMin ? '<span class="cluster-icon-price">' + cMin.toFixed(2) + '€</span>' : '',
-          '</div>'
-        ].join(''),
-        className: '',
-        iconSize:   [sz, sz],
-        iconAnchor: [sz / 2, sz / 2]
-      });
-    }
+    maxClusterRadius: function() { return window.innerWidth < 1024 ? 120 : 90; },
+    showCoverageOnHover: false,
+    iconCreateFunction: stationClusterIcon
   });
 
   var bounds = [];
-  stations.forEach(function(s, idx) {
+  stations.forEach(function(s) {
     var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
     var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
 
     var price = parsePrice(s[fuel]);
     var color = priceColor(price);
-    var icon  = makeIcon(color, price);
-    var marker = L.marker([lat, lng], { icon: icon, _price: price || 0 });
-    marker.bindPopup(buildPopup(s), { maxWidth: 270, className: 'custom-popup' });
-    var stId = stationId(s);
-    marker.on('click', function() { highlightCard(idx); });
-    // Marcamos la estacion como visitada y disparamos la carga asincrona del
-    // historial. El placeholder ya esta en el DOM (buildPopup), asi que aqui
-    // solo necesitamos localizarlo y llamar a renderHistoryPanel.
-    marker.on('popupopen', function(e) {
-      markVisited(stId);
-      // Seguimos alimentando el cache local — sirve de fallback si el
-      // endpoint /api/history responde 503 (dev sin D1) o el backfill aun
-      // no llego a esta estacion.
-      var p = parsePrice(s[fuel]);
-      if (p) pushHistoryPoint(stId, fuel, p);
-      // El DOM del popup ya existe en e.popup._contentNode.
-      try {
-        var node = e.popup && e.popup._contentNode;
-        if (!node) return;
-        // CSP (style-src sin 'unsafe-inline') bloquea style="" del HTML
-        // asi que aplicamos el left% del ph-marker via JS.
-        applyPercentileMarkerPos(node);
-        var panel = node.querySelector('[data-hist-station]');
-        if (panel) renderHistoryPanel(panel, 30);
-        // Predictor: fetch asincrono del veredicto y reemplazo del placeholder
-        // sin bloquear la apertura del popup. Si el endpoint 503 o no hay
-        // datos suficientes, el placeholder se queda vacio (no rompemos nada).
-        var predSlot = node.querySelector('[data-predict-station]');
-        if (predSlot) {
-          var predSt = predSlot.getAttribute('data-predict-station');
-          var predFuel = predSlot.getAttribute('data-predict-fuel');
-          var predCur = parseFloat(predSlot.getAttribute('data-predict-current') || '');
-          fetchPredict(predSt, predFuel, isFinite(predCur) ? predCur : null).then(function(pred) {
-            if (!pred) { predSlot.innerHTML = ''; return; }
-            predSlot.innerHTML = predictBadgeHTML(pred);
-          });
-        }
-        // Ship 27: re-sincroniza el boton "Activar alerta" con el estado REAL
-        // de la suscripcion al abrir el popup. Necesario porque buildPopup
-        // congela el estado al construir el marcador y el auto-sync de favoritas
-        // (toggleTelegramFav) es asincrono: sin esto el boton podria quedar
-        // invertido y un click "Activar" acabaria desactivando la alerta.
-        var alertNode = node.querySelector('[data-pop-alert]');
-        if (alertNode && typeof setPopupAlertBtnState === 'function' && typeof isTelegramFavActive === 'function') {
-          var afc = alertNode.getAttribute('data-pop-alert-fuel')
-            || (typeof fuelSelectorToCode === 'function' ? fuelSelectorToCode() : '95');
-          setPopupAlertBtnState(alertNode, isTelegramFavActive(stId, afc));
-        }
-      } catch (_) {}
+    var stId = String(stationId(s));
+    var marker = L.marker([lat, lng], {
+      icon: makeIcon(color, price, selectedStationId === stId),
+      title: (s.Rotulo || 'Gasolinera') + ': ' + fmtPriceUnit(price, fuel),
+      _price: price || 0, _priceColor: color, _stationId: stId,
+      _region: isCanarias(lat, lng) ? 'canarias' : 'peninsula',
+      zIndexOffset: selectedStationId === stId ? 1000 : 0
     });
+    markerByStationId[stId] = marker;
+    marker.on('add', function() {
+      var node = marker.getElement();
+      if (node) {
+        node.setAttribute('data-station-id', stId);
+        node.setAttribute('aria-pressed', String(selectedStationId === stId));
+      }
+    });
+    marker.on('click', function() { openStationDetailById(stId); });
     // Las canarias van al recuadro; el resto, al mapa grande. Solo estas
     // ultimas cuentan para el fitBounds, para que la peninsula llene la vista.
     // Manda la region activa: sus estaciones van al mapa GRANDE y cuentan para
@@ -1719,25 +1853,19 @@ function renderMarkers(stations) {
 
   map.addLayer(clusterGroup);
 
+  var keepSelection = selectedStationId && markerByStationId[selectedStationId]
+    && markerByStationId[selectedStationId].options._region === mapRegion;
+  if (selectedStationId && !keepSelection) closeStationDetail(false);
+  if (keepSelection) openStationDetailById(selectedStationId, { focus: false, pan: false });
+
   if (bounds.length > 0) {
-    lastFitBounds = bounds;
     // animate:false a proposito: un fitBounds ANIMADO a un area grande (una
     // provincia entera) con maxBounds activo acaba en el minZoom (nivel pais) en
     // vez del zoom correcto — bug de Leaflet con maxBoundsViscosity. El encuadre
     // de resultados es un "salto" a lo cargado; instantaneo es correcto y natural.
-    try { map.fitBounds(bounds, Object.assign({}, mapFitPadding(), { maxZoom: 14, animate: false })); }
+    try { if (!keepSelection) map.fitBounds(bounds, Object.assign({}, mapFitPadding(), { maxZoom: 14, animate: false })); }
     catch(e) {}
   }
-}
-
-// Re-aplicar el ultimo fitBounds con la padding actual. Lo usa el toggle del
-// sidebar para re-centrar las gasolineras tras cambiar el ancho del contenedor
-// (sin esto, invalidateSize preserva el centro geografico pero no reajusta la
-// bbox, dejando las gasolineras desencajadas cuando se abre/cierra el sidebar).
-function refitLastBounds() {
-  if (!map || !lastFitBounds || !lastFitBounds.length) return;
-  try { map.fitBounds(lastFitBounds, Object.assign({}, mapFitPadding(), { maxZoom: 14, animate: false })); }
-  catch(e) {}
 }
 
 function highlightCard(idx) {
@@ -1745,7 +1873,13 @@ function highlightCard(idx) {
   var card = document.querySelector('[data-idx="' + idx + '"]');
   if (card) {
     card.classList.add('active');
-    card.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' });
+    var sidebar = document.getElementById('sidebar');
+    var list = document.getElementById('station-list');
+    if (!sidebar || !list || (window.innerWidth < 1024 ? !sidebar.classList.contains('open') : sidebar.classList.contains('collapsed'))) return;
+    var rowRect = card.getBoundingClientRect(), listRect = list.getBoundingClientRect();
+    var delta = rowRect.top < listRect.top ? rowRect.top - listRect.top
+      : rowRect.bottom > listRect.bottom ? rowRect.bottom - listRect.bottom : 0;
+    if (delta) list.scrollTo({ top: list.scrollTop + delta, behavior: scrollBehavior('smooth') });
   }
 }
 
@@ -1917,12 +2051,12 @@ function setChargersVisible(show) {
 // ---- TOGGLE VISTA SATELITE ----
 // Alterna entre basemap normal (Liberty vector con toda la toponimia de OSM,
 // en castellano y filtrada a Espana) y basemap satelite HIBRIDO (mismo
-// Liberty vector pero con ortofoto Esri como fondo — misma toponimia,
+// Liberty vector pero con ortofoto IGN como fondo — misma toponimia,
 // unico cambio el fondo). Ambos comparten el mismo conjunto de datos:
 // municipios, calles, barrios, POIs, ... en castellano.
 //
 // Fallback si Liberty no cargo: mapLayers.satellite sigue siendo un
-// L.TileLayer raster de Esri y usamos SPAIN_LABELS (labelLayer) como unica
+// L.TileLayer raster del IGN y usamos SPAIN_LABELS (labelLayer) como unica
 // fuente de etiquetas. Lo detectamos con isSatVector().
 //
 // Probamos con un 2o MapLibre GL layer (solo symbols del style) sobre el
@@ -1934,9 +2068,14 @@ function setChargersVisible(show) {
 (function() {
   var btn = document.getElementById('btn-satellite');
   if (!btn) return;
+  function updateBasemapLabel(satellite) {
+    var label = btn.querySelector('.satellite-button-label');
+    if (label) label.textContent = satellite ? 'Mapa' : 'Satélite';
+    btn.title = satellite ? 'Volver al mapa' : 'Ver fotografía aérea del IGN';
+  }
 
   // true si el satelite activo es vector-hibrido (Liberty lo ha upgradeado);
-  // false si seguimos con el raster Esri crudo.
+  // false si seguimos con el raster PNOA inicial.
   function isSatVector() {
     return !!(mapLayers.satellite && !(mapLayers.satellite instanceof L.TileLayer));
   }
@@ -1962,6 +2101,7 @@ function setChargersVisible(show) {
   try {
     if (localStorage.getItem('gs_basemap') === 'satellite') {
       btn.setAttribute('aria-pressed', 'true');
+      updateBasemapLabel(true);
       btn.setAttribute('aria-label', 'Volver al mapa normal');
       if (!isSatVector()) ensureLabelLayer();
     }
@@ -1989,6 +2129,7 @@ function setChargersVisible(show) {
       try { localStorage.setItem('gs_basemap', 'map'); } catch (_) {}
       syncCanariasBase(false);   // el recuadro de Canarias sigue al principal
       btn.setAttribute('aria-pressed', 'false');
+      updateBasemapLabel(false);
       btn.setAttribute('aria-label', 'Ver mapa en vista satelite');
     } else {
       // Cambiar a satelite — quitamos el basemap normal.
@@ -2009,6 +2150,7 @@ function setChargersVisible(show) {
       try { localStorage.setItem('gs_basemap', 'satellite'); } catch (_) {}
       syncCanariasBase(true);   // el recuadro de Canarias sigue al principal
       btn.setAttribute('aria-pressed', 'true');
+      updateBasemapLabel(true);
       btn.setAttribute('aria-label', 'Volver al mapa normal');
     }
   });

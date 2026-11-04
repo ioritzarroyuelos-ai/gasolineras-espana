@@ -22,8 +22,13 @@ test('cantidad de repostaje, favoritos y los tres navegadores conservan la estac
   await expect(page.locator('#favs-modal-count')).toHaveText('1')
   await page.locator('#btn-favs-close').click()
   await card.click()
-  const popup = page.locator('.leaflet-popup-content')
+  const popup = page.locator('#station-detail-content')
   await expect(popup).toBeVisible()
+  await expect(popup.locator('[data-pop-fav]')).toHaveAttribute('aria-pressed', 'true')
+  await popup.locator('[data-pop-fav]').click()
+  await expect(popup.locator('[data-pop-fav]')).toHaveAttribute('aria-pressed', 'false')
+  await popup.locator('[data-pop-fav]').click()
+  await expect(popup.locator('[data-pop-fav]')).toHaveAttribute('aria-pressed', 'true')
   const google = new URL((await popup.locator('.popup-nav-google').getAttribute('href'))!)
   const waze = new URL((await popup.locator('.popup-nav-waze').getAttribute('href'))!)
   const apple = new URL((await popup.locator('.popup-nav-apple').getAttribute('href'))!)
@@ -42,8 +47,8 @@ test('cantidad de repostaje, favoritos y los tres navegadores conservan la estac
   expect(destination.searchParams.get('station')).toBe(stationId)
   expect(destination.hash).toBe('')
   await page.goto(destination.toString())
-  await expect(page.locator('.leaflet-popup-content')).toBeVisible({ timeout: 20000 })
-  await expect(page.locator('.leaflet-popup-content [data-pop-share]')).toHaveAttribute('data-pop-share', stationId!)
+  await expect(page.locator('#station-detail')).toBeVisible({ timeout: 20000 })
+  await expect(page.locator('#station-detail [data-pop-share]')).toHaveAttribute('data-pop-share', stationId!)
   await expect(page.locator('#in-refuel-litres')).toHaveValue('30')
 })
 
@@ -140,13 +145,19 @@ test('municipio, alrededores y actualizar son elecciones distintas', async ({ pa
   await expect(page.locator('.station-card').first().locator('.distance-chip')).toHaveAttribute('title', /recta|aproximada/i)
 })
 
-test('un enlace compartido de Canarias abre la estación en el mapa principal', async ({ page, request }) => {
+test('un enlace compartido de Canarias abre su ficha y centra el mapa principal', async ({ page, request }) => {
   const snapshot = await request.get('/data/stations.json').then(r => r.json())
   const station = snapshot.ListaEESSPrecio.find((s: Record<string, string>) => s.IDProvincia === '35' && s['Precio Gasolina 95 E5'])
   expect(station).toBeTruthy()
   await page.goto('/gasolineras/mapa?prov=35&station=' + station.IDEESS)
-  await expect(page.locator('.leaflet-popup-content [data-pop-share]')).toHaveAttribute('data-pop-share', station.IDEESS, { timeout: 20000 })
-  await expect(page.locator('#map .leaflet-popup-content')).toBeVisible()
+  await expect(page.locator('#station-detail [data-pop-share]')).toHaveAttribute('data-pop-share', station.IDEESS, { timeout: 20000 })
+  await expect(page.locator('#station-detail')).toBeVisible()
+  await expect.poll(() => page.evaluate(() => (window as any).mapRegion)).toBe('canarias')
+  await expect(page.locator('#map .station-price-marker.is-selected')).toHaveAttribute('data-station-id', station.IDEESS)
+  const expected = [Number(station.Latitud.replace(',', '.')), Number(station['Longitud (WGS84)'].replace(',', '.'))]
+  const destination = new URL((await page.locator('#station-detail .popup-nav-google').getAttribute('href'))!).searchParams.get('destination')!.split(',').map(Number)
+  expect(destination[0]).toBeCloseTo(expected[0], 5)
+  expect(destination[1]).toBeCloseTo(expected[1], 5)
 })
 
 test('ubicación: conserva el punto elegido sin mandarlo en la dirección del servidor', async ({ page, context }) => {

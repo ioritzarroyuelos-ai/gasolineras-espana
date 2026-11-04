@@ -197,6 +197,24 @@ for (const width of [390, 320]) {
   })
 }
 
+test('móvil 320px: la tabla con letra grande conserva sus columnas y se desplaza con teclado sin ensanchar la página', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  await page.goto('/gasolineras/madrid/madrid')
+  // Las fuentes disponibles cambian entre sistemas. El tamaño grande también
+  // representa a quien necesita aumentar el texto para leer los precios.
+  await page.locator('.seo-summary').evaluate(element => { (element as HTMLElement).style.fontFamily = 'Verdana, sans-serif' })
+  await page.locator('.seo-summary table').evaluate(element => { (element as HTMLElement).style.fontSize = '20px' })
+  const region = page.getByRole('region', { name: 'Resumen de precios por combustible' })
+  await expect(region.locator('th')).toHaveText(['Combustible', 'Más barato', 'Medio', 'Más caro'])
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320)
+  expect(await region.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
+  await region.focus()
+  await expect(region).toBeFocused()
+  await region.press('ArrowRight')
+  await expect.poll(() => region.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+  await expect.poll(() => page.evaluate(() => window.scrollX)).toBe(0)
+})
+
 test('el control de ubicación explica la denegación y permite volver a intentarlo sin enviar coordenadas al servidor', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator.geolocation, 'getCurrentPosition', { configurable: true, value: (success: (p: unknown) => void, failure: (e: unknown) => void) => {

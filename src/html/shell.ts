@@ -935,6 +935,7 @@ ${hasSeoSummary ? `
   </nav>
   <h1 id="seo-h1">Precios de combustible en ${geoLabelH}</h1>
   <p>Esta página muestra los precios oficiales publicados de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <div class="seo-table-scroll" role="region" aria-label="Resumen de precios por combustible" tabindex="0">
   <table>
     <thead><tr>
       <th>Combustible</th>
@@ -962,6 +963,7 @@ ${hasSeoSummary ? `
       })()}
     </tbody>
   </table>
+  </div>
   <p class="seo-note">${seo?.stationCount ? seo.stationCount + ' estaciones activas en ' + geoLabelH + '. ' : ''}Usa el mapa o la lista de arriba para filtrar por municipio, horario, marca o distancia.</p>
 ${seo?.topStations && seo.topStations.length ? `
   <h2>Gasolineras más baratas en ${geoLabelH} (gasolina 95)</h2>

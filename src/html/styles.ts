@@ -2039,11 +2039,14 @@ export function getStyles(nonce: string = ''): string {
     .seo-summary #seo-h1{font-size:24px;color:#14532d;margin:0 0 12px;font-weight:700}
     .seo-summary p{margin:0 0 16px;color:#475569;line-height:1.6}
     .seo-summary p:last-of-type{margin:14px 0 0;color:#64748b;font-size:13px}
+    .seo-summary .seo-table-scroll{max-width:100%;overflow-x:auto;overscroll-behavior-x:contain}
+    .seo-summary .seo-table-scroll:focus-visible{outline:3px solid #2563eb;outline-offset:2px}
     .seo-summary table{width:100%;border-collapse:collapse;font-size:14px;max-width:640px}
     .seo-summary th{text-align:right;padding:8px 12px;border-bottom:2px solid #e5e7eb;color:#64748b;font-weight:500}
     .seo-summary th:first-child{text-align:left}
     .seo-summary td{padding:10px 12px;border-bottom:1px solid #f1f5f9}
     .seo-summary td:not(:first-child){text-align:right;font-family:ui-monospace,monospace}
+    @media(max-width:480px){.seo-summary th,.seo-summary td{padding-left:6px;padding-right:6px}}
     .seo-summary h2{font-size:18px;color:#14532d;margin:28px 0 10px;font-weight:700}
     .seo-summary .seo-cheap{margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.7;max-width:640px}
     .seo-summary .seo-cheap .sc-price{font-family:ui-monospace,monospace;font-weight:700;color:#14532d}

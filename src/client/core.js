@@ -1216,29 +1216,19 @@ try {
 // Helper publico: resuelve el scroll-behavior segun preferencia. Uso:
 //   el.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' })
 function scrollBehavior(fallback) { return PRM_VALUE ? 'auto' : (fallback || 'smooth'); }
-// Padding para fitBounds que compensa el sidebar cuando esta abierto en
-// desktop. Sin esto, fitBounds centraba las gasolineras en el ancho total del
-// contenedor (incluyendo los 320px que ocupa el sidebar por la izquierda), con
-// lo que el cluster visualmente aparecia pegado al borde del sidebar o incluso
-// tapado por el. En movil el sidebar es position:fixed (overlay) y no reduce
-// el area del mapa cuando esta cerrado — pero si esta abierto, tambien lo
-// compensamos para que cuando el usuario abra la lista y use un deep-link no
-// le salga el mapa detras del overlay.
+// El sidebar de escritorio ocupa su propia columna: el mapa ya tiene su
+// ancho util y no necesita otro desplazamiento lateral. En movil la lista
+// flota por abajo; solo reservamos el espacio que realmente cubre.
 function mapFitPadding() {
-  var sb = document.getElementById('sidebar');
-  if (!sb) return { padding: [40, 40] };
-  var isDesktop = window.innerWidth >= 1024;
-  if (isDesktop && !sb.classList.contains('collapsed')) {
-    // Desktop con sidebar expandido (~320px). paddingTopLeft corre el bounds
-    // hacia la derecha para que las gasolineras queden centradas en la zona
-    // visible, no del contenedor total.
-    return { paddingTopLeft: [360, 60], paddingBottomRight: [40, 40] };
+  var host = document.getElementById('map');
+  var sidebar = document.getElementById('sidebar');
+  if (!host || !sidebar || window.innerWidth >= 1024) return { padding: [40, 40] };
+  var mapRect = host.getBoundingClientRect(), sheet = sidebar.getBoundingClientRect();
+  var bottom = 40;
+  if (!document.body.classList.contains('station-detail-open') && sheet.top < mapRect.bottom && sheet.bottom > mapRect.top) {
+    bottom = Math.min(Math.max(40, mapRect.bottom - sheet.top + 20), Math.max(40, mapRect.height - 140));
   }
-  if (!isDesktop && sb.classList.contains('open')) {
-    // Movil con sidebar overlay abierto (~340px).
-    return { paddingTopLeft: [380, 60], paddingBottomRight: [40, 40] };
-  }
-  return { padding: [40, 40] };
+  return { paddingTopLeft: [32, 32], paddingBottomRight: [32, bottom] };
 }
 
 // Elimina tildes de las claves del objeto estacion (evita problemas de encoding del documento)

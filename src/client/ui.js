@@ -4,8 +4,8 @@
 
 
 // ---- EVENTOS ----
-// Los filtros actualizan el listado al cambiar. La ubicación solo se usa si
-// el usuario llega desde «Cerca de mí», y nunca se añade a un enlace compartido.
+// Los filtros actualizan el listado al cambiar. La ubicación sólo se usa
+// cuando el usuario la pide, y nunca se añade a un enlace compartido.
 document.getElementById('sel-provincia').addEventListener('change', async function(e) {
   clearSearchLocation();
   // Al cambiar provincia refrescamos el dropdown de municipios (selector
@@ -86,25 +86,48 @@ function refreshSearchAreaControls() {
 
 // ---- SIDEBAR TOGGLE ----
 var sidebar    = document.getElementById('sidebar');
-var backdrop   = document.getElementById('sidebar-backdrop');
+var sidebarContent = document.getElementById('sidebar-content');
+var sheetToggle = document.getElementById('btn-sheet-toggle');
 
 function isMobile() { return window.innerWidth < 1024; }
 
-function openMobileSidebar() {
+function setFiltersExpanded(expanded) {
+  var fields = document.getElementById('filter-fields');
+  var button = document.getElementById('btn-toggle-filters');
+  if (!fields || !button) return;
+  fields.hidden = !expanded;
+  button.setAttribute('aria-expanded', String(expanded));
+  button.querySelector('.filter-toggle-state').textContent = expanded ? 'Ocultar' : 'Mostrar';
+}
+function openMobileSidebar(showFilters) {
+  if (typeof closeStationDetail === 'function') closeStationDetail(false);
+  if (typeof showFilters === 'boolean') setFiltersExpanded(showFilters);
   sidebar.classList.add('open');
-  backdrop.classList.add('show');
+  sidebarIcon();
 }
 function closeMobileSidebar() {
   sidebar.classList.remove('open');
-  backdrop.classList.remove('show');
+  if (isMobile() && sidebarContent && sidebarContent.contains(document.activeElement) && sheetToggle) {
+    sheetToggle.focus({ preventScroll: true });
+  }
+  sidebarIcon();
 }
-// ---- DESKTOP SIDEBAR: colapso con tira + persistencia ----
+// El contenido recogido sale también del recorrido con Tab.
 function sidebarIcon() {
-  // El botón contiene un <svg class="ic"><use href="#i-..."/></svg> (sprite SVG,
-  // ya no FontAwesome). Cambiamos el símbolo referenciado por el <use>.
+  var mobile = isMobile();
+  var expanded = mobile ? sidebar.classList.contains('open') : !sidebar.classList.contains('collapsed');
+  var toggle = document.getElementById('btn-toggle-sidebar');
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', expanded ? 'Ocultar filtros y lista' : 'Mostrar filtros y lista');
+  }
+  if (sidebarContent) sidebarContent.inert = !expanded;
+  if (sheetToggle) sheetToggle.setAttribute('aria-expanded', String(mobile && expanded));
+  var sheetLabel = document.getElementById('sheet-toggle-label');
+  if (sheetLabel) sheetLabel.textContent = expanded ? 'Ver más mapa' : 'Ver lista y filtros';
   var use = document.querySelector('#btn-toggle-sidebar use');
   if (!use) return;
-  var id = isMobile()
+  var id = mobile
     ? '#i-bars'
     : (sidebar.classList.contains('collapsed') ? '#i-chevron-right' : '#i-chevron-left');
   use.setAttribute('href', id);
@@ -113,23 +136,23 @@ function sidebarIcon() {
 function toggleDesktopSidebar() {
   var isCollapsed = sidebar.classList.contains('collapsed');
   sidebar.classList.toggle('collapsed', !isCollapsed);
-  localStorage.setItem('gs_sb', isCollapsed ? '1' : '0');
+  try { localStorage.setItem('gs_sb', isCollapsed ? '1' : '0'); } catch (_) {}
   sidebarIcon();
-  // Tras la transicion CSS (280ms), invalidateSize para que Leaflet vea el
-  // nuevo ancho y refitLastBounds para re-centrar las gasolineras visibles
-  // con la padding correcta (mapFitPadding ya ajusta segun sidebar abierto/
-  // cerrado). Sin el refit, invalidateSize preservaba el centro geografico
-  // pero dejaba los marcadores desencajados o incluso tapados por el sidebar.
+  // Ajustar el ancho conserva el zoom y la zona elegidos. Si hay una ficha,
+  // mover sólo lo necesario para que su marcador siga visible.
   setTimeout(function() {
     if (!map) return;
-    map.invalidateSize(true);
-    if (typeof refitLastBounds === 'function') refitLastBounds();
+    map.invalidateSize({ pan: false });
+    if (typeof selectedStationId !== 'undefined' && selectedStationId && typeof keepStationVisible === 'function') {
+      keepStationVisible(markerByStationId[selectedStationId]);
+    }
   }, 300);
 }
 
 // Restaurar estado al cargar
 (function() {
-  if (!isMobile() && localStorage.getItem('gs_sb') === '0') {
+  var saved = null; try { saved = localStorage.getItem('gs_sb'); } catch (_) {}
+  if (!isMobile() && saved === '0') {
     sidebar.classList.add('collapsed');
   }
   sidebarIcon();
@@ -137,19 +160,59 @@ function toggleDesktopSidebar() {
 
 document.getElementById('btn-toggle-sidebar').addEventListener('click', function() {
   if (isMobile()) {
-    sidebar.classList.contains('open') ? closeMobileSidebar() : openMobileSidebar();
+    sidebar.classList.contains('open') ? closeMobileSidebar() : openMobileSidebar(true);
   } else {
     toggleDesktopSidebar();
   }
 });
 
-backdrop.addEventListener('click', closeMobileSidebar);
+var filterToggle = document.getElementById('btn-toggle-filters');
+if (filterToggle) filterToggle.addEventListener('click', function() {
+  setFiltersExpanded(filterToggle.getAttribute('aria-expanded') !== 'true');
+});
+if (sheetToggle) {
+  var sheetStartY = null;
+  var sheetDidDrag = false;
+  sheetToggle.addEventListener('pointerdown', function(event) {
+    sheetStartY = event.clientY;
+    sheetDidDrag = false;
+    sheetToggle.setPointerCapture(event.pointerId);
+  });
+  sheetToggle.addEventListener('pointerup', function(event) {
+    if (sheetStartY === null) return;
+    var distance = event.clientY - sheetStartY;
+    sheetStartY = null;
+    if (Math.abs(distance) < 30) return;
+    sheetDidDrag = true;
+    if (distance < 0) openMobileSidebar(!allStations.length);
+    else closeMobileSidebar();
+  });
+  sheetToggle.addEventListener('pointercancel', function() { sheetStartY = null; });
+  sheetToggle.addEventListener('click', function() {
+    if (sheetDidDrag) { sheetDidDrag = false; return; }
+    sidebar.classList.contains('open') ? closeMobileSidebar() : openMobileSidebar(!allStations.length);
+  });
+  sheetToggle.addEventListener('keydown', function(event) {
+    if (event.key === 'ArrowUp') { event.preventDefault(); openMobileSidebar(!allStations.length); }
+    if (event.key === 'ArrowDown') { event.preventDefault(); closeMobileSidebar(); }
+  });
+}
+document.addEventListener('keydown', function(event) {
+  if (event.key === 'Escape' && isMobile() && sidebar.classList.contains('open') && sidebar.contains(event.target)) {
+    closeMobileSidebar();
+    if (sheetToggle) sheetToggle.focus({ preventScroll: true });
+  }
+});
 
+var lastSidebarMobile = isMobile();
 window.addEventListener('resize', function() {
-  if (!isMobile()) {
+  var mobile = isMobile();
+  if (mobile === lastSidebarMobile) return;
+  lastSidebarMobile = mobile;
+  if (!mobile) {
     closeMobileSidebar();
     // Al pasar a desktop, restaurar preferencia guardada
-    var pref = localStorage.getItem('gs_sb');
+    var pref = null; try { pref = localStorage.getItem('gs_sb'); } catch (_) {}
     sidebar.classList.toggle('collapsed', pref === '0');
   } else {
     sidebar.classList.remove('collapsed');
@@ -158,6 +221,77 @@ window.addEventListener('resize', function() {
   sidebarIcon();
   if (map) map.invalidateSize(true);
 });
+
+// Reserva exactamente el espacio de la cabecera y los avisos, también cuando
+// las tendencias llegan después de cargar. El SEO queda debajo del mapa.
+(function() {
+  var lastHeight = -1;
+  var queued = false;
+  function measure() {
+    queued = false;
+    var nodes = document.querySelectorAll('.masthead, #app-header, #offline-banner, #stale-banner, #trend-strip');
+    var total = 0;
+    for (var i = 0; i < nodes.length; i++) total += nodes[i].getBoundingClientRect().height;
+    total = Math.ceil(total);
+    if (lastHeight === total) return;
+    lastHeight = total;
+    document.documentElement.style.setProperty('--map-chrome-height', total + 'px');
+    if (typeof map !== 'undefined' && map) requestAnimationFrame(function() { map.invalidateSize({ pan: false }); });
+  }
+  function schedule() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(measure);
+  }
+  if (typeof ResizeObserver !== 'undefined') {
+    // ResizeObserver llega antes de pintar: actualizar aquí evita un fotograma
+    // con el mapa más alto que la ventana al aparecer la barra de tendencias.
+    var observer = new ResizeObserver(measure);
+    document.querySelectorAll('.masthead, #app-header, #offline-banner, #stale-banner, #trend-strip').forEach(function(node) { observer.observe(node); });
+  }
+  window.addEventListener('resize', schedule);
+  measure();
+})();
+
+(function() {
+  var button = document.getElementById('btn-map-location');
+  var status = document.getElementById('map-location-status');
+  if (!button || !status) return;
+  function message(text) { status.textContent = text; status.hidden = !text; }
+  function finish() { button.disabled = false; button.removeAttribute('aria-busy'); }
+  button.addEventListener('click', function() {
+    if (!navigator.geolocation) { message('Este navegador no permite usar tu ubicación. Puedes elegir un municipio en los filtros.'); return; }
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    message('Buscando tu ubicación…');
+    navigator.geolocation.getCurrentPosition(async function(position) {
+      var lat = position.coords.latitude, lng = position.coords.longitude;
+      if (lat < 27 || lat > 44.5 || lng < -19 || lng > 5) {
+        message('Mostramos gasolineras de España. Elige una provincia en los filtros.'); finish(); return;
+      }
+      try {
+        if (typeof closeStationDetail === 'function') closeStationDetail(false);
+        sharedStationId = ''; sharedStationRestored = false;
+        document.getElementById('sel-provincia').value = '';
+        await loadMunicipios('');
+        setSearchOrigin({ lat: Number(lat.toFixed(5)), lng: Number(lng.toFixed(5)) });
+        refreshSearchAreaControls();
+        syncSearchMapRegion();
+        if (isMobile()) closeMobileSidebar();
+        var loaded = await loadStations();
+        writeQueryState();
+        message(loaded === false ? 'No se han podido cargar las gasolineras. Pulsa Mi ubicación para intentarlo otra vez.' : '');
+      } catch (_) {
+        message('No se han podido cargar las gasolineras. Pulsa Mi ubicación para intentarlo otra vez.');
+      } finally { finish(); }
+    }, function(error) {
+      message(error.code === 1
+        ? 'No has permitido usar tu ubicación. Puedes activar el permiso en tu navegador o elegir un municipio en los filtros.'
+        : 'No hemos podido encontrar tu ubicación. Pulsa Mi ubicación para volver a intentarlo.');
+      finish();
+    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+  });
+})();
 
 // ---- INIT ----
 // Limpiar cache antigua (datos sin normalizar) si existe
@@ -191,6 +325,8 @@ function clearSearchLocation() {
   setSearchOrigin(null);
   sharedStationId = '';
   sharedStationRestored = false;
+  var locationStatus = document.getElementById('map-location-status');
+  if (locationStatus) { locationStatus.hidden = true; locationStatus.textContent = ''; }
 }
 
 function syncSearchMapRegion() {

@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import { localDB } from './helpers/sqlite.mjs'
 import errorsSchema from '../migrations/0002_client_errors.sql?raw'
 import enrichment from '../migrations/0004_client_errors_enrichment.sql?raw'
+import reportsSchema from '../migrations/0003_price_reports.sql?raw'
 
 // Endpoint tests de telemetría/admin tras extraer a src/routes/admin.ts (B1).
 // Sin CRON_TOKEN las rutas /api/admin/* dan 503 (authorizeCron); las públicas
@@ -16,6 +17,48 @@ beforeEach(async () => {
 })
 
 describe('rutas telemetría/admin tras extraer a src/routes/admin.ts (B1)', () => {
+  it.each(['gnc', 'gnl', 'hidrogeno'])('guarda precios por kg de %s superiores a 10 sin convertirlos en null', async fuel => {
+    const DB = localDB([reportsSchema])
+    try {
+      const response = await app.request('/api/reports/price', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ideess: '1445', fuel, reason: 'outdated', officialPriceEur: 25, reportedPriceEur: '25,500' }),
+      }, { DB })
+      expect(response.status).toBe(200)
+      const { results } = await DB.prepare('SELECT fuel, official_price_eur, reported_price_eur FROM price_reports').bind().all()
+      expect(results).toEqual([{ fuel, official_price_eur: 25, reported_price_eur: 25.5 }])
+    } finally { DB.close() }
+  })
+
+  it.each([
+    ['95', 10.01, 1.5], ['hidrogeno', 100.01, 25], ['gnc', '2.1texto', 2], ['hidrogeno', 25, 101], ['95', true, 1.5],
+  ])('rechaza valores inválidos de %s y no crea un informe con precio vacío', async (fuel, reportedPriceEur, officialPriceEur) => {
+    const DB = localDB([reportsSchema])
+    try {
+      const response = await app.request('/api/reports/price', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ideess: '1445', fuel, reason: 'outdated', reportedPriceEur, officialPriceEur }),
+      }, { DB })
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ error: 'bad price' })
+      const { results } = await DB.prepare('SELECT COUNT(*) AS count FROM price_reports').bind().all()
+      expect(results).toEqual([{ count: 0 }])
+    } finally { DB.close() }
+  })
+
+  it('conserva el precio opcional vacío para una incidencia sin precio observado', async () => {
+    const DB = localDB([reportsSchema])
+    try {
+      const response = await app.request('/api/reports/price', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ideess: '1445', fuel: '95', reason: 'closed', reportedPriceEur: null, officialPriceEur: 1.5 }),
+      }, { DB })
+      expect(response.status).toBe(200)
+      const { results } = await DB.prepare('SELECT reported_price_eur FROM price_reports').bind().all()
+      expect(results).toEqual([{ reported_price_eur: null }])
+    } finally { DB.close() }
+  })
+
   it('reavisa errores recurrentes tras 24 h; no repite resueltos ni pierde errores durante el envío', async () => {
     const DB = localDB([errorsSchema, enrichment])
     const now = Date.now(), day = 86400_000

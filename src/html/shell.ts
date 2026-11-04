@@ -864,7 +864,7 @@ ${gClientId ? `
         </select>
       </div>
       <div class="form-group">
-        <label class="form-label" for="report-price">Precio que viste en el surtidor (&euro;/L) <span class="form-hint">opcional</span></label>
+        <label class="form-label" for="report-price">Precio que viste en el surtidor (<span id="report-price-unit">&euro;/L</span>) <span class="form-hint">opcional</span></label>
         <!-- type="text" (no "number") para aceptar coma decimal en locale espanol.
              En Chrome/Win con locale ES, un input type=number rechaza "1,499" y
              muestra un tooltip tipo "Introduzca un numero valido" que el usuario

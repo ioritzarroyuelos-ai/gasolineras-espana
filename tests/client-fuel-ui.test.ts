@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import mapSource from '../src/client/map.js?raw'
 import uiSource from '../src/client/ui.js?raw'
 import coreSource from '../src/client/core.js?raw'
+import featuresSource from '../src/client/features.js?raw'
 import { buildPage } from '../src/html/shell'
 import { mastheadHtml } from '../src/html/masthead'
 
@@ -18,6 +19,48 @@ function runFunction(source: string, name: string, deps: Record<string, unknown>
 }
 const fuelUnit = runFunction(coreSource, 'fuelUnit')
 const esc = (text: unknown) => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+
+function reportForm() {
+  const fields: Record<string, any> = {}
+  for (const id of ['modal-report', 'report-context', 'report-reason', 'report-price', 'report-price-unit', 'report-comment', 'report-status', 'btn-report-close', 'btn-report-cancel', 'btn-report-submit']) {
+    fields[id] = { value: '', textContent: '', innerHTML: '', disabled: false, handlers: {}, focus() {},
+      classList: { add() {}, remove() {} },
+      addEventListener(event: string, callback: (...args: unknown[]) => unknown) { this.handlers[event] = callback },
+    }
+  }
+  const target = featuresSource.indexOf("  var modal = document.getElementById('modal-report');")
+  const start = featuresSource.lastIndexOf('(function() {', target)
+  const window: Record<string, any> = {}
+  const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+  new Function('document', 'window', 'esc', 'fetch', 'setTimeout', 'showToast', featuresSource.slice(start))(
+    { getElementById: (id: string) => fields[id], addEventListener() {} }, window, esc, fetch, () => 0, () => {},
+  )
+  return { fields, fetch, open: window.openReportModal, submit: () => fields['btn-report-submit'].handlers.click() }
+}
+
+describe('reportar precios con su unidad real', () => {
+  it.each(['gnc', 'gnl', 'hidrogeno'])('muestra €/kg para %s y envía el precio completo, sin sustituirlo por null', async (fuel) => {
+    const form = reportForm()
+    form.open('1445', fuel, 25, 'REPSOL')
+    expect(form.fields['report-price-unit'].textContent).toBe('€/kg')
+    expect(form.fields['report-context'].innerHTML).toContain('25,000 €/kg')
+    form.fields['report-price'].value = '25,500'
+    await form.submit()
+    expect(form.fetch).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(form.fetch.mock.calls[0][1].body)).toMatchObject({ fuel, officialPriceEur: 25, reportedPriceEur: 25.5 })
+  })
+
+  it.each([
+    ['95', '10,01', '10,00 €/L'], ['hidrogeno', '100,01', '100,00 €/kg'], ['gnc', '2,10texto', '100,00 €/kg'],
+  ])('rechaza el precio inválido de %s antes de enviarlo', async (fuel, price, message) => {
+    const form = reportForm()
+    form.open('1445', fuel, 1.5, 'Prueba')
+    form.fields['report-price'].value = price
+    await form.submit()
+    expect(form.fetch).not.toHaveBeenCalled()
+    expect(form.fields['report-status'].textContent).toContain(message)
+  })
+})
 
 describe('gasolineras: controles públicos y unidades', () => {
   it('permite abrir favoritas y elegir litros sin sesión, con un solo buscador de zona', () => {

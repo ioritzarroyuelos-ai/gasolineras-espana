@@ -328,6 +328,7 @@ function trendDeltaHTML(current, previous) {
   var ctxBox    = document.getElementById('report-context');
   var selReason = document.getElementById('report-reason');
   var inPrice   = document.getElementById('report-price');
+  var priceUnit = document.getElementById('report-price-unit');
   var inComment = document.getElementById('report-comment');
   var statusEl  = document.getElementById('report-status');
   var btnClose  = document.getElementById('btn-report-close');
@@ -352,6 +353,10 @@ function trendDeltaHTML(current, previous) {
     'diesel_renov': 'Diésel Renovable'
   };
 
+  function reportUnit() {
+    return ['gnc', 'gnl', 'hidrogeno'].indexOf(current.fuel) >= 0 ? 'kg' : 'L';
+  }
+
   function setStatus(msg, isError) {
     if (!statusEl) return;
     statusEl.textContent = msg || '';
@@ -373,8 +378,9 @@ function trendDeltaHTML(current, previous) {
     // Caja contextual con lo que el usuario va a reportar.
     var fuelLabel = FUEL_LABELS[current.fuel] || current.fuel;
     var priceTxt  = current.officialPrice != null
-      ? current.officialPrice.toFixed(3) + ' €/L'
+      ? current.officialPrice.toFixed(3).replace('.', ',') + ' €/' + reportUnit()
       : 'sin precio publicado';
+    if (priceUnit) priceUnit.textContent = '€/' + reportUnit();
     if (ctxBox) {
       ctxBox.innerHTML = 'Reportando <strong>' + esc(current.rotulo) + '</strong>'
                       + ' &middot; <strong>' + esc(fuelLabel) + '</strong>'
@@ -440,12 +446,13 @@ function trendDeltaHTML(current, previous) {
     var priceRaw = inPrice ? inPrice.value.trim() : '';
     var reportedPrice = null;
     if (priceRaw) {
-      var n = parseFloat(priceRaw.replace(',', '.'));
-      if (!isFinite(n) || n < 0.1 || n > 10) {
-        setStatus('El precio debe estar entre 0,10 y 10,00 €/L.', true);
+      var n = /^\d+(?:[.,]\d+)?$/.test(priceRaw) ? Number(priceRaw.replace(',', '.')) : NaN;
+      var maxPrice = reportUnit() === 'kg' ? 100 : 10;
+      if (!isFinite(n) || n < 0.1 || n > maxPrice) {
+        setStatus('Introduce un precio entre 0,10 y ' + maxPrice.toFixed(2).replace('.', ',') + ' €/' + reportUnit() + '.', true);
         return;
       }
-      reportedPrice = n;
+      reportedPrice = Math.round(n * 1000) / 1000;
     }
     var comment = inComment ? inComment.value.trim() : '';
     if (comment.length > 500) comment = comment.slice(0, 500);

@@ -391,16 +391,20 @@ app.post('/api/reports/price', async c => {
     return c.json({ ok: false, error: 'bad reason' }, 400)
   }
 
-  // Precios opcionales. Aceptamos numeros o null. Rango [0.1, 10] euros/litro
-  // — cubre todos los combustibles reales con margen.
-  const parsePriceOpt = (v: unknown): number | null => {
-    if (v === null || v === undefined || v === '') return null
-    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'))
-    if (!isFinite(n) || n < 0.1 || n > 10) return null
+  // Límites técnicos por unidad, también aplicados por el formulario.
+  // Un precio inválido se rechaza; nunca se guarda como si el usuario lo hubiese omitido.
+  const maxPrice = ['gnc', 'gnl', 'hidrogeno'].includes(fuel) ? 100 : 10
+  const parsePriceOpt = (v: unknown): number | null | undefined => {
+    if (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) return null
+    if (typeof v !== 'number' && typeof v !== 'string') return undefined
+    if (typeof v === 'string' && !/^\d+(?:[.,]\d+)?$/.test(v.trim())) return undefined
+    const n = typeof v === 'number' ? v : Number(v.trim().replace(',', '.'))
+    if (!isFinite(n) || n < 0.1 || n > maxPrice) return undefined
     return Math.round(n * 1000) / 1000
   }
   const reportedPrice = parsePriceOpt(body.reportedPriceEur)
   const officialPrice = parsePriceOpt(body.officialPriceEur)
+  if (reportedPrice === undefined || officialPrice === undefined) return c.json({ ok: false, error: 'bad price' }, 400)
 
   // Comment: texto libre, trim, max 500 chars. Guardamos null si vacio para
   // no contar como "hay comentario" en queries.

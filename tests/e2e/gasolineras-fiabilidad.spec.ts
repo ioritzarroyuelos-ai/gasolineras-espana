@@ -56,6 +56,21 @@ test('combustibles por kilo no muestran depósitos en litros', async ({ page }) 
   await expect(page.locator('.row-tank-cost')).toHaveCount(0)
   await card.click()
   await expect(page.locator('.popup-price-main')).toContainText('€/kg')
+  await page.locator('[data-pop-report]').click()
+  await expect(page.locator('#report-price-unit')).toHaveText('€/kg')
+  // Sustituimos la recepción del reporte: no se publica ningún dato de prueba.
+  let report: any = null
+  await page.route('**/api/reports/price', async route => {
+    report = route.request().postDataJSON()
+    await route.fulfill({ json: { ok: true } })
+  })
+  await page.locator('#report-price').fill('500')
+  await page.locator('#btn-report-submit').click()
+  await expect(page.locator('#report-status')).toContainText('100,00 €/kg')
+  expect(report).toBeNull()
+  await page.locator('#report-price').fill('25')
+  await page.locator('#btn-report-submit').click()
+  await expect.poll(() => report?.reportedPriceEur).toBe(25)
 })
 
 test('móvil: cabecera, favoritos y filtros caben en la pantalla', async ({ page }) => {

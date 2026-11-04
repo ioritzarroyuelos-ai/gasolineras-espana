@@ -1147,7 +1147,7 @@ export function getStyles(nonce: string = ''): string {
        Strip horizontal, no-intrusivo. Colores del delta:
         - verde / flecha abajo si bajan los precios (bueno para el usuario)
         - rojo / flecha arriba si suben
-        - gris / igual si la diferencia es <0.5 c/L (ruido). ---- */
+        - gris / igual si no hay cambio. ---- */
     #trend-strip {
       background: #f1f5f9;
       color: #334155;
@@ -1160,12 +1160,12 @@ export function getStyles(nonce: string = ''): string {
       position: relative;
     }
     #trend-strip[hidden] { display: none; }
-    .trend-strip-label { font-weight: 600; color: #64748b; }
+    .trend-strip-label { font-weight: 600; color: #475569; }
     .trend-strip-item { font-weight: 500; }
     .trend-strip-item .dlt { font-weight: 700; margin-left: 4px; }
     .trend-strip-item .dlt-down { color: #15803d; }
     .trend-strip-item .dlt-up   { color: #b91c1c; }
-    .trend-strip-item .dlt-flat { color: #64748b; }
+    .trend-strip-item .dlt-flat { color: #475569; }
     .trend-strip-sep { color: #cbd5e1; }
     .trend-strip-close {
       margin-left: auto;
@@ -1174,14 +1174,16 @@ export function getStyles(nonce: string = ''): string {
       font-size: 18px;
       line-height: 1;
       cursor: pointer;
-      color: #94a3b8;
+      color: #475569;
       padding: 0 4px;
     }
     .trend-strip-close:hover { color: #334155; }
     body.dark #trend-strip { background: #0f172a; color: #cbd5e1; border-bottom-color: #334155; }
     body.dark .trend-strip-label { color: #94a3b8; }
+    body.dark .trend-strip-item .dlt-flat { color: #94a3b8; }
     body.dark .trend-strip-item .dlt-down { color: #4ade80; }
     body.dark .trend-strip-item .dlt-up   { color: #fca5a5; }
+    body.dark .trend-strip-close { color: #94a3b8; }
     body.dark .trend-strip-close:hover { color: #e2e8f0; }
 
     /* ---- Sliders de ahorro / radio ---- */

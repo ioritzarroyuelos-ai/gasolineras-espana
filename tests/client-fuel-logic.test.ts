@@ -6,6 +6,7 @@ import list from '../src/client/list.js?raw'
 
 // Execute the shipped client functions, with only their browser/network edges mocked.
 function section(source: string, start: string, end: string) {
+  source = source.replace(/\r\n/g, '\n') // Mismo código con saltos de línea de Windows o Linux.
   const from = source.indexOf(start), to = source.indexOf(end, from)
   if (from < 0 || to < 0) throw new Error(`Missing client section: ${start}`)
   return source.slice(from, to)

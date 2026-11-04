@@ -4,7 +4,7 @@
 // (sept 2026) la portada pasa a ser una pagina ligera "buscador primero": eliges
 // tu municipio (autocompletado) y te lleva a su pagina (SSR, con mapa y precios);
 // tienes ademas "usar mi ubicacion", que geolocaliza en el navegador y abre la
-// pagina del municipio mas cercano. (El mapa completo sigue en /gasolineras/mapa,
+// mapa de estaciones cercanas. (El mapa completo sigue en /gasolineras/mapa,
 // accesible desde las fichas de municipio.) Beneficio SEO: la portada gana contenido
 // crawleable (precios medios + enlaces a las 52 provincias) y las paginas de
 // municipio/provincia siguen siendo las que posicionan.
@@ -20,6 +20,7 @@ export interface GasLandingData {
   stats?: Record<string, { min: number; avg: number; max: number; count: number }>
   stationCount?: number
   provincias?: GasLandingProvincia[]
+  snapshotDate?: string
 }
 
 const FUEL_LABEL: Record<string, string> = {
@@ -43,9 +44,9 @@ export function buildGasolinerasLanding(
   const desc = stats95 && stats95.count >= 3
     ? 'Encuentra la gasolinera más barata cerca de ti. Gasolina 95 desde '
       + stats95.min.toFixed(3) + '€ (media ' + stats95.avg.toFixed(3) + '€). '
-      + 'Busca por municipio, usa tu ubicación o planifica una ruta. Datos oficiales del Ministerio.'
-    : 'Encuentra la gasolinera más barata cerca de ti: busca por municipio, usa tu ubicación '
-      + 'o planifica una ruta. Precios oficiales del Ministerio, actualizados a diario.'
+      + 'Busca por municipio o usa tu ubicación. Datos oficiales del Ministerio.'
+    : 'Encuentra la gasolinera más barata cerca de ti: busca por municipio o usa tu ubicación. '
+      + 'Precios oficiales del Ministerio.'
 
   const esc = (s: string): string => String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -69,11 +70,6 @@ export function buildGasolinerasLanding(
   const jsonLd = [
     {
       '@context': 'https://schema.org', '@type': 'WebSite', name: 'España Útil', url: origin,
-      potentialAction: {
-        '@type': 'SearchAction',
-        target: origin + '/gasolineras/mapa?q={search_term_string}',
-        'query-input': 'required name=search_term_string',
-      },
     },
     {
       '@context': 'https://schema.org', '@type': 'Dataset',
@@ -197,7 +193,7 @@ export function buildGasolinerasLanding(
   </style>
 </head>
 <body>
-  ${mastheadHtml('gasolineras')}
+  ${mastheadHtml('gasolineras', { hideMunicipioSearch: true })}
 
   <main>
     <h1>Gasolineras baratas en España</h1>
@@ -213,12 +209,13 @@ export function buildGasolinerasLanding(
     </div>
     <p class="hint">Empieza a escribir el nombre de tu municipio.</p>
 
-    <div class="acciones">
+    <div class="acciones" id="cerca-de-mi">
       <button type="button" id="btn-geoloc" class="a-primary">📍 Usar mi ubicación</button>
     </div>
     <p id="geo-status" class="geo-status" role="status" aria-live="polite" hidden></p>
 
-    ${preciosCards ? `<h2>Precio medio del combustible hoy en España</h2>
+    ${preciosCards ? `<h2>Precio medio del combustible en España</h2>
+    <p class="hint">${data.snapshotDate ? 'Datos del Ministerio: ' + esc(data.snapshotDate) + ' (hora peninsular).' : 'Fecha de los precios no disponible.'}</p>
     <div class="precios">${preciosCards}</div>` : ''}
 
     ${provLinks ? `<h2>Gasolineras por provincia</h2>
@@ -245,9 +242,10 @@ export function buildGasolinerasLanding(
     var box = document.getElementById('sugs');
     var muni = [];
     var loaded = false;
+    var loading = false;
     var active = -1;
     var shown = [];
-    function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
+    function norm(s) { return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
     function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
     function cerrar() { box.hidden = true; box.innerHTML = ''; active = -1; shown = []; input.setAttribute('aria-expanded', 'false'); }
     function msg(t) { box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>'; box.hidden = false; shown = []; active = -1; input.setAttribute('aria-expanded', 'true'); }
@@ -255,10 +253,14 @@ export function buildGasolinerasLanding(
       var nq = norm(q);
       if (nq.length < 2) { cerrar(); return; }
       if (!loaded) { msg('Cargando municipios\\u2026'); return; }
-      var res = [];
-      for (var i = 0; i < muni.length && res.length < 12; i++) {
-        if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
-      }
+      var res = muni.filter(function (m) { return norm(m.n).indexOf(nq) >= 0; });
+      res.sort(function (a, b) {
+        var an = norm(a.n), bn = norm(b.n);
+        var ar = an === nq ? 0 : an.indexOf(nq) === 0 ? 1 : 2;
+        var br = bn === nq ? 0 : bn.indexOf(nq) === 0 ? 1 : 2;
+        return ar - br || a.n.localeCompare(b.n, 'es');
+      });
+      res = res.slice(0, 12);
       shown = res; active = -1;
       if (res.length === 0) { msg('No encontramos ese municipio. Prueba con otro nombre o mira por provincia.'); return; }
       var html = '';
@@ -274,15 +276,21 @@ export function buildGasolinerasLanding(
     }
     function ir(idx) { if (idx >= 0 && shown[idx]) { window.location.href = shown[idx].u; return true; } return false; }
     function cargar() {
-      if (loaded) return;
+      if (loaded || loading) return;
+      loading = true;
       fetch('/api/gasolineras/municipios', { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (r) { if (!r.ok) throw new Error('municipios'); return r.json(); })
         .then(function (data) {
-          muni = Array.isArray(data) ? data : (data && data.municipios) || [];
+          if (!Array.isArray(data) || !data.length) throw new Error('municipios');
+          muni = data;
           loaded = true;
+          loading = false;
           if (norm(input.value).length >= 2) render(input.value);
         })
-        .catch(function () { loaded = true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
+        .catch(function () {
+          loading = false;
+          msg('No se pudo cargar el listado. Vuelve a escribir para reintentar o consulta por provincia.');
+        });
     }
     input.addEventListener('focus', cargar);
     input.addEventListener('input', function () { cargar(); render(input.value); });
@@ -295,10 +303,9 @@ export function buildGasolinerasLanding(
     });
     document.addEventListener('click', function (e) { if (e.target !== input && !box.contains(e.target)) cerrar(); });
 
-    // ---- "Usar mi ubicación": geolocaliza y abre el municipio más cercano ----
-    // Elige el municipio con la coordenada representativa más próxima (haversine)
-    // del propio índice que ya carga el buscador. Sin llamadas de red extra ni
-    // emparejamiento por nombre (robusto en municipios bilingües).
+    // El fragmento permanece en el navegador: las coordenadas no se envían
+    // al servidor. El mapa busca en todas las estaciones, incluso si hay una
+    // provincia limítrofe más cerca que las estaciones del propio municipio.
     var geoBtn = document.getElementById('btn-geoloc');
     var geoStatus = document.getElementById('geo-status');
     function setGeoStatus(t, isErr) {
@@ -308,40 +315,20 @@ export function buildGasolinerasLanding(
       geoStatus.classList.toggle('err', !!isErr);
     }
     function resetGeoBtn() { if (geoBtn) { geoBtn.disabled = false; geoBtn.textContent = '📍 Usar mi ubicación'; } }
-    function haversineKm(la1, lo1, la2, lo2) {
-      var R = 6371, toRad = function (d) { return d * Math.PI / 180; };
-      var dLa = toRad(la2 - la1), dLo = toRad(lo2 - lo1);
-      var s = Math.sin(dLa / 2) * Math.sin(dLa / 2) +
-        Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLo / 2) * Math.sin(dLo / 2);
-      return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
-    }
-    function goToNearest(lat, lng) {
-      var best = null, bestD = Infinity;
-      for (var i = 0; i < muni.length; i++) {
-        var m = muni[i];
-        if (typeof m.lat !== 'number' || typeof m.lng !== 'number') continue;
-        var d = haversineKm(lat, lng, m.lat, m.lng);
-        if (d < bestD) { bestD = d; best = m; }
-      }
-      if (best && best.u) { setGeoStatus('Te llevamos a ' + best.n + '…'); window.location.href = best.u; }
-      else { setGeoStatus('No hemos encontrado gasolineras cerca de tu ubicación. Prueba con el buscador.', true); resetGeoBtn(); }
-    }
     if (geoBtn) {
       geoBtn.addEventListener('click', function () {
         if (!navigator.geolocation) { setGeoStatus('Tu navegador no permite geolocalización. Usa el buscador.', true); return; }
         geoBtn.disabled = true;
         geoBtn.textContent = '📍 Localizando…';
         setGeoStatus('Pidiendo tu ubicación…');
-        cargar(); // asegura que el índice de municipios se está descargando
         navigator.geolocation.getCurrentPosition(function (pos) {
           var lat = pos.coords.latitude, lng = pos.coords.longitude;
-          if (loaded) { goToNearest(lat, lng); return; }
-          // Índice aún cargando: esperamos hasta ~5s a que 'loaded' sea true.
-          var tries = 0;
-          var iv = setInterval(function () {
-            if (loaded) { clearInterval(iv); goToNearest(lat, lng); }
-            else if (++tries > 50) { clearInterval(iv); setGeoStatus('No hemos podido cargar el listado. Usa el buscador.', true); resetGeoBtn(); }
-          }, 100);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            setGeoStatus('No hemos podido obtener tu ubicación. Usa el buscador.', true);
+            resetGeoBtn(); return;
+          }
+          setGeoStatus('Buscando gasolineras cerca de ti…');
+          window.location.href = '/gasolineras/mapa#near=' + lat.toFixed(5) + ',' + lng.toFixed(5);
         }, function (err) {
           setGeoStatus(err && err.code === 1
             ? 'Has bloqueado el permiso de ubicación. Actívalo en el navegador o usa el buscador.'

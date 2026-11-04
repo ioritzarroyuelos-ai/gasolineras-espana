@@ -44,10 +44,22 @@ describe('rutas /gasolineras/* tras extraer a src/routes/gasolineras.ts (B1)', (
     expect(res.headers.get('content-type') || '').toContain('text/html')
   })
 
-  it('/api/gasolineras/municipios responde 200 con JSON array', async () => {
+  it('/api/gasolineras/municipios avisa del fallo sin cachear una lista vacía', async () => {
     const res = await app.request('/api/gasolineras/municipios', {}, { ASSETS: assets404() })
-    expect(res.status).toBe(200)
-    expect(Array.isArray(await res.json())).toBe(true)
+    expect(res.status).toBe(503)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.json()).toEqual({ error: 'municipios_unavailable' })
+  })
+
+  it('muestra la fecha que corresponde a los precios precomputados, aunque no sea hoy', async () => {
+    const data = {
+      v: 1, fechaMinisterio: '01/11/2026 8:58:14', provinciaCounts: { '28': 1 },
+      nacionalStats: { stationCount: 1, stats: { '95': { min: 1.4, max: 1.6, avg: 1.5, count: 1 } } },
+    }
+    const res = await app.request('/gasolineras/', {}, { ASSETS: { fetch: async () => Response.json(data) } })
+    const html = await res.text()
+    expect(html).toContain('01/11/2026 8:58:14 (hora peninsular)')
+    expect(html).not.toContain('combustible hoy')
   })
 
   it('/gasolineras/:slug -> 200 con provincia valida (SEO, degradada sin datos)', async () => {

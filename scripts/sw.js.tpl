@@ -11,7 +11,7 @@
 // el usuario recibe la pagina fresca en el proximo navigate sin tocar nada.
 const CACHE_NAME = 'gasolineras-__BUILD_ID__';
 const TILE_CACHE = CACHE_NAME + '-tiles';
-// Cache de respuestas API (snapshots por provincia / bbox). Network-first con
+// Cache de respuestas API (snapshots por provincia). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
 // para poder aplicar un LRU distinto y evitar que snapshots viejos expulsen
 // tiles utiles o viceversa.
@@ -19,8 +19,7 @@ const API_CACHE = CACHE_NAME + '-api';
 // Cap defensivo contra crecimiento ilimitado de la cache de tiles (DoS de almacenamiento).
 const TILE_CACHE_MAX = 400;
 // Cap de snapshots API: 24 entradas cubren con holgura los casos de uso:
-// provincia del usuario + algunas consultadas recientemente + varias bbox
-// del planificador de rutas. Suficiente para que tras un viaje reciente la
+// provincia del usuario y otras consultadas recientemente. Permite que la
 // app siga funcionando offline. Mas seria acumular ruido.
 const API_CACHE_MAX = 24;
 
@@ -115,7 +114,6 @@ async function trimApiCache() {
 // Decide que endpoints /api/* merecen cacheado offline. Listado conservador:
 //   - /api/estaciones             -> snapshot full (raro, pero puede ocurrir)
 //   - /api/estaciones/provincia   -> snapshot filtrado por provincia (hot path)
-//   - /api/estaciones/bbox        -> usado por el planificador de rutas
 //   - /api/history/*              -> datos historicos, valiosos sin red
 //   - /api/predict/*              -> predictor, no critico pero ayuda UX
 // Explicitamente NO cacheamos:

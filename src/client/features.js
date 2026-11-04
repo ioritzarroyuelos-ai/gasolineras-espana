@@ -2,77 +2,70 @@
 // Escapes SIMPLES (ya no vive en template literal). Se empaqueta con
 // scripts/gen-client-bundle.mjs → public/static/app.js. Editar AQUI.
 
-// ---- TREND STRIP (tendencia nacional hoy vs ciclo anterior) ----
-// Lee /data/trends.json (generado por scripts/fetch-prices.mjs cada cron) y
-// pinta un strip horizontal con medianas nacionales de gasolina 95 + gasoleo A
-// mas delta vs la ejecucion anterior. Se oculta si no hay "previous" (primera
-// ejecucion) o si el usuario lo descarto en este ciclo (recordamos la
-// dismissal anclada al ministryDate para que vuelva a aparecer al dia
-// siguiente con nuevos datos).
-(function() {
-  var strip  = document.getElementById('trend-strip');
-  if (!strip) return;
-  var g95El  = document.getElementById('trend-g95');
-  var dslEl  = document.getElementById('trend-diesel');
-  var closer = document.getElementById('trend-strip-close');
-  var DISMISS_KEY = 'gs_trend_dismiss_v1';
-
-  function fmtPrice(v) { return v == null ? '--' : v.toFixed(3) + ' €'; }
-  function fmtDelta(d) {
-    if (d == null) return '';
-    // Mostramos en centimos porque el delta inter-ciclo es de decimas de cent.
-    var cents = d * 100;
-    var abs = Math.abs(cents);
-    if (abs < 0.5) return '<span class="dlt dlt-flat">↔ sin cambio</span>';
-    var arrow = cents < 0 ? '↓' : '↑';
-    var cls = cents < 0 ? 'dlt-down' : 'dlt-up';
-    return '<span class="dlt ' + cls + '">' + arrow + ' ' + abs.toFixed(1) + 'c</span>';
+// ---- TENDENCIA NACIONAL: dos capturas oficiales recientes ----
+function trendComparison(data, now) {
+  if (!data || !data.current) return null;
+  var current = data.current, previous = data.previous;
+  var ts = Date.parse(current.ts), time = now == null ? Date.now() : now;
+  var limit = 36 * 60 * 60 * 1000;
+  if (!Number.isFinite(ts) || time - ts > limit || ts > time + 5 * 60 * 1000) return null;
+  var source = Date.parse(current.sourceAt);
+  if (!Number.isFinite(source) || time - source > limit || source > time + 5 * 60 * 1000) return null;
+  if (previous) {
+    var before = Date.parse(previous.ts);
+    var sourceBefore = Date.parse(previous.sourceAt);
+    if (!Number.isFinite(before) || before >= ts || time - before > limit ||
+        !Number.isFinite(sourceBefore) || sourceBefore >= source || time - sourceBefore > limit ||
+        !current.ministryDate || !previous.ministryDate || current.ministryDate === previous.ministryDate) previous = null;
   }
-  function paint(label, curr, prev, node) {
-    if (curr == null) { node.textContent = ''; return false; }
-    var delta = (prev != null) ? (curr - prev) : null;
-    node.innerHTML = label + ' <b>' + fmtPrice(curr) + '</b> ' + fmtDelta(delta);
+  return { current: current, previous: previous, id: current.ts + '|' + (current.ministryDate || '') };
+}
+function trendDeltaHTML(current, previous) {
+  if (!Number.isFinite(current) || !Number.isFinite(previous)) return '';
+  var cents = Math.round((current - previous) * 10000) / 100;
+  if (cents === 0) return '<span class="dlt dlt-flat">↔ sin cambio</span>';
+  var down = cents < 0;
+  return '<span class="dlt ' + (down ? 'dlt-down' : 'dlt-up') + '">' +
+    (down ? '↓ ' : '↑ ') + Math.abs(cents).toLocaleString('es-ES', { maximumFractionDigits: 2 }) + ' cént./L</span>';
+}
+(function initTrendStrip() {
+  var strip = document.getElementById('trend-strip');
+  if (!strip) return;
+  var g95El = document.getElementById('trend-g95');
+  var dslEl = document.getElementById('trend-diesel');
+  var period = document.getElementById('trend-period');
+  var closer = document.getElementById('trend-strip-close');
+  var DISMISS_KEY = 'gs_trend_dismiss_v2';
+  var activeId = '';
+  function paint(label, current, previous, node) {
+    if (!node) return false;
+    if (!Number.isFinite(current) || current <= 0) { node.textContent = ''; return false; }
+    node.innerHTML = label + ' <b>' + current.toLocaleString('es-ES', { minimumFractionDigits: 3, maximumFractionDigits: 3 }) +
+      ' €/L</b> ' + trendDeltaHTML(current, previous);
     return true;
   }
-
-  try {
-    fetch('/data/trends.json', { cache: 'no-store' }).then(function(r) {
-      if (!r.ok) return null;
-      return r.json();
-    }).then(function(data) {
-      if (!data || !data.current) return;
-      // No mostramos el strip hasta tener un "previous" (primera ejecucion
-      // del cron no tiene con que comparar).
-      if (!data.previous) return;
-      var curr = data.current.medians || {};
-      var prev = data.previous.medians || {};
-      // Dismissal: si el usuario cerro este mismo snapshot, respetamos.
-      var dismissed = '';
-      try { dismissed = localStorage.getItem(DISMISS_KEY) || ''; } catch(_) {}
-      if (dismissed && dismissed === (data.ministryDate || '')) return;
-
-      var any = false;
-      any = paint('G95:',   curr.g95,    prev.g95,    g95El) || any;
-      any = paint('Diésel:', curr.diesel, prev.diesel, dslEl) || any;
-      if (any) strip.hidden = false;
-    }).catch(function() { /* silenciar — strip es opcional */ });
-  } catch(_) {}
-
-  if (closer) {
-    closer.addEventListener('click', function() {
-      strip.hidden = true;
-      // Ancla la dismissal al ministryDate activo: al dia siguiente, cuando
-      // cambie el snapshot, volvera a aparecer.
-      try {
-        fetch('/data/trends.json', { cache: 'no-store' }).then(function(r) {
-          return r.ok ? r.json() : null;
-        }).then(function(data) {
-          if (!data) return;
-          try { localStorage.setItem(DISMISS_KEY, data.ministryDate || ''); } catch(_) {}
-        }).catch(function(){});
-      } catch(_) {}
-    });
-  }
+  fetch('/data/trends.json', { cache: 'no-store' }).then(function(r) {
+    return r.ok ? r.json() : null;
+  }).then(function(data) {
+    var pair = trendComparison(data);
+    if (!pair) return;
+    activeId = pair.id;
+    try { if (localStorage.getItem(DISMISS_KEY) === activeId) return; } catch(_) {}
+    var current = pair.current.medians || {};
+    var previous = pair.previous ? pair.previous.medians || {} : {};
+    var any = paint('Gasolina 95:', current.g95, previous.g95, g95El);
+    any = paint('Diésel:', current.diesel, previous.diesel, dslEl) || any;
+    if (period) {
+      period.textContent = 'España · ' + (pair.current.ministryDate || data.ministryDate || '') +
+        (pair.previous ? ' frente a ' + pair.previous.ministryDate : ' · Esperando otra actualización para comparar.');
+    }
+    strip.title = 'Medianas nacionales del Ministerio. La diferencia compara las dos fechas indicadas.';
+    strip.hidden = !any;
+  }).catch(function() { /* Si falla la descarga, no se anuncia una tendencia. */ });
+  if (closer) closer.addEventListener('click', function() {
+    strip.hidden = true;
+    try { if (activeId) localStorage.setItem(DISMISS_KEY, activeId); } catch(_) {}
+  });
 })();
 
 // ---- WATCHDOG DE FRESCURA ----
@@ -198,7 +191,7 @@
     showToast('Seleccion del comparador vaciada', 'info');
   });
   // Cerrar con click fuera del modal (backdrop) — patron comun con los otros
-  // modales (onboarding/favoritos/diario). El click dentro del .modal burbujeara
+  // modales (favoritos/comparador). El click dentro del .modal burbujeara
   // hasta el backdrop tambien, asi que comprobamos que el target sea el propio.
   modal.addEventListener('click', function(e) {
     if (e.target === modal) closeCompareModal();

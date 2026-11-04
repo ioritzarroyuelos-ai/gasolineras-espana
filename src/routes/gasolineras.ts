@@ -41,16 +41,17 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       return c.json(muniGasIndex.data, 200, CACHE)
     }
     const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
-    // Incluimos lat/lng (coord representativa del municipio) para que la portada
-    // pueda resolver "usar mi ubicación" → municipio más cercano sin llamadas extra.
-    const out: Array<{ n: string; p: string; u: string; lat?: number; lng?: number }> = []
+    if (!snap?.ListaEESSPrecio?.length) {
+      return c.json({ error: 'municipios_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+    }
+    const out: Array<{ n: string; p: string; u: string }> = []
     const seen = new Set<string>()
     for (const prov of PROVINCIAS) {
       for (const m of municipiosInProvincia(snap, prov.id)) {
         const u = '/gasolineras/' + prov.slug + '/' + m.slug
         if (seen.has(u)) continue
         seen.add(u)
-        out.push({ n: m.name, p: prov.name, u, lat: m.lat, lng: m.lng })
+        out.push({ n: m.name, p: prov.name, u })
       }
     }
     out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
@@ -59,7 +60,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
   })
 
   // `/gasolineras/` — portada: buscador de municipio + "usar mi ubicacion" +
-  // "planificar ruta" + contenido SEO (precios medios nacionales y enlaces por
+  // contenido SEO (precios medios nacionales y enlaces por
   // provincia). El mapa interactivo completo vive en /gasolineras/mapa. Ver
   // src/html/gasolineras.ts.
   app.get('/gasolineras/', async c => {
@@ -73,11 +74,13 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
     const nonce = genNonce()
     let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
     let provincias: GasLandingProvincia[] = []
+    let snapshotDate: string | undefined
     try {
       // M5: stats nacionales + recuento por provincia desde el resumen precomputado;
       // fallback al calculo completo sobre stations.json (12 MB) si falta/no valida.
       const resumen = resumenFromPre(await loadSnapshot<unknown>(c.req.url, 'gasolineras-resumen.json', c.env.ASSETS))
       if (resumen) {
+        snapshotDate = resumen.fechaMinisterio
         stats = Object.keys(resumen.nacionalStats.stats).length ? resumen.nacionalStats.stats : undefined
         const counts = resumen.provinciaCounts
         provincias = PROVINCIAS
@@ -86,6 +89,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
           .sort((a, b) => a.name.localeCompare(b.name, 'es'))
       } else {
         const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
+        snapshotDate = snap?.Fecha
         const r = statsNacional(snap)
         stats = Object.keys(r.stats).length ? r.stats : undefined
         if (snap && Array.isArray(snap.ListaEESSPrecio)) {
@@ -101,14 +105,14 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       }
     } catch { /* degradacion: portada sin bloque de precios/provincias */ }
     return new Response(
-      buildGasolinerasLanding(nonce, c.req.url, { stats, provincias }),
+      buildGasolinerasLanding(nonce, c.req.url, { stats, provincias, snapshotDate }),
       { headers: gasolinerasLandingHeaders(nonce) },
     )
   })
 
   // `/gasolineras/mapa` — el mapa interactivo completo (la SPA de siempre). La
   // portada /gasolineras/ paso a ser un buscador; esta ruta conserva el mapa con
-  // filtros, ubicacion (?cerca=1) y rutas (?desde=&hasta=). Va ANTES de
+  // filtros y ubicación (#near=lat,lng, solo en el navegador). Va ANTES de
   // `/gasolineras/:slug` o "mapa" se interpretaria como slug de provincia. Es la
   // misma pagina que la home de mapa, con noindex (herramienta, no contenido SEO).
   app.get('/gasolineras/mapa', async c => {

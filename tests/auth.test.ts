@@ -169,7 +169,6 @@ describe('cookie helpers', () => {
 describe('isSyncableKey', () => {
   it('accepts known keys', () => {
     expect(isSyncableKey('gs_profile_v1')).toBe(true)
-    expect(isSyncableKey('gs_diary_v1')).toBe(true)
     expect(isSyncableKey('gs_favs_v1')).toBe(true)
   })
 
@@ -178,5 +177,7 @@ describe('isSyncableKey', () => {
     expect(isSyncableKey('../../etc/passwd')).toBe(false)
     expect(isSyncableKey('')).toBe(false)
     expect(isSyncableKey('gs_profile_v2')).toBe(false)
+    expect(isSyncableKey('gs_diary_v1')).toBe(false)
+    expect(isSyncableKey('gs_alerts_v1')).toBe(false)
   })
 })

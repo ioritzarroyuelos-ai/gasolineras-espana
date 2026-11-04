@@ -4,18 +4,21 @@
 
 
 // ---- EVENTOS ----
-// Filosofia UX: los cambios en los filtros NO disparan carga ni render. El
-// usuario decide cuando mirar resultados pulsando "Buscar" (o "Mi ubicacion").
-// Asi evitamos que un usuario indeciso vea la lista bailar mientras ajusta 4
-// controles — y ahorramos llamadas innecesarias al Ministerio.
+// Los filtros actualizan el listado al cambiar. La ubicación solo se usa si
+// el usuario llega desde «Cerca de mí», y nunca se añade a un enlace compartido.
 document.getElementById('sel-provincia').addEventListener('change', async function(e) {
+  clearSearchLocation();
   // Al cambiar provincia refrescamos el dropdown de municipios (selector
   // dependiente) y cargamos la provincia entera (sin "Buscar": el flujo es
   // automatico). Elegir luego un municipio recorta por radio a su alrededor.
   await loadMunicipios(e.target.value);
+  refreshSearchAreaControls();
+  syncSearchMapRegion();
   if (e.target.value) { loadStations(); setTimeout(writeQueryState, 0); }
 });
 document.getElementById('sel-municipio').addEventListener('change', function() {
+  clearSearchLocation();
+  refreshSearchAreaControls();
   // Flujo automatico: al elegir municipio cargamos sus estaciones. La
   // provincia ya esta elegida (loadStations la exige). El radio de busqueda
   // se centra en el municipio (setupMunicipioRadio dentro de loadStations).
@@ -23,11 +26,63 @@ document.getElementById('sel-municipio').addEventListener('change', function() {
   setTimeout(writeQueryState, 0);
 });
 document.getElementById('sel-combustible').addEventListener('change', function() {
+  sharedStationId = '';
+  setProfile({ fuel: this.value, litres: getRefuelLitres() });
+  refreshRefuelControls();
   // El combustible re-filtra/re-colorea el pool ya cargado (operacion de
   // cliente, sin fetch). Si aun no hay estaciones, no hace nada.
   if (allStations.length) applyFilters();
   setTimeout(writeQueryState, 0);
 });
+
+function refreshRefuelControls() {
+  var fuel = document.getElementById('sel-combustible').value;
+  var litres = document.getElementById('in-refuel-litres');
+  var group = document.getElementById('refuel-litres-group');
+  var note = document.getElementById('fuel-unit-note');
+  if (litres) litres.value = String(getRefuelLitres());
+  if (group) group.hidden = fuelUnit(fuel) !== 'L';
+  if (note) note.hidden = fuelUnit(fuel) !== 'kg';
+}
+
+function refreshSearchAreaControls() {
+  var municipality = document.getElementById('sel-municipio').value;
+  var area = document.getElementById('sel-area');
+  var group = document.getElementById('area-group');
+  var note = document.getElementById('search-origin-note');
+  var radius = document.getElementById('radius-group');
+  if (group) group.hidden = !!searchOrigin || !municipality;
+  if (note) note.hidden = !searchOrigin;
+  if (radius) radius.style.display = searchOrigin || (municipality && area && area.value === 'cerca') ? 'block' : 'none';
+}
+
+(function() {
+  var area = document.getElementById('sel-area');
+  if (area) area.addEventListener('change', function() {
+    sharedStationId = '';
+    refreshSearchAreaControls();
+    loadStations();
+    writeQueryState();
+  });
+  var refresh = document.getElementById('btn-refresh');
+  if (refresh) refresh.addEventListener('click', async function() {
+    refresh.disabled = true;
+    refresh.textContent = 'Actualizando…';
+    try { await forceReload(); }
+    finally { refresh.disabled = false; refresh.textContent = 'Actualizar'; }
+  });
+})();
+
+(function() {
+  var input = document.getElementById('in-refuel-litres');
+  if (!input) return;
+  input.addEventListener('change', function() {
+    if (!input.checkValidity()) { input.reportValidity(); return; }
+    setProfile({ fuel: document.getElementById('sel-combustible').value, litres: Number(input.value) });
+    refreshRefuelControls();
+    if (allStations.length) applyFilters();
+  });
+})();
 
 // ---- SIDEBAR TOGGLE ----
 var sidebar    = document.getElementById('sidebar');
@@ -104,10 +159,6 @@ window.addEventListener('resize', function() {
   if (map) map.invalidateSize(true);
 });
 
-// Geocoder del header retirado por decision de producto (usuarios lo usaban
-// poco frente al filtro por provincia + geolocalizacion). El modal de ruta
-// sigue usando /api/geocode/search internamente para origen/destino.
-
 // ---- INIT ----
 // Limpiar cache antigua (datos sin normalizar) si existe
 (function() {
@@ -125,7 +176,51 @@ window.addEventListener('resize', function() {
 //      history.replaceState para que refrescar no pierda contexto.
 // La seed via window.__SEO__ (rutas /gasolineras/<slug>) solo rellena la
 // provincia; los query params tienen prioridad sobre ella.
-var __urlSyncActive = false;   // evita que la rehidratacion dispare loadStations
+var sharedStationId = '';
+var sharedStationRestored = false;
+
+function readNearLocation(hash) {
+  var value = new URLSearchParams(String(hash || '').replace(/^#/, '')).get('near');
+  if (!value || !/^-?\d+(?:\.\d+)?,-?\d+(?:\.\d+)?$/.test(value)) return null;
+  var parts = value.split(',').map(Number);
+  if (parts[0] < 27 || parts[0] > 44.5 || parts[1] < -19 || parts[1] > 5) return null;
+  return { lat: parts[0], lng: parts[1] };
+}
+
+function clearSearchLocation() {
+  setSearchOrigin(null);
+  sharedStationId = '';
+  sharedStationRestored = false;
+}
+
+function syncSearchMapRegion() {
+  var province = document.getElementById('sel-provincia').value;
+  var canarias = searchOrigin ? isCanarias(searchOrigin.lat, searchOrigin.lng) : province === '35' || province === '38';
+  setMapRegion(canarias ? 'canarias' : 'peninsula', true);
+}
+
+function restoreSharedStation() {
+  if (!sharedStationId || sharedStationRestored) return;
+  for (var i = 0; i < filteredStations.length; i++) {
+    if (stationId(filteredStations[i]) !== sharedStationId) continue;
+    sharedStationRestored = true;
+    zoomTo(i);
+    return;
+  }
+}
+
+function stationShareData(station) {
+  var url = new URL('/gasolineras/mapa', window.location.origin);
+  url.searchParams.set('prov', String(station['IDProvincia'] || ''));
+  url.searchParams.set('station', stationId(station));
+  url.searchParams.set('fuel', document.getElementById('sel-combustible').value);
+  return {
+    title: station['Rotulo'] || 'Gasolinera',
+    text: (station['Rotulo'] || 'Gasolinera') + ' — ' + (station['Direccion'] || '') + ', ' + (station['Municipio'] || ''),
+    url: url.toString()
+  };
+}
+
 function readQueryState() {
   var p = new URLSearchParams(location.search);
   // Fallback: si la ruta es /gasolineras/<slug>[/<mun-slug>] y no hay ?prov,
@@ -135,7 +230,9 @@ function readQueryState() {
   return {
     prov:   p.get('prov')   || (seo && seo.provinciaId) || '',
     mun:    p.get('mun')    || (seo && seo.municipioId) || '',
-    fuel:   p.get('fuel')   || ''
+    fuel:   p.get('fuel')   || getProfile().fuel,
+    area:   p.get('area') === 'cerca' ? 'cerca' : 'municipio',
+    station: /^\d{1,12}$/.test(p.get('station') || '') ? p.get('station') : ''
   };
 }
 function writeQueryState() {
@@ -148,6 +245,9 @@ function writeQueryState() {
     if (mun)   p.set('mun',   mun);
     // fuel por defecto es "Precio Gasolina 95 E5"; no lo escribimos para URLs limpias
     if (fuel && fuel !== 'Precio Gasolina 95 E5') p.set('fuel', fuel);
+    if (sharedStationId) p.set('station', sharedStationId);
+    var area = document.getElementById('sel-area');
+    if (mun && area && area.value === 'cerca') p.set('area', 'cerca');
     var qs = p.toString();
     var base = location.pathname;
     // En rutas /gasolineras/<slug>[/<mun-slug>], mantener la ruta pero anadir
@@ -161,7 +261,8 @@ function writeQueryState() {
       }
       qs = p.toString();
     }
-    history.replaceState(null, '', base + (qs ? '?' + qs : ''));
+    var hash = searchOrigin ? '#near=' + searchOrigin.lat + ',' + searchOrigin.lng : '';
+    history.replaceState(null, '', base + (qs ? '?' + qs : '') + hash);
   } catch(_) {}
 }
 
@@ -170,6 +271,8 @@ async function applyQueryState(state) {
   var selProv = document.getElementById('sel-provincia');
   var selMun  = document.getElementById('sel-municipio');
   var selFuel = document.getElementById('sel-combustible');
+  var selArea = document.getElementById('sel-area');
+  if (selArea) selArea.value = state.area === 'cerca' ? 'cerca' : 'municipio';
 
   if (state.prov && selProv) {
     selProv.value = state.prov;
@@ -185,7 +288,12 @@ async function applyQueryState(state) {
     }
     if (match) selMun.value = state.mun;
   }
-  if (state.fuel && selFuel)  selFuel.value = state.fuel;
+  if (selFuel) {
+    var fuelExists = Array.prototype.some.call(selFuel.options, function(option) { return option.value === state.fuel; });
+    selFuel.value = fuelExists ? state.fuel : getProfile().fuel;
+  }
+  refreshRefuelControls();
+  refreshSearchAreaControls();
 }
 
 // Si el <script> de Leaflet no carga (adblocker agresivo, red corporativa que
@@ -241,11 +349,13 @@ async function bootApp() {
   // server. Si el bot no esta vinculado la funcion retorna inmediatamente.
   try { loadTelegramSubscriptions(); } catch(_) {}
   var st = readQueryState();
-  __urlSyncActive = true;
-  if (st.prov) {
+  sharedStationId = st.station || '';
+  setSearchOrigin(readNearLocation(location.hash));
+  await applyQueryState(st);
+  syncSearchMapRegion();
+  if (st.prov || searchOrigin) {
     // Rehidratacion completa: aplicamos estado y disparamos busqueda
     // automaticamente para que la URL compartida funcione "en un click".
-    await applyQueryState(st);
     try { await loadStations(); } catch(_) {}
   }
   // Ship 4: acciones rapidas desde Manifest shortcuts (?action=...).
@@ -257,6 +367,15 @@ async function bootApp() {
       setTimeout(function() {
         if (action === 'favs') {
           if (typeof openFavsModal === 'function') openFavsModal();
+        } else if (action === 'geolocate' || action === 'cheapest') {
+          var hint = document.createElement('p');
+          hint.className = 'form-help';
+          var link = document.createElement('a');
+          link.href = action === 'geolocate' ? '/gasolineras/#cerca-de-mi' : '/gasolineras/';
+          link.textContent = action === 'geolocate' ? 'Buscar por mi ubicación' : 'Elegir zona para buscar las más baratas';
+          hint.appendChild(link);
+          document.getElementById('sidebar-filters').prepend(hint);
+          if (isMobile()) openMobileSidebar();
         }
       }, 300);
     }
@@ -296,7 +415,7 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
       // alerta para la favorita que acaba de cambiar. El server manda el
       // mensaje bonito al bot; aqui no hace falta feedback adicional mas
       // alla del toast de "guardada/eliminada".
-      if (telegramAlertsActive()) {
+      if (telegramAlertsActive() && fuelSelectorToCode()) {
         toggleTelegramFav(stationId(station), fuelSelectorToCode(), added);
       }
       renderFavsPanel();
@@ -341,7 +460,7 @@ window.addEventListener('resize', function() { if (map) map.invalidateSize(true)
   list.addEventListener('keydown', function(e) {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     var card = e.target.closest ? e.target.closest('.station-card') : null;
-    if (!card) return;
+    if (!card || e.target !== card) return;
     e.preventDefault();
     handleCardActivation(card);
   });
@@ -427,7 +546,7 @@ document.addEventListener('click', function(e) {
     favBtn.setAttribute('aria-pressed', String(added));
     showToast(added ? 'Guardada en favoritas ★' : 'Eliminada de favoritas', added ? 'success' : 'info');
     // Ship 26: auto-sync con Telegram si el bot esta vinculado.
-    if (telegramAlertsActive()) {
+    if (telegramAlertsActive() && fuelSelectorToCode()) {
       toggleTelegramFav(stationId(station), fuelSelectorToCode(), added);
     }
     // Refrescar lista para actualizar icono tambien alli
@@ -445,17 +564,17 @@ document.addEventListener('click', function(e) {
   // Compartir
   var shareBtn = t.closest('[data-pop-share]');
   if (shareBtn) {
-    var popup = shareBtn.closest('.leaflet-popup-content');
-    var title = popup ? (popup.querySelector('[style*="font-weight:800"]') || {}).textContent : '';
-    var addr  = popup ? (popup.querySelector('[style*="opacity:0.75"]') || {}).textContent : '';
-    var url = window.location.href;
-    var textMsg = (title || 'Gasolinera') + ' - ' + (addr || '') + ' - ' + url;
+    var sharedStation = findStationById(shareBtn.getAttribute('data-pop-share'));
+    if (!sharedStation) { showToast('No se pudo encontrar esta gasolinera', 'warning'); return; }
+    var shareData = stationShareData(sharedStation);
     if (navigator.share) {
-      navigator.share({ title: title || 'Gasolinera', text: textMsg, url: url }).catch(function(){});
-    } else if (navigator.clipboard) {
-      navigator.clipboard.writeText(textMsg).then(function() {
-        showToast('Enlace copiado al portapapeles', 'success');
+      navigator.share(shareData).catch(function(error) {
+        if (!error || error.name !== 'AbortError') showToast('No se pudo compartir el enlace', 'warning');
       });
+    } else if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareData.text + '\n' + shareData.url).then(function() {
+        showToast('Enlace copiado al portapapeles', 'success');
+      }).catch(function() { showToast('No se pudo copiar el enlace', 'error'); });
     } else {
       showToast('Tu navegador no permite compartir', 'warning');
     }
@@ -547,7 +666,7 @@ function lookupStationInCaches(favId) {
   // 1) Hot path: provincia que el usuario esta viendo ahora mismo.
   for (var i = 0; i < allStations.length; i++) {
     if (stationId(allStations[i]) === favId) {
-      return { station: allStations[i], ts: Date.now(), stale: false };
+      return { station: allStations[i], ts: null, fecha: currentSnapshotDate, stale: false };
     }
   }
   // 2) Otras provincias cacheadas en localStorage. Iteramos claves gs_v2_*.
@@ -567,7 +686,7 @@ function lookupStationInCaches(favId) {
       if (Date.now() - ts > CACHE_HARD_TTL) continue;
       for (var j = 0; j < data.length; j++) {
         if (stationId(data[j]) === favId) {
-          return { station: data[j], ts: ts, stale: Date.now() - ts > CACHE_FRESH_TTL };
+          return { station: data[j], ts: ts, fecha: parsed.fecha || '', stale: Date.now() - ts > CACHE_FRESH_TTL };
         }
       }
     }
@@ -681,8 +800,9 @@ function renderFavsModalList() {
     var ageHint = (found && found.stale) ? ' title="Precio guardado ' + formatAge(found.ts) + ' (pulsa para actualizar)"' : '';
     var stalePrefix = (found && found.stale) ? '⚠ ' : '';
     var priceHtml = price
-      ? '<span class="fav-row-price badge badge-' + priceColor(price) + '"' + ageHint + '>' + stalePrefix + fmtPriceUnit(price) + '</span>'
+      ? '<span class="fav-row-price badge badge-' + priceColor(price) + '"' + ageHint + '>' + stalePrefix + fmtPriceUnit(price, fuel) + '</span>'
       : '<span class="fav-row-sub fav-row-sub--small">Sin datos</span>';
+    if (found) priceHtml += '<small class="fav-row-date">' + esc(found.fecha ? 'Datos: ' + found.fecha : 'Fecha de los precios no disponible') + '</small>';
     // Mostramos municipio (+ provincia si la conocemos) para que el usuario
     // entienda de un vistazo donde vive cada favorita.
     var loc = esc(f.municipio || '');
@@ -708,7 +828,7 @@ function renderFavsModalList() {
       + '  <div class="fav-row-sub">📍 ' + loc + '</div>'
       + '</div>'
       + '<div>' + priceHtml + '</div>'
-      + '<button class="' + bellCls + '" data-bell-id="' + esc(f.id) + '" data-bell-fuel="' + esc(fuelCode) + '" aria-label="' + bellLabel + '" aria-pressed="' + (bellOn ? 'true' : 'false') + '" title="' + bellLabel + '">' + bellIcon + '</button>'
+      + (fuelCode ? '<button class="' + bellCls + '" data-bell-id="' + esc(f.id) + '" data-bell-fuel="' + esc(fuelCode) + '" aria-label="' + bellLabel + '" aria-pressed="' + (bellOn ? 'true' : 'false') + '" title="' + bellLabel + '">' + bellIcon + '</button>' : '')
       + '<button class="fav-row-remove" data-remove-id="' + esc(f.id) + '" aria-label="Quitar de favoritas" title="Quitar"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-trash"/></svg></button>';
     // Click en info -> navegar a la favorita (setea provincia, municipio,
     // busqueda por rotulo y zoom). Funciona aunque actualmente estes viendo
@@ -897,9 +1017,11 @@ function clearFavProvinceHints(id) {
 // usuario no tiene que re-guardar nada.
 async function navigateToFav(f) {
   closeFavsModal();
+  clearSearchLocation();
+  var areaControl = document.getElementById('sel-area');
+  if (areaControl) areaControl.value = 'municipio';
   var selProv = document.getElementById('sel-provincia');
   var selMun  = document.getElementById('sel-municipio');
-  var inText  = document.getElementById('search-text');
 
   // Paso 0: centrar el mapa INMEDIATAMENTE sobre la ubicacion real de la
   // favorita. Esto desacopla el feedback visual (siempre funciona si
@@ -910,6 +1032,7 @@ async function navigateToFav(f) {
   var favLng = parseFloat(f.lng);
   var haveFavCoords = !isNaN(favLat) && !isNaN(favLng) && (favLat !== 0 || favLng !== 0);
   if (haveFavCoords) {
+    setMapRegion(isCanarias(favLat, favLng) ? 'canarias' : 'peninsula', true);
     try { map.setView([favLat, favLng], 15); } catch(_) {}
   }
 
@@ -946,7 +1069,6 @@ async function navigateToFav(f) {
     // Sin provinciaId: si el mapa ya esta centrado en la favorita (paso 0),
     // al menos el usuario la ve. Quitamos el search text (para no mentir
     // con "Sin resultados") y damos un toast explicativo.
-    if (inText) inText.value = '';
     applyFilters();
     if (haveFavCoords) {
       showToast('No pudimos resolver la provincia. Seleccionala manualmente — el mapa ya esta centrado en la favorita.', 'warning');
@@ -971,6 +1093,7 @@ async function navigateToFav(f) {
     } else if (selMun) {
       selMun.value = '';
     }
+    refreshSearchAreaControls();
     try { await loadStations(); } catch(_) {}
     for (var p = 0; p < allStations.length; p++) {
       if (stationId(allStations[p]) === f.id) return true;
@@ -981,7 +1104,6 @@ async function navigateToFav(f) {
   // --- A partir de aqui tenemos provinciaId (posiblemente incorrecto de un
   // reverse anterior). Cargamos; si el fav NO aparece, lo tratamos como
   // provinciaId corrupto, lo borramos y reintentamos con reverse fresco.
-  if (inText) inText.value = f.rotulo || '';
   var found = await loadAndCheck();
 
   if (!found && haveFavCoords) {
@@ -1007,7 +1129,6 @@ async function navigateToFav(f) {
     // Ni con self-heal sale. Quitamos el filtro de texto (para que el
     // usuario pueda mirar las de la provincia actual si ya esta), avisamos,
     // y dejamos el mapa centrado en la favorita como hicimos en paso 0.
-    if (inText) inText.value = '';
     applyFilters();
     showToast('No encontramos "' + (f.rotulo || 'esta favorita') + '" en los datos actuales. El mapa esta centrado en su ubicacion.', 'warning');
     return;
@@ -1035,7 +1156,7 @@ async function navigateToFav(f) {
   for (var i = 0; i < filteredStations.length; i++) {
     if (stationId(filteredStations[i]) === f.id) { zoomTo(i); return; }
   }
-  showToast('Esa gasolinera existe pero esta oculta por los filtros avanzados', 'info');
+  showToast('Esta gasolinera no publica un precio para el combustible elegido', 'info');
 }
 
 function openFavsModal() {
@@ -1052,14 +1173,16 @@ function closeFavsModal() {
 // ---- SLIDER DE RADIO (centrado en el municipio elegido) ----
 // El radio recorta las estaciones a N km alrededor del centro del municipio
 // seleccionado (munCenter). La capacidad del deposito se lee de
-// localStorage.gs_tank (default 50 L) para el calculo de ahorro.
+// la cantidad elegida en el control de litros para el cálculo de ahorro.
 (function() {
   var inRad = document.getElementById('in-radius');
   var lblRad = document.getElementById('lbl-radius');
   inRad.addEventListener('input', function() {
     lblRad.textContent = inRad.value + ' km';
     // Re-aplica en vivo el radio alrededor del municipio (munCenter).
-    if (munCenter && allStations.length) applyFilters();
+    sharedStationId = '';
+    if ((munCenter || searchOrigin) && allStations.length) applyFilters();
+    writeQueryState();
   });
 })();
 
@@ -1105,6 +1228,8 @@ document.addEventListener('keydown', function(e) {
 (function() {
   var modal = document.getElementById('modal-favs');
   if (!modal) return;
+  var btnOpen = document.getElementById('btn-favs-open');
+  if (btnOpen) btnOpen.addEventListener('click', openFavsModal);
   var btnClose = document.getElementById('btn-favs-close');
   var btnDone  = document.getElementById('btn-favs-done');
 
@@ -1221,8 +1346,12 @@ function hideTelegramLinkPromptDialog() {
   }
 
   btn.addEventListener('click', async function() {
-    btn.disabled = true;
     var wasActive = panel.classList.contains('active');
+    if (!wasActive && !fuelSelectorToCode()) {
+      showToast('Las alertas están disponibles para gasolina 95/98 y diésel', 'info');
+      return;
+    }
+    btn.disabled = true;
     try {
       if (wasActive) {
         var res1 = await disableTelegramAlerts();
@@ -1239,6 +1368,8 @@ function hideTelegramLinkPromptDialog() {
         });
         if (res2.ok) {
           showToast('✅ Alertas Telegram activas — resumen diario a las 8:00', 'success');
+        } else if (res2.error === 'combustible_no_disponible') {
+          showToast('Las alertas están disponibles para gasolina 95/98 y diésel', 'info');
         } else if (res2.error === 'sin_favoritos') {
           showToast('Añade al menos una favorita antes de activar alertas', 'info');
         } else if (res2.error === 'telegram_no_configurado') {

@@ -339,9 +339,7 @@ export function parseSessionCookie(cookieHeader: string | null | undefined): str
 // que un atacante con sesion valida guarde basura arbitraria en la KV.
 export const SYNCABLE_KEYS = new Set<string>([
   'gs_profile_v1',
-  'gs_diary_v1',
   'gs_favs_v1',
-  'gs_alerts_v1',
   'gs_tg_chat_v1',
   'gs_settings_v1',
 ])

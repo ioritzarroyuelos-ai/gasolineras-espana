@@ -158,23 +158,19 @@ function initMap() {
     map.invalidateSize(true);
     var hasSeo = false;
     try { hasSeo = !!(window.__SEO__ && window.__SEO__.provinciaId); } catch(_) {}
-    // En rutas SEO (provincia/municipio) el encuadre a su zona lo hace
-    // loadStations. NO encuadramos Espana aqui: por su setTimeout, este fit
-    // pisaba el de la provincia/municipio y la pagina se quedaba a nivel pais.
-    // Si las estaciones ya estan (datos en cache), re-encuadramos su zona ya;
-    // si no, loadStations lo hara (sin carrera, porque no hay fit de Espana).
-    if (hasSeo) {
-      if (typeof applyFilters === 'function' && allStations && allStations.length) applyFilters();
-    } else {
-      map.fitBounds(ESPANA_BOUNDS, { padding: [6, 6], animate: false });
-    }
+    // Una búsqueda o un enlace a una estación ya ha elegido su encuadre.
+    // Este ajuste de tamaño no debe cerrar su ficha ni devolverlo al país entero.
+    var provinceControl = document.getElementById('sel-provincia');
+    var hasSelection = hasSeo || searchOrigin || (provinceControl && provinceControl.value);
+    var activeBounds = mapRegion === 'canarias' ? CANARIAS_VIEW : ESPANA_BOUNDS;
+    if (!hasSelection && !allStations.length) map.fitBounds(activeBounds, { padding: [6, 6], animate: false });
     // minZoom = nivel al que Espana llena la pantalla (no dejar alejarse mas).
     // Se calcula con getBoundsZoom, NO con map.getZoom(): si el contenedor midio
     // 0 en algun frame, getZoom() seria maxZoom (19) y bloquearia el mapa a nivel
     // calle (minZoom=maxZoom). Acotado a [4,6] por si getBoundsZoom tambien
     // devuelve un valor raro con el contenedor sin medir.
     var z = 5;
-    try { z = Math.floor(map.getBoundsZoom(ESPANA_BOUNDS, false, L.point(6, 6))); } catch(_) {}
+    try { z = Math.floor(map.getBoundsZoom(activeBounds, false, L.point(6, 6))); } catch(_) {}
     if (!isFinite(z) || z < 4) z = 4;
     if (z > 6) z = 6;
     map.setMinZoom(z);
@@ -244,7 +240,7 @@ var PENINSULA_VIEW = null;
 var CANARIAS_VIEW = null;
 var mapRegion = 'peninsula';
 
-function setMapRegion(region) {
+function setMapRegion(region, skipRender) {
   if (!map || !PENINSULA_VIEW || !CANARIAS_VIEW || region === mapRegion) return;
   mapRegion = region;
   var b = region === 'canarias' ? CANARIAS_VIEW : PENINSULA_VIEW;
@@ -252,13 +248,11 @@ function setMapRegion(region) {
   // al llegar, junto con el minZoom del nuevo encuadre.
   map.setMinZoom(4);
   map.setMaxBounds(null);
-  map.fitBounds(b, { padding: [6, 6], animate: true });
-  map.once('moveend', function() {
-    map.setMaxBounds(b);
-    map.setMinZoom(map.getZoom());
-  });
+  map.fitBounds(b, { padding: [6, 6], animate: false });
+  map.setMaxBounds(b);
+  map.setMinZoom(Math.max(4, Math.min(6, map.getZoom())));
   updateRegionUI();
-  if (typeof applyFilters === 'function' && allStations && allStations.length) applyFilters();
+  if (!skipRender && typeof applyFilters === 'function' && allStations && allStations.length) applyFilters();
 }
 
 // Muestra el recuadro (vista peninsular) o el boton de volver (vista canaria).
@@ -912,10 +906,14 @@ var minP = 0, maxP = 0;
 var currentMedianPrice = null;              // mediana del listado filtrado actual
 var topCheapIds = {};                       // ids de las 3 estaciones mas baratas (para medallas)
 
-// Formatea precio en €/L (unica unidad soportada tras quitar el toggle).
-function fmtPriceUnit(price) {
+// La unidad depende del producto: los gases GNC/GNL y el hidrógeno se venden por kg.
+function fmtPriceUnit(price, fuel) {
   if (price == null) return 'N/D';
-  return price.toFixed(3) + ' €';
+  if (!fuel) {
+    var selectedFuel = document.getElementById('sel-combustible');
+    fuel = selectedFuel ? selectedFuel.value : '';
+  }
+  return price.toFixed(3).replace('.', ',') + ' €/' + fuelUnit(fuel);
 }
 
 // ---- ICONS - price badge pill ----
@@ -968,13 +966,12 @@ function priceColor(price) {
   return 'red';
 }
 
-function fmt(price) { return price ? price.toFixed(3) + ' €/L' : 'N/D'; }
 
 // Detecta si una gasolinera es 24H
 function is24H(h) {
   if (!h) return false;
-  var u = h.toUpperCase().replace(/s/g,'');
-  return u === '24H' || u.includes('00:00-24:00') || u.includes('00:00-00:00') || u === 'L-D:00:00-24:00';
+  var u = String(h).toUpperCase().replace(/\s/g, '');
+  return /^(?:L-D:?)?(?:24H|00:00-24:00)$/.test(u);
 }
 
 // Version corta para la tarjeta (primer segmento)
@@ -982,8 +979,8 @@ function horarioCard(h) {
   if (!h) return 'Horario no disponible';
   if (is24H(h)) return '&#x2665; Abierto 24 horas';
   var segs = h.split(';').map(function(s){ return s.trim(); }).filter(Boolean);
-  if (!segs.length) return h;
-  return segs[0] + (segs.length > 1 ? ' (+' + (segs.length-1) + ' tramos)' : '');
+  if (!segs.length) return esc(h);
+  return esc(segs[0]) + (segs.length > 1 ? ' (+' + (segs.length-1) + ' tramos)' : '');
 }
 
 // Version completa para el popup (cada tramo en su linea)
@@ -992,7 +989,7 @@ function horarioPopup(h) {
   if (is24H(h)) return '<span class="popup-h24">&#x2665; Abierto 24 horas todos los dias</span>';
   var segs = h.split(';').map(function(s){ return s.trim(); }).filter(Boolean);
   return segs.map(function(seg) {
-    var parts = seg.match(/^([^:]+):s*(.+)$/);
+    var parts = seg.match(/^([^:]+):\s*(.+)$/);
     if (!parts) return '<div class="popup-segment">' + esc(seg) + '</div>';
     return '<div class="popup-segment-row">'
       + '<span class="popup-seg-day">' + esc(parts[1].trim()) + '</span>'
@@ -1155,6 +1152,8 @@ function renderHistoryPanel(container, days) {
     toggles[i].setAttribute('aria-selected', active ? 'true' : 'false');
   }
   container.setAttribute('data-hist-days', String(days));
+  var requestId = (container.__historyRequestId || 0) + 1;
+  container.__historyRequestId = requestId;
   body.innerHTML = '<div class="hist-loading">⏳ Cargando historial…</div>';
 
   // Fetch estacion (obligatorio) + mediana provincial (opcional, no bloquea).
@@ -1179,6 +1178,7 @@ function renderHistoryPanel(container, days) {
     : Promise.resolve(null);
 
   Promise.all([pStation, pMedian]).then(function(results) {
+    if (container.__historyRequestId !== requestId) return;
     var st = results[0], md = results[1];
     if (st && st.unavailable) {
       renderFallbackLocal(body, stationIdV, fuel, days);
@@ -1201,9 +1201,10 @@ function renderHistoryPanel(container, days) {
       renderFallbackLocal(body, stationIdV, fuel, days);
       return;
     }
-    renderHistoryBody(body, points, medianPoints, currentP, fuelLabel);
+    renderHistoryBody(body, points, medianPoints, currentP, fuelLabel, fuel);
   }).catch(function() {
-    // Fallo de red/servidor: caemos al local como ultimo recurso.
+    // Un cambio posterior de rango tiene prioridad sobre esta respuesta.
+    if (container.__historyRequestId !== requestId) return;
     renderFallbackLocal(body, stationIdV, fuel, days);
   });
 }
@@ -1219,8 +1220,11 @@ function renderFallbackLocal(body, stationIdV, fuel, days) {
   cutoff.setDate(cutoff.getDate() - days);
   var cutoffStr = cutoff.toISOString().slice(0, 10);
   var filtered = local.filter(function(pt) { return pt.d >= cutoffStr; });
-  if (filtered.length < 2) filtered = local;  // si el rango corta demasiado, dejamos todo el local
-  renderHistoryBody(body, filtered, null, null, fuel);
+  if (filtered.length < 2) {
+    body.innerHTML = '<div class="hist-empty">Sin datos suficientes para este rango</div>';
+    return;
+  }
+  renderHistoryBody(body, filtered, null, null, fuel, fuel);
   var note = document.createElement('div');
   note.className = 'trend-label u-mt-2';
   note.textContent = 'ℹ Datos locales (servidor sin historial)';
@@ -1230,12 +1234,12 @@ function renderFallbackLocal(body, stationIdV, fuel, days) {
 // Pinta el cuerpo del panel: sparkline + stats (min/max/media) + badge de
 // "precio historicamente bajo". Extraido para poder llamarlo desde fallback
 // local y desde la via normal.
-function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) {
+function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel, fuel) {
   var vals = points.map(function(p) { return p.p; });
   var min = Math.min.apply(null, vals);
   var max = Math.max.apply(null, vals);
   var avg = vals.reduce(function(a, b) { return a + b; }, 0) / vals.length;
-  var fmt = function(v) { return v.toFixed(3) + ' €'; };
+  var fmt = function(v) { return fmtPriceUnit(v, fuel); };
   // Badge "historicamente bajo": precio actual <= percentil 10 del periodo.
   // Usamos una copia ordenada para no mutar el array original.
   var sorted = vals.slice().sort(function(a, b) { return a - b; });
@@ -1260,7 +1264,7 @@ function renderHistoryBody(body, points, medianPoints, currentPrice, fuelLabel) 
   var trendClass = delta > 0.005 ? 'trend-up' : (delta < -0.005 ? 'trend-down' : '');
   var trendArrow = delta > 0.005 ? '↑' : (delta < -0.005 ? '↓' : '→');
   var trendTxt = '<div class="trend-label u-mt-2 ' + trendClass + '">'
-               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3) + ' € en ' + points.length + ' observaciones</div>';
+               + trendArrow + ' ' + (delta >= 0 ? '+' : '') + delta.toFixed(3).replace('.', ',') + ' €/' + fuelUnit(fuel) + ' en ' + points.length + ' observaciones</div>';
 
   var legend = medianPoints
     ? '<div class="hist-legend">'
@@ -1393,13 +1397,23 @@ function applyPercentileMarkerPos(popupNode) {
   }
 }
 
+// Enlaces por coordenadas: cada proveedor recibe el destino de esta estación.
+function buildNavigationLinks(lat, lng, name) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return '';
+  var coords = lat.toFixed(6) + ',' + lng.toFixed(6);
+  return '<div class="popup-nav-row">'
+    + '<a class="popup-nav-btn popup-nav-google" href="https://www.google.com/maps/dir/?api=1&amp;destination=' + coords + '&amp;travelmode=driving" target="_blank" rel="noopener">Google Maps</a>'
+    + '<a class="popup-nav-btn popup-nav-waze" href="https://www.waze.com/ul?ll=' + coords + '&amp;navigate=yes" target="_blank" rel="noopener">Waze</a>'
+    + '<a class="popup-nav-btn popup-nav-apple" href="https://maps.apple.com/?daddr=' + coords + '&amp;q=' + encodeURIComponent(name || 'Destino') + '&amp;dirflg=d" target="_blank" rel="noopener">Apple Maps</a>'
+    + '</div>';
+}
+
 function buildPopup(s) {
   var fuel = document.getElementById('sel-combustible').value;
   var fuelEntry = FUELS_POPUP.find(function(f){ return f[0] === fuel; });
   var fuelLabel = fuelEntry ? fuelEntry[1] : fuel;
   var mainPrice = parsePrice(s[fuel]);
   var mainColor = mainPrice ? priceColor(mainPrice) : 'gray';
-  var mainBg = CLRS[mainColor];
   var id = stationId(s);
   var fav = isFav(id);
 
@@ -1408,7 +1422,7 @@ function buildPopup(s) {
   var hasCoords = !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0);
 
   // Estado abierta/cerrada
-  var status = isOpenNow(s['Horario']);
+  var status = isOpenNow(s['Horario'], s);
   var statusHtml = '';
   if (status) {
     statusHtml = status.open
@@ -1425,35 +1439,23 @@ function buildPopup(s) {
       + '<span class="status-chip status-members">🔑 Solo socios Costco Club</span>';
   }
 
-  // Distancia al centro del municipio elegido (munCenter). La calculamos
-  // antes del ahorro para que el ahorro neto pueda restar el coste del desvio.
+  // Distancia orientativa en línea recta. El recorrido real lo calcula la app de navegación.
   var distHtml = '';
-  var extraKmPopup = null;
-  if (munCenter && hasCoords) {
-    var kmPop = distanceKm(munCenter.lat, munCenter.lng, lat, lng);
-    extraKmPopup = kmPop * 2;  // ida + vuelta, conservador
-    var minsPop = Math.round(kmPop / 40 * 60); // 40 km/h urbano
-    distHtml = '<span class="distance-chip u-ml-6">🧭 ' + kmPop.toFixed(1) + ' km &middot; ~' + minsPop + ' min</span>';
+  var distanceOrigin = searchOrigin || munCenter;
+  if (distanceOrigin && hasCoords) {
+    var kmPop = distanceKm(distanceOrigin.lat, distanceOrigin.lng, lat, lng);
+    var originLabel = searchOrigin ? 'tu ubicación' : 'el centro de la zona elegida';
+    distHtml = '<span class="popup-distance">' + kmPop.toFixed(1).replace('.', ',') + ' km en línea recta desde ' + originLabel + '</span>';
   }
 
-  // Ahorro — AHORRO NETO si tenemos centro de municipio + perfil (resta el
-  // coste en gasolina del desvio ida-vuelta usando el consumo declarado). Si
-  // no hay datos, cae al bruto como antes.
+  // Compara la cantidad elegida con el precio intermedio del listado; no estima trayectos.
   var savingsHtml = '';
-  if (mainPrice && currentMedianPrice && currentMedianPrice > mainPrice) {
-    var tankP = parseInt(localStorage.getItem('gs_tank') || '50', 10);
+  if (fuelUnit(fuel) === 'L' && mainPrice && currentMedianPrice && currentMedianPrice > mainPrice) {
+    var tankP = getRefuelLitres();
     var grossP = (currentMedianPrice - mainPrice) * tankP;
-    var profP = getProfile();
-    if (extraKmPopup != null && profP && profP.consumo > 0) {
-      var netP = computeNetSavings(grossP, extraKmPopup, profP.consumo, mainPrice);
-      if (netP.worthIt) {
-        savingsHtml = '<div class="savings-badge u-mt-6">💰 Ahorro neto ' + netP.netEur.toFixed(2) + ' € / deposito ' + tankP + 'L'
-                    + ' <span class="savings-sub">(' + grossP.toFixed(2) + ' € − ' + netP.detourCostEur.toFixed(2) + ' desvio)</span></div>';
-      } else if (grossP >= 0.5) {
-        savingsHtml = '<div class="savings-badge savings-badge--negative u-mt-6">⚠ El desvio cuesta ' + netP.detourCostEur.toFixed(2) + ' € — no compensa (neto ' + netP.netEur.toFixed(2) + ' €)</div>';
-      }
-    } else if (grossP >= 0.5) {
-      savingsHtml = '<div class="savings-badge u-mt-6">💰 Ahorras ' + grossP.toFixed(2) + ' € / deposito ' + tankP + 'L</div>';
+    if (grossP >= 0.5) {
+      savingsHtml = '<div class="savings-badge u-mt-6">' + grossP.toFixed(2).replace('.', ',') + ' € menos por ' + tankP + ' L'
+        + '<span class="savings-sub">Frente al precio intermedio del listado. No incluye el desplazamiento.</span></div>';
     }
   }
 
@@ -1481,39 +1483,7 @@ function buildPopup(s) {
   var provinciaId = s['IDProvincia'] || '';
   var sparkHtml = mainPrice ? buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, mainPrice) : '';
 
-  // Deep links a apps de navegacion. Los 3 siguen sus URL schemes oficiales:
-  //   Google Maps: https://developers.google.com/maps/documentation/urls/get-started
-  //   Waze:        https://developers.google.com/waze/deeplinks
-  //   Apple Maps:  https://developer.apple.com/library/archive/featuredarticles/
-  //                iPhoneURLScheme_Reference/MapLinks/MapLinks.html
-  //
-  // Comportamiento esperado segun plataforma:
-  //   - Desktop            -> nueva pestana con la version web
-  //   - Mobile con app     -> Universal Link / Android intent abre la app nativa
-  //                           con navegacion ya arrancada (navigate=yes/dirflg=d)
-  //   - Mobile sin app     -> cae al web viewer del vendor
-  //
-  // Notas:
-  //   - Waze: www. explicito para evitar 301 extra (waze.com redirige a www.).
-  //   - Apple Maps: q= pinta la etiqueta del pin con el nombre de la estacion
-  //     en vez de solo las coordenadas.
-  //   - Coordenadas redondeadas a 6 decimales (~11cm de precision). Mas que
-  //     suficiente para apuntar al surtidor y genera URLs limpias sin artefactos
-  //     de coma flotante (ej. 43.2199999998).
-  //   - target="_blank" + rel="noopener" impide que la pestana destino acceda
-  //     a window.opener (reverse-tabnabbing).
-  var latS = lat.toFixed(6);
-  var lngS = lng.toFixed(6);
-  // Label para Apple Maps: nombre de la estacion o fallback generico.
-  // encodeURIComponent garantiza que comas, espacios y tildes no rompan la URL.
-  var aplLabel = encodeURIComponent(s['Rotulo'] || 'Gasolinera');
-  var navBtns = hasCoords ? (
-    '<div class="popup-nav-row">'
-    + '<a class="popup-nav-btn popup-nav-google" href="https://www.google.com/maps/dir/?api=1&destination=' + latS + ',' + lngS + '&travelmode=driving" target="_blank" rel="noopener">Google Maps</a>'
-    + '<a class="popup-nav-btn popup-nav-waze" href="https://www.waze.com/ul?ll=' + latS + ',' + lngS + '&navigate=yes" target="_blank" rel="noopener">Waze</a>'
-    + '<a class="popup-nav-btn popup-nav-apple" href="https://maps.apple.com/?daddr=' + latS + ',' + lngS + '&q=' + aplLabel + '&dirflg=d" target="_blank" rel="noopener">Apple Maps</a>'
-    + '</div>'
-  ) : '';
+  var navBtns = hasCoords ? buildNavigationLinks(lat, lng, s['Rotulo'] || 'Gasolinera') : '';
 
   // Acciones (fav, share, copiar, comparar)
   // El boton "Comparar" cambia de label segun si la estacion ya esta en la
@@ -1529,7 +1499,7 @@ function buildPopup(s) {
     + '  <button data-pop-compare="' + esc(id) + '" aria-pressed="' + inCompare + '" aria-label="' + (inCompare ? 'Quitar de comparativa' : 'Añadir a comparativa') + '">'
     + (inCompare ? '⚖️ En comparativa' : '⚖️ Comparar')
     + '</button>'
-    + '  <button data-pop-share="1" aria-label="Compartir gasolinera">📤 Compartir</button>'
+    + '  <button data-pop-share="' + esc(id) + '" aria-label="Compartir gasolinera">📤 Compartir</button>'
     + '  <button data-pop-copy="' + esc((s['Direccion']||'') + ', ' + (s['Municipio']||'')) + '" aria-label="Copiar direccion">📋 Copiar</button>'
     + '</div>';
 
@@ -1560,7 +1530,7 @@ function buildPopup(s) {
   // Mensaje explicito en vez de "Sin precio" para que el usuario no piense
   // que es un fallo de carga de datos.
   var priceDisplay = mainPrice
-    ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3) + ' <span class="popup-price-main-unit">€/L</span></strong>'
+    ? '<strong class="popup-price-main popup-price-main--' + mainColor + '">' + mainPrice.toFixed(3).replace('.', ',') + ' <span class="popup-price-main-unit">€/' + fuelUnit(fuel) + '</span></strong>'
     : '<span class="popup-price-none">No se vende aquí</span>';
 
   // Ship 8: link de reporte. Solo lo mostramos si hay precio publicado — si
@@ -1621,11 +1591,7 @@ function buildPopup(s) {
 }
 
 // ---- RENDER MARKERS ----
-// Ship 6: cache de las estaciones renderizadas para poder re-renderizar al
-// togglear el heatmap sin tener que re-disparar loadStations.
-var lastRenderedStations = [];
 function renderMarkers(stations) {
-  lastRenderedStations = stations || [];
   // Si initMap fallo (typeof L === 'undefined' por adblocker/red), 'map'
   // es undefined y llamar map.removeLayer tumbaria el render de la lista.
   // Bailamos silenciosamente: el banner de fallo del mapa ya esta visible,
@@ -1795,6 +1761,7 @@ var chargersMain = null;    // markerClusterGroup en el mapa grande
 var chargersInset = null;   // markerClusterGroup en el recuadro de Canarias
 var chargersData = null;    // filas crudas cacheadas (una sola descarga)
 var chargersLoading = false;
+var chargersUpdatedAt = '';
 
 // Color del pin/cluster por velocidad de carga. Gama azul→morada, distinta del
 // verde/precio de las gasolineras para que no se confundan las dos capas.
@@ -1830,6 +1797,14 @@ function evClusterIcon(cluster) {
   });
 }
 
+function chargerDateLabel(value) {
+  var date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) return 'Fecha del directorio no disponible';
+  return 'Directorio consultado el ' + date.toLocaleString('es-ES', {
+    timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+}
+
 function buildChargerPopup(row) {
   var title = row[2], op = row[3], kw = row[4], conn = row[5], pts = row[6], src = row[7];
   var chips = [];
@@ -1846,6 +1821,9 @@ function buildChargerPopup(row) {
     (op ? '<p class="ev-pop-op">' + esc(op) + '</p>' : '') +
     '<div class="ev-pop-stats">' + chips.join('') + '</div>' +
     '<p class="ev-pop-src">Fuente: ' + srcLabel + '</p>' +
+    '<p class="ev-pop-src">' + esc(chargerDateLabel(chargersUpdatedAt)) + '</p>' +
+    '<p class="ev-pop-note">No indica si está libre o funcionando. Confirma con el operador.</p>' +
+    '<p class="ev-pop-directions">Cómo llegar</p>' + buildNavigationLinks(row[0], row[1], title) +
     '</div>';
 }
 
@@ -1885,9 +1863,10 @@ function loadChargers(done) {
   if (chargersData) { if (done) done(); return; }
   if (chargersLoading) return;
   chargersLoading = true;
-  fetch('/data/chargers.json', { cache: 'force-cache' })
+  fetch('/data/chargers.json', { cache: 'no-cache' })
     .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(function(d) {
+      chargersUpdatedAt = (d && d.ts) || '';
       chargersData = (d && d.chargers) || [];
       populateChargers();
       chargersLoading = false;

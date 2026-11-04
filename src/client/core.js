@@ -477,19 +477,9 @@ function median(arr) {
   return vals.length % 2 ? vals[mid] : (vals[mid-1] + vals[mid]) / 2;
 }
 
-// ---- AHORRO NETO (desvio) ----
-// Duplica la logica de netSavings() en pure.ts para uso en cliente sin
-// bundler. Tranquilo: hay tests unitarios que verifican la version canonica.
-// Devuelve { detourCostEur, netEur, worthIt }. Si no tenemos userPos, el
-// cliente no muestra "net", solo el grossSavings historico.
-function computeNetSavings(grossSavingsEur, extraKm, consumoL100km, fuelPriceEurL) {
-  var gross = (typeof grossSavingsEur === 'number' && isFinite(grossSavingsEur)) ? grossSavingsEur : 0;
-  var km    = (typeof extraKm        === 'number' && isFinite(extraKm)        && extraKm        > 0) ? extraKm        : 0;
-  var cons  = (typeof consumoL100km  === 'number' && isFinite(consumoL100km)  && consumoL100km  > 0) ? consumoL100km  : 0;
-  var price = (typeof fuelPriceEurL  === 'number' && isFinite(fuelPriceEurL)  && fuelPriceEurL  > 0) ? fuelPriceEurL  : 0;
-  var detourCostEur = (km / 100) * cons * price;
-  var netEur = gross - detourCostEur;
-  return { detourCostEur: detourCostEur, netEur: netEur, worthIt: netEur >= 0.5 };
+// Los gases comprimidos/licuados y el hidrogeno se publican por kilogramo.
+function fuelUnit(fuel) {
+  return ['Precio Gas Natural Comprimido', 'Precio Gas Natural Licuado', 'Precio Hidrogeno'].indexOf(fuel) >= 0 ? 'kg' : 'L';
 }
 
 // Mapa de codigos cortos ('95', 'diesel', ...) para el endpoint /api/predict.
@@ -549,14 +539,53 @@ function predictBadgeHTML(predict) {
   return '<span class="' + cls + '" title="' + esc(tip) + '" aria-label="' + esc(label + ' — ' + tip) + '">' + emoji + ' ' + label + conf + '</span>';
 }
 
-// ---- PERFIL DEL USUARIO (localStorage) ----
+// ---- PREFERENCIAS SENCILLAS (version 2; clave conservada para sincronizacion) ----
 var PROFILE_KEY = 'gs_profile_v1';
+var PROFILE_FUELS = [
+  'Precio Gasolina 95 E5', 'Precio Gasolina 98 E5', 'Precio Gasoleo A',
+  'Precio Gasoleo Premium', 'Precio Gases licuados del petroleo',
+  'Precio Gas Natural Comprimido', 'Precio Gas Natural Licuado',
+  'Precio Hidrogeno', 'Precio Diesel Renovable'
+];
+function cleanProfile(p) {
+  p = p && typeof p === 'object' ? p : {};
+  var litres = Number(p.litres);
+  return {
+    version: 2,
+    fuel: PROFILE_FUELS.indexOf(p.fuel) >= 0 ? p.fuel : PROFILE_FUELS[0],
+    litres: isFinite(litres) && litres >= 1 && litres <= 200 ? Math.round(litres) : 50
+  };
+}
 function getProfile() {
-  try { return JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); } catch(e) { return null; }
+  var raw = null;
+  try { raw = JSON.parse(localStorage.getItem(PROFILE_KEY) || 'null'); } catch(e) {}
+  var profile = cleanProfile(raw);
+  // Migrar solo preferencias comprensibles. Los filtros/consumo antiguos nunca
+  // vuelven a ocultar estaciones ni a producir un ahorro de viaje inventado.
+  if (!raw || raw.version !== 2) {
+    try {
+      var oldLitres = Number(localStorage.getItem('gs_tank'));
+      if (isFinite(oldLitres) && oldLitres >= 1 && oldLitres <= 200) profile.litres = Math.round(oldLitres);
+    } catch(e) {}
+  }
+  try {
+    // No crear un perfil vacio antes del primer pull: permite recuperar el remoto.
+    if (raw || localStorage.getItem('gs_tank') != null) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    localStorage.removeItem('gs_tank');
+  } catch(e) {}
+  return profile;
 }
 function setProfile(p) {
-  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch(e) {}
+  var profile = cleanProfile(p);
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch(e) {}
   syncPush(PROFILE_KEY);
+  return profile;
+}
+function getRefuelLitres() { return getProfile().litres; }
+function setRefuelLitres(litres) {
+  var profile = getProfile();
+  profile.litres = litres;
+  return setProfile(profile).litres;
 }
 
 // ---- FAVORITOS (localStorage) ----
@@ -590,6 +619,7 @@ function syncPush(key) {
   if (v == null) return Promise.resolve(false);
   var body;
   try { body = JSON.parse(v); } catch (_) { return Promise.resolve(false); }
+  if (key === PROFILE_KEY) body = cleanProfile(body);
   return fetch('/api/sync/' + encodeURIComponent(key), {
     method: 'PUT', credentials: 'same-origin',
     headers: { 'content-type': 'application/json' },
@@ -629,7 +659,7 @@ function syncPull(gen) {
       if (data['gs_profile_v1']) {
         var lp = _lsGet('gs_profile_v1');
         if (lp == null || lp === 'null') {
-          try { localStorage.setItem('gs_profile_v1', JSON.stringify(data['gs_profile_v1'])); } catch (_) {}
+          try { localStorage.setItem(PROFILE_KEY, JSON.stringify(cleanProfile(data[PROFILE_KEY]))); } catch (_) {}
         }
       }
       // SUBIDA INICIAL: lo que el usuario ya tenia en local y aun no esta en la nube
@@ -675,108 +705,14 @@ function toggleFav(station) {
   return true;
 }
 
-// ---- ALERTAS DE BAJADA DE PRECIO (localStorage + Notification API) ----
-// El usuario activa alertas con un click — al hacerlo, pedimos permiso de
-// notificaciones del navegador y marcamos el flag gs_alerts_on. Para cada
-// favorita guardamos un "baseline" (ultimo precio visto por combustible).
-// Cuando cargamos snapshot y encontramos una bajada >= ALERT_THRESHOLD_EUR,
-// disparamos una Notification local (y un toast de respaldo). Los baselines
-// se actualizan cada vez que vemos precio para que las alertas sean
-// progresivas ("cada vez que vuelva a bajar") y no spammeen.
-var ALERTS_ON_KEY    = 'gs_alerts_on';
-var ALERTS_BASE_KEY  = 'gs_alerts_base_v1';        // { "id|fuel": {p: 1.459, ts: 172...} }
-var ALERTS_LAST_KEY  = 'gs_alerts_last_v1';        // dedupe: { "id|fuel": tsUltimaNotif }
-var ALERT_THRESHOLD_EUR = 0.02;                    // 2 centimos de bajada
-var ALERT_COOLDOWN_MS   = 6 * 60 * 60 * 1000;      // no repetir la misma alerta en <6h
-
-function alertsEnabled() {
-  try { return localStorage.getItem(ALERTS_ON_KEY) === '1'; } catch(e) { return false; }
-}
-function setAlertsEnabled(on) {
-  try { localStorage.setItem(ALERTS_ON_KEY, on ? '1' : '0'); } catch(e) {}
-}
-function getAlertBaselines() {
-  try { return JSON.parse(localStorage.getItem(ALERTS_BASE_KEY) || '{}'); } catch(e) { return {}; }
-}
-function setAlertBaselines(b) {
-  try { localStorage.setItem(ALERTS_BASE_KEY, JSON.stringify(b)); } catch(e) {}
-}
-function getAlertLast() {
-  try { return JSON.parse(localStorage.getItem(ALERTS_LAST_KEY) || '{}'); } catch(e) { return {}; }
-}
-function setAlertLast(l) {
-  try { localStorage.setItem(ALERTS_LAST_KEY, JSON.stringify(l)); } catch(e) {}
-}
-
-// Dispara una notificacion local (no requiere service worker). Si el navegador
-// no da permiso o no soporta Notification, fallback a toast dentro de la app.
-function fireDropNotification(title, body) {
+// Retirar el estado de las alertas locales antiguas. Telegram conserva sus claves.
+(function clearLegacyAlerts() {
   try {
-    if ('Notification' in window && Notification.permission === 'granted') {
-      var n = new Notification(title, {
-        body: body,
-        icon: '/static/favicon-32.png',
-        badge: '/static/favicon-32.png',
-        tag: 'gs-price-drop',
-        // A pesar del tag dedupe, respetamos el cooldown por id+fuel.
-      });
-      // Al clic, enfoca la tab.
-      n.onclick = function() {
-        try { window.focus(); n.close(); } catch(_) {}
-      };
-      return true;
-    }
-  } catch(_) {}
-  // Fallback visual in-app
-  try { showToast('🔔 ' + title + ' — ' + body, 'success'); } catch(_) {}
-  return false;
-}
-
-// Se llama despues de cada loadStations. Recorre favoritos, compara precios
-// actuales con baselines y notifica bajadas. Luego actualiza baselines.
-function checkPriceDropsAndUpdateBaselines(stations, fuel) {
-  if (!stations || !stations.length || !fuel) return;
-  var favs = getFavs();
-  if (!favs.length) return;
-  var favIds = {}; favs.forEach(function(f) { favIds[f.id] = f; });
-  var baselines = getAlertBaselines();
-  var lastNotif = getAlertLast();
-  var now = Date.now();
-  var enabled = alertsEnabled();
-
-  stations.forEach(function(s) {
-    var id = stationId(s);
-    if (!favIds[id]) return;
-    var p = parsePrice(s[fuel]);
-    if (!p) return;
-    var k = id + '|' + fuel;
-    var base = baselines[k];
-    if (!base) {
-      // Primera vez: establecer baseline, sin notificar (no hay referencia).
-      baselines[k] = { p: p, ts: now };
-      return;
-    }
-    // Si el precio ha bajado por encima del umbral...
-    if (enabled && base.p - p >= ALERT_THRESHOLD_EUR) {
-      // Dedup por cooldown.
-      if (!lastNotif[k] || now - lastNotif[k] > ALERT_COOLDOWN_MS) {
-        var drop = (base.p - p);
-        var fav = favIds[id];
-        var title = 'Precio en bajada: ' + (fav.rotulo || 'gasolinera');
-        var body = '-' + (drop * 100).toFixed(1) + 'c (ahora ' + p.toFixed(3) + ' €) en ' + (fav.municipio || '');
-        fireDropNotification(title, body);
-        lastNotif[k] = now;
-      }
-    }
-    // Actualizamos baseline al precio actual: asi el proximo test compara
-    // contra la observacion mas reciente y notifica "cada vez que vuelva a
-    // bajar" en lugar de repetir la misma bajada indefinidamente.
-    baselines[k] = { p: p, ts: now };
-  });
-
-  setAlertBaselines(baselines);
-  setAlertLast(lastNotif);
-}
+    ['gs_alerts_on', 'gs_alerts_base_v1', 'gs_alerts_last_v1', 'gs_alerts_v1', 'gs_diary_v1'].forEach(function(key) {
+      localStorage.removeItem(key);
+    });
+  } catch (_) {}
+})();
 
 // ============================================================
 // Ship 25: ALERTAS POR TELEGRAM — sustituye Web Push (Ship 23, retirado).
@@ -820,7 +756,6 @@ function _tgHeaders(withJson) {
 function _tgClear() {
   try { localStorage.removeItem(TG_CHAT_KEY); localStorage.removeItem(TG_AUTH_KEY); } catch(_) {}
   _tgSubs = {};
-  _tgSubsHydrated = true;
 }
 
 // Combustible seleccionado -> fuel_code para el backend.
@@ -833,7 +768,7 @@ function fuelSelectorToCode() {
     'Precio Gasoleo A':         'diesel',
     'Precio Gasoleo Premium':   'diesel_plus',
   };
-  return map[cur] || '95';
+  return map[cur] || null;
 }
 
 // Pide al servidor un token + deepLink. Manda los favoritos en el body asi
@@ -842,6 +777,7 @@ function fuelSelectorToCode() {
 // en el mensaje de confirmacion. Devuelve { ok, token?, deepLink?, error? }.
 async function startTelegramLink(favs) {
   var fc = fuelSelectorToCode();
+  if (!fc) return { ok: false, error: 'combustible_no_disponible' };
   var payload = {
     threshold_cents: 10,
     favs: (favs || []).map(function(f) {
@@ -967,7 +903,6 @@ function telegramAlertsActive() {
 // Se hidrata con loadTelegramSubscriptions() una sola vez al cargar la web
 // y despues al modificar (toggleTelegramFav) mantiene el cache localmente.
 var _tgSubs = {}; // { "stationId|fuelCode": true }
-var _tgSubsHydrated = false;
 
 function _tgSubsKey(stationId, fuelCode) { return stationId + '|' + fuelCode; }
 
@@ -977,12 +912,11 @@ function _tgSubsKey(stationId, fuelCode) { return stationId + '|' + fuelCode; }
 // cache local).
 async function loadTelegramSubscriptions() {
   _tgSubs = {};
-  _tgSubsHydrated = false;
-  if (!_tgAuth()) { _tgSubsHydrated = true; return; }
+  if (!_tgAuth()) { return; }
   try {
     var res = await fetch('/api/telegram/subscriptions', { headers: _tgHeaders(false) });
     if (res.status === 401) { _tgClear(); return; }
-    if (!res.ok) { _tgSubsHydrated = true; return; }
+    if (!res.ok) { return; }
     var j = await res.json();
     if (j && j.ok && Array.isArray(j.subscriptions)) {
       for (var i = 0; i < j.subscriptions.length; i++) {
@@ -991,7 +925,6 @@ async function loadTelegramSubscriptions() {
       }
     }
   } catch(_) {}
-  _tgSubsHydrated = true;
 }
 
 // Consulta rapida (sync) — para render del boton campana.
@@ -1004,6 +937,7 @@ function isTelegramFavActive(stationId, fuelCode) {
 // de "activa el bot primero". El server es idempotente — si el estado ya
 // era el pedido, no duplica mensajes.
 async function toggleTelegramFav(stationId, fuelCode, enabled) {
+  if (['95', '98', 'diesel', 'diesel_plus'].indexOf(fuelCode) < 0) return { ok: false, error: 'combustible_no_disponible' };
   if (!_tgAuth()) return { ok: false, error: 'not_linked' };
   try {
     var res = await fetch('/api/telegram/toggle-fav', {
@@ -1119,71 +1053,89 @@ function recordHistoryForTracked(stations, fuel) {
     if (p) pushHistoryPoint(id, fuel, p);
   });
 }
-// Alias retro-compatible por si algun call-site antiguo persiste; ahora cubre
-// favoritos + visitados.
-var recordHistoryForFavorites = recordHistoryForTracked;
-
-// ---- HORARIO VIVO: parsea el string del Ministerio y decide si esta abierta ahora ----
-// Formato tipico: "L-V: 06:00-22:00; S: 07:00-14:00; D: cerrado"
+// ---- HORARIO VIVO: dias y hora local de la estacion ----
 var DAY_MAP = { L:1, M:2, X:3, J:4, V:5, S:6, D:0 };
 function parseTime(s) {
-  var m = s.match(/(d{1,2}):(d{2})/);
+  var m = String(s).match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
-  return parseInt(m[1],10) * 60 + parseInt(m[2],10);
+  var h = Number(m[1]), minute = Number(m[2]);
+  if (h > 24 || minute > 59 || (h === 24 && minute !== 0)) return null;
+  return h * 60 + minute;
 }
 function expandDayRange(token) {
-  token = token.toUpperCase().replace(/s/g,'');
-  if (token === 'LABORABLES' || token === 'L-V') return [1,2,3,4,5];
-  if (token === 'DIARIO' || token === 'L-D' || token === 'TODOS') return [0,1,2,3,4,5,6];
-  if (token.indexOf('-') > -1) {
-    var pair = token.split('-');
-    var from = DAY_MAP[pair[0]], to = DAY_MAP[pair[1]];
-    if (from == null || to == null) return [];
-    var days = [];
-    var d = from;
-    for (var i = 0; i < 8; i++) {
-      days.push(d);
+  token = String(token).toUpperCase().replace(/\s/g, '');
+  if (token === 'LABORABLES') token = 'L-V';
+  if (token === 'DIARIO' || token === 'TODOS') token = 'L-D';
+  var days = [];
+  var parts = token.split(',');
+  for (var i = 0; i < parts.length; i++) {
+    var pair = parts[i].split('-');
+    var from = DAY_MAP[pair[0]], to = pair.length === 1 ? from : DAY_MAP[pair[1]];
+    if (pair.length > 2 || from == null || to == null) return [];
+    for (var d = from, n = 0; n < 7; n++, d = (d + 1) % 7) {
+      if (days.indexOf(d) < 0) days.push(d);
       if (d === to) break;
-      d = (d + 1) % 7;
     }
-    return days;
   }
-  // Lista "L,M,X"
-  return token.split(',').map(function(t) { return DAY_MAP[t]; }).filter(function(d) { return d != null; });
+  return days;
 }
-function isOpenNow(horario) {
-  if (!horario) return null;
-  var upper = horario.toUpperCase();
-  if (upper.indexOf('24H') >= 0 || upper.indexOf('00:00-24:00') >= 0) return { open: true, nextChange: null };
-  var now = new Date();
-  var day = now.getDay();
-  var minutes = now.getHours()*60 + now.getMinutes();
-  var segs = horario.split(';').map(function(s) { return s.trim(); });
-  for (var i = 0; i < segs.length; i++) {
-    var seg = segs[i];
-    var m = seg.match(/^([^:]+):\s*(.+)$/);
-    if (!m) continue;
-    var days = expandDayRange(m[1]);
-    if (days.indexOf(day) < 0) continue;
-    var times = m[2];
-    if (times.toUpperCase().indexOf('CERRADO') >= 0) return { open: false, nextChange: null };
-    // Rango HH:MM-HH:MM (posibles multiples)
-    var ranges = times.split(/[,Y]/).map(function(r) { return r.trim(); });
+function stationTimeZone(station) {
+  station = station || {};
+  var province = String(station.IDProvincia || '').padStart(2, '0');
+  var lat = parseFloat(String(station.Latitud || '').replace(',', '.'));
+  var lng = parseFloat(String(station['Longitud (WGS84)'] || '').replace(',', '.'));
+  return province === '35' || province === '38' ||
+    (lat >= 27 && lat <= 30 && lng >= -19 && lng <= -13)
+    ? 'Atlantic/Canary' : 'Europe/Madrid';
+}
+function isOpenNow(horario, station, instant) {
+  if (!horario || typeof horario !== 'string') return null;
+  var segments = horario.toUpperCase().trim().split(';').filter(function(s) { return s.trim(); });
+  var intervals = [];
+  for (var i = 0; i < segments.length; i++) {
+    var seg = segments[i].trim();
+    var allDay = /^24\s*H(?:ORAS)?$/.test(seg);
+    var match = allDay ? null : seg.match(/^([^:]+):\s*(.+)$/);
+    if (!allDay && !match) return null;
+    var days = allDay ? [0,1,2,3,4,5,6] : expandDayRange(match[1]);
+    if (!days.length) return null;
+    var times = allDay ? '24H' : match[2].trim();
+    if (times === 'CERRADO' || times === 'CERRADA') continue;
+    var ranges = /^24\s*H(?:ORAS)?$/.test(times) ? ['00:00-24:00'] : times.split(/\s*[,Y]\s*/);
     for (var j = 0; j < ranges.length; j++) {
-      var rg = ranges[j].match(/(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
-      if (!rg) continue;
-      var from = parseTime(rg[1]);
-      var to   = parseTime(rg[2]);
-      if (to === 0) to = 24*60;
-      if (minutes >= from && minutes < to) return { open: true,  closesAt: rg[2] };
-      if (minutes < from)                  return { open: false, opensAt: rg[1] };
+      var range = ranges[j].match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+      if (!range) return null;
+      var from = parseTime(range[1]), to = parseTime(range[2]);
+      if (from == null || to == null || from >= 1440 || from === to) return null;
+      if (to <= from) to += 1440;
+      for (var k = 0; k < days.length; k++) {
+        intervals.push({ day: days[k], from: from, to: to, opens: range[1], closes: range[2] });
+      }
     }
   }
-  return null;
+  if (!segments.length) return null;
+  var parts;
+  try {
+    parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: stationTimeZone(station), weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+    }).formatToParts(instant || new Date());
+  } catch (_) { return null; }
+  var values = {};
+  parts.forEach(function(p) { values[p.type] = p.value; });
+  var day = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].indexOf(values.weekday);
+  var minutes = Number(values.hour) * 60 + Number(values.minute);
+  var next = null;
+  for (var n = 0; n < intervals.length; n++) {
+    var it = intervals[n];
+    var current = it.day === day ? minutes : ((it.day + 1) % 7 === day ? minutes + 1440 : -1);
+    if (current >= it.from && current < it.to) return { open: true, closesAt: it.closes };
+    if (it.day === day && it.from > minutes && (!next || it.from < next.from)) next = it;
+  }
+  return next ? { open: false, opensAt: next.opens } : { open: false, nextChange: null };
 }
 
 // ---- FETCH CON RETRY (hasta 3 intentos con espera creciente) ----
-async function fetchJSON(url) {
+async function fetchJSON(url, options) {
   // Timeout por intento via AbortController. Sin esto, una conexion lenta/colgada
   // (DNS stall, TCP sin ACK, movil con mala cobertura) dejaba el fetch pendiente
   // indefinidamente: los 3 reintentos nunca arrancaban porque ninguno terminaba,
@@ -1194,12 +1146,12 @@ async function fetchJSON(url) {
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     var tid = ctrl ? setTimeout(function() { ctrl.abort(); }, 8000) : 0;
     try {
-      var opts = ctrl ? { signal: ctrl.signal } : undefined;
+      var opts = Object.assign({}, options || {}, ctrl ? { signal: ctrl.signal } : {});
       var res = await fetch(url, opts);
-      if (tid) clearTimeout(tid);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       if (data && data.error) throw new Error(data.error);
+      if (tid) clearTimeout(tid);
       return data;
     } catch(e) {
       if (tid) clearTimeout(tid);
@@ -1222,6 +1174,7 @@ function lsWrite(key, data) {
 
 function showListError(msg, retryLabel) {
   var list = document.getElementById('station-list');
+  list.setAttribute('aria-busy', 'false');
   list.innerHTML = '';
   var box = document.createElement('div');
   box.className = 'empty-state';
@@ -1252,7 +1205,6 @@ function showListError(msg, retryLabel) {
 //      scroll animado de la lista al enfocar estacion.
 //   2. map.fitBounds({..., animate: true}) — Leaflet anima pan+zoom.
 //   3. map.flyTo() — si se usa. Por defecto anima.
-// Exponemos window.prefersReducedMotion() para que cada call-site decida.
 // Subscribimos a cambios del media query asi el toggle del SO aplica en
 // vivo sin recargar.
 var PRM_MQ = null;
@@ -1266,15 +1218,9 @@ try {
     else if (typeof PRM_MQ.addListener === 'function') PRM_MQ.addListener(update); // Safari <14
   }
 } catch (_) { /* no matchMedia — asumimos no-preference */ }
-function prefersReducedMotion() { return PRM_VALUE; }
 // Helper publico: resuelve el scroll-behavior segun preferencia. Uso:
 //   el.scrollIntoView({ behavior: scrollBehavior('smooth'), block: 'nearest' })
 function scrollBehavior(fallback) { return PRM_VALUE ? 'auto' : (fallback || 'smooth'); }
-// Opcion compartida para Leaflet fitBounds / setView con animacion
-// respetando la preferencia. Se pasa como opts:
-//   map.fitBounds(b, Object.assign({}, mapAnimOpts(), mapFitPadding(), { maxZoom: 14 }))
-function mapAnimOpts() { return { animate: !PRM_VALUE }; }
-
 // Padding para fitBounds que compensa el sidebar cuando esta abierto en
 // desktop. Sin esto, fitBounds centraba las gasolineras en el ancho total del
 // contenedor (incluyendo los 320px que ocupa el sidebar por la izquierda), con
@@ -1321,7 +1267,7 @@ function normalizeStation(s) {
 //   - Al ocultarse, devolvemos foco al elemento original.
 // Implementacion: un MutationObserver observa el atributo 'class' de cada
 // modal. Asi no tenemos que instrumentar cada openX()/closeX() existente —
-// funciona con modales actuales (profile/favs/route/diary/compare) y con
+// funciona con modales actuales (favoritas, comparación e historial) y con
 // futuros nuevos modales mientras mantengan la convencion .modal-backdrop.
 (function initModalFocusTrap() {
   var FOCUSABLE = [

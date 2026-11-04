@@ -119,7 +119,7 @@ export function buildPage(
   // ("precios") y añade la marca al final (coherente con el resto de verticales).
   const pageTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ': precios | ' + BRAND
-    : BRAND + ' · Precios oficiales en tiempo real'
+    : BRAND + ' · Precios oficiales publicados'
   // Description enriquecida cuando hay stats: incluye precio min de 95 y numero
   // de estaciones — mejora CTR en SERP y da a Google material ranqueable
   // ("precio gasolina madrid"). Recortada a <=~155 car. para no truncarse en SERP.
@@ -132,10 +132,10 @@ export function buildPage(
           '. Datos oficiales del Ministerio.'
         : 'Precios actualizados de gasolina y diésel en ' + geoLabel + '. Mapa, comparador y favoritos con datos oficiales del Ministerio.'
       )
-    : 'Precios oficiales de gasolineras en España en tiempo real. Mapa, comparador de ahorro y favoritos. Datos oficiales del Ministerio.'
+    : 'Precios publicados de gasolineras en España. Mapa, comparador de ahorro y favoritos. Datos oficiales del Ministerio.'
   const ogTitle = geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
-    : BRAND + ' · Precios en tiempo real'
+    : BRAND + ' · Precios publicados'
   const ogDesc = geoLabel
     ? 'Mapa de precios de combustible en ' + geoLabel + ', actualizados a diario. Datos oficiales.'
     : 'Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario.'
@@ -372,7 +372,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta property="og:description" content="${ogDescH}" />
   <meta property="og:url" content="${canonical}" />
   <meta property="og:image" content="${ogImage}" />
-  <meta property="og:image:alt" content="${BRAND} · comparador de precios oficial" />
+  <meta property="og:image:alt" content="${BRAND} · comparador de precios publicados" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
   <meta property="og:locale" content="es_ES" />
@@ -382,7 +382,7 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   <meta name="twitter:title" content="${ogTitleH}" />
   <meta name="twitter:description" content="${ogDescH}" />
   <meta name="twitter:image" content="${ogImage}" />
-  <meta name="twitter:image:alt" content="${BRAND} · comparador de precios oficial" />
+  <meta name="twitter:image:alt" content="${BRAND} · comparador de precios publicados" />
 
   <link rel="canonical" href="${canonical}" />
   <title>${pageTitleH}</title>
@@ -461,14 +461,14 @@ ${ICON_SPRITE}
      secciones). Va en flujo normal encima de la app y se desplaza con la
      página; la barra de herramientas del mapa (#app-header) queda sticky justo
      debajo. -->
-${mastheadHtml('gasolineras')}
+${mastheadHtml('gasolineras', { hideMunicipioSearch: true, compact: true })}
 
 <!-- H1 semantico. En SEO pages (provincia/municipio) el <section class="seo-summary">
      duplica un H1 visible con el mismo texto — acceptable para SEO moderno y da
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
-${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND} — precios oficiales en tiempo real</h1>` : ''}
+${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND} — precios oficiales publicados</h1>` : ''}
 
 <!-- ============ HEADER ============ -->
 <header id="app-header">
@@ -479,16 +479,16 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
   <a href="/gasolineras/" id="brand" class="brand-link" aria-label="${BRAND} · inicio">
     <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
     <div class="u-mw-0">
-      <div class="header-title">${BRAND}</div>
-      <div class="header-sub">Precios oficiales · Ministerio para la Transición Ecológica</div>
+      <div class="header-title">Gasolineras</div>
+      <div class="header-sub">Mapa y precios del Ministerio</div>
     </div>
   </a>
 
   <div class="header-actions">
-    <span id="lbl-update" class="header-update u-hide"></span>
     <span id="lbl-count" class="header-badge u-hide"></span>
-    <!-- Acceso a favoritas vive dentro del desplegable del usuario
-         (#user-dropdown) — no hay botones de cabecera duplicados. -->
+    <button id="btn-favs-open" class="btn-favs-open" type="button" aria-label="Ver mis gasolineras favoritas">
+      ${icon('star')} <span>Mis favoritas</span>
+    </button>
     ${gClientId ? `
     <!-- Login Google: visible solo si hay GOOGLE_CLIENT_ID configurado. El
          boton abre el modal de login cuando no hay sesion; cuando la hay,
@@ -537,7 +537,7 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
      Oculta por defecto y solo se muestra cuando hay deltas computables
      (segundo snapshot en adelante). -->
 <div id="trend-strip" role="status" aria-live="polite" hidden>
-  <span class="trend-strip-label">Hoy en España:</span>
+  <span id="trend-period" class="trend-strip-label">Precios en España:</span>
   <span class="trend-strip-item" id="trend-g95"></span>
   <span class="trend-strip-sep">·</span>
   <span class="trend-strip-item" id="trend-diesel"></span>
@@ -556,7 +556,9 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
         <span class="search-heading">
           ${icon('sliders', 'u-c-green')} Búsqueda
         </span>
+        <button id="btn-refresh" class="btn-refresh" type="button">Actualizar</button>
       </div>
+      <span id="lbl-update" class="header-update u-hide" aria-live="polite"></span>
 
       <div class="form-group">
         <label class="form-label" for="sel-provincia">Provincia</label>
@@ -571,6 +573,14 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
           <option value="">-- Todos --</option>
         </select>
       </div>
+      <div class="form-group" id="area-group" hidden>
+        <label class="form-label" for="sel-area">Zona</label>
+        <select id="sel-area" class="form-select">
+          <option value="municipio">Solo este municipio</option>
+          <option value="cerca">También cerca</option>
+        </select>
+      </div>
+      <p id="search-origin-note" class="form-help" hidden>Desde tu ubicación, en línea recta.</p>
 
       <div class="form-group">
         <label class="form-label" for="sel-combustible">Combustible</label>
@@ -585,6 +595,13 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
           <option value="Precio Hidrogeno">Hidrogeno</option>
           <option value="Precio Diesel Renovable">Diesel Renovable</option>
         </select>
+        <p id="fuel-unit-note" class="form-help" hidden>Este combustible se vende por kilogramo. No calculamos su coste en litros.</p>
+      </div>
+
+      <div class="form-group" id="refuel-litres-group">
+        <label class="form-label" for="in-refuel-litres">Cantidad a repostar (litros)</label>
+        <input id="in-refuel-litres" class="form-input" type="number" min="1" max="200" step="1" value="50" inputmode="numeric" required aria-describedby="refuel-litres-help" />
+        <small id="refuel-litres-help" class="form-help">Calculamos el coste para esta cantidad.</small>
       </div>
 
       <!-- Radio de busqueda (centrado en el municipio elegido) -->
@@ -595,8 +612,6 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
           <span class="range-val" id="lbl-radius">10 km</span>
         </div>
       </div>
-      <!-- La capacidad del deposito se lee desde localStorage.gs_tank para
-           calcular el ahorro (default 50 L si no esta configurado). -->
     </div>
 
     <!-- STATS -->
@@ -863,7 +878,7 @@ ${gClientId ? `
         <label class="form-label" for="report-comment">Comentario <span class="form-hint">opcional, max 500 caracteres</span></label>
         <textarea id="report-comment" class="form-input" rows="3" maxlength="500" placeholder="Detalles extra (ej. surtidor 3, fecha, foto subida a otro sitio...)"></textarea>
       </div>
-      <div id="report-status" class="route-status" aria-live="polite"></div>
+      <div id="report-status" class="report-status" aria-live="polite"></div>
     </div>
     <div class="modal-footer">
       <button id="btn-report-cancel" class="btn-ghost">Cancelar</button>
@@ -899,7 +914,7 @@ ${hasSeoSummary ? `
     ${seo?.municipioName ? ' &rsaquo; <span aria-current="page">' + seo.municipioName + '</span>' : ''}
   </nav>
   <h1 id="seo-h1">Precios de combustible en ${geoLabelH}</h1>
-  <p>Esta página muestra los precios oficiales en tiempo real de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
+  <p>Esta página muestra los precios oficiales publicados de las gasolineras de ${geoLabelH}, según el <a href="https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/help" rel="noopener">dataset público del Ministerio para la Transición Ecológica</a>. Actualizado diariamente. Los rangos siguientes se calculan sobre el último snapshot disponible.</p>
   <table>
     <thead><tr>
       <th>Combustible</th>

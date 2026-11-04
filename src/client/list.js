@@ -183,7 +183,7 @@ function renderCompareModal() {
 
   var cols = stations.map(function(s) {
     var id = stationId(s);
-    var status = isOpenNow(s['Horario']);
+    var status = isOpenNow(s['Horario'], s);
     var statusChip = status
       ? (status.open
           ? '<span class="status-chip status-open">● Abierta</span>'
@@ -209,7 +209,7 @@ function renderCompareModal() {
       // feed del Ministerio). "No se vende aquí" deja claro que no es
       // un fallo de datos sino una ausencia real de producto en el surtidor.
       var valueHtml = (p != null)
-        ? '<span class="cp-value">' + p.toFixed(3) + ' €/L</span>' + deltaHtml
+        ? '<span class="cp-value">' + p.toFixed(3) + ' €/' + fuelUnit(code) + '</span>' + deltaHtml
         : '<span class="cp-value cp-value--none">No se vende aquí</span>';
       return '<div class="' + cls + '"><span class="cp-label">' + esc(label) + '</span>' + valueHtml + '</div>';
     }).join('');
@@ -287,36 +287,23 @@ function cardHTML(s, i, fuel, fuelLabel) {
     var rank = topCheapIds[id];
     medal = '<span class="medal" aria-hidden="true">' + (rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉') + '</span>';
   }
-  // Distancia (calculada ANTES del ahorro para que el ahorro neto reste el
-  // coste del desvio ida-vuelta).
   var distHtml = '';
-  var extraKmCard = null;
-  // Centro para la distancia: munCenter (centro del municipio elegido).
-  var centerCard = munCenter;
-  if (centerCard) {
+  if (munCenter) {
     var posC = stationLatLng(s);
     if (posC) {
-      var kmC = distanceKm(centerCard.lat, centerCard.lng, posC.lat, posC.lng);
-      extraKmCard = kmC * 2;
-      if (kmC < 1) distHtml = '<span class="distance-chip" aria-label="Distancia">' + Math.round(kmC*1000) + ' m</span>';
-      else distHtml = '<span class="distance-chip" aria-label="Distancia">' + kmC.toFixed(1) + ' km</span>';
+      var kmC = distanceKm(munCenter.lat, munCenter.lng, posC.lat, posC.lng);
+      var distanceText = kmC < 1 ? Math.round(kmC * 1000) + ' m' : kmC.toFixed(1) + ' km';
+      var originText = searchOrigin ? 'tu ubicación' : 'el centro de la zona';
+      distHtml = '<span class="distance-chip" title="En línea recta desde ' + originText + '">' + distanceText + ' en línea recta</span>';
     }
   }
 
   var savingsHtml = '';
-  if (price && currentMedianPrice && currentMedianPrice > price) {
-    var tankC = parseInt(localStorage.getItem('gs_tank') || '50', 10);
-    var grossC = (currentMedianPrice - price) * tankC;
-    var profC = getProfile();
-    if (extraKmCard != null && profC && profC.consumo > 0) {
-      var netC = computeNetSavings(grossC, extraKmCard, profC.consumo, price);
-      if (netC.worthIt) {
-        savingsHtml = '<span class="savings-badge" title="Ahorro - coste desvio">💰 neto ' + netC.netEur.toFixed(2) + ' € / dep.</span>';
-      } else if (grossC >= 0.5) {
-        savingsHtml = '<span class="savings-badge savings-badge--negative" title="El desvio cuesta mas que el ahorro">⚠ desvio no compensa</span>';
-      }
-    } else if (grossC >= 0.5) {
-      savingsHtml = '<span class="savings-badge" title="Ahorro frente a la mediana del listado">💰 ahorra ' + grossC.toFixed(2) + ' € / dep.</span>';
+  if (fuelUnit(fuel) === 'L' && price && currentMedianPrice && currentMedianPrice > price) {
+    var litres = getRefuelLitres();
+    var grossC = (currentMedianPrice - price) * litres;
+    if (grossC >= 0.5) {
+      savingsHtml = '<span class="savings-badge" title="Comparado con el precio central de esta búsqueda; no incluye el viaje">💰 ahorras ' + grossC.toFixed(2) + ' € en ' + litres + ' L</span>';
     }
   }
 
@@ -349,7 +336,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
 
   // Horario vivo
   var statusHtml = '';
-  var status = isOpenNow(s['Horario']);
+  var status = isOpenNow(s['Horario'], s);
   if (status) {
     if (status.open) {
       statusHtml = '<span class="status-chip status-open" aria-label="Abierta ahora">● Abierta'
@@ -366,16 +353,13 @@ function cardHTML(s, i, fuel, fuelLabel) {
     statusHtml += '<span class="status-chip status-members" aria-label="Solo para socios de Costco Club" title="Necesitas tarjeta de socio Costco Club para repostar">🔑 Solo socios</span>';
   }
 
-  var priceText = price ? fmtPriceUnit(price) : '';
-  // Coste total para un deposito completo: EUR/L x L. Usa el mismo gs_tank
-  // que el badge de ahorro. Se renderiza DEBAJO del precio/L en pequenito
-  // para que quien nunca haya hecho la cuenta mental vea el impacto real
-  // (p.ej. 1.45 vs 1.50 parece trivial hasta que ve 72.50 vs 75.00 €).
-  var tankLitersCard = parseInt(localStorage.getItem('gs_tank') || '50', 10);
+  var priceText = price ? fmtPriceUnit(price, fuel) : '';
+  // Solo multiplicar por litros cuando el precio se publica por litro.
+  var tankLitersCard = getRefuelLitres();
   var tankCostHtml = '';
-  if (price && tankLitersCard > 0) {
+  if (price && fuelUnit(fuel) === 'L') {
     var tankTotal = (price * tankLitersCard).toFixed(2);
-    tankCostHtml = '<div class="row-tank-cost" title="Coste de llenar el deposito de ' + tankLitersCard + ' L">×' + tankLitersCard + 'L = ' + tankTotal + ' €</div>';
+    tankCostHtml = '<div class="row-tank-cost" title="Coste de repostar ' + tankLitersCard + ' L">' + tankLitersCard + ' L = ' + tankTotal + ' €</div>';
   }
   // Cuando la estacion no distribuye este combustible (Ministerio publica ""),
   // priceEl muestra "No se vende" en vez de N/D. Asi el usuario distingue de un
@@ -413,7 +397,7 @@ function cardHTML(s, i, fuel, fuelLabel) {
 function appendPage() {
   var list = document.getElementById('station-list');
   var fuel = document.getElementById('sel-combustible').value;
-  var fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text.replace(/^S+s*/, '');
+  var fuelLabel = document.getElementById('sel-combustible').selectedOptions[0].text;
   var sentinel = list.querySelector('#list-sentinel');
   var slice = listStations.slice(listOffset, listOffset + PAGE_SIZE);
   if (!slice.length) {
@@ -475,6 +459,8 @@ function renderList(stations) {
   list.setAttribute('aria-busy', 'false');
 
   if (!stations.length) {
+    if (list._observer) list._observer.disconnect();
+    document.getElementById('stats-bar').style.display = 'none';
     list.innerHTML = '<div class="empty-state"><div class="icon" aria-hidden="true">&#x1F50D;</div><p>Sin resultados</p><small>Prueba con otros filtros</small></div>';
     return;
   }
@@ -521,30 +507,31 @@ function zoomTo(idx) {
   }
   highlightCard(idx);
   // Close sidebar on mobile
-  if (window.innerWidth < 768) document.getElementById('sidebar').classList.remove('open');
+  if (window.innerWidth < 1024 && typeof closeMobileSidebar === 'function') closeMobileSidebar();
 }
 
 // ---- SORT & FILTER ----
-// Conjunto de marcas conocidas: para el filtro "low-cost" (cualquier rotulo
-// que NO este en esta lista se considera generico/low-cost). Lista espejo de
-// lo que aparece en el dropdown de marcas en shell.ts.
-var KNOWN_BRANDS = {
-  REPSOL:1, CEPSA:1, MOEVE:1, GALP:1, BALLENOIL:1, PLENERGY:1, SHELL:1,
-  PETROPRIX:1, PETRONOR:1, CARREFOUR:1, BP:1, AVIA:1, Q8:1, CAMPSA:1,
-  ESCLATOIL:1, ALCAMPO:1, EROSKI:1, BONAREA:1, MEROIL:1, VALCARCE:1,
-  ENI:1, GASEXPRESS:1, BEROIL:1, HAM:1, AGLA:1
-};
-
-// Centro del municipio elegido (media de sus gasolineras): cuando el usuario
-// elige un municipio, mostramos las gasolineras en un radio (10 km por
-// defecto, ajustable con la barra) alrededor de este punto. null = modo inactivo.
+// Centro de busqueda. Las coordenadas GPS solo viven en memoria y en el hash.
 var munCenter = null;
+var searchOrigin = null;
+function getSearchArea() {
+  var control = document.getElementById('sel-area');
+  return searchOrigin || (control && control.value === 'cerca') ? 'cerca' : 'municipio';
+}
+function setSearchOrigin(origin) {
+  var lat = origin && Number(origin.lat), lng = origin && Number(origin.lng);
+  searchOrigin = origin && isFinite(lat) && isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+    ? { lat: lat, lng: lng } : null;
+  munCenter = searchOrigin;
+}
 
-// Calcula munCenter (centroide de las estaciones del municipio dentro de
-// allStations, que en este modo trae la provincia entera) y muestra u oculta el
-// slider de radio. Si no hay municipio o no se puede centrar, desactiva el modo.
 function setupMunicipioRadio(munMode, idMun) {
   var rg = document.getElementById('radius-group');
+  if (searchOrigin) {
+    munCenter = searchOrigin;
+    if (rg) rg.style.display = 'block';
+    return;
+  }
   if (!munMode || !idMun) {
     munCenter = null;
     if (rg) rg.style.display = 'none';
@@ -557,7 +544,7 @@ function setupMunicipioRadio(munMode, idMun) {
     if (pos) { sumLat += pos.lat; sumLng += pos.lng; n++; }
   }
   munCenter = n > 0 ? { lat: sumLat / n, lng: sumLng / n } : null;
-  if (munCenter && rg) rg.style.display = 'block';
+  if (rg) rg.style.display = munCenter && getSearchArea() === 'cerca' ? 'block' : 'none';
 }
 
 function applyFilters() {
@@ -567,19 +554,15 @@ function applyFilters() {
   var radius = parseInt(document.getElementById('in-radius').value, 10);
 
   var stations = allStations.slice();
-
-  // Filtro por combustible: si el perfil es estricto, quitamos estaciones sin
-  // precio en ese combustible (el listado se ordena siempre por precio).
-  var profile = getProfile();
-  var strictFuel = profile && profile.strictFuel;
-  if (strictFuel) {
-    stations = stations.filter(function(s) { return parsePrice(s[fuel]); });
+  var selectedMunicipality = document.getElementById('sel-municipio').value;
+  if (!searchOrigin && selectedMunicipality && getSearchArea() === 'municipio') {
+    stations = stations.filter(function(s) { return String(s.IDMunicipio) === selectedMunicipality; });
   }
 
   // Filtro por radio centrado en el municipio elegido (munCenter): al elegir
   // un municipio, mostramos las gasolineras en un radio de N km a su alrededor.
   var center = munCenter;
-  var radiusActive = !!munCenter;
+  var radiusActive = !!munCenter && getSearchArea() === 'cerca';
   if (center && radiusActive && radius) {
     stations = stations.filter(function(s) {
       var pos = stationLatLng(s);
@@ -634,12 +617,9 @@ function applyFilters() {
 
   // Guardar historico de precios (favoritos + visitados recientes).
   recordHistoryForTracked(stations, fuel);
-  // Alertas: comparamos el precio vs baseline y notificamos bajadas de
-  // favoritos. checkPriceDropsAndUpdateBaselines aisla el estado en
-  // localStorage y respeta el cooldown/consentimiento.
-  try { checkPriceDropsAndUpdateBaselines(stations, fuel); } catch(_) {}
   // Refrescar el panel de favoritas (si el modal esta abierto).
   renderFavsPanel();
+  if (typeof restoreSharedStation === 'function') restoreSharedStation();
 }
 
 // ---- CACHE localStorage ----
@@ -674,12 +654,14 @@ function formatAge(ts) {
   return 'hace ' + Math.floor(hrs/24) + 'd';
 }
 
-function showCacheIndicator(ts, stale) {
+function showCacheIndicator(ts, stale, fecha) {
   var lbl = document.getElementById('lbl-update');
   var age = formatAge(ts);
+  var source = fecha ? 'Datos: ' + fecha + ' · copia ' : 'Copia descargada ';
+  lbl.title = fecha ? 'Fecha publicada por el Ministerio: ' + fecha : 'Fecha de descarga; la fuente no indicó la fecha de los precios';
   lbl.innerHTML = '';
   if (stale) {
-    lbl.appendChild(document.createTextNode('⚠ ' + age + ' '));
+    lbl.appendChild(document.createTextNode('⚠ ' + source + age + ' '));
     var btn = document.createElement('button');
     btn.textContent = 'Actualizar';
     // Estilos en styles.ts (.cache-refresh-btn).
@@ -687,32 +669,13 @@ function showCacheIndicator(ts, stale) {
     btn.addEventListener('click', forceReload);
     lbl.appendChild(btn);
   } else {
-    lbl.textContent = '✓ ' + age;
+    lbl.textContent = source + age;
   }
   lbl.style.display = 'inline';
 }
 
-async function refreshInBackground(key, idProv, idMun) {
-  try {
-    var url = idMun ? '/api/estaciones/municipio/' + idMun : '/api/estaciones/provincia/' + idProv;
-    var res = await fetch(url);
-    if (!res.ok) return;
-    var data = await res.json();
-    var stations = (data.ListaEESSPrecio || []).map(normalizeStation);
-    setCache(key, stations, data.Fecha || '');
-    allStations = stations;
-    applyFilters();
-    showCacheIndicator(Date.now(), false);
-  } catch(e) { /* silencioso */ }
-}
-
 function forceReload() {
-  var idProv = document.getElementById('sel-provincia').value;
-  var idMun = document.getElementById('sel-municipio').value;
-  if (!idProv) return;
-  var key = cacheKey(idProv, idMun);
-  try { localStorage.removeItem(key); } catch(e) {}
-  loadStations();
+  return loadStations({ force: true });
 }
 
 // ---- API CALLS (via proxy Hono) ----
@@ -805,7 +768,9 @@ function fillMunicipios(sel, data) {
   sel.disabled = false;
 }
 
+var municipalityRequest = 0;
 async function loadMunicipios(idProv) {
+  var request = ++municipalityRequest;
   var sel = document.getElementById('sel-municipio');
   sel.innerHTML = '<option value="">-- Todos --</option>';
   sel.disabled = true;
@@ -831,8 +796,10 @@ async function loadMunicipios(idProv) {
   try {
     var data = await fetchJSON('/api/municipios/' + idProv);
     lsWrite(key, data);
+    if (request !== municipalityRequest || document.getElementById('sel-provincia').value !== idProv) return;
     fillMunicipios(sel, data);
   } catch(e) {
+    if (request !== municipalityRequest || document.getElementById('sel-provincia').value !== idProv) return;
     if (cached) {
       fillMunicipios(sel, cached.data);
     } else {
@@ -859,72 +826,66 @@ function renderSkeletons(count) {
   list.innerHTML = html;
 }
 
-async function loadStations() {
+var stationRequest = 0;
+var currentSnapshotDate = '';
+function stationSelectionKey() {
+  return searchOrigin ? 'near:' + searchOrigin.lat + ',' + searchOrigin.lng
+    : document.getElementById('sel-provincia').value + '|' + document.getElementById('sel-municipio').value + '|' + getSearchArea();
+}
+async function loadStations(options) {
+  options = options || {};
+  var request = ++stationRequest;
+  var selection = stationSelectionKey();
   var idProv = document.getElementById('sel-provincia').value;
   var idMunSel = document.getElementById('sel-municipio').value;
-
-  if (!idProv) { showToast('Selecciona una provincia primero', 'warning'); return; }
-
-  // Modo "radio alrededor del municipio": si el usuario elige un municipio,
-  // cargamos la PROVINCIA entera como pool y luego, en applyFilters, recortamos
-  // a un radio (10 km por defecto, ajustable con la barra) centrado en ese
-  // municipio. Asi ve tambien las de pueblos vecinos. Sin municipio, mostramos
-  // la provincia entera sin recorte. Siempre cargamos a nivel provincia (idMun
-  // vacio); el municipio solo fija el centro del radio (setupMunicipioRadio).
-  var munMode = !!idMunSel;
-  var idMun = '';
-
-  document.getElementById('stats-bar').style.display = 'none';
-  renderSkeletons(6);
-
-  var key = cacheKey(idProv, idMun);
+  var nearby = !!searchOrigin || (!!idMunSel && getSearchArea() === 'cerca');
+  function isCurrent() { return request === stationRequest && selection === stationSelectionKey(); }
+  if (!idProv && !nearby) { showToast('Selecciona una provincia primero', 'warning'); return false; }
+  var key = cacheKey(nearby ? 'near' : idProv, '');
   var cached = getCache(key);
-
-  if (cached) {
-    allStations = cached.data;
-    var stale = Date.now() - cached.ts > 2 * 60 * 60 * 1000;
-    showCacheIndicator(cached.ts, stale);
-    setupMunicipioRadio(munMode, idMunSel);
+  function paint(stations, fecha, ts, stale) {
+    if (!isCurrent()) return;
+    allStations = stations;
+    currentSnapshotDate = fecha || '';
+    setupMunicipioRadio(!!idMunSel, idMunSel);
+    showCacheIndicator(ts, stale, fecha);
     applyFilters();
-    if (stale) refreshInBackground(key, idProv, idMun);
-    return;
   }
-
-  document.getElementById('loading').classList.add('show');
-
+  if (cached && options.force !== true) {
+    var stale = Date.now() - cached.ts > 2 * 60 * 60 * 1000;
+    paint(cached.data, cached.fecha, cached.ts, stale);
+    document.getElementById('loading').classList.remove('show');
+    if (stale) return loadStations({ force: true, background: true });
+    return true;
+  }
+  if (!options.background) {
+    document.getElementById('stats-bar').style.display = 'none';
+    renderSkeletons(6);
+    document.getElementById('loading').classList.add('show');
+  }
   try {
-    var url = idMun
-      ? '/api/estaciones/municipio/' + idMun
-      : '/api/estaciones/provincia/' + idProv;
-
-    var data = await fetchJSON(url);
-    allStations = (data.ListaEESSPrecio || []).map(normalizeStation);
-
-    showCacheIndicator(Date.now(), false);
-    if (data.Fecha) {
-      var lbl = document.getElementById('lbl-update');
-      lbl.title = 'Datos del Ministerio: ' + data.Fecha;
-    }
-
-    setCache(key, allStations, data.Fecha || '');
-    setupMunicipioRadio(munMode, idMunSel);
-    applyFilters();
+    var url = nearby ? '/data/stations.json' : '/api/estaciones/provincia/' + idProv;
+    var data = await fetchJSON(url, options.force ? { cache: 'no-store' } : undefined);
+    if (!data || !Array.isArray(data.ListaEESSPrecio)) throw new Error('Respuesta de precios incompleta');
+    var stations = data.ListaEESSPrecio.map(normalizeStation);
+    if (!isCurrent()) return false;
+    setCache(key, stations, data.Fecha || '');
+    paint(stations, data.Fecha || '', Date.now(), false);
+    return true;
   } catch(err) {
+    if (!isCurrent()) return false;
     console.error(err);
-    // Fallback: usar cache vieja (hasta 30 dias) si existe
     var stale = getCache(key, true);
     if (stale) {
-      allStations = stale.data;
-      showCacheIndicator(stale.ts, true);
-      setupMunicipioRadio(munMode, idMunSel);
-      applyFilters();
-      showToast('El Ministerio no responde. Mostrando datos guardados (' + formatAge(stale.ts) + ').', 'warning');
+      paint(stale.data, stale.fecha, stale.ts, true);
+      showToast('No se pudo actualizar. Mostrando la copia guardada ' + formatAge(stale.ts) + '.', 'warning');
     } else {
       showListError('No hemos podido cargar los precios ahora mismo. Vuelve a intentarlo en unos minutos.');
       showToast('No se pudieron cargar los precios. Reintenta en unos minutos.', 'error');
     }
+    return false;
   } finally {
-    document.getElementById('loading').classList.remove('show');
+    if (request === stationRequest) document.getElementById('loading').classList.remove('show');
   }
 }
 
@@ -932,7 +893,7 @@ async function loadStations() {
 function normStr(s) {
   return (s || '').toLowerCase()
     .normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9s]/g, ' ').replace(/s+/g, ' ').trim();
+    .replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 // ============================================================
@@ -1036,15 +997,11 @@ function normStr(s) {
       indicator.classList.add('refreshing');
       if (text) text.textContent = 'Actualizando...';
       setHeight(PTR_REFRESH_H);
-      try { forceReload(); } catch(_) {}
-      // Cerrar el indicador tras un tiempo prudente — forceReload es async
-      // pero no devuelve promesa aqui. 1500ms es suficiente para ver el
-      // spinner y ya tener los nuevos datos cargados (fetch + render ~300ms).
-      setTimeout(function() {
+      Promise.resolve().then(forceReload).finally(function() {
         indicator.classList.remove('refreshing');
         reset();
         refreshing = false;
-      }, 1500);
+      });
     } else {
       reset();
     }

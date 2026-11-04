@@ -163,8 +163,11 @@ for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 844 })
     await page.goto('/gasolineras/madrid/madrid')
     await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
-    await page.locator('#btn-sheet-toggle').click()
     const card = page.locator('.station-card').first()
+    // Con resultados ya cargados el asa prioriza la lista; antes de recibirlos
+    // abre los filtros. Esperar la tarjeta en el DOM fija el caso que probamos.
+    await expect(card).toBeAttached({ timeout: 20000 })
+    await page.locator('#btn-sheet-toggle').click()
     await expect(card).toBeVisible({ timeout: 20000 })
     await expect(page.locator('#filter-fields')).toBeHidden()
     await page.locator('#btn-toggle-filters').click()
@@ -196,6 +199,43 @@ for (const width of [390, 320]) {
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })
 }
+
+test('móvil: abrir antes de recibir precios permite usar filtros y conserva la elección al llegar los datos', async ({ page }, info) => {
+  test.skip(info.config.metadata.live === true, 'Carga demorada controlada; producción conserva sus consultas reales.')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await smallSnapshot(page)
+  let releaseStations!: () => void
+  const pendingStations = new Promise<void>(resolve => { releaseStations = resolve })
+  await page.route('**/api/estaciones/provincia/28', async route => {
+    await pendingStations
+    await route.fallback()
+  })
+  try {
+    await page.goto('/gasolineras/mapa?prov=28')
+    await expect(page.locator('#station-list')).toHaveAttribute('aria-busy', 'true')
+    await expect(page.locator('.station-card')).toHaveCount(0)
+    await page.locator('#btn-sheet-toggle').click()
+    await expect(page.locator('#filter-fields')).toBeVisible()
+    await expect(page.locator('#btn-toggle-filters')).toHaveAttribute('aria-expanded', 'true')
+    await page.locator('#sel-combustible').selectOption('Precio Gasoleo A')
+
+    releaseStations()
+    await expect(page.locator('.station-card')).toHaveCount(3)
+    await expect(page.locator('#station-list')).toHaveAttribute('aria-busy', 'false')
+    await expect(page.locator('#sel-combustible')).toHaveValue('Precio Gasoleo A')
+    await expect(page.locator('#filter-fields')).toBeVisible()
+    const cheapest = cardFor(page, '900002')
+    await expect(cheapest).toContainText('1,423')
+    await page.locator('#btn-toggle-filters').click()
+    await expect(page.locator('#filter-fields')).toBeHidden()
+    await cheapest.click()
+    await expect(page.locator('#station-detail')).toHaveAttribute('data-station-id', '900002')
+    await expect(page.locator('#station-detail .popup-price-main')).toContainText('1,423')
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  } finally {
+    releaseStations()
+  }
+})
 
 test('móvil 320px: la tabla con letra grande conserva sus columnas y se desplaza con teclado sin ensanchar la página', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 })

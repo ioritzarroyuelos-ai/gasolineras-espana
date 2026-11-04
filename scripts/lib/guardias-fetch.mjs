@@ -55,14 +55,20 @@ export async function descargarGuardiaHTML(territorio, url, encoding = 'utf-8') 
   try { return new TextDecoder(encoding).decode(await (await descargar(url)).arrayBuffer()) }
   catch (primaryError) {
     if (!['asturias', 'ceuta'].includes(territorio)) throw primaryError
-    const origin = process.env.GUARDIAS_RELAY_ORIGIN || 'https://espana-util-guardias.ioritz-arroyuelos.workers.dev'
-    if (!/^https:\/\/espana-util-guardias(?:-pr-\d+|-preview)?\.ioritz-arroyuelos\.workers\.dev$/.test(origin)) throw new Error('Origen de respaldo no permitido')
     console.warn(`${territorio}: la conexión directa falla; comprobamos el respaldo de Cloudflare`)
-    const data = await descargarJSON(origin + '/' + territorio)
-    const age = Date.now() - Date.parse(data?.fetchedAt)
-    if (data?.source !== url || typeof data.html !== 'string' || !Number.isFinite(age) || age < -300000 || age > 900000) throw new Error('Respaldo sin origen o fecha válidos')
+    const data = await descargarRespaldo(territorio, url)
+    if (typeof data.html !== 'string') throw new Error('Respaldo sin listado HTML')
     return data.html
   }
+}
+export async function descargarRespaldo(territorio, source) {
+  if (!['asturias', 'ceuta', 'almeria'].includes(territorio)) throw new Error('Territorio de respaldo no permitido')
+  const origin = process.env.GUARDIAS_RELAY_ORIGIN || 'https://espana-util-guardias.ioritz-arroyuelos.workers.dev'
+  if (!/^https:\/\/espana-util-guardias(?:-pr-\d+|-preview)?\.ioritz-arroyuelos\.workers\.dev$/.test(origin)) throw new Error('Origen de respaldo no permitido')
+  const data = await descargarJSON(origin + '/' + territorio)
+  const age = Date.now() - Date.parse(data?.fetchedAt)
+  if (data?.source !== source || !Number.isFinite(age) || age < -300000 || age > 900000) throw new Error('Respaldo sin origen o fecha válidos')
+  return data
 }
 export function guardarGuardias(territorio, source, guardias, { fecha = fechaMadrid(), min = 1, max = 1000, sourceUrl, incidencias = [], cobertura, coordenadasOficiales = false } = {}) {
   if (guardias.length < min || guardias.length > max || guardias.some(r => !r[2] || !r[3])) {

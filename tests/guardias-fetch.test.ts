@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { descargarJSON } from '../scripts/lib/guardias-fetch.mjs'
+import { descargarJSON, descargarRespaldo } from '../scripts/lib/guardias-fetch.mjs'
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
@@ -37,5 +37,13 @@ describe('descarga JSON de fuentes oficiales', () => {
     vi.stubGlobal('fetch', fetchMock)
     await expect(descargarJSON('https://www.cofalmeria.com/listado')).rejects.toThrow('HTTP 403')
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+  it.each([
+    { source: 'https://example.test', age: 0 },
+    { source: 'https://www.cofalmeria.com/', age: 16 * 60_000 },
+    { source: 'https://www.cofalmeria.com/', age: -6 * 60_000 },
+  ])('rechaza un respaldo con origen o fecha inválidos: %j', async ({ source, age }) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ source, fetchedAt: new Date(Date.now() - age).toISOString(), data: {} })))
+    await expect(descargarRespaldo('almeria', 'https://www.cofalmeria.com/')).rejects.toThrow('Respaldo sin origen o fecha válidos')
   })
 })

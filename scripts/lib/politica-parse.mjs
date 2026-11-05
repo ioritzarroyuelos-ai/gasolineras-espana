@@ -5,9 +5,8 @@
 // el encabezado de sección (no por posición), mapear partidos por su nombre (no
 // por índice), separar filas de referencia, tratar "—" como ausencia (no 0) y
 // los rangos "16/17"/"30-33" como {min,max}. Conserva el texto original de la
-// fecha (fechaTexto). El AÑO de las fechas sin año se toma del encabezado de
-// sección (=== 2025 ===) con arrastre de mes (las tablas van de más nueva a más
-// antigua); si no hay año resoluble, no se emite ISO (solo fechaTexto).
+// fecha (fechaTexto). Para el año se usa el que indica la celda o el encabezado
+// anual de su sección. El orden de publicación puede diferir del fin de campo.
 //
 // Testeado contra fixtures reales en tests/fixtures/politica/*.html.
 
@@ -68,43 +67,42 @@ export function parseEscanos(raw) {
   return uno ? parseInt(t, 10) : null
 }
 
-// Descompone una fecha de trabajo de campo en componentes (sin decidir el año si
-// no viene explícito). días 1-2 cifras, meses es/en, año 4 cifras opcional.
-function componentesFecha(text) {
-  const texto = limpiaTexto(text)
-  if (!texto || texto === '?') return { texto }
-  const t = texto.replace(/–|—/g, '-').toLowerCase()
-  const anios = [...t.matchAll(/\b(?:19|20)\d{2}\b/g)].map((m) => parseInt(m[0], 10))
-  const anio = anios.length ? anios[anios.length - 1] : null
-  const meses = []
-  for (const m of t.matchAll(/[a-záéíóú]+/g)) {
-    const key = m[0].normalize('NFD').replace(/[̀-ͯ]/g, '')
-    if (MESES[key]) meses.push(MESES[key])
-  }
-  const dias = []
-  for (const m of t.matchAll(/\b\d{1,2}\b/g)) dias.push(parseInt(m[0], 10))
-  if (meses.length === 0 || dias.length === 0) return { texto, anio }
-  return {
-    texto,
-    anio,
-    mes1: meses[0],
-    mes2: meses.length > 1 ? meses[1] : meses[0],
-    dia1: dias[0],
-    dia2: dias.length > 1 ? dias[dias.length - 1] : dias[0],
-  }
-}
-
+// El año al final de un intervalo corresponde a su fin. Bajo el encabezado
+// 2025, «27 Dic–3 Ene» empieza en diciembre de 2024 y termina en enero de 2025.
 function iso(dia, mes, anio) {
-  if (!anio || !mes || !dia || dia < 1 || dia > 31) return undefined
-  return `${anio}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`
+  if (!anio || !mes || !dia) return undefined
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia))
+  if (fecha.getUTCMonth() !== mes - 1 || fecha.getUTCDate() !== dia) return undefined
+  return fecha.toISOString().slice(0, 10)
 }
 
-// Compat: resuelve una fecha usando anioContexto cuando no hay año explícito.
 export function parseFecha(text, anioContexto) {
-  const c = componentesFecha(text)
-  const anio = c.anio || anioContexto
-  if (!c.mes1) return { texto: c.texto }
-  return { texto: c.texto, inicio: iso(c.dia1, c.mes1, anio), fin: iso(c.dia2, c.mes2, anio) }
+  const texto = limpiaTexto(text)
+  const t = texto.toLowerCase()
+  if (t.includes('?')) return { texto }
+  const meses = [...t.matchAll(/[a-záéíóú]+/g)].map(m => MESES[m[0]]).filter(Number.isInteger)
+  const dias = [...t.matchAll(/\b\d{1,2}\b/g)]
+  const anios = [...t.matchAll(/\b(?:19|20)\d{2}\b/g)]
+  if (!dias.length || dias.length > 2 || !meses.length || meses.length > dias.length || anios.length > 2) return { texto }
+
+  const mesInicio = meses[0]
+  const mesFin = meses.at(-1)
+  const cruzaEnero = mesFin < mesInicio ? 1 : 0
+  let anioFin = anioContexto
+  let anioInicio
+  if (anios.length === 2) {
+    anioInicio = Number(anios[0][0])
+    anioFin = Number(anios[1][0])
+  } else if (anios.length === 1) {
+    const anio = Number(anios[0][0])
+    // En «28 Dec 2025–5 Jan» el único año está junto al primer extremo.
+    anioFin = dias.length === 2 && anios[0].index < dias[1].index ? anio + cruzaEnero : anio
+  }
+  if (!anioFin) return { texto }
+  anioInicio ??= anioFin - cruzaEnero
+  const inicio = iso(Number(dias[0][0]), mesInicio, anioInicio)
+  const fin = iso(Number(dias.at(-1)[0]), mesFin, anioFin)
+  return inicio && fin && inicio <= fin ? { texto, inicio, fin } : { texto }
 }
 
 function tituloDe(el) {
@@ -139,6 +137,8 @@ function esTablaSondeos(tab) {
 }
 
 function parseCelda(td) {
+  // La fuente puede compartir una misma celda entre filas mediante rowspan.
+  td = td.clone()
   const spans = td.querySelectorAll('span')
   let seatSpan = spans.find((s) => /font-size/i.test(s.getAttribute('style') || ''))
   if (!seatSpan) seatSpan = spans.find((s) => /^\(?\d+\s*[/-]?\s*\d*\)?$/.test(limpiaTexto(s.text)))
@@ -174,31 +174,60 @@ function extraeEscanosFila(tds, columnas) {
   return out
 }
 
-// Componentes de fecha de la primera fila de datos (no-referencia) de las tablas
-// seleccionadas: sirve para anclar el año del sondeo más reciente.
-function primeraFechaDatos(seleccion) {
-  for (const { tab } of seleccion) {
-    const cols = columnasDe(tab)
-    const partidos = cols.filter((c) => c.rol === 'partido')
-    const fechaCol = cols.find((c) => c.rol === 'fecha')
-    const empresaIdx = (cols.find((c) => c.rol === 'empresa') || { i: 0 }).i
-    if (!fechaCol) continue
-    const filas = tab.querySelectorAll('tr')
-    for (let r = 1; r < filas.length; r++) {
-      const tds = filas[r].querySelectorAll('td')
-      if (tds.length < partidos.length) continue
-      const et = limpiaTexto(tds[empresaIdx] ? tds[empresaIdx].text : '')
-      if (!et || RE_REFERENCIA.test(et)) continue
-      const c = componentesFecha(tds[fechaCol.i] ? tds[fechaCol.i].text : '')
-      if (c.mes1 != null || c.anio != null) return c
+// Respeta las celdas compartidas por varias filas. Un número que abarca
+// varios partidos (colspan) no se puede atribuir por entero a cada uno.
+function filasDeDatos(tabla) {
+  const pendientes = []
+  const datos = []
+  const filas = tabla.querySelectorAll('tr').filter(fila => fila.closest('table') === tabla)
+  for (const [indice, fila] of filas.entries()) {
+    const columnas = []
+    pendientes.forEach((p, i) => { if (p.hasta >= indice) columnas[i] = p.celda })
+    let columna = 0
+    const propias = fila.childNodes.filter(n => n.tagName === 'TD' || n.tagName === 'TH')
+    for (const elemento of propias) {
+      while (columna in columnas) columna++
+      const ancho = Math.min(100, Number.parseInt(elemento.getAttribute('colspan') || '1', 10) || 1)
+      const alto = Math.min(filas.length, Number.parseInt(elemento.getAttribute('rowspan') || '1', 10) || 1)
+      const celda = elemento.tagName === 'TD' && ancho === 1 ? elemento : null
+      for (let n = 0; n < ancho; n++) {
+        columnas[columna] = celda
+        if (alto > 1) pendientes[columna] = { celda, hasta: indice + alto - 1 }
+        columna++
+      }
     }
+    if (propias.some(n => n.tagName === 'TD')) datos.push(columnas)
   }
-  return null
+  return datos
+}
+
+function tablasDeEstimaciones(root) {
+  const seleccion = []
+  const titulos = []
+  const esAnual = t => /^(?:19|20)\d{2}$/.test(t)
+  for (const nodo of root.querySelectorAll('h1,h2,h3,h4,h5,h6,table.wikitable')) {
+    if (nodo.tagName !== 'TABLE') {
+      const nivel = Number(nodo.tagName[1])
+      titulos.length = nivel
+      titulos[nivel - 1] = limpiaTexto(nodo.text)
+      continue
+    }
+    if (!esTablaSondeos(nodo)) continue
+    const secciones = titulos.filter(Boolean)
+    // El mismo encabezado anual puede aparecer bajo estimaciones o bajo voto
+    // directo. Los bloques, las preferencias y las respuestas en bruto difieren.
+    if (secciones.some(t => /voto direct[oa]|intenci[oó]n directa|voting preferences|preferenci|preferred|predicted|victory (?:likelihood|preferences)|bloque ideol[oó]gico/i.test(t))) continue
+    const ultimo = secciones.at(-1) || ''
+    if (ultimo && !esAnual(ultimo) && !RE_HEAD_ESTIM.test(ultimo)) continue
+    const anio = secciones.filter(esAnual).at(-1)
+    seleccion.push({ tab: nodo, anio: anio ? Number(anio) : undefined })
+  }
+  return seleccion
 }
 
 /**
  * @param {string} html
- * @param {{ anioReferencia?: number, hoy?: { anio: number, mes: number } }} [opts]
+ * @param {{ anioReferencia?: number }} [opts]
  */
 export function parseSondeos(html, opts = {}) {
   const root = parse(html)
@@ -207,54 +236,20 @@ export function parseSondeos(html, opts = {}) {
     if (/display\s*:\s*none/i.test(el.getAttribute('style') || '')) el.remove()
   })
 
-  // Recorre encabezados + tablas en orden de documento; asocia a cada tabla de
-  // estimaciones el año de su encabezado de sección más cercano.
-  const nodos = root.querySelectorAll('h1,h2,h3,h4,table.wikitable')
-  const seleccion = []
-  let headText = ''
-  for (const n of nodos) {
-    const tag = (n.tagName || '').toUpperCase()
-    if (/^H[1-4]$/.test(tag)) {
-      headText = limpiaTexto(n.text)
-      continue
-    }
-    if (!esTablaSondeos(n)) continue
-    const anioHead = (headText.match(/\b(?:19|20)\d{2}\b/) || [])[0]
-    const relevante = !!anioHead || RE_HEAD_ESTIM.test(headText) || headText === ''
-    if (relevante) seleccion.push({ tab: n, anioHead: anioHead ? parseInt(anioHead, 10) : null })
-  }
+  const seleccion = tablasDeEstimaciones(root)
 
   const incidencias = []
   if (seleccion.length === 0) {
     return { tablasCoincidentes: 0, candidaturas: [], sondeos: [], referencia: null, incidencias: ['no se encontró tabla de sondeos por cabecera'], filas: { candidatas: 0, aceptadas: 0, rechazadas: 0 } }
   }
 
-  // Ancla del año: el sondeo más NUEVO (primera fila de datos) suele ser reciente.
-  // Si su celda trae año explícito, ese manda; si no, se ancla respecto a HOY
-  // (que pasa el robot): un mes de inicio posterior al mes actual es del año
-  // pasado. A partir de ahí se arrastra hacia atrás (tablas de nuevo a viejo).
-  const primera = primeraFechaDatos(seleccion)
-  let anioRun = null
-  if (primera) {
-    if (primera.anio != null) anioRun = primera.anio
-    else if (opts.hoy && opts.hoy.anio && primera.mes1 != null) {
-      anioRun = primera.mes1 <= (opts.hoy.mes || 12) ? opts.hoy.anio : opts.hoy.anio - 1
-    }
-  }
-
+  let variantesSinDistinguir = 0
   const candMap = new Map()
   const sondeos = []
   let referencia = null
   let candidatasFilas = 0
   let rechazadas = 0
-  // Invariante de ordenación: las tablas van de sondeo más NUEVO (arriba) a más
-  // ANTIGUO. Guardamos la fecha de FIN del sondeo anterior (más nuevo) para
-  // corregir el año inferido: la fecha de fin nunca puede ser posterior a la del
-  // anterior; si sale posterior, hemos cruzado a un año anterior. Persiste entre
-  // tablas (años consecutivos).
-  let prevFinTs = null
-
-  for (const { tab } of seleccion) {
+  for (const { tab, anio } of seleccion) {
     const columnas = columnasDe(tab)
     const partidos = columnas.filter((c) => c.rol === 'partido')
     if (partidos.length === 0) continue
@@ -263,14 +258,12 @@ export function parseSondeos(html, opts = {}) {
     const muestraCol = columnas.find((c) => c.rol === 'muestra')
     for (const p of partidos) if (!candMap.has(p.id)) candMap.set(p.id, { id: p.id, nombre: p.nombre, siglas: p.siglas })
 
-    // anio = año de trabajo (se arrastra fila a fila y entre tablas).
-    let anio = anioRun
-    const filas = tab.querySelectorAll('tr')
-    for (let r = 1; r < filas.length; r++) {
-      const tds = filas[r].querySelectorAll('td')
+    for (const tds of filasDeDatos(tab)) {
       if (tds.length < partidos.length) continue
       candidatasFilas++
-      const empresaTxt = limpiaTexto(tds[empresaIdx] ? tds[empresaIdx].text : '')
+      const celdaEmpresa = tds[empresaIdx]
+      const celdaFecha = fechaCol && tds[fechaCol.i]
+      const empresaTxt = limpiaTexto(celdaEmpresa?.text)
 
       if (RE_REFERENCIA.test(empresaTxt)) {
         const anioFila = (empresaTxt.match(/(?:19|20)\d{2}/) || [])[0]
@@ -281,34 +274,20 @@ export function parseSondeos(html, opts = {}) {
         }
         continue
       }
-      if (!empresaTxt) {
+      if (!empresaTxt || /<\/?ref\b/i.test(empresaTxt)) {
         rechazadas++
         continue
       }
-
-      const [empresa, comitente] = empresaTxt.split('/').map((s) => s.trim())
-      const c = fechaCol ? componentesFecha(tds[fechaCol.i] ? tds[fechaCol.i].text : '') : { texto: '' }
-      // Determina el año de inicio y de fin de esta fila.
-      let inicioAnio, finAnio
-      if (c.mes1 != null) {
-        const base = c.anio != null ? c.anio : anio
-        if (base != null) {
-          inicioAnio = base
-          finAnio = c.mes2 != null && c.mes2 < c.mes1 ? base + 1 : base // rango que cruza fin de año
-          // Con año inferido (no explícito), corrige hacia atrás si la fecha de
-          // fin saldría posterior a la del sondeo anterior (más nuevo): imposible
-          // en una tabla ordenada -> hemos cruzado de año. Arregla el caso dic–ene.
-          if (c.anio == null && prevFinTs != null) {
-            for (let g = 0; g < 6; g++) {
-              const ft = Date.parse(iso(c.dia2 != null ? c.dia2 : c.dia1, c.mes2 != null ? c.mes2 : c.mes1, finAnio) + 'T00:00:00Z')
-              if (Number.isNaN(ft) || ft <= prevFinTs) break
-              inicioAnio -= 1
-              finAnio -= 1
-            }
-          }
-          anio = inicioAnio
-        }
+      // Hay una encuesta con varias estimaciones sin rótulos independientes.
+      // Una fila por estimación aparentaría sondeos distintos.
+      if (Number(celdaEmpresa.getAttribute('rowspan')) > 1 && Number(celdaFecha?.getAttribute('rowspan')) > 1) {
+        variantesSinDistinguir++
+        rechazadas++
+        continue
       }
+      const [empresa, ...encargo] = empresaTxt.split('/').map(s => s.trim())
+      const comitente = encargo.join(' / ')
+      const fecha = parseFecha(celdaFecha?.text, anio)
 
       const muestraTxt = muestraCol && tds[muestraCol.i] ? limpiaTexto(tds[muestraCol.i].text).replace(/[.,\s]/g, '') : ''
       const muestra = /^\d+$/.test(muestraTxt) ? parseInt(muestraTxt, 10) : null
@@ -325,21 +304,15 @@ export function parseSondeos(html, opts = {}) {
         rechazadas++
         continue
       }
-      const s = { empresa: empresa || empresaTxt, datos, fechaTexto: c.texto || '' }
+      const s = { empresa: empresa || empresaTxt, datos, fechaTexto: fecha.texto }
       if (comitente) s.comitente = comitente
-      const inicio = iso(c.dia1, c.mes1, inicioAnio)
-      const fin = iso(c.dia2, c.mes2, finAnio)
-      if (inicio) s.campoInicio = inicio
-      if (fin) {
-        s.campoFin = fin
-        const ft = Date.parse(fin + 'T00:00:00Z')
-        if (!Number.isNaN(ft)) prevFinTs = ft // ancla para el orden de la siguiente fila
-      }
+      if (fecha.inicio) s.campoInicio = fecha.inicio
+      if (fecha.fin) s.campoFin = fecha.fin
       if (muestra != null) s.muestra = muestra
       sondeos.push(s)
     }
-    anioRun = anio // arrastra el año a la siguiente tabla (más antigua)
   }
+  if (variantesSinDistinguir) incidencias.push(variantesSinDistinguir + ' filas con estimaciones alternativas del mismo sondeo sin identificar')
 
   if (seleccion.length > 1) incidencias.push(`${seleccion.length} tablas de estimaciones combinadas`)
 

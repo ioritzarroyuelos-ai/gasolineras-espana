@@ -19,7 +19,6 @@ const UA = 'CercaYaBot/1.0 (+https://webapp-3ft.pages.dev; vertical política)'
 const DIR = resolve('public/data/politica')
 const LICENCIA = 'CC BY-SA 4.0'
 const HOY = new Date()
-const hoy = { anio: HOY.getUTCFullYear(), mes: HOY.getUTCMonth() + 1 }
 
 const args = process.argv.slice(2)
 const solo = args.includes('--solo') ? args[args.indexOf('--solo') + 1] : null
@@ -98,7 +97,7 @@ async function construyeEleccion(e) {
   }
   const art = await fetchArticulo(e.wikiSondeos)
   const url = `https://${e.wikiSondeos.lang}.wikipedia.org/wiki/${encodeURIComponent(e.wikiSondeos.articulo.replace(/ /g, '_'))}`
-  const parsed = parseSondeos(art.html, { anioReferencia: yearOf(e.ultimaFecha), hoy })
+  const parsed = parseSondeos(art.html, { anioReferencia: yearOf(e.ultimaFecha) })
   const candidaturas = parsed.candidaturas
   const referencia = parsed.referencia && parsed.referencia.escanos.length
     ? { fecha: e.ultimaFecha, escanos: parsed.referencia.escanos, fuente: `Wikipedia (${e.wikiSondeos.articulo})` }

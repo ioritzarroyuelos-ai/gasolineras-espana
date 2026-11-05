@@ -30,5 +30,5 @@ export function parseEscanos(raw: string): EscanosEstim
 export function parseFecha(text: string, anioContexto?: number): { texto: string; inicio?: string; fin?: string }
 export function parseSondeos(
   html: string,
-  opts?: { anioReferencia?: number; hoy?: { anio: number; mes: number } },
+  opts?: { anioReferencia?: number },
 ): ResultadoParse

@@ -40,6 +40,12 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
   // Índice de autonómicas (ANTES del :eleccionId).
   app.get('/politica/autonomicas', (c) => c.redirect('/politica/autonomicas/', 301))
   app.get('/politica/autonomicas/', async (c) => {
+    const comunidad = c.req.query('comunidad')
+    if (comunidad) {
+      const destino = eleccionPorId(comunidad)
+      if (!destino || destino.tipo !== 'autonomica') return c.notFound()
+      return c.redirect('/politica/autonomicas/' + destino.id, 302)
+    }
     const idx = await cargaIndex(c)
     if (!idx) return c.notFound()
     const auton = idx.elecciones.filter((e) => e.tipo === 'autonomica')
@@ -76,7 +82,9 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!file) return new Response('No disponible', { status: 503 })
     const ahoraISO = new Date().toISOString()
     const veda = enVeda(ahoraISO, cat.proxima)
-    const rawPagina = new URL(c.req.url).searchParams.get('pagina') || '1'
+    const params = new URL(c.req.url).searchParams
+    const rawPagina = params.get('pagina') || '1'
+    const referencia = params.get('referencia') === 'elecciones' ? 'elecciones' : 'anterior'
     const pagina = Number(rawPagina)
     const maxPagina = veda ? 1 : Math.max(1, Math.ceil(file.sondeos.length / SONDEOS_POR_PAGINA))
     if (!/^[1-9]\d{0,4}$/.test(rawPagina) || pagina > maxPagina) return new Response('Página no encontrada', { status: 404 })
@@ -86,7 +94,7 @@ export function registerPoliticaRoutes(app: Hono<{ Bindings: Env }>): void {
       : estadoEleccion({ tieneSondeos: (file.sondeos || []).length > 0, ultimaComprobacionOk: (file as { ultimaComprobacionOk?: string }).ultimaComprobacionOk }, ahoraISO)
     const nonce = genNonce()
     return new Response(
-      buildEleccionPage({ nonce, cat, file, estado, enVeda: veda, ahoraISO, canonical, pagina }),
+      buildEleccionPage({ nonce, cat, file, estado, enVeda: veda, ahoraISO, canonical, pagina, referencia }),
       { headers: politicaHeaders(nonce) },
     )
   }

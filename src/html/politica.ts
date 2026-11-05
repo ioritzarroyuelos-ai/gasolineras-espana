@@ -1,124 +1,66 @@
-// Páginas SSR de la vertical de POLÍTICA (elecciones + sondeos), sin JavaScript.
-// Índice de elecciones, índice de autonómicas y página por elección con:
-//  - cabecera (fecha/cuenta atrás, cámara y mayoría)
-//  - resultado de la última elección como BARRA de escaños (referencia)
-//  - tabla de todos los sondeos con el sube/baja frente a esa referencia
-//  - gráfica de evolución (SVG en servidor): una línea por partido a lo largo del
-//    tiempo + puntos por sondeo, con rejilla y línea de mayoría.
-//  - VEDA electoral (LOREG 69.7): en los 5 días previos a una elección confirmada
-//    no se muestran sondeos ni gráfica; solo fecha, cuenta atrás y resultado previo.
-// Todo el texto que viene de Wikipedia se escapa. Atribución CC BY-SA al pie.
-
-import type { EleccionFile, IndexEntry, Sondeo, Candidatura } from '../lib/politica-schemas'
-import { calculaCambio, type Cambio } from '../lib/politica'
+// Portada, directorio territorial y ficha de elecciones. Las referencias y la
+// paginación se resuelven en el servidor, incluso sin JavaScript.
+import type { EleccionFile, IndexEntry, Candidatura } from '../lib/politica-schemas'
 import { colorPartido, ordenIdeologico, type EleccionCatalogo } from '../../scripts/lib/politica-catalogo.mjs'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
+import { esc, fmtFecha, fmtMesAnio } from './politica-formato'
+import { renderSondeos, SONDEOS_CSS, type ReferenciaSondeo } from './politica-sondeos'
+import { renderGrafica, POLITICA_GRAFICA_CSS } from './politica-grafica'
 
-function esc(s: unknown): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+const CSS = `
+:root{color-scheme:light;--vd:#265c39;--ink:#222b25;--tx:#303c34;--mu:#536158;--bd:#dce2da;--rule:#cdd6cc;--paper:#f8f7f2;--bg:#f3f6f2}
+*{box-sizing:border-box}
+body{margin:0;background:#fffcf6;color:var(--tx);font:16px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif}
+main{max-width:1080px;margin:0 auto;padding:clamp(22px,4vw,48px) clamp(16px,3vw,32px) 24px}
+a{color:var(--vd);text-underline-offset:.18em}
+h1,h2,.el-name{font-family:Georgia,'Times New Roman',serif;color:var(--ink);line-height:1.14}
+h1{font-size:clamp(28px,4vw,42px);margin:0 0 10px;letter-spacing:-.025em}
+h2{font-size:clamp(21px,3vw,27px);margin:0 0 12px}
+.sub,.ficha,.fuente,.resultado .cap{color:var(--mu)}
+.sub{max-width:60ch;margin:0}
+main>section{margin-top:clamp(26px,4vw,42px)}
+main>section+section{padding-top:clamp(18px,3vw,30px);border-top:1px solid var(--rule)}
+.ficha{margin:0 0 8px;font-size:15px}.fecha-eleccion{margin:0;color:var(--ink)}
+.badge{display:inline-block;align-self:flex-start;font-size:13px;margin:4px 0;color:var(--vd)}
+.regional-form{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
+.regional-form label{display:grid;gap:5px;font-size:14px;min-width:0}
+.regional-form select,.regional-form button{max-width:100%;min-height:44px;border:1px solid #748476;border-radius:7px;font:inherit;padding:8px 12px}
+.regional-form select{background:#fff;color:var(--ink)}.regional-form button{background:var(--vd);color:#fff;font-weight:650;cursor:pointer}
+.grid-el{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:16px}
+.el{display:flex;flex-direction:column;gap:7px;padding:18px 20px;background:var(--paper);border:1px solid var(--rule);border-radius:12px;color:inherit;text-decoration:none}
+.el:hover,.territorios a:hover{background:var(--bg)}.el-name{font-size:21px;font-weight:700}
+.el-fecha{color:var(--mu);font-size:14px}.el .go{margin-top:auto;color:var(--vd);font-size:14px;font-weight:650}
+.territorios{margin-top:14px}.territorios summary{width:fit-content;color:var(--vd);cursor:pointer;padding:10px 0;font-weight:650}
+.territorios ul{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));column-gap:18px;padding:0;margin:8px 0 0;list-style:none}
+.territorios a{display:block;padding:10px 4px;border-top:1px solid var(--bd)}
+.masthead.masthead--compact{padding:6px max(16px,calc((100% - 1016px)/2));display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;text-align:left;border-bottom:1px solid var(--rule)}
+.masthead--compact .mh-inner,.masthead--compact .mh-local{margin:0}.masthead--compact .mh-brand{display:flex;align-items:center;gap:7px}
+.masthead--compact .mh-logo{width:23px;height:23px;margin:0}.masthead--compact .mh-title{font-size:23px}
+.masthead--compact .mh-nav{margin:0 0 0 auto;border:0}.masthead--compact .mh-nav a{font-size:12px;padding:10px 8px}
+.masthead--compact .mh-local{padding:0;color:var(--vd)}.mh-local summary{cursor:pointer;font-weight:650;padding:10px 4px}
+.masthead--compact .mh-local[open]{flex-basis:100%;max-width:none}.masthead--compact .mh-local form{justify-content:flex-start}
+.breadcrumb{font-size:14px;margin-bottom:12px}
+.referencias{display:flex;align-items:center;flex-wrap:wrap;gap:6px 12px;margin:8px 0 18px}
+.referencias>span{font-weight:600;font-size:14px}.referencias .opciones{display:inline-flex;flex-wrap:wrap;gap:4px}
+.opciones a{display:inline-flex;align-items:center;min-height:44px;border-radius:7px;border:1px solid var(--rule);padding:7px 12px;font-size:14px;text-decoration:none}
+.opciones a[aria-current]{background:var(--vd);color:#fff;border-color:var(--vd)}
+.paginas{display:flex;align-items:center;flex-wrap:wrap;gap:4px 16px;font-size:14px;margin:12px 0}
+.paginas a{display:inline-flex;align-items:center;min-height:44px}.paginas span{color:var(--mu)}
+.resultado .cap{margin:0 0 8px}.resbar{display:block;width:100%;height:26px;margin:12px 0}
+.leyenda-res{display:flex;flex-wrap:wrap;gap:8px 18px}.leyenda-res .it{display:inline-flex;align-items:center;gap:6px;font-size:14px}
+.leyenda-res .dot{width:10px;height:10px;border-radius:3px}.leyenda-res b{color:var(--ink)}
+.aviso,.veda{background:var(--paper);border-left:3px solid var(--rule);padding:12px 14px;margin:20px 0}
+.fuente,footer{font-size:13px}.fuente{margin:16px 0 0}.datos-fuente{max-width:80ch}
+footer{border-top:1px solid var(--rule);margin-top:20px;color:var(--mu);padding:20px;text-align:center}
+@media(max-width:700px){
+  .masthead.masthead--compact{justify-content:space-between;gap:0 8px}
+  .masthead--compact .mh-nav{order:2;flex-basis:100%;margin:0;justify-content:space-between}
+  .masthead--compact .mh-nav a{font-size:11px;letter-spacing:.015em;padding:10px 1px}
+  .masthead--compact .mh-title{font-size:21px}
+  .grid-el{gap:10px}.regional-form label{flex:1}.regional-form select{width:100%;min-width:0}
 }
-
-const MESES_ABR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-const MESES_LARGO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
-
-function fmtFecha(iso?: string): string {
-  if (!iso) return ''
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!m) return esc(iso)
-  return `${Number(m[3])} ${MESES_ABR[Number(m[2]) - 1] || ''} ${m[1]}`
-}
-function fmtMesAnio(iso: string): string {
-  const m = /^(\d{4})-(\d{2})/.exec(iso)
-  if (!m) return esc(iso)
-  return `${MESES_LARGO[Number(m[2]) - 1] || ''} de ${m[1]}`
-}
-
-const SERIF = "Georgia,'Times New Roman','Nimbus Roman',serif"
-
-const CSS =
-  ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--ink:#1a1a1a;--tx:#25303c;--mu:#697586;'
-  + '--bd:#e7e3d9;--rule:#dcd7c9;--paper:#faf8f4;--bg:#f7f8fa;--sube:#15803d;--baja:#c0341d;--sube-bg:#e7f6ec;--baja-bg:#fbeceA}'
-  + '*{box-sizing:border-box}'
-  + "body{margin:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.55}"
-  + 'main{max-width:880px;margin:0 auto;padding:22px 18px 8px}'
-  + 'a{color:var(--vd)}'
-  + `h1{font-family:${SERIF};font-size:clamp(26px,4.5vw,36px);line-height:1.15;letter-spacing:-.01em;margin:0 0 8px;color:var(--ink)}`
-  + `h2{font-family:${SERIF};font-size:20px;margin:30px 0 12px;color:var(--ink);padding-bottom:6px;border-bottom:2px solid var(--rule)}`
-  + '.sub{color:var(--mu);font-size:15px;margin:0 0 6px;max-width:64ch}'
-  + '.ficha{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:12px 0 20px;font-size:13.5px;color:var(--mu)}'
-  + '.ficha .sep{color:var(--rule)}'
-  + '.count{display:inline-flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--rule);border-radius:999px;padding:3px 12px;color:var(--vd);font-weight:700}'
-  // badges de estado
-  + '.badge{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid transparent;vertical-align:middle}'
-  + '.b-ok{background:#e7f6ec;color:#166534;border-color:#c9ebd4}'
-  + '.b-sin{background:#f1f3f6;color:#586372;border-color:#e2e6ec}'
-  + '.b-old{background:#fef7e6;color:#8a5a00;border-color:#f6e3b0}'
-  + '.b-no{background:#fdeceA;color:#9b2216;border-color:#f6cfc9}'
-  // tarjetas del índice
-  + '.grid-el{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}'
-  + '.el{display:flex;flex-direction:column;gap:6px;border:1px solid var(--bd);border-radius:14px;padding:14px 16px;'
-  + 'text-decoration:none;color:inherit;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04);transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}'
-  + '.el:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(16,24,40,.09);border-color:#cfe8d6}'
-  + '.el .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}'
-  + `.el .n{font-family:${SERIF};font-weight:700;font-size:17px;color:var(--ink);line-height:1.25}`
-  + '.el .d{color:var(--mu);font-size:12.5px}'
-  + '.el .go{color:var(--vd);font-weight:700;font-size:13px;margin-top:2px}'
-  // barra de escaños (resultado de referencia) — SVG, para no usar estilos inline (CSP)
-  + '.resultado{border:1px solid var(--bd);border-radius:14px;padding:16px;margin:0 0 16px;background:linear-gradient(180deg,#fff, var(--bg))}'
-  + '.resultado .cap{font-size:13px;color:var(--mu);margin:0 0 10px}'
-  + '.resultado .cap b{color:var(--ink)}'
-  + '.resbar{display:block;width:100%;height:auto;margin:2px 0 2px}'
-  + '.leyenda-res{display:flex;flex-wrap:wrap;gap:6px 14px;margin:12px 0 0}'
-  + '.leyenda-res .it{display:inline-flex;align-items:baseline;gap:6px;font-size:13px}'
-  + '.leyenda-res .dot{width:10px;height:10px;border-radius:3px;display:inline-block;align-self:center}'
-  + '.leyenda-res .it b{font-size:14px;color:var(--ink)}'
-  // gráfica
-  + '.chart{position:relative;border:1px solid var(--bd);border-radius:14px;padding:14px 14px 8px;background:#fff;margin:0 0 8px}'
-  + '.chart h3{margin:0 0 4px;font-size:15px;color:var(--ink)}'
-  + '.chart .hint{font-size:12px;color:var(--mu);margin:0 0 8px}'
-  + '.svgwrap{overflow-x:auto}'
-  + '.evsvg{max-width:100%;height:auto;display:block}'
-  + '.evsvg circle{cursor:pointer}'
-  // Tooltip propio de la gráfica (se posiciona por JS con CSSOM; sin estilos inline en el HTML)
-  + '.chart-tip{position:absolute;left:0;top:0;pointer-events:none;opacity:0;transform:translateY(-2px);'
-  + 'background:#1a1a1a;color:#fff;font-size:12px;line-height:1.35;padding:7px 10px;border-radius:8px;'
-  + 'max-width:250px;box-shadow:0 6px 18px rgba(16,24,40,.25);z-index:20;transition:opacity .08s}'
-  + '.chart-tip.on{opacity:1}'
-  + '.chart-tip .tp{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}'
-  + '.chart-tip b{color:#fff}'
-  + '.leyenda{display:flex;flex-wrap:wrap;gap:8px 14px;margin:8px 2px 0;font-size:12.5px}'
-  + '.leyenda span{display:inline-flex;align-items:center;gap:6px;color:var(--tx)}'
-  + '.leyenda i{width:11px;height:3px;border-radius:2px;display:inline-block}'
-  // tabla
-  + '.tabla-wrap{overflow-x:auto;border:1px solid var(--bd);border-radius:14px;margin:0 0 8px}'
-  + 'table.s{border-collapse:collapse;width:100%;font-size:13px;min-width:640px}'
-  + 'table.s th,table.s td{padding:8px 10px;text-align:center;white-space:nowrap;border-bottom:1px solid #eef0f3}'
-  + 'table.s thead th{font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--mu);background:var(--paper);position:sticky;top:0;border-bottom:2px solid var(--rule)}'
-  + 'table.s thead th .pdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:middle}'
-  + 'table.s td.emp,table.s th.emp{text-align:left;white-space:normal;min-width:158px}'
-  + 'table.s tbody tr:nth-child(odd){background:#fcfcfb}'
-  + 'table.s tbody tr:hover{background:#f2f8f4}'
-  + 'table.s .emp .empn{font-weight:600;color:var(--ink)}'
-  + 'table.s .pct{color:var(--mu);font-size:11.5px}'
-  + 'table.s .esc{font-weight:700;font-size:14px;color:var(--ink)}'
-  + '.d{font-size:11px;font-weight:700;padding:1px 5px;border-radius:5px;margin-left:2px}'
-  + '.d-sube{color:var(--sube);background:var(--sube-bg)}'
-  + '.d-baja{color:var(--baja);background:#fbece9}'
-  + '.d-igual,.d-amb{color:var(--mu);background:#f1f3f6}'
-  + 'table.s tr.refrow td{background:#eef1f5;border-bottom:2px solid var(--rule)}'
-  + 'table.s tr.refrow .emp{color:var(--ink)}'
-  // avisos
-  + '.veda{border:1px solid #f3d98a;background:linear-gradient(180deg,#fffdf5,#fef7e6);border-radius:14px;padding:18px;margin:0 0 16px;display:flex;gap:12px;align-items:flex-start}'
-  + '.veda .ic{font-size:22px;line-height:1}'
-  + '.veda b{color:#8a5a00}'
-  + '.aviso{font-size:14px;color:var(--mu);border-left:3px solid var(--v);padding:10px 14px;margin:16px 0;background:var(--bg);border-radius:0 8px 8px 0}'
-  + 'footer{border-top:2px solid var(--rule);margin-top:30px;padding:16px 18px;color:var(--mu);font-size:12.5px;text-align:center}'
-  + 'footer a{color:var(--vd)}'
-  + '.fuente{font-size:12px;color:var(--mu);margin:12px 0 0;line-height:1.5}'
-  + '.fuente a{color:var(--vd)}'
+`
 
 interface Meta {
   title: string
@@ -126,6 +68,7 @@ interface Meta {
   canonical: string
   nonce: string
   breadcrumb?: string
+  css?: string
 }
 
 function envoltorio(m: Meta, cuerpo: string): string {
@@ -144,87 +87,74 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + ogSocialTags(originFromCanonical(m.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.breadcrumb ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.breadcrumb + '</script>' : '')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
-    + mastheadHtml('politica') + '<main>'
+    + '<style nonce="' + esc(m.nonce) + '">' + MASTHEAD_CSS + CSS + (m.css || '') + '</style></head><body>'
+    + mastheadHtml('politica', { compact: true }) + '<main>'
     + cuerpo
-    + '</main><footer>Sondeos recopilados de Wikipedia (CC BY-SA); resultados oficiales del Ministerio del Interior. '
+    + '</main><footer>'
     + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
-const ESTADO_BADGE: Record<string, [string, string]> = {
-  ok: ['b-ok', 'Con sondeos'],
-  sin_sondeos: ['b-sin', 'Aún sin sondeos'],
-  desactualizado: ['b-old', 'Desactualizado'],
-  no_disponible: ['b-no', 'No disponible'],
-}
-function badge(estado: string): string {
-  const [cls, txt] = ESTADO_BADGE[estado] || ESTADO_BADGE.sin_sondeos
-  return '<span class="badge ' + cls + '">' + txt + '</span>'
+const ESTADOS: Record<string, string> = {
+  ok: 'Con sondeos', sin_sondeos: 'Aún sin sondeos', desactualizado: 'Pendiente de actualizar', no_disponible: 'Datos no disponibles',
 }
 
-function textoFecha(cat: EleccionCatalogo, ahoraISO: string): string {
-  const p = cat.proxima
-  if (!p.valor) return 'Próxima fecha aún sin determinar'
-  if (!p.confirmada) return 'Prevista para ' + fmtMesAnio(p.valor) + ' <span class="sep">·</span> sin fecha oficial'
-  const dias = Math.ceil((Date.parse(p.valor + 'T00:00:00Z') - Date.parse(ahoraISO)) / 86_400_000)
-  if (dias > 0) return '<span class="count">🗳 Faltan ' + dias + ' días</span> <span class="sep">·</span> ' + fmtFecha(p.valor) + ' (fecha oficial)'
-  return 'Convocada para el ' + fmtFecha(p.valor)
+function textoFecha(p: EleccionCatalogo['proxima'], ahoraISO?: string): string {
+  if (!p.valor) return 'Próxima votación pendiente de fecha oficial'
+  if (!p.confirmada) return 'Prevista para ' + fmtMesAnio(p.valor) + ' · Pendiente de confirmación'
+  const dias = ahoraISO ? Math.ceil((Date.parse(p.valor + 'T00:00:00Z') - Date.parse(ahoraISO)) / 86_400_000) : 0
+  return 'Votación convocada para el ' + fmtFecha(p.valor) + (dias > 0 ? (dias === 1 ? ' · Falta 1 día' : ' · Faltan ' + dias + ' días') : '')
 }
 
-// ---- Índice general ----
+function regionUrl(id: string): string {
+  return '/politica/autonomicas/' + encodeURIComponent(id)
+}
+
+function directorio(auton: IndexEntry[], abierto: boolean): string {
+  if (!auton.length) return '<p class="aviso">El directorio autonómico está pendiente de datos.</p>'
+  const nombre = (e: IndexEntry) => e.comunidad || e.nombre
+  const orden = [...auton].sort((a, b) => nombre(a).localeCompare(nombre(b), 'es'))
+  return '<form class="regional-form" action="/politica/autonomicas/" method="get">'
+    + '<label for="region">Comunidad o ciudad autónoma<select id="region" name="comunidad" required>'
+    + '<option value="">Elige tu comunidad</option>'
+    + orden.map(e => '<option value="' + esc(e.id) + '">' + esc(nombre(e)) + '</option>').join('')
+    + '</select></label><button>Ver elección</button></form>'
+    + '<details class="territorios"' + (abierto ? ' open' : '') + '><summary>Ver todas las comunidades y ciudades (' + orden.length + ')</summary><ul>'
+    + orden.map(e => '<li><a href="' + esc(regionUrl(e.id)) + '">' + esc(nombre(e)) + '</a></li>').join('')
+    + '</ul></details>'
+}
+
 export function buildIndexPage(nonce: string, elecciones: IndexEntry[], canonical: string): string {
   const origin = originFromCanonical(canonical)
-  const linkDe = (e: IndexEntry) => e.tipo === 'autonomica' ? '/politica/autonomicas/' + e.id : '/politica/' + e.id
-  const card = (e: IndexEntry) => '<a class="el" href="' + esc(linkDe(e)) + '">'
-    + '<div class="top"><span class="n">' + esc(e.tipo === 'autonomica' && e.comunidad ? e.comunidad : e.nombre) + '</span>' + badge(e.estado) + '</div>'
-    + '<span class="d">' + (e.fecha.valor ? (e.fecha.confirmada ? '🗳 ' : '📅 Prevista ') + fmtFecha(e.fecha.valor) : 'Sin fecha')
-    + (e.fechaUltimoSondeo ? ' · último sondeo ' + fmtFecha(e.fechaUltimoSondeo) : '') + '</span>'
-    + '<span class="go">Ver sondeos →</span></a>'
-  const seccion = (titulo: string, items: IndexEntry[]) => items.length
-    ? '<h2>' + esc(titulo) + '</h2><div class="grid-el">' + items.map(card).join('') + '</div>' : ''
-
-  const generales = elecciones.filter((e) => e.tipo === 'generales')
-  const europeas = elecciones.filter((e) => e.tipo === 'europeas')
-  const auton = elecciones.filter((e) => e.tipo === 'autonomica')
-  const cuerpo =
-    '<h1>Elecciones y sondeos en España</h1>'
-    + '<p class="sub">Fechas de las elecciones y todos los sondeos publicados, con los escaños estimados frente al resultado de la última vez. Sin publicidad y sin registro.</p>'
-    + seccion('Generales', generales)
-    + seccion('Europeas', europeas)
-    + seccion('Autonómicas', auton)
-    + '<p class="aviso">Los sondeos los recopila Wikipedia de cada casa encuestadora; nosotros los mostramos con su fuente. Los resultados oficiales son del Ministerio del Interior. Durante los 5 días previos a una votación, la ley (LOREG art. 69.7) prohíbe difundir sondeos: esas fechas la página los oculta.</p>'
+  const nacionales = elecciones.filter(e => e.tipo !== 'autonomica')
+  const tarjetas = nacionales.map(e =>
+    '<a class="el" href="/politica/' + esc(e.id) + '"><span class="el-name">' + esc(e.nombre) + '</span>'
+    + '<span class="el-fecha">' + textoFecha(e.fecha) + '</span>'
+    + '<span class="badge">' + (e.fechaUltimoSondeo && e.estado === 'ok' ? 'Último sondeo · ' + fmtFecha(e.fechaUltimoSondeo) : esc(ESTADOS[e.estado])) + '</span>'
+    + '<span class="go">' + (e.estado === 'ok' && e.fechaUltimoSondeo ? 'Ver sondeos' : 'Ver elección') + ' →</span></a>').join('')
+  const cuerpo = '<h1>Elecciones y sondeos en España</h1><p class="sub">Consulta cuándo se vota y cómo cambian los escaños que estima cada encuesta.</p>'
+    + (tarjetas ? '<section><h2>Elecciones de ámbito nacional</h2><div class="grid-el">' + tarjetas + '</div></section>' : '')
+    + '<section><h2>Elecciones en tu comunidad</h2>' + directorio(elecciones.filter(e => e.tipo === 'autonomica'), false) + '</section>'
   return envoltorio({
     title: 'Elecciones y sondeos en España · España Útil',
-    desc: 'Fechas de las elecciones en España y todos los sondeos publicados, con escaños estimados frente al último resultado. Generales, europeas y autonómicas.',
+    desc: 'Fechas, encuestas y resultados de las elecciones generales, europeas y autonómicas en España.',
     canonical, nonce,
     breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'Política', url: canonical }]),
   }, cuerpo)
 }
 
-// ---- Índice de autonómicas ----
 export function buildAutonomicasIndex(nonce: string, auton: IndexEntry[], canonical: string): string {
   const origin = originFromCanonical(canonical)
-  const card = (e: IndexEntry) => '<a class="el" href="' + esc('/politica/autonomicas/' + e.id) + '">'
-    + '<div class="top"><span class="n">' + esc(e.comunidad || e.nombre) + '</span>' + badge(e.estado) + '</div>'
-    + '<span class="d">' + esc(e.nombre) + (e.fechaUltimoSondeo ? ' · último sondeo ' + fmtFecha(e.fechaUltimoSondeo) : '') + '</span>'
-    + '<span class="go">Ver sondeos →</span></a>'
-  const cuerpo = '<h1>Elecciones autonómicas</h1>'
-    + '<p class="sub">Las 17 comunidades autónomas y las ciudades de Ceuta y Melilla.</p>'
-    + '<div class="grid-el">' + auton.map(card).join('') + '</div>'
+  const cuerpo = '<nav class="breadcrumb" aria-label="Volver"><a href="/politica/">← Política</a></nav>'
+    + '<h1>Elecciones autonómicas</h1><section aria-label="Elegir territorio">' + directorio(auton, true) + '</section>'
   return envoltorio({
     title: 'Elecciones autonómicas y sondeos · España Útil',
-    desc: 'Sondeos y fechas de las elecciones autonómicas de las 17 comunidades y Ceuta y Melilla.',
+    desc: 'Sondeos y fechas de las elecciones autonómicas de las 17 comunidades y de Ceuta y Melilla.',
     canonical, nonce,
-    breadcrumb: breadcrumbLd([
-      { name: 'Inicio', url: origin + '/' },
-      { name: 'Política', url: origin + '/politica/' },
-      { name: 'Autonómicas', url: canonical },
-    ]),
+    breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'Política', url: origin + '/politica/' }, { name: 'Autonómicas', url: canonical }]),
   }, cuerpo)
 }
 
-// ---- Página de una elección ----
 interface EleccionOpts {
   pagina?: number
   nonce: string
@@ -233,6 +163,7 @@ interface EleccionOpts {
   estado: string
   enVeda: boolean
   ahoraISO: string
+  referencia?: ReferenciaSondeo
   canonical: string
 }
 
@@ -241,32 +172,6 @@ function mapaColores(candidaturas: Candidatura[]): Map<string, { siglas: string;
   for (const c of candidaturas) m.set(c.id, { siglas: c.siglas, color: c.color || colorPartido(c.siglas) })
   return m
 }
-function refDe(file: EleccionFile): Map<string, number> {
-  const m = new Map<string, number>()
-  for (const r of file.referencia.escanos) m.set(r.candidaturaId, r.escanos)
-  return m
-}
-function seatVal(e: Sondeo['datos'][number]['escanos']): number | null {
-  if (e == null) return null
-  if (typeof e === 'number') return e
-  return Math.round((e.min + e.max) / 2)
-}
-function deltaHtml(c: Cambio): string {
-  if (c.tipo === 'exacto') {
-    if (c.direccion === 'sube') return '<span class="d d-sube">▲+' + c.delta + '</span>'
-    if (c.direccion === 'baja') return '<span class="d d-baja">▼' + c.delta + '</span>'
-    return '<span class="d d-igual">=</span>'
-  }
-  if (c.tipo === 'rango') {
-    const r = (c.min === c.max ? (c.min > 0 ? '+' + c.min : String(c.min)) : c.min + '…' + c.max)
-    if (c.direccion === 'sube') return '<span class="d d-sube">▲' + r + '</span>'
-    if (c.direccion === 'baja') return '<span class="d d-baja">▼' + r + '</span>'
-    if (c.direccion === 'igual') return '<span class="d d-igual">=</span>'
-    return '<span class="d d-amb">±</span>'
-  }
-  return ''
-}
-
 // Barra horizontal de escaños del resultado de referencia (SVG: usa atributos
 // fill, permitidos por la CSP; nada de estilos inline) + leyenda con puntos de
 // color por clase. El total y la mayoría se calculan sobre los escaños de ESA
@@ -276,11 +181,10 @@ function barraResultado(file: EleccionFile, colores: Map<string, { siglas: strin
   const sig = (id: string) => colores.get(id)?.siglas || id
   const orden = [...file.referencia.escanos].filter((r) => r.escanos > 0)
     .sort((a, b) => ordenIdeologico(sig(a.candidaturaId)) - ordenIdeologico(sig(b.candidaturaId)) || b.escanos - a.escanos)
-  if (!orden.length) return ''
+  if (!orden.length) return '<section><h2>Último resultado oficial</h2><p class="sub">Todavía no hay un reparto de escaños disponible.</p></section>'
   const total = orden.reduce((a, r) => a + r.escanos, 0)
-  if (total <= 0) return ''
   const mayoria = Math.floor(total / 2) + 1
-  const VB = 1000, H = 46, barY = 15, barH = 22
+  const VB = 1000, H = 26, barY = 3, barH = 20
   const u = VB / total
   let x = 0
   const rects = orden.map((r) => {
@@ -292,222 +196,92 @@ function barraResultado(file: EleccionFile, colores: Map<string, { siglas: strin
     return rect
   }).join('')
   const mx = (mayoria * u).toFixed(1)
-  const svg = '<svg class="resbar" viewBox="0 0 ' + VB + ' ' + H + '" width="100%" role="img" aria-label="Reparto de escaños del resultado">'
+  const svg = '<svg class="resbar" viewBox="0 0 ' + VB + ' ' + H + '" width="100%" preserveAspectRatio="none" role="img" aria-label="Reparto de escaños del resultado">'
     + '<defs><clipPath id="rcbar"><rect x="0" y="' + barY + '" width="' + VB + '" height="' + barH + '" rx="6" /></clipPath></defs>'
-    + '<g clip-path="url(#rcbar)">' + rects + '<rect x="0" y="' + barY + '" width="' + VB + '" height="' + barH + '" fill="none" /></g>'
-    + '<line x1="' + mx + '" y1="10" x2="' + mx + '" y2="' + (barY + barH + 4) + '" stroke="#1a1a1a" stroke-width="2.5" />'
-    + '<text x="' + mx + '" y="9" font-size="15" fill="#1a1a1a" text-anchor="middle" font-weight="600">mayoría ' + mayoria + '</text>'
+    + '<g clip-path="url(#rcbar)">' + rects + '</g>'
+    + '<line x1="' + mx + '" y1="0" x2="' + mx + '" y2="' + (barY + barH + 4) + '" stroke="#1a1a1a" stroke-width="2.5" />'
     + '</svg>'
-  const leyenda = orden.slice(0, 12).map((r) => {
+  const leyenda = orden.map((r) => {
     const info = colores.get(r.candidaturaId)
     return '<span class="it"><i class="dot sw-' + esc(r.candidaturaId) + '"></i>' + esc(info?.siglas || r.candidaturaId) + ' <b>' + r.escanos + '</b></span>'
   }).join('')
-  return '<div class="resultado">'
-    + '<p class="cap"><b>Resultado de la última elección</b> · ' + fmtFecha(file.referencia.fecha) + '</p>'
+  return '<section class="resultado"><h2>Último resultado oficial</h2>'
+    + '<p class="cap">Elecciones del ' + fmtFecha(file.referencia.fecha) + ' · Mayoría de esa elección: ' + mayoria + ' escaños</p>'
     + svg
     + '<div class="leyenda-res">' + leyenda + '</div>'
-    + '</div>'
-}
-
-export function buildEleccionPage(o: EleccionOpts): string {
-  const { file, cat, estado, enVeda, ahoraISO, canonical, nonce } = o
-  const origin = originFromCanonical(canonical)
-  const colores = mapaColores(file.candidaturas)
-  const ref = refDe(file)
-
-  const topIds = [...file.candidaturas].map((c) => c.id)
-    .sort((a, b) => (ref.get(b) || 0) - (ref.get(a) || 0))
-    .slice(0, 8)
-
-  // Colores de partido por CLASE (la CSP bloquea style="background:...").
-  // <style> con nonce sí está permitido. Clase .sw-<id> por candidatura.
-  const swatch = '<style nonce="' + esc(nonce) + '">'
-    + [...colores].map(([id, i]) => '.sw-' + id + '{background:' + i.color + '}').join('')
-    + '</style>'
-
-  let cuerpo = swatch + '<h1>' + esc(cat.nombre) + '</h1>'
-    + '<div class="ficha">' + textoFecha(cat, ahoraISO) + ' <span class="sep">·</span> '
-    + esc(file.camara.nombre) + ' <span class="sep">·</span> ' + file.camara.escanos + ' escaños · mayoría ' + file.camara.mayoria
-    + ' ' + badge(estado) + '</div>'
-
-  // Resultado de la última elección como barra de escaños.
-  cuerpo += barraResultado(file, colores)
-  // Mantiene el texto que esperan los tests aunque no haya barra (referencia vacía).
-  if (!file.referencia.escanos.length) cuerpo += '<p class="cap" hidden>Resultado de la última elección</p>'
-
-  if (enVeda) {
-    cuerpo += '<div class="veda"><span class="ic">🗳️</span><div><b>Veda electoral (jornada de reflexión).</b> '
-      + 'A menos de 5 días de la votación, la ley electoral (LOREG art. 69.7) prohíbe difundir sondeos. '
-      + 'Volverán a mostrarse cuando pase la votación.</div></div>'
-  } else if (!file.sondeos.length) {
-    cuerpo += '<p class="aviso">Todavía no hay sondeos publicados para esta elección. Se mostrarán aquí en cuanto las casas encuestadoras empiecen a publicarlos.</p>'
-  } else {
-    const CAP = SONDEOS_POR_PAGINA
-    const orden = [...file.sondeos].sort((a, b) => String(b.campoFin || '').localeCompare(String(a.campoFin || '')))
-    const paginas = Math.max(1, Math.ceil(orden.length / CAP))
-    const pagina = Math.max(1, Math.min(paginas, Math.trunc(o.pagina || 1)))
-    const muestra = orden.slice((pagina - 1) * CAP, pagina * CAP)
-    const ruta = new URL(canonical).pathname
-    const enlacePagina = (p: number) => ruta + (p > 1 ? '?pagina=' + p : '')
-    const navegacion = '<nav aria-label="Páginas de sondeos"><p>'
-      + (pagina > 1 ? '<a rel="prev" href="' + esc(enlacePagina(pagina - 1)) + '">← Más recientes</a> · ' : '')
-      + 'Página ' + pagina + ' de ' + paginas
-      + (pagina < paginas ? ' · <a rel="next" href="' + esc(enlacePagina(pagina + 1)) + '">Más antiguos →</a>' : '')
-      + '</p></nav>'
-    // Gráfica de evolución.
-    cuerpo += '<div class="chart"><h3>Evolución de los sondeos</h3>'
-      + '<p class="hint">Sondeos de esta página: ' + fmtFecha(muestra.at(-1)?.campoFin) + ' – ' + fmtFecha(muestra[0]?.campoFin) + '. Escaños estimados por cada sondeo (un punto por encuesta). La línea une las estimaciones de cada partido; es orientativa.</p>'
-      + graficaEvolucionSvg({ ...file, sondeos: muestra }, topIds, colores)
-      + '<div class="leyenda">' + topIds.map((id) => {
-        const info = colores.get(id)
-        return '<span><i class="sw-' + esc(id) + '"></i>' + esc(info?.siglas || id) + '</span>'
-      }).join('') + '</div></div>'
-      + chartTooltipScript(nonce)
-
-    // La tabla y la gráfica cubren el mismo intervalo; todo el histórico es accesible.
-    cuerpo += '<h2>Todos los sondeos</h2>'
-    cuerpo += navegacion
-    cuerpo += '<div class="tabla-wrap"><table class="s"><thead><tr>'
-      + '<th class="emp">Encuestadora</th><th>Fecha</th>'
-      + topIds.map((id) => '<th><span class="pdot sw-' + esc(id) + '"></span>' + esc(colores.get(id)?.siglas || id) + '</th>').join('')
-      + '</tr></thead><tbody>'
-    cuerpo += '<tr class="refrow"><td class="emp">Resultado ' + fmtFecha(file.referencia.fecha) + '</td><td>—</td>'
-      + topIds.map((id) => '<td>' + (ref.has(id) ? '<span class="esc">' + ref.get(id) + '</span>' : '·') + '</td>').join('')
-      + '</tr>'
-    for (const s of muestra) {
-      cuerpo += '<tr><td class="emp"><span class="empn">' + esc(s.empresa) + '</span>' + (s.comitente ? ' <span class="pct">/ ' + esc(s.comitente) + '</span>' : '') + '</td>'
-        + '<td>' + esc(s.fechaTexto || fmtFecha(s.campoFin)) + '</td>'
-      const byId = new Map(s.datos.map((d) => [d.candidaturaId, d]))
-      for (const id of topIds) {
-        const d = byId.get(id)
-        if (!d) { cuerpo += '<td>·</td>'; continue }
-        const sv = seatVal(d.escanos)
-        const cambio = calculaCambio(d.escanos, ref.has(id) ? ref.get(id)! : undefined)
-        cuerpo += '<td>'
-          + (d.pct != null ? '<span class="pct">' + d.pct.toFixed(1) + '%</span><br />' : '')
-          + (sv != null ? '<span class="esc">' + (typeof d.escanos === 'object' && d.escanos ? d.escanos.min + '–' + d.escanos.max : sv) + '</span>' + deltaHtml(cambio) : '·')
-          + '</td>'
-      }
-      cuerpo += '</tr>'
-    }
-    cuerpo += '</tbody></table></div>'
-    cuerpo += '<p class="fuente">Sondeos ' + ((pagina - 1) * CAP + 1) + '–' + Math.min(pagina * CAP, orden.length) + ' de ' + orden.length + ' recopilados.</p>' + navegacion
-  }
-
-  const pro = file.procedencia
-  cuerpo += '<p class="fuente">Sondeos: <a href="' + esc(pro.url || ('https://' + pro.wiki + '.wikipedia.org/')) + '" rel="nofollow noopener" target="_blank">Wikipedia</a>'
-    + ' («' + esc(pro.articulo) + '»' + (pro.revid ? ', rev. ' + pro.revid : '') + '), ' + esc(pro.licencia) + ', con modificaciones. '
-    + 'Resultado oficial: ' + esc(file.referencia.fuente) + '.</p>'
-
-  const comunidad = cat.comunidad ? cat.comunidad + (cat.ciudadAutonoma ? ' (ciudad autónoma)' : '') : ''
-  // OJO: NO escapar aqui — envoltorio() ya hace esc() de title/desc. Escapar dos
-  // veces convertia '&'/'<' en '&amp;amp;' en title y description (mismo criterio
-  // que buildIndexPage/buildAutonomicasIndex, que pasan el texto en crudo).
-  return envoltorio({
-    title: cat.nombre + ' · sondeos · España Útil',
-    desc: 'Todos los sondeos de ' + cat.nombre + (comunidad ? ' (' + comunidad + ')' : '') + ': escaños estimados por partido frente al resultado de la última elección.',
-    canonical, nonce,
-    breadcrumb: breadcrumbLd([
-      { name: 'Inicio', url: origin + '/' },
-      { name: 'Política', url: origin + '/politica/' },
-      ...(cat.tipo === 'autonomica' ? [{ name: 'Autonómicas', url: origin + '/politica/autonomicas/' }] : []),
-      { name: cat.nombre, url: canonical },
-    ]),
-  }, cuerpo)
+    + (file.id === 'generales' && file.referencia.fecha === '2023-07-23'
+      ? '<p class="fuente"><a href="https://www.boe.es/diario_boe/txt.php?id=BOE-A-2023-18907">Consultar el resultado en el BOE</a></p>' : '')
+    + '</section>'
 }
 
 export const SONDEOS_POR_PAGINA = 25
 
-// Gráfica de evolución: una línea (orientativa) por partido a lo largo del tiempo
-// + puntos por sondeo. Rejilla horizontal, línea de mayoría y ticks de año.
-// Devuelve '' si no hay al menos 2 sondeos con fecha.
-function graficaEvolucionSvg(file: EleccionFile, topIds: string[], colores: Map<string, { siglas: string; color: string }>): string {
-  const dated = file.sondeos.filter((s) => s.campoFin)
-  if (dated.length < 2) return ''
-  const W = 760, H = 340, ml = 34, mr = 14, mt = 14, mb = 30
-  const times = dated.map((s) => Date.parse(s.campoFin! + 'T00:00:00Z')).filter((t) => !Number.isNaN(t))
-  const t0 = Math.min(...times), t1 = Math.max(...times)
-  const maxObs = Math.max(0, ...dated.flatMap((s) => s.datos.map((d) => (d.escanos == null ? 0 : typeof d.escanos === 'number' ? d.escanos : d.escanos.max) || 0)))
-  const maxY = Math.max(8, Math.ceil((Math.max(maxObs, file.camara.mayoria) * 1.08) / 5) * 5)
-  const x = (t: number) => ml + (t1 === t0 ? 0.5 : (t - t0) / (t1 - t0)) * (W - ml - mr)
-  const y = (v: number) => mt + (1 - v / maxY) * (H - mt - mb)
-  const seatOf = (d: Sondeo['datos'][number]) => d.escanos == null ? null : typeof d.escanos === 'number' ? d.escanos : (d.escanos.min + d.escanos.max) / 2
-
-  let svg = '<div class="svgwrap"><svg class="evsvg" viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img" '
-    + 'aria-label="Evolución de los escaños estimados por sondeo">'
-  svg += '<rect x="' + ml + '" y="' + mt + '" width="' + (W - ml - mr) + '" height="' + (H - mt - mb) + '" fill="#fbfcfd" />'
-  // Rejilla horizontal + etiquetas
-  const steps = 4
-  for (let i = 0; i <= steps; i++) {
-    const val = Math.round((maxY / steps) * i)
-    const yy = y(val)
-    svg += '<line x1="' + ml + '" y1="' + yy.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + yy.toFixed(1) + '" stroke="#eceef1" />'
-    svg += '<text x="' + (ml - 5) + '" y="' + (yy + 3).toFixed(1) + '" font-size="9.5" fill="#94a3b8" text-anchor="end">' + val + '</text>'
-  }
-  // Línea de mayoría (destacada)
-  const ym = y(file.camara.mayoria)
-  svg += '<line x1="' + ml + '" y1="' + ym.toFixed(1) + '" x2="' + (W - mr) + '" y2="' + ym.toFixed(1) + '" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="5 4" />'
-  svg += '<text x="' + (W - mr) + '" y="' + (ym - 4).toFixed(1) + '" font-size="10" fill="#475569" text-anchor="end">mayoría ' + file.camara.mayoria + '</text>'
-  // Ticks de año en el eje x
-  const y0 = new Date(t0).getUTCFullYear(), y1 = new Date(t1).getUTCFullYear()
-  for (let yr = y0; yr <= y1; yr++) {
-    const t = Date.parse(yr + '-07-01T00:00:00Z')
-    if (t < t0 || t > t1) { if (yr !== y0 && yr !== y1) continue }
-    const xx = x(Math.min(Math.max(t, t0), t1))
-    svg += '<text x="' + xx.toFixed(1) + '" y="' + (H - 8) + '" font-size="9.5" fill="#94a3b8" text-anchor="middle">' + yr + '</text>'
-  }
-  // Línea + puntos por partido. Cada punto lleva un <title> (tooltip nativo del
-  // navegador, sin JS ni CSP): partido, encuestadora, fecha, escaños y %.
-  for (const id of topIds) {
-    const info = colores.get(id)
-    const color = info?.color || '#8a8f98'
-    const siglas = info?.siglas || id
-    const pts: Array<{ x: number; y: number; title: string }> = []
-    for (const s of dated) {
-      const d = s.datos.find((x2) => x2.candidaturaId === id)
-      if (!d) continue
-      const v = seatOf(d)
-      if (v == null) continue
-      const t = Date.parse(s.campoFin! + 'T00:00:00Z')
-      if (Number.isNaN(t)) continue
-      const escStr = typeof d.escanos === 'object' && d.escanos ? d.escanos.min + '–' + d.escanos.max : String(seatVal(d.escanos))
-      const title = esc(siglas + ' · ' + s.empresa + (s.comitente ? '/' + s.comitente : '')
-        + ' · ' + (s.fechaTexto || fmtFecha(s.campoFin)) + ' · ' + escStr + ' escaños'
-        + (d.pct != null ? ' · ' + d.pct.toFixed(1) + '%' : ''))
-      pts.push({ x: x(t), y: y(v), title })
-    }
-    if (pts.length < 1) continue
-    pts.sort((a, b) => a.x - b.x)
-    if (pts.length >= 2) {
-      const poly = pts.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ')
-      svg += '<polyline points="' + poly + '" fill="none" stroke="' + esc(color) + '" stroke-width="1.4" opacity="0.45" stroke-linejoin="round" />'
-    }
-    for (const p of pts) {
-      svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" fill="' + esc(color) + '" opacity="0.9" data-c="' + esc(color) + '">'
-        + '<title>' + p.title + '</title></circle>'
-    }
-  }
-  svg += '</svg></div>'
-  return svg
+function urlSondeos(ruta: string, pagina: number, referencia: ReferenciaSondeo): string {
+  const params = new URLSearchParams()
+  if (pagina > 1) params.set('pagina', String(pagina))
+  if (referencia === 'elecciones') params.set('referencia', referencia)
+  return ruta + (params.size ? '?' + params : '')
 }
 
-// Tooltip interactivo de la gráfica (mejora progresiva). Muestra los datos del
-// sondeo del punto más cercano al cursor (~26px), leyendo el <title> y el data-c
-// de cada círculo. Sin el script, el <title> nativo sigue funcionando de respaldo.
-// Script con nonce (CSP script-src 'self' 'nonce'); posiciona por CSSOM (permitido).
-function chartTooltipScript(nonce: string): string {
-  const js = "(function(){var svg=document.querySelector('.evsvg');"
-    + "if(!svg)return;var chart=svg.closest('.chart');if(!chart)return;"
-    + "var tip=document.createElement('div');tip.className='chart-tip';"
-    + "var dot=document.createElement('span');dot.className='tp';var txt=document.createElement('span');"
-    + "tip.appendChild(dot);tip.appendChild(txt);chart.appendChild(tip);"
-    + "var cs=[].slice.call(svg.querySelectorAll('circle'));"
-    + "function m(e){var b=null,bd=1e9,i,r,dx,dy,d;for(i=0;i<cs.length;i++){r=cs[i].getBoundingClientRect();dx=e.clientX-(r.left+r.width/2);dy=e.clientY-(r.top+r.height/2);d=dx*dx+dy*dy;if(d<bd){bd=d;b=cs[i];}}"
-    + "if(b&&bd<=676){var t=b.querySelector('title');txt.textContent=t?t.textContent:'';dot.style.background=b.getAttribute('data-c')||'#888';"
-    + "var cr=chart.getBoundingClientRect();var lx=e.clientX-cr.left+14,ly=e.clientY-cr.top+14;if(lx>cr.width-170)lx-=180;if(lx<0)lx=4;tip.style.left=lx+'px';tip.style.top=ly+'px';tip.classList.add('on');}"
-    + "else{tip.classList.remove('on');}}"
-    + "svg.addEventListener('mousemove',m);svg.addEventListener('mouseleave',function(){tip.classList.remove('on');});})();"
-  return '<script nonce="' + esc(nonce) + '">' + js + '</scr' + 'ipt>'
+export function buildEleccionPage(o: EleccionOpts): string {
+  const { file, cat, estado, enVeda, canonical, nonce } = o
+  const origin = originFromCanonical(canonical)
+  const colores = mapaColores(file.candidaturas)
+  const referencia = o.referencia || 'anterior'
+  const ruta = new URL(canonical).pathname
+  const swatch = '<style nonce="' + esc(nonce) + '">' + [...colores]
+    .filter(([id, i]) => /^[a-z0-9_-]+$/i.test(id) && /^#[0-9a-f]{6}$/i.test(i.color))
+    .map(([id, i]) => '.sw-' + id + '{background:' + i.color + '}').join('') + '</style>'
+  let cuerpo = swatch + '<nav class="breadcrumb" aria-label="Volver"><a href="/politica/">← Política</a></nav>'
+    + '<h1>' + esc(cat.nombre) + '</h1>'
+    + '<p class="ficha">' + esc(file.camara.nombre) + ' · ' + file.camara.escanos + ' escaños · mayoría ' + file.camara.mayoria + '</p>'
+    + '<p class="fecha-eleccion">' + textoFecha(cat.proxima, o.ahoraISO) + '</p>'
+  if (estado === 'desactualizado' || estado === 'no_disponible') cuerpo += '<p class="aviso">' + ESTADOS[estado] + '</p>'
+
+  if (enVeda) {
+    cuerpo += '<p class="veda"><b>Veda electoral.</b> La difusión de sondeos está suspendida durante el periodo electoral establecido.</p>'
+  } else if (!file.sondeos.length) {
+    cuerpo += '<p class="aviso">Todavía no hay sondeos publicados para esta elección.</p>'
+  } else {
+    const orden = [...file.sondeos].sort((a, b) => (b.campoFin || '').localeCompare(a.campoFin || ''))
+    const paginas = Math.ceil(orden.length / SONDEOS_POR_PAGINA)
+    const pagina = Math.max(1, Math.min(paginas, Math.trunc(o.pagina || 1)))
+    const offset = (pagina - 1) * SONDEOS_POR_PAGINA
+    const muestra = orden.slice(offset, offset + SONDEOS_POR_PAGINA)
+    const enlace = (p: number) => esc(urlSondeos(ruta, p, referencia))
+    const navegacion = paginas > 1 ? '<nav class="paginas" aria-label="Páginas de sondeos">'
+      + (pagina > 1 ? '<a rel="prev" href="' + enlace(pagina - 1) + '">← Más recientes</a>' : '')
+      + '<span>Página ' + pagina + ' de ' + paginas + '</span>'
+      + (pagina < paginas ? '<a rel="next" href="' + enlace(pagina + 1) + '">Más antiguos →</a>' : '')
+      + '</nav>' : ''
+    const opcion = (modo: ReferenciaSondeo, titulo: string) =>
+      '<a href="' + esc(urlSondeos(ruta, pagina, modo)) + '#sondeos"' + (referencia === modo ? ' aria-current="true"' : '') + '>' + titulo + '</a>'
+    cuerpo += '<section id="sondeos"><h2>' + (pagina === 1 ? 'Últimos sondeos' : 'Histórico de sondeos') + '</h2>'
+      + '<nav class="referencias" aria-label="Referencia para comparar los escaños"><span>Comparar con</span><div class="opciones">'
+      + opcion('anterior', 'Encuesta anterior') + opcion('elecciones', 'Elecciones del ' + fmtFecha(file.referencia.fecha)) + '</div></nav>'
+      + renderSondeos(file, muestra, referencia)
+      + '<p class="fuente">Sondeos ' + (offset + 1) + '–' + (offset + muestra.length) + ' de ' + orden.length + ' recopilados.</p>'
+      + navegacion + '</section>'
+    const topIds = [...file.referencia.escanos].sort((a, b) => b.escanos - a.escanos).map(r => r.candidaturaId)
+    const partidos = [...new Set([...topIds, ...file.candidaturas.map(c => c.id)])].slice(0, 8)
+    cuerpo += renderGrafica(file, muestra, partidos, colores, nonce)
+  }
+  cuerpo += barraResultado(file, colores)
+  const pro = file.procedencia
+  const wiki = /^https:\/\/(?:[a-z]+\.)?wikipedia\.org\//i.test(pro.url || '') ? pro.url : ''
+  if (wiki) cuerpo += '<p class="fuente datos-fuente">Datos recopilados de <a href="' + esc(wiki) + '" rel="nofollow noopener" target="_blank">Wikipedia</a>'
+    + ' («' + esc(pro.articulo) + '»' + (pro.revid ? ', rev. ' + pro.revid : '') + '), ' + esc(pro.licencia) + ', con modificaciones.</p>'
+  if (file.referencia.escanos.length) cuerpo += '<p class="fuente datos-fuente">Fuente del reparto electoral: ' + esc(file.referencia.fuente) + '.</p>'
+  return envoltorio({
+    title: cat.nombre + ' · sondeos · España Útil',
+    desc: 'Sondeos de ' + cat.nombre + '. Compara los escaños estimados con la encuesta anterior de la misma casa o con el último resultado electoral.',
+    canonical, nonce, css: !enVeda && file.sondeos.length ? SONDEOS_CSS + POLITICA_GRAFICA_CSS : '',
+    breadcrumb: breadcrumbLd([
+      { name: 'Inicio', url: origin + '/' }, { name: 'Política', url: origin + '/politica/' },
+      ...(cat.tipo === 'autonomica' ? [{ name: 'Autonómicas', url: origin + '/politica/autonomicas/' }] : []),
+      { name: cat.nombre, url: canonical },
+    ]),
+  }, cuerpo)
 }
 
 export function politicaHeaders(nonce: string): Record<string, string> {

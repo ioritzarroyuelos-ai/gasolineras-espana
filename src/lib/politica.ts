@@ -1,9 +1,9 @@
 // Lógica pura de la vertical de política (sin red, sin estado): cálculo del
-// "sube/baja" de un sondeo frente al resultado de la última elección, la
+// cambio de escaños entre encuestas o frente al resultado electoral, la
 // ventana de veda electoral (LOREG 69.7) y la derivación del estado de una
 // elección. Todo testeable en aislamiento.
 
-import type { EscanosEstim, EstadoEleccion } from './politica-schemas'
+import type { EscanosEstim, EstadoEleccion, Sondeo } from './politica-schemas'
 
 const DIA_MS = 86_400_000
 // Margen para cubrir la diferencia horaria España↔UTC (UTC+1/+2, con DST) sin
@@ -16,35 +16,98 @@ const VEDA_MARGEN_MS = 3 * 3_600_000
 // se considera desactualizado (cadencia del robot: diaria).
 export const STALE_MS = 30 * 3_600_000 // 30 h
 
-export type Cambio =
-  | { tipo: 'exacto'; delta: number; direccion: 'sube' | 'baja' | 'igual' }
-  | { tipo: 'rango'; min: number; max: number; direccion: 'sube' | 'baja' | 'ambiguo' | 'igual' }
-  | { tipo: 'sin_dato' } // el sondeo no da escaños para esa candidatura
-  | { tipo: 'desconocido' } // no hay referencia (candidatura nueva/coalición)
+export type ComparacionEscanos = {
+  tipo: 'sube' | 'baja' | 'igual' | 'misma_horquilla' | 'solapado' | 'sin_actual' | 'sin_referencia'
+  texto: string
+}
 
-// Compara los escaños estimados por un sondeo con los escaños de referencia
-// (resultado de la última elección) de esa misma candidatura.
-export function calculaCambio(esc: EscanosEstim, ref: number | null | undefined): Cambio {
-  if (ref === null || ref === undefined) return { tipo: 'desconocido' }
-  if (esc === null) return { tipo: 'sin_dato' }
-  if (typeof esc === 'number') {
-    if (!Number.isFinite(esc) || !Number.isFinite(ref)) return { tipo: 'sin_dato' }
-    const delta = esc - ref
-    return { tipo: 'exacto', delta, direccion: delta > 0 ? 'sube' : delta < 0 ? 'baja' : 'igual' }
+function intervalo(valor: EscanosEstim | undefined): { min: number; max: number } | undefined {
+  if (valor == null) return
+  const rango = typeof valor === 'number' ? { min: valor, max: valor } : valor
+  if (!Number.isSafeInteger(rango.min) || !Number.isSafeInteger(rango.max)) return
+  if (rango.min < 0 || rango.min > rango.max || rango.max > 1000) return
+  return rango
+}
+
+// Sirve tanto para comparar dos encuestas como para comparar con el escrutinio.
+// La diferencia más pequeña enfrenta el mínimo actual con el máximo anterior.
+export function comparaEscanos(
+  actual: EscanosEstim | undefined,
+  referencia: EscanosEstim | undefined,
+): ComparacionEscanos {
+  const ahora = intervalo(actual)
+  if (!ahora) return { tipo: 'sin_actual', texto: 'Sin dato de escaños' }
+  const antes = intervalo(referencia)
+  if (!antes) return { tipo: 'sin_referencia', texto: 'Sin referencia' }
+
+  const minimo = ahora.min - antes.max
+  const maximo = ahora.max - antes.min
+  if (minimo === maximo) {
+    if (minimo === 0) return { tipo: 'igual', texto: '＝ Igual' }
+    return minimo > 0
+      ? { tipo: 'sube', texto: '↑ Sube ' + minimo }
+      : { tipo: 'baja', texto: '↓ Baja ' + -minimo }
   }
-  if (!Number.isFinite(esc.min) || !Number.isFinite(esc.max) || !Number.isFinite(ref)) return { tipo: 'sin_dato' }
-  // Rango: el cambio también es un rango. No inventamos flecha desde un punto
-  // medio. Solo es "ambiguo" cuando el rango CRUZA la referencia (puede subir o
-  // bajar). Un rango que toca la referencia por un extremo pero no baja/sube del
-  // otro tiene dirección: [0,+] = sube (o igual), [-,0] = baja (o igual).
-  const min = esc.min - ref
-  const max = esc.max - ref
-  let direccion: 'sube' | 'baja' | 'ambiguo' | 'igual'
-  if (min === 0 && max === 0) direccion = 'igual'
-  else if (min >= 0) direccion = 'sube'
-  else if (max <= 0) direccion = 'baja'
-  else direccion = 'ambiguo'
-  return { tipo: 'rango', min, max, direccion }
+  if (ahora.min !== ahora.max && antes.min !== antes.max) {
+    if (ahora.min === antes.min && ahora.max === antes.max) return { tipo: 'misma_horquilla', texto: '＝ Mismo rango' }
+    if (minimo > 0) return { tipo: 'sube', texto: '↑ Sube' }
+    if (maximo < 0) return { tipo: 'baja', texto: '↓ Baja' }
+    if (minimo === 0) return { tipo: 'solapado', texto: 'Igual o sube' }
+    if (maximo === 0) return { tipo: 'solapado', texto: 'Igual o baja' }
+    return { tipo: 'solapado', texto: 'Rangos solapados' }
+  }
+  if (minimo > 0) return { tipo: 'sube', texto: '↑ Sube de ' + minimo + ' a ' + maximo }
+  if (maximo < 0) return { tipo: 'baja', texto: '↓ Baja de ' + -maximo + ' a ' + -minimo }
+  const desde = minimo === 0 ? '0' : '−' + -minimo
+  const hasta = maximo === 0 ? '0' : '+' + maximo
+  return { tipo: 'solapado', texto: 'De ' + desde + ' a ' + hasta }
+}
+
+function normalizaNombre(nombre?: string): string {
+  // Los artículos pueden incluir marcas invisibles de dirección o de ancho cero.
+  return (nombre || '').normalize('NFC').replace(/\p{Cf}/gu, '').trim().replace(/\s+/gu, ' ').toLowerCase()
+}
+
+export function diaDeCampo(fecha?: string): number | undefined {
+  // El robot guarda el día de fin en formato AAAA-MM-DD. Date.parse acepta
+  // algunos días imposibles trasladándolos al mes siguiente, de ahí la vuelta a ISO.
+  if (!fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return
+  const tiempo = Date.parse(fecha + 'T00:00:00Z')
+  if (Number.isFinite(tiempo) && new Date(tiempo).toISOString().slice(0, 10) === fecha) return tiempo
+}
+
+// Recibe los sondeos de UNA elección completa, antes de paginar. La clave del
+// resultado es el propio objeto publicado, incluso si comparte fecha con otro.
+export function enlazaSondeosAnteriores(sondeos: readonly Sondeo[]): Map<Sondeo, Sondeo> {
+  const series = new Map<string, Map<number, Sondeo[]>>()
+  for (const sondeo of sondeos) {
+    const empresa = normalizaNombre(sondeo.empresa)
+    const medio = normalizaNombre(sondeo.comitente)
+    const fin = diaDeCampo(sondeo.campoFin)
+    if (!empresa || !medio || fin == null) continue
+
+    const serie = JSON.stringify([empresa, medio])
+    const porFecha = series.get(serie) ?? new Map<number, Sondeo[]>()
+    const mismoDia = porFecha.get(fin) ?? []
+    mismoDia.push(sondeo)
+    porFecha.set(fin, mismoDia)
+    series.set(serie, porFecha)
+  }
+
+  const anteriores = new Map<Sondeo, Sondeo>()
+  for (const porFecha of series.values()) {
+    let anterior: Sondeo | undefined
+    for (const fecha of [...porFecha.keys()].sort((a, b) => a - b)) {
+      const dia = porFecha.get(fecha)!
+      if (anterior) {
+        for (const actual of dia) anteriores.set(actual, anterior)
+      }
+      // Dos encuestas terminaron el mismo día. Para la siguiente fecha no se
+      // elige una al azar ni se retrocede hasta una encuesta más antigua.
+      anterior = dia.length === 1 ? dia[0] : undefined
+    }
+  }
+  return anteriores
 }
 
 // Veda electoral (LOREG art. 69.7): prohibida la publicación/difusión/reproducción

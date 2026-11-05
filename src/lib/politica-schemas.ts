@@ -15,7 +15,8 @@ const iso = z.string().max(40) // fecha ISO permisiva (validación fina en el ro
 export const CandidaturaSchema = z.object({
   id: z.string().min(1).max(40),
   nombre: z.string().min(1).max(120),
-  siglas: z.string().min(1).max(24),
+  // Algunas tablas usan el nombre completo como rótulo de la candidatura.
+  siglas: z.string().min(1).max(120),
   // El color lo asigna el render desde el catálogo (colorPartido); opcional aquí.
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'color hex #rrggbb').optional(),
 })

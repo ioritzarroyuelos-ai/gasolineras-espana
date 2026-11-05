@@ -243,6 +243,12 @@ window.addEventListener('resize', function() {
     queued = true;
     requestAnimationFrame(measure);
   }
+  // La franja puede llegar con los filtros abiertos. Ajustar el mapa en el
+  // mismo cambio evita que el foco desplace la página antes del siguiente frame.
+  var trendStrip = document.getElementById('trend-strip');
+  if (trendStrip && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(measure).observe(trendStrip, { attributes: true, attributeFilter: ['hidden'] });
+  }
   if (typeof ResizeObserver !== 'undefined') {
     // ResizeObserver llega antes de pintar: actualizar aquí evita un fotograma
     // con el mapa más alto que la ventana al aparecer la barra de tendencias.

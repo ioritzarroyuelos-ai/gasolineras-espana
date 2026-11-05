@@ -1,4 +1,4 @@
-import { test, expect, type Page, type Locator } from '@playwright/test'
+import { test, expect, type Page, type Locator, type Route } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { ministryFixture } from './ministry-fixture'
 
@@ -159,8 +159,12 @@ test('el estilo vectorial real se aplica y satélite conserva selección y preci
 })
 
 for (const width of [390, 320]) {
-  test('móvil ' + width + 'px: ficha y filtros dejan controles accesibles y no desbordan', async ({ page }) => {
+  test('móvil ' + width + 'px: ficha y filtros dejan controles accesibles y no desbordan', async ({ page }, info) => {
     await page.setViewportSize({ width, height: 844 })
+    // A 390 px hacemos aparecer la franja cuando el usuario ya está en los
+    // filtros. La comprobación en producción conserva las respuestas oficiales.
+    const tendencia = width === 390 && !info.config.metadata.live ? Promise.withResolvers<Route>() : undefined
+    if (tendencia) await page.route('**/data/trends.json', route => tendencia.resolve(route))
     await page.goto('/gasolineras/madrid/madrid')
     await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
     const card = page.locator('.station-card').first()
@@ -172,6 +176,30 @@ for (const width of [390, 320]) {
     await expect(page.locator('#filter-fields')).toBeHidden()
     await page.locator('#btn-toggle-filters').click()
     await expect(page.locator('#sel-combustible')).toBeVisible()
+    if (tendencia) {
+      // Un clic o un cambio de foco puede consultar la geometría justo cuando
+      // aparece la franja, antes de que se ejecute el siguiente ResizeObserver.
+      const primerEncuadre = await page.evaluateHandle(() => ({
+        margen: new Promise<number>(resolve => {
+          const observador = new MutationObserver(() => {
+            observador.disconnect()
+            const mapa = document.querySelector('#app-body')!.getBoundingClientRect()
+            resolve(Math.round(mapa.bottom + window.scrollY - window.innerHeight))
+          })
+          observador.observe(document.querySelector('#trend-strip')!, { attributes: true, attributeFilter: ['hidden'] })
+        }),
+      }))
+      const ahora = new Date().toISOString()
+      const antes = new Date(Date.now() - 3600000).toISOString()
+      await (await tendencia.promise).fulfill({ json: {
+        current: { ts: ahora, sourceAt: ahora, ministryDate: '05/11/2026 11:00:00', medians: { g95: 1.59, diesel: 1.55 } },
+        previous: { ts: antes, sourceAt: antes, ministryDate: '05/11/2026 10:00:00', medians: { g95: 1.60, diesel: 1.54 } },
+      } })
+      await expect(page.locator('#trend-strip')).toBeVisible()
+      expect(await primerEncuadre.evaluate(encuadre => encuadre.margen)).toBe(0)
+      await primerEncuadre.dispose()
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+    }
     await page.locator('#btn-toggle-filters').click()
     await expect(page.locator('#filter-fields')).toBeHidden()
     await expect(card).toBeVisible()

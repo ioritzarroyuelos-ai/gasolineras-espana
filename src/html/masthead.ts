@@ -44,6 +44,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     : '<span class="mh-title">España Útil</span>'
   const item = (href: string, key: SeccionActiva, label: string): string =>
     '<a href="' + href + '"' + (active === key ? ' class="mh-on" aria-current="page"' : '') + '>' + label + '</a>'
+  const municipioTag = opts.compact ? 'details' : 'div'
   return '<header class="masthead' + (opts.compact ? ' masthead--compact' : '') + '">'
     + '<div class="mh-inner">'
     + (fecha && !opts.compact ? '<p class="mh-date">' + esc(fecha) + ' · España</p>' : '')
@@ -60,8 +61,10 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + item('/itv/', 'itv', 'ITV')
     + item('/politica/', 'politica', 'Política')
     + '</nav>'
-    + (opts.hideMunicipioSearch ? '' : '<div class="mh-local"><form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
-    + '<a id="municipio-elegido" hidden></a><ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></div>'
+    + (opts.hideMunicipioSearch ? '' : '<' + municipioTag + ' class="mh-local">'
+    + (opts.compact ? '<summary>Tu municipio</summary>' : '')
+    + '<form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
+    + '<a id="municipio-elegido" hidden></a><ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></' + municipioTag + '>'
     + '<script src="/static/municipio.js" defer></script>')
     + '</header>'
 }

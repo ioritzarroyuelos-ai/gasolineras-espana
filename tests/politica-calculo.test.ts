@@ -1,55 +1,114 @@
 import { describe, it, expect } from 'vitest'
-import { calculaCambio, estadoEleccion } from '../src/lib/politica'
+import { comparaEscanos, enlazaSondeosAnteriores, estadoEleccion } from '../src/lib/politica'
+import type { Sondeo } from '../src/lib/politica-schemas'
 
-describe('calculaCambio (sube/baja frente al resultado anterior)', () => {
-  it('escaños exactos: 140 vs 137 -> +3 sube', () => {
-    expect(calculaCambio(140, 137)).toEqual({ tipo: 'exacto', delta: 3, direccion: 'sube' })
+describe('comparación de escaños', () => {
+  it('distingue empates, ganancias y pérdidas, incluso si una cifra publicada es cero', () => {
+    expect(comparaEscanos(5, 3)).toEqual({ tipo: 'sube', texto: '↑ Sube 2' })
+    expect(comparaEscanos(0, 2)).toEqual({ tipo: 'baja', texto: '↓ Baja 2' })
+    expect(comparaEscanos(0, 0)).toEqual({ tipo: 'igual', texto: '＝ Igual' })
+    expect(comparaEscanos({ min: 3, max: 3 }, 3)).toEqual({ tipo: 'igual', texto: '＝ Igual' })
+    expect(comparaEscanos(2, { min: 0, max: 0 })).toEqual({ tipo: 'sube', texto: '↑ Sube 2' })
   })
 
-  it('escaños exactos: 33 vs 33 -> igual', () => {
-    expect(calculaCambio(33, 33)).toEqual({ tipo: 'exacto', delta: 0, direccion: 'igual' })
+  it('muestra ambos extremos de la diferencia con la última elección', () => {
+    expect(comparaEscanos({ min: 24, max: 26 }, 22)).toEqual({ tipo: 'sube', texto: '↑ Sube de 2 a 4' })
+    expect(comparaEscanos({ min: 19, max: 21 }, 22)).toEqual({ tipo: 'baja', texto: '↓ Baja de 1 a 3' })
+    expect(comparaEscanos({ min: 21, max: 24 }, 22)).toEqual({ tipo: 'solapado', texto: 'De −1 a +2' })
+    expect(comparaEscanos({ min: 22, max: 24 }, 22)).toEqual({ tipo: 'solapado', texto: 'De 0 a +2' })
+    expect(comparaEscanos({ min: 20, max: 22 }, 22)).toEqual({ tipo: 'solapado', texto: 'De −2 a 0' })
   })
 
-  it('escaños exactos: 30 vs 33 -> -3 baja', () => {
-    expect(calculaCambio(30, 33)).toEqual({ tipo: 'exacto', delta: -3, direccion: 'baja' })
+  it('calcula en sentido inverso cuando la anterior publicó una horquilla y la actual un punto', () => {
+    expect(comparaEscanos(22, { min: 24, max: 26 })).toEqual({ tipo: 'baja', texto: '↓ Baja de 2 a 4' })
+    expect(comparaEscanos(22, { min: 19, max: 21 })).toEqual({ tipo: 'sube', texto: '↑ Sube de 1 a 3' })
+    expect(comparaEscanos(22, { min: 21, max: 24 })).toEqual({ tipo: 'solapado', texto: 'De −2 a +1' })
   })
 
-  it('rango que cruza la referencia: {20,25} vs 22 -> ambiguo (-2..+3)', () => {
-    expect(calculaCambio({ min: 20, max: 25 }, 22)).toEqual({ tipo: 'rango', min: -2, max: 3, direccion: 'ambiguo' })
+  it('la misma horquilla conserva incertidumbre sobre la cifra exacta', () => {
+    expect(comparaEscanos({ min: 5, max: 9 }, { min: 5, max: 9 })).toEqual({ tipo: 'misma_horquilla', texto: '＝ Mismo rango' })
   })
 
-  it('rango entero por encima: {24,26} vs 22 -> sube', () => {
-    expect(calculaCambio({ min: 24, max: 26 }, 22)).toEqual({ tipo: 'rango', min: 2, max: 4, direccion: 'sube' })
+  it('indica dirección entre horquillas sólo cuando todos sus valores lo permiten', () => {
+    const anterior = { min: 5, max: 9 }
+    expect(comparaEscanos({ min: 10, max: 11 }, anterior)).toEqual({ tipo: 'sube', texto: '↑ Sube' })
+    expect(comparaEscanos({ min: 0, max: 4 }, anterior)).toEqual({ tipo: 'baja', texto: '↓ Baja' })
+    expect(comparaEscanos({ min: 9, max: 11 }, anterior)).toEqual({ tipo: 'solapado', texto: 'Igual o sube' })
+    expect(comparaEscanos({ min: 1, max: 5 }, anterior)).toEqual({ tipo: 'solapado', texto: 'Igual o baja' })
+    expect(comparaEscanos({ min: 6, max: 8 }, anterior)).toEqual({ tipo: 'solapado', texto: 'Rangos solapados' })
+    expect(comparaEscanos({ min: 7, max: 12 }, anterior)).toEqual({ tipo: 'solapado', texto: 'Rangos solapados' })
   })
 
-  it('rango entero por debajo: {18,20} vs 22 -> baja', () => {
-    expect(calculaCambio({ min: 18, max: 20 }, 22)).toEqual({ tipo: 'rango', min: -4, max: -2, direccion: 'baja' })
+  it('las cifras ausentes o imposibles nunca cuentan como cero', () => {
+    for (const dato of [undefined, null, NaN, Infinity, -1, 1.5, { min: 10, max: 9 }, { min: -1, max: 3 }]) {
+      expect(comparaEscanos(dato, 0).tipo).toBe('sin_actual')
+      expect(comparaEscanos(0, dato).tipo).toBe('sin_referencia')
+    }
+    expect(comparaEscanos(null, null).tipo).toBe('sin_actual')
+  })
+})
+
+function sondeo(campoFin: string | undefined, cambios: Partial<Sondeo> = {}): Sondeo {
+  return { empresa: 'Sigma Dos', comitente: 'El Mundo', campoFin, datos: [], ...cambios }
+}
+
+describe('sondeo anterior de cada empresa y comitente', () => {
+  it('ordena por fin de campo y reconoce los mismos nombres con espacios, marcas invisibles, acentos y mayúsculas', () => {
+    const primero = sondeo('2026-06-01', { empresa: 'Opiñe', comitente: 'El Mundo' })
+    const segundo = sondeo('2026-06-04', { empresa: ' OPIN\u0303E ', comitente: 'El\u00a0   mundo\u200b' })
+    const ultimo = sondeo('2026-06-10', { empresa: 'opiñe', comitente: 'EL MUNDO', campoInicio: '2026-05-30' })
+    primero.publicacion = '2026-06-15'
+    const desordenados = [ultimo, primero, segundo]
+    const anteriores = enlazaSondeosAnteriores(desordenados)
+    expect(anteriores.get(ultimo)).toBe(segundo)
+    expect(anteriores.get(segundo)).toBe(primero)
+    expect(anteriores.has(primero)).toBe(false)
+    expect(desordenados).toEqual([ultimo, primero, segundo])
   })
 
-  it('rango que toca la referencia por abajo: {22,25} vs 22 -> sube (no ambiguo)', () => {
-    expect(calculaCambio({ min: 22, max: 25 }, 22)).toEqual({ tipo: 'rango', min: 0, max: 3, direccion: 'sube' })
+  it('usa la misma empresa y el mismo comitente de todo el archivo, aun fuera de la página visible', () => {
+    const antiguo = sondeo('2024-02-29')
+    const reciente = sondeo('2026-11-01')
+    const otros = Array.from({ length: 80 }, (_, i) => sondeo('2026-10-30', { comitente: 'Otro medio ' + i }))
+    const otraEmpresa = sondeo('2026-10-31', { empresa: 'Otra empresa' })
+    const anteriores = enlazaSondeosAnteriores([reciente, ...otros, otraEmpresa, antiguo])
+    expect(anteriores.get(reciente)).toBe(antiguo)
+    expect(anteriores.size).toBe(1)
   })
 
-  it('rango que toca la referencia por arriba: {19,22} vs 22 -> baja', () => {
-    expect(calculaCambio({ min: 19, max: 22 }, 22)).toEqual({ tipo: 'rango', min: -3, max: 0, direccion: 'baja' })
+  it('ante dos posibles anteriores del mismo día, evita elegir una o saltar a una más antigua', () => {
+    const uno = sondeo('2026-10-01')
+    const dosA = sondeo('2026-10-02', { publicacion: '2026-10-03' })
+    const dosB = sondeo('2026-10-02', { publicacion: '2026-10-04' })
+    const tres = sondeo('2026-10-03')
+    const cuatro = sondeo('2026-10-04')
+    const anteriores = enlazaSondeosAnteriores([cuatro, dosB, tres, uno, dosA])
+    expect(anteriores.get(dosA)).toBe(uno)
+    expect(anteriores.get(dosB)).toBe(uno)
+    expect(anteriores.has(tres)).toBe(false)
+    expect(anteriores.get(cuatro)).toBe(tres)
   })
 
-  it('rango exacto en la referencia: {22,22} vs 22 -> igual', () => {
-    expect(calculaCambio({ min: 22, max: 22 }, 22)).toEqual({ tipo: 'rango', min: 0, max: 0, direccion: 'igual' })
+  it('requiere empresa, comitente conocido y fin de campo válido', () => {
+    const incompletos = [
+      sondeo(undefined, { campoInicio: '2026-10-03', publicacion: '2026-10-04' }),
+      sondeo('2026-02-29'), sondeo('2026-04-31'), sondeo('2026-10'),
+      sondeo('2026-10-03', { comitente: undefined }), sondeo('2026-10-04', { comitente: '\u200b ' }),
+      sondeo('2026-10-03', { empresa: ' ' }), sondeo('2026-10-04', { empresa: '\u200b' }),
+    ]
+    const primero = sondeo('2026-02-01'), ultimo = sondeo('2026-11-01')
+    const anteriores = enlazaSondeosAnteriores([primero, ...incompletos, ultimo])
+    expect(anteriores.size).toBe(1)
+    expect(anteriores.get(ultimo)).toBe(primero)
   })
 
-  it('valores no finitos -> sin_dato (no cálculos falsos)', () => {
-    expect(calculaCambio(NaN, 22)).toEqual({ tipo: 'sin_dato' })
-    expect(calculaCambio({ min: NaN, max: 5 }, 22)).toEqual({ tipo: 'sin_dato' })
-  })
-
-  it('sin referencia (candidatura nueva/coalición) -> desconocido, NO 0', () => {
-    expect(calculaCambio(15, null)).toEqual({ tipo: 'desconocido' })
-    expect(calculaCambio(15, undefined)).toEqual({ tipo: 'desconocido' })
-  })
-
-  it('el sondeo no da escaños (null) -> sin_dato', () => {
-    expect(calculaCambio(null, 22)).toEqual({ tipo: 'sin_dato' })
+  it('conserva el anterior inmediato aunque ese sondeo no haya publicado escaños para el partido', () => {
+    const antiguo = sondeo('2026-09-01', { datos: [{ candidaturaId: 'a', escanos: 3, pct: null }] })
+    const anterior = sondeo('2026-10-01', { datos: [{ candidaturaId: 'a', escanos: null, pct: 5 }] })
+    const actual = sondeo('2026-11-01', { datos: [{ candidaturaId: 'a', escanos: 0, pct: null }] })
+    const porSondeo = enlazaSondeosAnteriores([actual, anterior, antiguo])
+    expect(porSondeo.get(actual)).toBe(anterior)
+    expect(comparaEscanos(actual.datos[0].escanos, porSondeo.get(actual)?.datos[0].escanos).tipo).toBe('sin_referencia')
   })
 })
 

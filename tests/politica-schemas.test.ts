@@ -44,6 +44,21 @@ describe('SondeoSchema', () => {
 })
 
 describe('CandidaturaSchema', () => {
+  it('acepta un rótulo de Cataluña que contiene el nombre completo', () => {
+    const candidaturaCatalana = {
+      id: 'partidodelossocialistasdecataluna',
+      nombre: 'Partido de los Socialistas de Cataluña',
+      siglas: 'Partido de los Socialistas de Cataluña',
+    }
+    expect(CandidaturaSchema.parse(candidaturaCatalana)).toEqual(candidaturaCatalana)
+  })
+
+  it('exige un rótulo de entre 1 y 120 caracteres', () => {
+    expect(CandidaturaSchema.safeParse({ ...candidatura, siglas: '' }).success).toBe(false)
+    expect(CandidaturaSchema.safeParse({ ...candidatura, siglas: 'A'.repeat(120) }).success).toBe(true)
+    expect(CandidaturaSchema.safeParse({ ...candidatura, siglas: 'A'.repeat(121) }).success).toBe(false)
+  })
+
   it('color opcional pero, si se da, debe ser hex #rrggbb', () => {
     expect(CandidaturaSchema.safeParse(candidatura).success).toBe(true)
     expect(CandidaturaSchema.safeParse({ id: 'pp', nombre: 'PP', siglas: 'PP' }).success).toBe(true) // sin color

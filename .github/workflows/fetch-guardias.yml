@@ -4,7 +4,7 @@ name: Fetch guardias farmacias snapshot
 # desde 47 fuentes (45 COF provinciales + SESCAM regional para CLM + Ayto
 # La Bañeza para León):
 #   - Madrid     (cofm.es)                  → guardias-madrid.json
-#   - Bizkaia    (cofbizkaia.net)           → guardias-bizkaia.json
+#   - Bizkaia    (calendario cofbizkaia.eus) → guardias-bizkaia.json
 #   - Gipuzkoa   (cofgipuzkoa.pretools.net) → guardias-gipuzkoa.json
 #   - Araba      (cofalava.org)             → guardias-alava.json
 #   - A Coruña   (cofc.es)                  → guardias-coruna.json

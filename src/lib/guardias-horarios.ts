@@ -18,7 +18,7 @@ export function tipoAtencionGuardia(g: Guardia): 'guardia' | 'apertura' | 'local
   return 'guardia'
 }
 
-function fechaValida(fecha: string) {
+export function fechaValida(fecha: string) {
   const d = new Date(fecha + 'T12:00:00Z')
   return /^\d{4}-\d{2}-\d{2}$/.test(fecha) && Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === fecha
 }
@@ -104,6 +104,16 @@ function tramosTenerife(g: Guardia, ahora: Date, zona: string) {
 }
 
 const iso = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*-\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$/
+
+// La consulta diaria de Bizkaia incluye el relevo de anoche si seguía de
+// guardia al descargarla. Cada turno tiene inicio y fin en hora local.
+export function turnoBizkaiaDelDia(horario: string, ahoraLocal: string): boolean {
+  const m = iso.exec(horario)
+  if (!m || m[2] <= m[1]) return false
+  const hoy = ahoraLocal.slice(0, 10)
+  return m[1].slice(0, 10) === hoy || (m[1] < ahoraLocal && ahoraLocal < m[2])
+}
+
 function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; tramos: Tramo[] } {
   const h = g.horario.trim()
   if (g.territorio === 'tenerife' && /(?:lunes|martes|miércoles|jueves|viernes|sábado|domingo):/i.test(h)) return tramosTenerife(g, ahora, zona)
@@ -113,7 +123,11 @@ function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; t
       const m = iso.exec(parte)
       if (!m || m[2] <= m[1]) return { texto: 'Horario por confirmar: llama antes de acudir', tramos: [] }
       const diaMes = (s: string) => s.slice(0, 10).split('-').reverse().join('/')
-      etiquetas.push(diaMes(m[1]) + ' de ' + m[1].slice(-5) + ' a ' + m[2].slice(-5) + (m[1].slice(0, 10) === m[2].slice(0, 10) ? '' : ' del ' + diaMes(m[2])))
+      if (g.territorio === 'bizkaia' && m[1].slice(0, 10) !== m[2].slice(0, 10)) {
+        etiquetas.push('Desde las ' + m[1].slice(-5) + ' del ' + diaMes(m[1]) + ' hasta las ' + m[2].slice(-5) + ' del ' + diaMes(m[2]))
+      } else {
+        etiquetas.push(diaMes(m[1]) + ' de ' + m[1].slice(-5) + ' a ' + m[2].slice(-5) + (m[1].slice(0, 10) === m[2].slice(0, 10) ? '' : ' del ' + diaMes(m[2])))
+      }
       tramos.push([m[1], m[2]])
     }
     return { texto: etiquetas.join(' · '), tramos }

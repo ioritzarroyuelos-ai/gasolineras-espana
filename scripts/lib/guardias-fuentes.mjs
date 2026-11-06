@@ -80,3 +80,17 @@ export function parseAlmeria(response, fecha) {
   if (omitidas > farmacias.length * 0.1) throw new Error('Almería: demasiadas fichas sin dirección o municipio')
   return { rows, omitidas }
 }
+
+
+export function turnosLasPalmas(guardias) {
+  const salida = []
+  const fecha = s => /^(\d{4}-\d{2}-\d{2} (?:[01]\d|2[0-3]):[0-5]\d)(?::00)?$/.exec(String(s))?.[1]
+  for (const g of Array.isArray(guardias) ? guardias : []) {
+    const a = fecha(g.guardia_horario_fecha_inicio), b = fecha(g.guardia_horario_fecha_fin)
+    const horario = a && b && b > a ? a + '-' + b : ''
+    const tipo = String(g.tipo_guardia || '').trim().toLowerCase()
+    const nota = tipo === 'localizada' ? 'Guardia localizada: llama antes de acudir' : tipo === 'presencial' ? 'Guardia presencial' : 'Tipo de guardia por confirmar'
+    salida.push({ horario, nota: horario ? nota : nota + ' · Horario por confirmar' })
+  }
+  return salida.length ? salida : [{ horario: '', nota: 'Horario por confirmar' }]
+}

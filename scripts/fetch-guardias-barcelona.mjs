@@ -35,6 +35,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -125,6 +126,7 @@ function parseAdreca(raw) {
 }
 
 async function main() {
+  const fecha = fechaMadrid()
   console.log('Descargando farmacias provincia Barcelona (farmaguia.net)...')
   const data = await fetchFarmacias()
   const lista = data?.farmacias || []
@@ -164,10 +166,10 @@ async function main() {
       municipio: adr.ciudad,
       cp: adr.cp,
       telefono: clean(f.Telefon, 30).replace(/\s+/g, ''),
-      horario: clean(f.Horari, 80),
+      horario: clean(f.Horari),
       // El campo Serveis trae extras (MHDA, ortopedia, etc.) — info util
       // de descripcion de la farmacia.
-      horarioDesc: clean(f.Serveis, 80),
+      horarioDesc: clean(f.Serveis),
     })
   }
 
@@ -195,10 +197,12 @@ async function main() {
     ])
   }
 
+  if (fechaMadrid() !== fecha) throw new Error('Cambio de día durante la consulta')
   const out = {
     ts: new Date().toISOString(),
     source: 'farmaguia.net',
     territorio: 'barcelona',
+    fecha,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

@@ -63,6 +63,8 @@ function titleCase(s) {
 async function main() {
   console.log('Descargando guardias Tenerife — coftenerife.es API JSON...')
 
+  const fechaLocal = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Atlantic/Canary', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  const fecha = fechaLocal()
   const municipios = await fetchJson(`${API_BASE}/municipios`)
   if (!Array.isArray(municipios)) throw new Error('Listado de municipios inválido')
   console.log(`  ${municipios.length} municipios detectados`)
@@ -113,7 +115,7 @@ async function main() {
     const dirRaw = f.direccion || ''
     const dirFinal = `${titNombre} · ${titleCase(dirRaw)}`.replace(/\s+·\s*$/, '')
     const telefono = String(f.telefono || '').replace(/\s+/g, '')
-    const horario = (f.descripcionHorario || '').slice(0, 100)
+    const horario = String(f.descripcionHorario || '').trim()
     const horarioDesc = f.zonaGuardia ? `Zona: ${f.zonaGuardia}` : ''
     guardias.push([
       Math.round(f.lat * 1e5) / 1e5,
@@ -127,9 +129,10 @@ async function main() {
     ])
   }
 
+  if (fechaLocal() !== fecha) throw new Error('Cambio de día durante la consulta; se conserva el último fichero')
   guardarGuardias('tenerife', 'coftenerife.es', guardias, {
-    min: 5, sourceUrl: REFERER,
-    fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'Atlantic/Canary', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()),
+    min: 5, sourceUrl: REFERER, horariosCompletos: true,
+    fecha,
     cobertura: 'Farmacias abiertas o de guardia publicadas por el COF de Santa Cruz de Tenerife en el momento de la consulta. Confirma por teléfono antes de acudir.',
     incidencias: [
       ...(errores.length ? [`Cobertura parcial: ${errores.length} de ${municipios.length} municipios no se pudieron comprobar (${errores.join(', ')}).`] : []),

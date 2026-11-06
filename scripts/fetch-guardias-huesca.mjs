@@ -115,9 +115,8 @@ async function main() {
       coord,
       nombre,
       direccion,
-      // telefonoGL es el movil de guardia localizada — preferible al fijo.
-      telefono: clean(f.telefonoGL || f.telefono, 30).replace(/\s+/g, ''),
-      refuerzo: clean(f.refuerzo, 80),
+      telefono: clean(String(f.guardiaLocalizada) === '1' ? f.telefonoGL || f.telefono : f.telefono || f.telefonoGL, 30).replace(/\s+/g, ''),
+      refuerzo: [String(f.guardiaLocalizada) === '1' ? 'Guardia localizada: llama antes de acudir' : '', clean(f.refuerzo)].filter(Boolean).join(' · '),
     })
   }
 

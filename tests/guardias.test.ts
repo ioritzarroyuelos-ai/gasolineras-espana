@@ -92,7 +92,8 @@ describe('turnos comprobables y coordenadas oficiales', () => {
     expect(filtrada).toContain('https://www.cofalmeria.com/buscador-de-farmacias/')
   })
   it('conserva la alternativa oficial al caducar los datos y rechaza enlaces inseguros', () => {
-    expect(fuenteGuardia('madrid', { sourceUrl: 'javascript:alert(1)' })).toBe(null)
+    expect(fuenteGuardia('madrid', { sourceUrl: 'javascript:alert(1)' })).toBe('https://www.cofm.es/es/buscador-de-farmacias/')
+    expect(fuenteGuardia('burgos', { sourceUrl: 'javascript:alert(1)' })).toBe(null)
     const html = buildGuardiaMunicipioPage('nonce', { provinciaSlug: 'avila', provinciaName: 'Ávila', municipioSlug: 'avila', municipioName: 'Ávila', guardias: [turno], otrosMunicipios: [], actualizado: '2026-01-01', canonical: 'https://example.test/farmacias/avila/avila', ahora })
     expect(html).toContain('Consultar la fuente oficial')
     expect(html).not.toContain('Farmacia A')

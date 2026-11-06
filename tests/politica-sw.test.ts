@@ -51,4 +51,15 @@ describe('copias sin conexión y veda de sondeos', () => {
       expect(await (await pedir(url, accept)).text()).toBe('copia anterior')
     }
   })
+
+  it('no presenta como abiertas las farmacias de una visita anterior sin conexión', async () => {
+    const { pedir, almacen } = navegadorSinConexion()
+    for (const url of ['/farmacias/madrid/madrid?turno=ahora', '/farmacias/islas-baleares']) {
+      const respuesta = await pedir(url, 'text/html')
+      expect(respuesta.status).toBe(503)
+      expect(await respuesta.text()).toContain('turno actualizado')
+    }
+    expect(almacen.match).not.toHaveBeenCalled()
+    expect(await (await pedir('/farmacias/guardia', 'text/html')).text()).toBe('copia anterior')
+  })
 })

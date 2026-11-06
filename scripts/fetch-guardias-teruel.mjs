@@ -29,6 +29,7 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -97,10 +98,6 @@ function titleCase(s) {
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase())
 }
 
-function fechaTeruel(d = new Date()) {
-  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`
-}
-
 // Parsea el HTML del listado y devuelve [{nombre, slug, localidad, horario}].
 function parseListado(html) {
   // Quitar el form (que esta dentro del primer <ul.category-box>) para
@@ -126,7 +123,7 @@ function parseListado(html) {
       let horario = ''
       if (mHor) {
         const sin = mHor[1].replace(/<h3[\s\S]*?<\/h3>/i, '').replace(/<[^>]+>/g, ' ')
-        horario = clean(sin, 60)
+        horario = clean(sin)
       }
       out.push({
         slug: mSlug[1],
@@ -179,7 +176,8 @@ async function geocodeNominatim(direccion, localidad) {
 }
 
 async function main() {
-  const fecha = fechaTeruel()
+  const fechaTurno = fechaMadrid()
+  const fecha = fechaTurno.split('-').reverse().join('/')
   console.log(`Descargando guardias Teruel (${fecha}) — cofteruel.org...`)
 
   const url = `${BASE}/ciudadanos/listado-de-farmacias/?gl=0&localidad=all&guardia=1&fecha=${encodeURIComponent(fecha)}`
@@ -245,28 +243,29 @@ async function main() {
 
   const guardias = []
   for (const it of items) {
-    if (!it.coord) continue
+    if (!it.direccion && !it.telefono) continue
     const dirFinal = `${titleCase(it.nombre)} · ${titleCase(it.direccion || '')}`.replace(/\s+·\s*$/, '')
     guardias.push([
-      it.coord[0],
-      it.coord[1],
+      it.coord?.[0] || 0,
+      it.coord?.[1] || 0,
       dirFinal.slice(0, 140),
       titleCase(it.localidad),
       it.telefono || '',
       '', // CP no expuesto en la ficha
-      it.horario || 'De guardia 24 horas',
+      it.horario,
       '',
     ])
   }
 
   if (guardias.length < 1) {
-    throw new Error(`Cero con coord. Abortamos.`)
+    throw new Error(`Sin direcciones ni teléfonos verificables. Se conserva la última lista.`)
   }
 
   const out = {
     ts: new Date().toISOString(),
     source: 'cofteruel.org',
     territorio: 'teruel',
+    fecha: fechaTurno,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

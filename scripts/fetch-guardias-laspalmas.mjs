@@ -33,6 +33,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { turnosLasPalmas } from './lib/guardias-fuentes.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -125,34 +126,9 @@ function parseCoord(arr) {
   return [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5]
 }
 
-// "2026-04-24 09:00:00" → "9:00"
-function timeOf(iso) {
-  if (!iso) return ''
-  const m = String(iso).match(/(\d{1,2}):(\d{2})/)
-  if (!m) return ''
-  return `${parseInt(m[1], 10)}:${m[2]}`
-}
-
-// Convierte la lista de guardias en un horario human-readable. Por ejemplo
-// "9:00-9:00" significa 24h (turno completo). Si hay 1 guardia → "ini-fin",
-// si hay varias → join por " / ".
-function buildHorario(guardias) {
-  if (!Array.isArray(guardias) || guardias.length === 0) return ''
-  const slots = guardias
-    .map(g => {
-      const ini = timeOf(g.guardia_horario_fecha_inicio)
-      const fin = timeOf(g.guardia_horario_fecha_fin)
-      if (!ini || !fin) return ''
-      return `${ini}-${fin}`
-    })
-    .filter(Boolean)
-  return Array.from(new Set(slots)).join(' / ')
-}
-
 async function main() {
   console.log('Obteniendo nonce + cookies del COF Las Palmas...')
   const { nonce, cookie } = await fetchNonceAndCookies()
-  console.log(`  nonce=${nonce.slice(0, 8)}... cookie=${cookie ? 'OK' : 'vacio'}`)
 
   console.log('Descargando guardias Las Palmas (POST admin-ajax.php)...')
   const data = await fetchGuardias(nonce, cookie)
@@ -179,22 +155,19 @@ async function main() {
     if (!f.uuid) continue
     const coord = parseCoord(f.coordenadas)
     if (!coord) continue
-    const key = String(f.uuid)
-    if (dedupe.has(key)) {
-      const e = dedupe.get(key)
-      const h = buildHorario(f.guardias)
-      if (h) e.horarios.add(h)
-      continue
+    for (const { horario, nota } of turnosLasPalmas(f.guardias)) {
+      const key = String(f.uuid) + '|' + nota
+      if (!dedupe.has(key)) dedupe.set(key, {
+        coord, nota,
+        nombre: titleCase(clean(f.nombre, 80)),
+        direccion: clean(f.direccion, 120),
+        telefono: clean(f.telefono, 30).replace(/\s+/g, ''),
+        municipio: titleCase(clean(f.municipio, 60)),
+        cp: clean(f.codigo_postal, 5),
+        horarios: new Set(),
+      })
+      if (horario) dedupe.get(key).horarios.add(horario)
     }
-    dedupe.set(key, {
-      coord,
-      nombre: titleCase(clean(f.nombre, 80)),
-      direccion: clean(f.direccion, 120),
-      telefono: clean(f.telefono, 30).replace(/\s+/g, ''),
-      municipio: titleCase(clean(f.municipio, 60)),
-      cp: clean(f.codigo_postal, 5),
-      horarios: new Set([buildHorario(f.guardias)].filter(Boolean)),
-    })
   }
 
   console.log(`  ${dedupe.size} farmacias unicas tras dedupe`)
@@ -215,13 +188,15 @@ async function main() {
       f.telefono,
       f.cp,
       horarioGuardia,
-      '',
+      f.nota,
     ])
   }
 
   const out = {
     ts: new Date().toISOString(),
     source: 'coflaspalmas.es',
+    sourceUrl: PAGE_URL,
+    coordenadasOficiales: true,
     territorio: 'laspalmas',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

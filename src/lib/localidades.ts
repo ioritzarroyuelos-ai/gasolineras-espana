@@ -1,7 +1,7 @@
 import { slugifyMunicipio } from './municipios'
 import { PROVINCIAS } from './provincias'
-import { GUARDIAS_TERRITORIO_BY_PROVINCIA, parseGuardias, guardiasForProvincia, frescuraGuardia } from './guardias'
-import type { GuardiasFile } from './guardias'
+import { GUARDIAS_TERRITORIO_BY_PROVINCIA, parseGuardias, guardiasForProvincia, municipiosConGuardia, frescuraGuardia } from './guardias'
+import type { GuardiasFile, MunicipioGuardia } from './guardias'
 import type { ItvFile } from './itv'
 import { frescuraTiempo, type MunicipioLista, type Prediccion } from '../../scripts/lib/tiempo.mjs'
 
@@ -14,6 +14,16 @@ export interface Localidad extends LocalidadIndex {
   tiempo: { url: string; pred?: Prediccion }
 }
 const normaliza = (s: string) => slugifyMunicipio(s).replace(/-/g, ' ')
+
+// Formas documentadas del mismo municipio. La comparación siempre va dentro de su provincia.
+export function slugsMunicipioGuardia(m: Pick<MunicipioLista, 'ine' | 'nombre'>): string[] {
+  const slugs = new Set([slugifyMunicipio(m.nombre)])
+  const conArticulo = m.nombre.match(/^(.+),\s*(las?|los?|el|as?|os?|els|les|es|sa|ses|l['’])$/i)
+  if (conArticulo) slugs.add(slugifyMunicipio(conArticulo[2] + ' ' + conArticulo[1]))
+  if (m.ine === '28127') slugs.add('las-rozas') // El Colegio de Madrid publica «LAS ROZAS».
+  return [...slugs]
+}
+
 export function buscaLocalidades(all: LocalidadIndex[], q: string): LocalidadIndex[] {
   const query = normaliza(q.trim().slice(0, 70))
   if (query.length < 2) return []
@@ -33,15 +43,22 @@ export function construyeLocalidades(municipios: MunicipioLista[], stations: Rec
     gas.set(key, item)
   }
   const parsed = new Map(Object.entries(guardias).map(([t, f]) => [t, parseGuardias(f)]))
+  const municipiosGuardia = new Map<string, MunicipioGuardia>()
+  for (const prov of PROVINCIAS) {
+    const territorio = GUARDIAS_TERRITORIO_BY_PROVINCIA[prov.slug]
+    for (const m of municipiosConGuardia(guardiasForProvincia(parsed.get(territorio) || [], prov.id, territorio))) {
+      municipiosGuardia.set(prov.id + '/' + m.slug, m)
+    }
+  }
   return municipios.map(m => {
     const prov = PROVINCIAS.find(p => p.id === m.provinciaId)!
     const slug = slugifyMunicipio(m.nombre), key = prov.id + '/' + slug
     const g = gas.get(key), territorio = GUARDIAS_TERRITORIO_BY_PROVINCIA[prov.slug]
-    const fs = guardiasForProvincia(parsed.get(territorio) || [], prov.id, territorio).filter(g => slugifyMunicipio(g.municipio) === slug)
+    const guardia = slugsMunicipioGuardia(m).map(s => municipiosGuardia.get(prov.id + '/' + s)).find(Boolean)
     const estaciones = (itv.estaciones || []).filter(e => e.prov === prov.id && slugifyMunicipio(e.mun) === slug)
     return { ine: m.ine, nombre: m.nombre, provinciaNombre: m.provinciaNombre,
       gas: { url: '/gasolineras/' + prov.slug + (g ? '/' + slug : ''), ts: gasTs, count: g?.count || 0, min95: g?.min95 },
-      farmacias: { url: guardias[territorio] ? '/farmacias/' + prov.slug + (fs.length ? '/' + slug : '') : '/farmacias/', ts: guardias[territorio]?.ts, count: fs.length, zona: ['35', '38'].includes(prov.id) ? 'Atlantic/Canary' : 'Europe/Madrid' },
+      farmacias: { url: '/farmacias/' + prov.slug + (territorio ? '/' + (guardia?.slug || slug) : ''), ts: guardias[territorio]?.ts, count: guardia?.count || 0, zona: ['35', '38'].includes(prov.id) ? 'Atlantic/Canary' : 'Europe/Madrid' },
       itv: { url: (itv.estaciones || []).some(e => e.prov === prov.id) ? '/itv/' + prov.slug + (estaciones.length ? '/' + slug : '') : '/itv/', ts: itv.generatedAt, count: estaciones.length },
       tiempo: { url: '/tiempo/' + m.provinciaSlug + '/' + m.slug, pred: predicciones[m.ine] },
     }

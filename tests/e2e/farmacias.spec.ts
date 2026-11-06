@@ -20,6 +20,8 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
     await expect(page).toHaveTitle(/Farmacia de guardia.*España Útil/i)
     await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia en españa/i })).toBeVisible()
     await expect(page.locator('#q')).toBeVisible()
+    await expect(page.getByRole('search')).toHaveCount(1)
+    await expect(page.locator('#municipio-form')).toHaveCount(0)
     await expect(page.getByRole('link', { name: /provincia por provincia/i })).toBeVisible()
     // El mapa ya no existe.
     await expect(page.locator('#map')).toHaveCount(0)
@@ -55,21 +57,25 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
     }
   })
 
-  test('el autocompletado sugiere municipios al escribir', async ({ page }) => {
+  test('el municipio exacto aparece antes que la provincia y se puede elegir con el teclado', async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 740 })
     await page.goto('/farmacias/')
     const input = page.locator('#q')
     await input.click()
     await input.fill('madrid')
     const sugs = page.locator('#sugs')
     await expect(sugs).toBeVisible({ timeout: 10_000 })
-    // Debe haber al menos una sugerencia de MUNICIPIO (enlace de dos segmentos:
-    // /farmacias/<provincia>/<municipio>). Cuando el texto coincide con el nombre
-    // de una provincia, el autocompletado antepone una sugerencia de provincia
-    // ("Toda la provincia: …", enlace de un segmento /farmacias/<provincia>), asi
-    // que no asumimos que la primera sea un municipio: excluimos las de provincia.
-    const muniLink = sugs.locator('a').filter({ hasNotText: /Toda la provincia/i }).first()
-    await expect(muniLink).toBeVisible()
-    await expect(muniLink).toHaveAttribute('href', /^\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
+    const opciones = sugs.getByRole('option')
+    await expect(opciones.first()).toHaveAttribute('href', '/farmacias/madrid/madrid')
+    await expect(opciones.filter({ hasText: 'Toda la provincia' })).toHaveAttribute('href', '/farmacias/madrid')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320)
+    await input.press('Escape')
+    await expect(sugs).toBeHidden()
+    await input.press('ArrowDown')
+    await expect(input).toHaveAttribute('aria-activedescendant', await opciones.first().getAttribute('id') as string)
+    await expect(opciones.first()).toHaveAttribute('aria-selected', 'true')
+    await input.press('Enter')
+    await expect(page).toHaveURL(/\/farmacias\/madrid\/madrid$/)
   })
 
   test('pulsar una sugerencia navega a la pagina de guardia del municipio', async ({ page }) => {
@@ -79,13 +85,49 @@ test.describe('Farmacias de guardia (/farmacias/)', () => {
     await input.fill('madrid')
     const sugs = page.locator('#sugs')
     await expect(sugs).toBeVisible({ timeout: 10_000 })
-    // Pulsamos la primera sugerencia de MUNICIPIO (dos segmentos). Puede ir
-    // precedida de una sugerencia de provincia ("Toda la provincia: …") cuando el
-    // texto coincide con el nombre de una provincia; esa lleva a /farmacias/<provincia>
-    // y no es lo que valida este test, asi que la excluimos.
     await sugs.locator('a').filter({ hasNotText: /Toda la provincia/i }).first().click()
     await expect(page).toHaveURL(/\/farmacias\/[a-z-]+\/[a-z0-9-]+$/)
-    await expect(page.getByRole('heading', { level: 1, name: /farmacia de guardia/i })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Farmacias de guardia en Madrid', exact: true })).toBeVisible()
+  })
+
+  test('recupera las sugerencias tras un error y evita varias descargas mientras se escribe', async ({ page }, info) => {
+    test.skip(info.config.metadata.live === true, 'El error simulado sólo se prueba en local.')
+    let peticiones = 0
+    let soltar!: () => void
+    const espera = new Promise<void>(r => { soltar = r })
+    await page.route('**/api/guardias/municipios', async route => {
+      if (++peticiones === 1) { await espera; await route.fulfill({ status: 503 }); return }
+      await route.fulfill({ json: [{ n: 'Madrid', p: 'Madrid', u: '/farmacias/madrid/madrid' }, { n: 'Lugo', p: 'Lugo', u: '/farmacias/lugo' }] })
+    })
+    await page.goto('/farmacias/')
+    const q = page.getByRole('combobox')
+    await q.pressSequentially('Lugo')
+    await expect.poll(() => peticiones).toBe(1)
+    await expect(page.getByRole('status')).toContainText('Buscando')
+    soltar()
+    await expect(page.getByRole('status')).toContainText('Puedes pulsar Buscar')
+    await page.getByRole('button', { name: 'Reintentar sugerencias' }).click()
+    const opciones = page.getByRole('option')
+    await expect(opciones).toHaveCount(1)
+    await expect(opciones.first()).toHaveAttribute('href', '/farmacias/lugo')
+    await expect(q).toBeFocused()
+    await q.fill('Nombre que no existe')
+    await expect(page.getByRole('status')).toContainText('Pulsa Buscar')
+    await page.getByRole('button', { name: 'Buscar', exact: true }).click()
+    await expect(page).toHaveURL(/\/farmacias\/buscar\?q=Nombre\+que\+no\+existe$/)
+    expect(peticiones).toBe(2)
+  })
+
+  test('se puede buscar un municipio sin JavaScript', async ({ browser, baseURL }) => {
+    const contexto = await browser.newContext({ baseURL, javaScriptEnabled: false })
+    try {
+      const pagina = await contexto.newPage()
+      await pagina.goto('/farmacias/')
+      await pagina.getByLabel('¿En qué municipio?').fill('Madrid')
+      await pagina.getByRole('button', { name: 'Buscar', exact: true }).click()
+      await expect(pagina).toHaveURL(/\/farmacias\/madrid\/madrid$/)
+      await expect(pagina.getByRole('heading', { level: 1 })).toContainText('Madrid')
+    } finally { await contexto.close() }
   })
 
   test('los 47 snapshots de guardias se sirven con count > 0', async ({ request }) => {

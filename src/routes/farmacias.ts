@@ -3,7 +3,7 @@
 // /farmacias*, /api/guardias/municipios y las paginas SSR por provincia/municipio.
 // Orden interno CRITICO: /farmacias/guardia va ANTES de /farmacias/:provinciaSlug
 // o "guardia" se tragaria como slug de provincia. Se preserva dentro del modulo.
-import type { Hono } from 'hono'
+import type { Hono, Context } from 'hono'
 import type { Env } from '../index'
 import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/runtime'
 import { buildFarmaciasPage, farmaciasHeaders } from '../html/farmacias'
@@ -17,6 +17,16 @@ import {
   GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
 } from '../lib/guardias'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
+import { slugsMunicipioGuardia, type LocalidadIndex } from '../lib/localidades'
+import { slugifyMunicipio } from '../lib/municipios'
+import { paginaBusquedaGuardia, paginaSinTurno, type LugarGuardia } from '../html/guardia-consulta'
+
+type ContextoFarmacias = Context<{ Bindings: Env }>
+const turnoPedido = (c: ContextoFarmacias) => {
+  const turno = c.req.query('turno')
+  return turno === 'ahora' || turno === '24h' ? turno : 'todas'
+}
+const sinIndice = (nonce: string) => ({ ...guardiaHeaders(nonce), 'X-Robots-Tag': 'noindex, follow' })
 
 export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
   // ---- Farmacias (Fase 1 MVP nacional) ----
@@ -42,14 +52,12 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
   // intencion del proyecto y una SPA no se indexa. Los datos ya los generan los
   // scrapers de los 47 colegios provinciales, incluidos los que solo publican en
   // PDF, que es justo donde la competencia no llega.
-  // 404 si la provincia, el fichero o el municipio no existen, para no meter
-  // paginas vacias en el indice.
+  // Los municipios conocidos conservan la dirección incluso entre dos guardias.
   // `/farmacias/guardia` — indice nacional de provincias con guardia.
   // IMPORTANTE: va declarada ANTES que `/farmacias/:provinciaSlug`, o el parametro
   // se tragaria "guardia" como si fuera un slug de provincia.
   app.get('/farmacias/guardia', c => {
     const provincias = PROVINCIAS
-      .filter(p => guardiasFileForProvincia(p.slug))
       .map(p => ({ slug: p.slug, name: p.name }))
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/farmacias/guardia'
@@ -68,10 +76,9 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
   // aviso de "sin turno actualizado".
   let muniGuardiaIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
 
-  app.get('/api/guardias/municipios', async c => {
-    const CACHE = { 'Cache-Control': 'public, max-age=3600' }
+  async function leerIndiceGuardias(c: ContextoFarmacias) {
     if (muniGuardiaIndex && Date.now() - muniGuardiaIndex.ts < MUNI_INDEX_TTL) {
-      return c.json(muniGuardiaIndex.data, 200, CACHE)
+      return { lugares: muniGuardiaIndex.data, completo: true }
     }
     const out: Array<{ n: string; p: string; u: string }> = []
     const seen = new Set<string>()
@@ -107,9 +114,54 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
         if (!seen.has(u)) { seen.add(u); out.push({ n: prov.name, p: prov.name, u }) }
       }
     }
+    if (![...cache.values()].some(Boolean)) return { lugares: [], completo: false }
+    const completos = [...cache.values()].every(Boolean)
+    out.push({ n: 'Lugo', p: 'Lugo', u: '/farmacias/lugo' })
     out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
-    muniGuardiaIndex = { ts: Date.now(), data: out }
-    return c.json(out, 200, CACHE)
+    if (completos) muniGuardiaIndex = { ts: Date.now(), data: out }
+    return { lugares: out, completo: completos }
+  }
+
+  app.get('/api/guardias/municipios', async c => {
+    const { lugares, completo } = await leerIndiceGuardias(c)
+    return c.json(lugares, lugares.length ? 200 : 503, { 'Cache-Control': completo ? 'public, max-age=3600' : 'no-store' })
+  })
+
+  // El buscador de respaldo también reconoce localidades sin turno ese día.
+  // El índice se genera junto a las fichas municipales y no depende del COF de hoy.
+  app.get('/farmacias/buscar', async c => {
+    const q = (c.req.query('q') || '').trim().slice(0, 80)
+    const clave = slugifyMunicipio(q)
+    if (clave.length < 2) return c.redirect('/farmacias/', 302)
+    const localidades = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS)
+    const exactas: LugarGuardia[] = [], parciales: LugarGuardia[] = []
+    const provincias = new Map(PROVINCIAS.map(p => [p.id, p]))
+    for (const m of localidades ?? []) {
+      const prov = provincias.get(m.ine.slice(0, 2))
+      if (!prov) continue
+      const nombres = slugsMunicipioGuardia(m)
+      const exacta = nombres.includes(clave)
+      if (!exacta && (parciales.length >= 20 || !nombres.some(n => n.includes(clave)))) continue
+      const lista = exacta ? exactas : parciales
+      lista.push({ nombre: m.nombre, provincia: prov.name, ruta: '/farmacias/' + prov.slug + '/' + nombres[0] })
+    }
+    // Los colegios también distinguen pedanías y barrios que no figuran como municipios en el INE.
+    if (!exactas.length) {
+      const { lugares } = await leerIndiceGuardias(c)
+      const rutas = new Set(parciales.map(l => l.ruta))
+      for (const l of lugares) {
+        const nombre = slugifyMunicipio(l.n)
+        const lugar = { nombre: l.n, provincia: l.p, ruta: l.u }
+        if (nombre === clave) exactas.push(lugar)
+        else if (parciales.length < 20 && nombre.includes(clave) && !rutas.has(l.u)) parciales.push(lugar)
+      }
+    }
+    if (exactas.length === 1 && localidades) return c.redirect(exactas[0].ruta, 302)
+    const provincia = PROVINCIAS.find(p => p.slug === clave)
+    if (!exactas.length && provincia) return c.redirect('/farmacias/' + provincia.slug, 302)
+    const nonce = genNonce()
+    return c.html(paginaBusquedaGuardia(nonce, canonicalBase(c) + '/farmacias/buscar', q, exactas.length ? exactas : parciales, !!localidades),
+      localidades ? 200 : 503, sinIndice(nonce))
   })
 
   // `/farmacias/:provincia` — municipios de la provincia con guardia publicada.
@@ -119,16 +171,15 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaBySlug(provSlug)
     if (!prov) return c.notFound()
     const file = guardiasFileForProvincia(provSlug)
-    if (!file) return c.notFound()
-
-    const raw = await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)
-    if (!raw) return c.notFound()
+    const raw = file ? await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS) : null
+    const nonce = genNonce()
+    const canonical = canonicalBase(c) + '/farmacias/' + provSlug
+    if (!raw?.guardias?.length) return c.html(paginaSinTurno(nonce, canonical, prov, undefined, raw, !!file && !raw),
+      file && !raw ? 503 : 200, sinIndice(nonce))
 
     const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
     const municipios = municipiosConGuardia(all)
 
-    const nonce = genNonce()
-    const canonical = canonicalBase(c) + '/farmacias/' + provSlug
     // Si el territorio no se ha refrescado en el ultimo pase (>30 h), no lo
     // dejamos indexar: la pagina mostrara el aviso de caducado en vez del turno.
     const hdrs = frescuraGuardia(raw.ts).fiable
@@ -137,9 +188,9 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     // Sin municipios (Baleares, Huesca): la fuente no trae municipio pero SI trae
     // guardias con direccion y telefono; se listan directamente en vez de un 404.
     if (!municipios.length) {
-      if (!all.length) return c.notFound()
+      if (!all.length) return c.html(paginaSinTurno(nonce, canonical, prov, undefined, raw), 200, sinIndice(nonce))
       return new Response(
-        buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical, raw),
+        buildGuardiaProvinciaFlatPage(nonce, provSlug, prov.name, all, raw.ts, canonical, raw, turnoPedido(c)),
         { headers: hdrs },
       )
     }
@@ -155,18 +206,26 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaBySlug(provSlug)
     if (!prov) return c.notFound()
     const file = guardiasFileForProvincia(provSlug)
-    if (!file) return c.notFound()
-
-    const raw = await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS)
-    if (!raw) return c.notFound()
-
-    const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw.territorio)
+    const raw = file ? await loadSnapshot<GuardiasFile>(c.req.url, file, c.env.ASSETS) : null
+    const all = guardiasForProvincia(parseGuardias(raw), prov.id, raw?.territorio)
     const municipios = municipiosConGuardia(all)
     const munEntry = municipios.find(m => m.slug === munSlug)
-    if (!munEntry) return c.notFound()
-
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/farmacias/' + provSlug + '/' + munSlug
+    if (!munEntry || !raw) {
+      const indice = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades/' + prov.id + '.json', c.env.ASSETS)
+      if (!indice) return c.html(paginaSinTurno(nonce, canonical, prov, undefined, raw, true), 503, sinIndice(nonce))
+      const conocidos = indice.filter(m => slugsMunicipioGuardia(m).includes(munSlug))
+      if (conocidos.length !== 1) return c.notFound()
+      const lugar = conocidos[0]
+      const slugs = slugsMunicipioGuardia(lugar)
+      const publicado = municipios.find(m => slugs.includes(m.slug))
+      if (publicado) {
+        const turno = turnoPedido(c)
+        return c.redirect('/farmacias/' + provSlug + '/' + publicado.slug + (turno === 'todas' ? '' : '?turno=' + turno), 302)
+      }
+      return c.html(paginaSinTurno(nonce, canonical, prov, lugar.nombre, raw, !!file && !raw), file && !raw ? 503 : 200, sinIndice(nonce))
+    }
     const hdrs = frescuraGuardia(raw.ts).fiable
       ? guardiaHeaders(nonce)
       : { ...guardiaHeaders(nonce), 'X-Robots-Tag': 'noindex, follow' }
@@ -180,7 +239,7 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
       actualizado: raw.ts,
       fuente: raw.source,
       metadatos: raw,
-      turno: c.req.query('turno') === 'ahora' ? 'ahora' : c.req.query('turno') === '24h' ? '24h' : 'todas',
+      turno: turnoPedido(c),
       canonical,
     }), { headers: hdrs })
   })

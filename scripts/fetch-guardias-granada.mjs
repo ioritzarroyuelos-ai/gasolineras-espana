@@ -36,6 +36,8 @@
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
+import { parseTurnosGranada } from './lib/guardias-granada.mjs'
 import { PDFParse } from 'pdf-parse'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -64,10 +66,6 @@ function saveCache(c) {
 function titleCase(s) {
   return String(s || '').toLowerCase()
     .replace(/(^|[^\p{L}])(\p{L})/gu, (_, sep, c) => sep + c.toUpperCase())
-}
-
-function fechaGranada(d = new Date()) {
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 async function buscarPdf(fecha) {
@@ -145,81 +143,17 @@ async function geocode(direccion) {
   return null
 }
 
-// Parsea el texto plano del PDF buscando bloques: encabezado de seccion +
-// secuencia de farmacias (direccion + tlf). Cada farmacia ocupa 1-2 lineas.
-// Heuristica: el TLF es la ancla. La "direccion real" es la primera linea
-// previa que no sea info entre parentesis ni separador. Las (info) en la
-// misma linea del TLF o una linea atras se ignoran como direccion principal.
-function parsePdf(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
-  const out = []
-  let seccion = ''
-  const teleRe = /TLF\.?:?\s*(\d[\d\s]+)/i
-  // Una direccion "valida" empieza con letra mayuscula o numero/abreviatura
-  // (CALLE, AVDA, CTRA, PLAZA, REYES, GRAN VIA...). Excluimos lineas que
-  // empiecen con parentesis (info) o que sean separadores.
-  const isDireccion = (s) => {
-    if (!s) return false
-    if (/^\(/.test(s)) return false
-    if (/^-+/.test(s)) return false
-    if (/^SOLO\s+/i.test(s)) return false
-    if (/^SERVICIO\s+/i.test(s)) return false
-    if (/^SÁBADO|^DOMINGO/i.test(s)) return false
-    return true
-  }
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i]
-    if (/SERVICIO\s+DE\s+URGENCIA\s+DIURNO/i.test(l)) { seccion = 'Diurna 9:30-22:00'; continue }
-    if (/SERVICIO\s+DE\s+URGENCIA\s+NOCTURNO/i.test(l)) { seccion = 'Nocturna 22:00-9:30'; continue }
-    if (!seccion) continue
-    const tel = l.match(teleRe)
-    if (!tel) continue
-    // Buscar la direccion: prefijo de la linea actual hasta TLF si ese
-    // prefijo es una direccion valida (no empieza con paréntesis); si no,
-    // retroceder hasta la primera linea que sea direccion valida.
-    const idxTel = l.search(teleRe)
-    let direccion = l.slice(0, idxTel).trim().replace(/[.,]\s*$/, '')
-    if (!isDireccion(direccion)) {
-      direccion = ''
-      for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
-        const cand = lines[j].trim().replace(/[.,]\s*$/, '')
-        if (isDireccion(cand)) { direccion = cand; break }
-      }
-    }
-    if (!direccion) continue
-    out.push({
-      direccion,
-      telefono: tel[1].replace(/\s+/g, ''),
-      horario: seccion,
-    })
-  }
-  // Dedup por (direccion + telefono).
-  const seen = new Set()
-  const dedupe = []
-  for (const f of out) {
-    const k = `${f.direccion.toLowerCase()}|${f.telefono}`
-    if (seen.has(k)) {
-      const prev = dedupe.find(x => `${x.direccion.toLowerCase()}|${x.telefono}` === k)
-      if (prev && !prev.horario.includes(f.horario.split(' ')[0])) {
-        prev.horario += ` y ${f.horario.toLowerCase()}`
-      }
-      continue
-    }
-    seen.add(k)
-    dedupe.push(f)
-  }
-  return dedupe
-}
-
 async function main() {
-  const fecha = fechaGranada()
+  const fechaTurno = fechaMadrid()
+  const fecha = fechaTurno.split('-').reverse().join('/')
   console.log(`Descargando guardias Granada (${fecha}) — cofgranada.com...`)
   const pdfName = await buscarPdf(fecha)
   console.log(`  PDF encontrado: ${pdfName}`)
   const data = await fetchPdf(pdfName)
   const parser = new PDFParse({ data })
   const r = await parser.getText()
-  const farmacias = parsePdf(r.text)
+  await parser.destroy()
+  const farmacias = parseTurnosGranada(r.text, fechaTurno)
   console.log(`  ${farmacias.length} farmacias detectadas`)
   if (farmacias.length < 3) throw new Error(`Solo ${farmacias.length} farmacias. Parser fallido?`)
   if (farmacias.length > 80) throw new Error(`Sospechoso: ${farmacias.length} farmacias.`)
@@ -274,6 +208,7 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'cofgranada.com',
     territorio: 'granada',
+    fecha: fechaTurno,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

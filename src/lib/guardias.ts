@@ -16,9 +16,15 @@
 // Baleares y Huesca no traen municipio, asi que solo admiten pagina provincial.
 
 import { slugifyMunicipio } from './municipios'
-import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
+import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
+
+import { estadoHorarioGuardia } from './guardias-horarios'
+export { textoHorarioGuardia, tipoAtencionGuardia } from './guardias-horarios'
 
 export interface Guardia {
+  territorio?: string
+  fechaTurno?: string
+  horarioCompleto?: boolean
   lat: number
   lng: number
   direccion: string
@@ -37,6 +43,7 @@ export interface GuardiasFile {
   territorio?: string
   count?: number
   fecha?: string
+  horariosCompletos?: boolean
   sourceUrl?: string
   cobertura?: string
   incidencias?: string[]
@@ -130,6 +137,9 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
       cp:          str(row[5]),
       horario:     str(row[6]),
       horarioDesc: str(row[7]),
+      territorio: file.territorio,
+      fechaTurno: file.fecha,
+      horarioCompleto: file.territorio !== 'tenerife' || String(row[6] ?? '').length !== 100 || file.horariosCompletos === true,
       provinciaId: str(row[8]) || undefined,
       // Madrid ya publicaba coordenadas nativas verificadas antes de añadir la marca.
       coordenadasFiables: (file.coordenadasOficiales === true || (file.territorio === 'madrid' && file.source === 'cofm.es')) && lat >= 27 && lat <= 44 && lng >= -19 && lng <= 5,
@@ -176,19 +186,16 @@ export function zonaGuardia(provinciaSlug: string): string {
 }
 
 export function estadoGuardia(g: Guardia, actualizado?: string, ahora = new Date(), zona = 'Europe/Madrid') {
-  const unknown = { conocida: false, abierta: false, todoElDia: false }
-  if (!frescuraGuardia(actualizado, ahora, zona).fiable || /localizada|no presencial|por confirmar|confirmar horario/i.test(g.horarioDesc)) return unknown
-  const m = g.horario.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})-(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$/)
-  if (!m) return unknown
-  const start = instanteLocal(m[1], zona), end = instanteLocal(m[2], zona)
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return unknown
-  const abierta = ahora.getTime() >= start && ahora.getTime() < end
-  // Turno completo según las horas del colegio, incluso el día del cambio de hora.
-  const horasTurno = (Date.parse(m[2].replace(' ', 'T') + ':00Z') - Date.parse(m[1].replace(' ', 'T') + ':00Z')) / 3600000
-  return { conocida: true, abierta, todoElDia: abierta && horasTurno >= 24 }
+  if (!frescuraGuardia(actualizado, ahora, zona).fiable) return { conocida: false, abierta: false, todoElDia: false }
+  return estadoHorarioGuardia(g, ahora, zona)
 }
 
 const FUENTES_RECUPERADAS: Record<string, string> = {
+  lugo: 'https://www.coflugo.org/farmacia-guardia',
+  madrid: 'https://www.cofm.es/es/buscador-de-farmacias/',
+  barcelona: 'https://www.farmaguia.net/',
+  tenerife: 'https://www.coftenerife.es/farmacias/',
+  palencia: 'https://www.cofpalencia.org/PUBLICO/CALENDARIOS%20DE%20GUARDIA/menu_calendarios_guardia.htm',
   alicante: 'https://www.cofalicante.com/farmacias-de-guardia/',
   almeria: 'https://www.cofalmeria.com/buscador-de-farmacias/?activo_guardias=on',
   asturias: 'https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp?IdMenu=355',
@@ -198,7 +205,7 @@ const FUENTES_RECUPERADAS: Record<string, string> = {
   clm: 'https://farmaciasdeguardia.cofcam.es/',
 }
 export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile): string | null {
-  const known = FUENTES_RECUPERADAS[GUARDIAS_TERRITORIO_BY_PROVINCIA[provinciaSlug]]
+  const known = FUENTES_RECUPERADAS[GUARDIAS_TERRITORIO_BY_PROVINCIA[provinciaSlug] || provinciaSlug]
   const value = known || file?.sourceUrl || (file?.source && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(file.source) ? 'https://' + file.source : '')
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null } catch { return null }
 }

@@ -34,6 +34,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -157,7 +158,7 @@ async function main() {
     throw new Error(`Solo ${paresUnicos.length} municipios unicos. El select ha cambiado. Abortamos.`)
   }
 
-  const hoy = new Date().toISOString().slice(0, 10)
+  const hoy = fechaMadrid()
   console.log(`  consultando API para fecha ${hoy}`)
 
   const porId = new Map()
@@ -238,6 +239,7 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'cofgipuzkoa.pretools.net',
     territorio: 'gipuzkoa',
+    fecha: hoy,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

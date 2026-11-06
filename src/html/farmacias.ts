@@ -16,6 +16,14 @@ import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
+export const CABECERA_FARMACIAS_CSS = `
+.masthead.masthead--compact{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px;padding:4px max(12px,calc((100% - 1024px)/2));border-bottom:1px solid var(--mh-rule)}
+.masthead--compact .mh-inner,.masthead--compact .mh-nav{margin:0}.masthead--compact .mh-brand{display:flex;align-items:center;gap:7px}
+.masthead--compact .mh-logo{width:23px;height:23px;margin:0}.masthead--compact .mh-title{font-size:22px}
+.masthead--compact .mh-nav{border:0}.masthead--compact .mh-nav a{padding:11px 8px;font-size:12px}
+@media(max-width:650px){.masthead.masthead--compact{justify-content:center;padding:6px 10px 0}
+.masthead--compact .mh-nav{flex-basis:100%;justify-content:space-around}.masthead--compact .mh-nav a{padding:10px 2px;font-size:11px;letter-spacing:.01em}}`
+
 export function buildFarmaciasPage(
   nonce: string = '',
   reqUrl: string = 'https://webapp-3ft.pages.dev/farmacias/',
@@ -80,7 +88,7 @@ export function buildFarmaciasPage(
   <style nonce="${nonce}">
     :root {
       color-scheme: light;
-      --c-bg: #f8fafc; --c-surface: #ffffff; --c-text: #0f172a; --c-muted: #64748b;
+      --c-bg: #f8fafc; --c-surface: #ffffff; --c-text: #0f172a; --c-muted: #475569;
       --c-brand-dark: #14532d; --c-brand: #16a34a; --c-brand-soft: #dcfce7;
       --c-border: #e2e8f0; --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
     }
@@ -88,24 +96,29 @@ export function buildFarmaciasPage(
     body { margin: 0; font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
       color: var(--c-text); background: var(--c-bg); line-height: 1.5; }
     ${MASTHEAD_CSS}
+    ${CABECERA_FARMACIAS_CSS}
     main { max-width: 640px; margin: 0 auto; padding: 24px 18px 40px; }
     h1 { font-size: 26px; line-height: 1.2; margin: 8px 0 6px; }
     .lead { color: var(--c-muted); margin: 0 0 22px; font-size: 15px; }
     .search { position: relative; }
     .search label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 15px; }
-    .search input { width: 100%; padding: 14px 16px; font-size: 17px; border: 2px solid var(--c-border);
+    .search-row { display: flex; gap: 6px; }
+    .search button,.retry { font: inherit; padding: 8px 14px; border: 1px solid #166534; border-radius: 10px;
+      font-weight: 600; background: #166534; color: white; cursor: pointer; }
+    .retry { background: white; color: var(--c-brand-dark); margin-top: 6px; }
+    .search input { width: 100%; min-width: 0; padding: 12px; font-size: 17px; border: 2px solid #697586;
       border-radius: 12px; background: var(--c-surface); color: var(--c-text); }
     .search input:focus { outline: none; border-color: var(--c-brand); }
     .sugs { list-style: none; margin: 6px 0 0; padding: 6px; position: absolute; left: 0; right: 0;
       background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px;
       box-shadow: var(--c-shadow); max-height: 320px; overflow-y: auto; z-index: 10; }
     .sugs li { margin: 0; }
-    .sugs a, .sugs .sug-msg { display: block; padding: 10px 12px; border-radius: 8px;
+    .sugs a { display: block; padding: 10px 12px; border-radius: 8px;
       text-decoration: none; color: var(--c-text); font-size: 15px; }
     .sugs a small { display: block; color: var(--c-muted); font-size: 12px; }
     .sugs a:hover, .sugs a.active { background: var(--c-brand-soft); }
-    .sug-msg { color: var(--c-muted); font-size: 14px; }
-    .hint { font-size: 13px; color: var(--c-muted); margin: 10px 0 0; }
+    .hint { font-size: 14px; color: var(--c-muted); margin: 8px 0 0; }
+    .hint:empty { margin: 0; }
     .browse { margin: 26px 0 0; }
     .browse a { display: inline-block; padding: 10px 16px; border: 1px solid var(--c-border);
       border-radius: 10px; background: var(--c-surface); color: var(--c-brand-dark);
@@ -118,20 +131,23 @@ export function buildFarmaciasPage(
   </style>
 </head>
 <body>
-  ${mastheadHtml('farmacias')}
+  ${mastheadHtml('farmacias', { compact: true, hideMunicipioSearch: true })}
 
   <main>
     <h1>Farmacia de guardia en España</h1>
-    <p class="lead">Escribe tu municipio y te llevamos a la farmacia que está de guardia, con dirección, teléfono y horario.</p>
+    <p class="lead">Busca los turnos publicados para tu municipio o consulta el colegio de tu provincia.</p>
 
-    <div class="search">
+    <form class="search" id="busca-guardias" role="search" action="/farmacias/buscar" method="get">
       <label for="q">¿En qué municipio?</label>
-      <input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"
-        placeholder="Cuéllar, Utrera, Gijón..."
-        role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugs" />
+      <div class="search-row">
+        <input id="q" type="search" name="q" minlength="2" maxlength="70" required autocomplete="off"
+          autocapitalize="off" spellcheck="false" placeholder="Cuéllar, Utrera, Gijón…" />
+        <button type="submit">Buscar</button>
+      </div>
       <ul id="sugs" class="sugs" role="listbox" aria-label="Municipios" hidden></ul>
-    </div>
-    <p class="hint">Empieza a escribir el nombre de tu municipio.</p>
+    </form>
+    <p class="hint" id="q-estado" role="status"></p>
+    <button class="retry" id="q-reintentar" type="button" hidden>Reintentar sugerencias</button>
 
     <div class="browse">
       <a href="/farmacias/guardia">O consulta provincia por provincia &rarr;</a>
@@ -148,123 +164,142 @@ export function buildFarmaciasPage(
 
   <script nonce="${nonce}">
   (function () {
+    var form = document.getElementById('busca-guardias');
     var input = document.getElementById('q');
     var box = document.getElementById('sugs');
-    var muni = [];      // [{n, p, u}]
-    var loaded = false;
-    var active = -1;    // indice resaltado
-    var shown = [];     // sugerencias visibles
+    var status = document.getElementById('q-estado');
+    var retry = document.getElementById('q-reintentar');
+    var estado = 'inicial';
+    var municipios = [], provincias = [], mostrados = [];
+    var activo = -1;
+    var sugerir = false;
 
-    // Normaliza para comparar sin acentos ni mayusculas.
+    input.setAttribute('role', 'combobox');
+    input.setAttribute('aria-autocomplete', 'list');
+    input.setAttribute('aria-expanded', 'false');
+    input.setAttribute('aria-controls', box.id);
+
     function norm(s) {
-      return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
+      return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, '');
     }
-
-    function esc(s) {
-      return String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    function cerrar() {
-      box.hidden = true; box.innerHTML = ''; active = -1; shown = [];
-      input.setAttribute('aria-expanded', 'false');
-    }
-
-    function msg(t) {
-      box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>';
-      box.hidden = false; shown = []; active = -1;
-      input.setAttribute('aria-expanded', 'true');
-    }
-
-    // Nombres cooficiales/alternativos de provincia: se buscan ADEMAS del nombre
-    // canonico (castellano/INE), para que 'gipuzkoa', 'araba', 'gerona'...
-    // encuentren su provincia. Deriva el enlace del propio /<vertical>/<prov>/<mun>.
-    var provs = null;
-    var PROV_ALIAS = {
+    var aliasProvincias = {
       'guipuzcoa': 'gipuzkoa', 'alava': 'araba', 'bizkaia': 'vizcaya',
       'girona': 'gerona', 'lleida': 'lerida', 'ourense': 'orense',
       'a coruna': 'la coruna coruna', 'islas baleares': 'illes balears baleares',
       'santa cruz de tenerife': 'tenerife', 'navarra': 'nafarroa',
       'alicante': 'alacant', 'castellon': 'castello'
     };
-    function buildProvs() {
-      if (provs) return provs;
-      provs = []; var seen = {};
-      for (var i = 0; i < muni.length; i++) {
-        var parts = String(muni[i].u || '').split('/'); var slug = parts[2] || '';
-        if (!slug || seen[slug]) continue; seen[slug] = 1;
-        var nombre = muni[i].p || '', np = norm(nombre);
-        provs.push({ n: nombre, u: '/' + parts[1] + '/' + slug, s: np + ' ' + (PROV_ALIAS[np] || '') });
-      }
-      return provs;
+    function cerrar() {
+      box.hidden = true;
+      box.replaceChildren();
+      mostrados = [];
+      activo = -1;
+      input.setAttribute('aria-expanded', 'false');
+      input.removeAttribute('aria-activedescendant');
     }
-
-    function render(q) {
-      var nq = norm(q);
-      if (nq.length < 2) { cerrar(); return; }
-      if (!loaded) { msg('Cargando municipios\\u2026'); return; }
-      var res = [];
-      // 1) Provincias que casan por nombre canonico o cooficial -> enlace a la provincia.
-      var pv = buildProvs();
-      for (var k = 0; k < pv.length && res.length < 3; k++) {
-        if (pv[k].s.indexOf(nq) >= 0) res.push({ n: 'Toda la provincia: ' + pv[k].n, p: 'Ver municipios', u: pv[k].u });
-      }
-      // 2) Municipios por nombre.
-      for (var i = 0; i < muni.length && res.length < 12; i++) {
-        if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
-      }
-      shown = res; active = -1;
-      if (res.length === 0) { msg('No encontramos ese municipio. Prueba con otro nombre o mira por provincia.'); return; }
-      var html = '';
-      for (var j = 0; j < res.length; j++) {
-        html += '<li role="option"><a href="' + esc(res[j].u) + '">' + esc(res[j].n)
-          + '<small>' + esc(res[j].p) + '</small></a></li>';
-      }
-      box.innerHTML = html;
-      box.hidden = false;
-      input.setAttribute('aria-expanded', 'true');
-    }
-
-    function marcar(idx) {
-      var links = box.querySelectorAll('a');
-      for (var i = 0; i < links.length; i++) links[i].classList.toggle('active', i === idx);
-      if (idx >= 0 && links[idx]) links[idx].scrollIntoView({ block: 'nearest' });
-    }
-
-    function ir(idx) {
-      if (idx >= 0 && shown[idx]) { window.location.href = shown[idx].u; return true; }
-      return false;
-    }
-
-    // Carga el indice una vez, al primer foco/teclazo.
-    function cargar() {
-      if (loaded) return;
-      fetch('/api/guardias/municipios', { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (data) {
-          muni = Array.isArray(data) ? data : (data && data.municipios) || [];
-          loaded = true;
-          if (norm(input.value).length >= 2) render(input.value);
-        })
-        .catch(function () { loaded = true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
-    }
-
-    input.addEventListener('focus', cargar);
-    input.addEventListener('input', function () { cargar(); render(input.value); });
-    input.addEventListener('keydown', function (e) {
-      if (box.hidden || shown.length === 0) {
-        if (e.key === 'Enter') { e.preventDefault(); }
+    function render() {
+      cerrar();
+      var q = norm(input.value);
+      if (q.length < 2) { status.textContent = ''; return; }
+      if (estado === 'error') {
+        status.textContent = 'No se han cargado las sugerencias. Puedes pulsar Buscar o reintentarlo.';
         return;
       }
-      if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, shown.length - 1); marcar(active); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); marcar(active); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (!ir(active)) ir(0); }
-      else if (e.key === 'Escape') { cerrar(); }
+      if (estado !== 'listo') { status.textContent = 'Buscando sugerencias…'; return; }
+      var exactos = municipios.filter(function(m) { return m.clave === q; });
+      var porProvincia = provincias.filter(function(p) { return p.clave.includes(q); }).slice(0, 3);
+      var otros = municipios.filter(function(m) { return m.clave !== q && m.clave.includes(q); });
+      mostrados = exactos.concat(porProvincia, otros).slice(0, 12);
+      if (!mostrados.length) {
+        status.textContent = 'Pulsa Buscar para consultar ese municipio en el directorio.';
+        return;
+      }
+      mostrados.forEach(function(m, i) {
+        var item = document.createElement('li');
+        item.setAttribute('role', 'none');
+        var enlace = document.createElement('a');
+        enlace.href = m.u;
+        enlace.id = 'g-sug-' + i;
+        enlace.tabIndex = -1;
+        enlace.setAttribute('role', 'option');
+        enlace.setAttribute('aria-selected', 'false');
+        enlace.textContent = m.n;
+        var detalle = document.createElement('small');
+        detalle.textContent = m.p;
+        enlace.appendChild(detalle);
+        item.appendChild(enlace);
+        box.appendChild(item);
+      });
+      box.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      status.textContent = mostrados.length === 1 ? 'Una sugerencia.' : mostrados.length + ' sugerencias.';
+    }
+    function cargar() {
+      if (estado === 'cargando' || estado === 'listo') return;
+      estado = 'cargando';
+      retry.hidden = true;
+      render();
+      fetch('/api/guardias/municipios', { credentials: 'same-origin' })
+        .then(function(r) { if (!r.ok) throw Error(); return r.json(); })
+        .then(function(filas) {
+          if (!Array.isArray(filas) || !filas.length) throw Error();
+          var zonas = new Map(), pueblos = [];
+          filas.forEach(function(m) {
+            if (!m || typeof m.n !== 'string' || typeof m.p !== 'string' || typeof m.u !== 'string') return;
+            var ruta = m.u.match(/^\\/farmacias\\/([a-z0-9-]+)(?:\\/[a-z0-9-]+)?$/);
+            if (!ruta) return;
+            var urlProvincia = '/farmacias/' + ruta[1];
+            var nombre = norm(m.p);
+            zonas.set(urlProvincia, { n: 'Toda la provincia: ' + m.p, p: ruta[1] === 'lugo' ? 'Consultar el colegio' : 'Ver la provincia',
+              u: urlProvincia, clave: nombre + ' ' + (aliasProvincias[nombre] || '') });
+            if (m.u !== urlProvincia) pueblos.push({ n: m.n, p: m.p, u: m.u, clave: norm(m.n) });
+          });
+          if (!zonas.size) throw Error();
+          municipios = pueblos;
+          provincias = Array.from(zonas.values());
+          estado = 'listo';
+          if (sugerir && document.activeElement === input) render();
+        })
+        .catch(function() {
+          estado = 'error';
+          if (sugerir && document.activeElement === input) { retry.hidden = false; render(); }
+        });
+    }
+    input.addEventListener('focus', function() {
+      sugerir = true;
+      if (estado === 'inicial') cargar();
+      else { retry.hidden = estado !== 'error'; render(); }
     });
-    // Cerrar al hacer clic fuera.
-    document.addEventListener('click', function (e) {
-      if (e.target !== input && !box.contains(e.target)) cerrar();
+    input.addEventListener('input', function() { sugerir = true; retry.hidden = estado !== 'error'; render(); });
+    retry.addEventListener('click', function() { input.focus(); cargar(); });
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        if (!box.hidden) e.preventDefault();
+        sugerir = false; cerrar(); status.textContent = ''; return;
+      }
+      if (e.key === 'ArrowDown' && box.hidden && estado === 'listo') { sugerir = true; render(); }
+      if (box.hidden || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+      e.preventDefault();
+      activo = Math.max(0, Math.min(mostrados.length - 1, activo + (e.key === 'ArrowDown' ? 1 : -1)));
+      var enlaces = box.querySelectorAll('a');
+      enlaces.forEach(function(a, i) {
+        a.classList.toggle('active', i === activo);
+        a.setAttribute('aria-selected', String(i === activo));
+      });
+      input.setAttribute('aria-activedescendant', enlaces[activo].id);
+      enlaces[activo].scrollIntoView({ block: 'nearest' });
+    });
+    form.addEventListener('submit', function(e) {
+      // Sin elección explícita, el directorio completo distingue también los pueblos
+      // con el mismo nombre que hoy no tienen ningún turno en las sugerencias.
+      var eleccion = mostrados[activo];
+      if (eleccion) { e.preventDefault(); window.location.assign(eleccion.u); }
+    });
+    document.addEventListener('click', function(e) {
+      if (!form.contains(e.target) && e.target !== retry) cerrar();
+    });
+    form.addEventListener('focusout', function(e) {
+      if (e.relatedTarget && !form.contains(e.relatedTarget)) cerrar();
     });
   })();
   </script>

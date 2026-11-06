@@ -1,7 +1,12 @@
 // Fechas oficiales sin zona: interpretarlas explícitamente, nunca en la zona del servidor.
+const relojes = new Map()
 export function fechaHoraLocal(date, zona = 'Europe/Madrid') {
-  const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(date)
-  return parts.replace('T', ' ')
+  let reloj = relojes.get(zona)
+  if (!reloj) {
+    reloj = new Intl.DateTimeFormat('sv-SE', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    relojes.set(zona, reloj)
+  }
+  return reloj.format(date).replace('T', ' ')
 }
 export function instanteLocal(value, zona = 'Europe/Madrid') {
   if (typeof value !== 'string') return NaN

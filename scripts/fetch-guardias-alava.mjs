@@ -32,6 +32,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -87,15 +88,6 @@ function clean(s, max) {
   return max ? t.slice(0, max) : t
 }
 
-// Fecha hoy en formato DD/MM/YYYY (el que usa el COF Alava).
-function fechaHoyDDMMYYYY() {
-  const d = new Date()
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yyyy = String(d.getFullYear())
-  return `${dd}/${mm}/${yyyy}`
-}
-
 // Extrae el array "places" del HTML. El JSON esta inline en un <script>
 // largo con otras config. Buscamos el arranque "places":[ y encontramos el
 // matching-bracket haciendo conteo manual (regex no basta con strings que
@@ -144,7 +136,8 @@ async function main() {
     throw new Error(`Solo ${places.length} places. El COF suele tener ~5900 (todo el año). Abortamos.`)
   }
 
-  const fechaHoy = fechaHoyDDMMYYYY()
+  const fechaTurno = fechaMadrid()
+  const fechaHoy = fechaTurno.split('-').reverse().join('/')
   console.log(`  filtrando por fecha ${fechaHoy}`)
 
   const guardias = []
@@ -195,6 +188,7 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'cofalava.org',
     territorio: 'alava',
+    fecha: fechaTurno,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

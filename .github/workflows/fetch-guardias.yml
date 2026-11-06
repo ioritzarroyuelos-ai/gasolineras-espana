@@ -427,8 +427,8 @@ jobs:
         id: tenerife
         if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
-          # Directorio municipal y carteles con los turnos de cada zona.
-          timeout-minutes: 10
+        # Directorio municipal y carteles con los turnos de cada zona.
+        timeout-minutes: 10
         run: node scripts/fetch-guardias-tenerife.mjs
 
       - name: Guardias Teruel (COF Teruel listado HTML)

@@ -3,7 +3,7 @@ import { PROVINCIAS } from './provincias'
 import { GUARDIAS_TERRITORIO_BY_PROVINCIA, parseGuardias, guardiasForProvincia, municipiosConGuardia, frescuraGuardia } from './guardias'
 import type { GuardiasFile, MunicipioGuardia } from './guardias'
 import type { ItvFile } from './itv'
-import { frescuraTiempo, type MunicipioLista, type Prediccion } from '../../scripts/lib/tiempo.mjs'
+import { prediccionVigente, type MunicipioLista, type Prediccion } from '../../scripts/lib/tiempo.mjs'
 
 export interface LocalidadIndex { ine: string; nombre: string; provinciaNombre: string }
 export interface ServicioLocal { titulo: string; url: string; detalle: string }
@@ -70,13 +70,13 @@ export function construyeLocalidades(municipios: MunicipioLista[], stations: Rec
 }
 export function serviciosLocalidad(m: Localidad, now = Date.now()): ServicioLocal[] {
   const fresco = (ts: string | undefined, horas: number) => { const age = now - Date.parse(ts || ''); return Number.isFinite(age) && age >= -300000 && age <= horas * 3600000 }
-  const p = m.tiempo.pred
+  const p = prediccionVigente(m.tiempo.pred, now)
   const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: m.farmacias.zona }).format(new Date(now))
   const dia = p?.dias.find(d => d.fecha.slice(0, 10) === hoy)
   return [
     { titulo: 'Gasolineras', url: m.gas.url, detalle: m.gas.count ? (fresco(m.gas.ts, 24) && m.gas.min95 ? 'Gasolina 95 desde ' + m.gas.min95.toFixed(3).replace('.', ',') + ' €/L · ' : '') + m.gas.count + ' estaciones' + (fresco(m.gas.ts, 24) ? '' : ' · precios pendientes de actualizar') : 'Consultar la provincia' },
     { titulo: 'Farmacias de guardia', url: m.farmacias.url, detalle: m.farmacias.count && frescuraGuardia(m.farmacias.ts, new Date(now), m.farmacias.zona).esHoy ? 'Consultar las farmacias y sus horarios' : 'Consultar turnos y fuentes oficiales' },
-    { titulo: 'El tiempo', url: m.tiempo.url, detalle: p && dia && frescuraTiempo(p.elaborado, now).fiable ? `${dia.tmin ?? '—'}° / ${dia.tmax ?? '—'}° · ${dia.cielo || p.fuente}` : 'Consultar la predicción del municipio' },
+    { titulo: 'El tiempo', url: m.tiempo.url, detalle: p && dia ? `Máx. ${dia.tmax ?? '—'}° · Mín. ${dia.tmin ?? '—'}° · ${dia.cielo || p.fuente}` : 'Consultar la predicción del municipio' },
     { titulo: 'ITV', url: m.itv.url, detalle: m.itv.count ? m.itv.count + ' estaciones' + (fresco(m.itv.ts, 40 * 24) ? '' : ' · directorio pendiente de actualizar') : 'Consultar estaciones en la provincia' },
   ]
 }

@@ -9,15 +9,12 @@ import { statsNacional } from '../lib/municipios'
 import { buildObservatorio, observatorioFromPre, calculaVariaciones, type ObservatorioPre } from '../lib/observatorio'
 import { buildLandingPage, landingHeaders, type LandingData, type LandingTiempo } from '../html/landing'
 import { buildObservatorioPage, observatorioHeaders, type Variacion } from '../html/observatorio'
-import { frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
+import { prediccionVigente, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
+import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
 import { buscaLocalidades, serviciosLocalidad, type Localidad, type LocalidadIndex } from '../lib/localidades'
 
-// Franja "El tiempo hoy" de la portada: las ciudades más pobladas (municipios
-// "importantes") que tengan predicción de AEMET fresca en el snapshot. Cargamos
-// cada snapshot de provincia una sola vez (en paralelo) y cogemos el día 0. Solo
-// AEMET y fresco (misma norma que /tiempo/*): nunca metemos dato dudoso en la
-// portada. Como mucho 6 ciudades.
+// Hasta seis ciudades con parte vigente de AEMET para su día local.
 async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<LandingTiempo[] | undefined> {
   const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
   const all = (raw && raw.municipios) || []
@@ -39,8 +36,9 @@ async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<Land
       snapCache.set(m.provinciaSlug, preds)
     }
     const p = preds && preds[m.ine]
-    if (!p || p.fuente !== 'AEMET' || !frescuraTiempo(p.elaborado).fiable) continue
-    const hoy = p.dias && p.dias[0]
+    if (p?.fuente !== 'AEMET') continue
+    const fecha = fechaHoraLocal(new Date(), zonaTiempo(m.ine)).slice(0,10)
+    const hoy = prediccionVigente(p)?.dias.find(d => d.fecha.slice(0,10) === fecha)
     if (!hoy) continue
     out.push({
       nombre: m.nombre,

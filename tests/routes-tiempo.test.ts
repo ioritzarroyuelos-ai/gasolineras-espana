@@ -68,6 +68,28 @@ describe('rutas /tiempo/* tras extraer a src/routes/tiempo.ts (B1)', () => {
     expect(Array.isArray(await res.json())).toBe(true)
   })
 
+  it('consulta el índice generado sólo al buscar, sin cargar todos los municipios', async () => {
+    const lugar = {n:'Madrid', p:'Madrid', u:'/tiempo/madrid/madrid', tipo:'municipio'}
+    const assets = assetsReturning({ 'tiempo/buscador-v1.json': [{ lugar, nombres:['madrid'] }] })
+    const fetch = vi.spyOn(assets, 'fetch')
+    const env = { ASSETS: assets }
+    await app.request('/api/tiempo/municipios?q=m', {}, env)
+    expect(fetch).not.toHaveBeenCalled()
+    const json = await app.request('/api/tiempo/municipios?q=madrid', {}, env)
+    expect(await json.json()).toEqual([lugar])
+    const pagina = await app.request('/tiempo/buscar?q=Madrid', {}, env)
+    expect(pagina.headers.get('location')).toBe(lugar.u)
+    expect(fetch.mock.calls.map(([req]) => new URL(req.url).pathname)).toEqual(['/data/tiempo/buscador-v1.json'])
+  })
+
+  it('conserva la búsqueda de municipio y provincia si falta el índice generado', async () => {
+    const env = { ASSETS: assetsReturning({ 'tiempo/municipios.json': { municipios: [MADRID] } }) }
+    const res = await app.request('/api/tiempo/municipios?q=madrid', {}, env)
+    expect(await res.json()).toMatchObject([{u:'/tiempo/madrid/madrid'}, {u:'/tiempo/madrid'}])
+    const completa = await app.request('/api/tiempo/municipios', {}, env)
+    expect(await completa.json()).toEqual([{n:'Madrid',p:'Madrid',u:'/tiempo/madrid/madrid'}])
+  })
+
   it('/tiempo/:prov -> 404 si la provincia no existe en los datos', async () => {
     const res = await app.request('/tiempo/provincia-que-no-existe', {}, { ASSETS: assetsReturning({}) })
     expect(res.status).toBe(404)

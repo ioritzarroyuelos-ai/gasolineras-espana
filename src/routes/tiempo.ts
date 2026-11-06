@@ -1,152 +1,133 @@
-// Vertical "El tiempo" (AEMET + suplente Open-Meteo). Extraido de index.tsx
-// (B1: partir el monolito en sub-modulos por vertical). Las rutas se registran
-// sobre el mismo `app` via registerTiempoRoutes(app, deps), preservando EXACTA-
-// MENTE el orden y comportamiento que tenian inline. La infra compartida
-// (loadSnapshot, genNonce, resolveHost/Scheme, MUNI_INDEX_TTL) se inyecta como
-// `deps` para no duplicar ni mover el estado global del index.
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 import type { Env } from '../index'
-import { loadSnapshot, genNonce, canonicalBase, MUNI_INDEX_TTL } from '../lib/runtime'
-// Lógica del tiempo compartida con el robot/tests (scripts/lib/tiempo.mjs + .d.mts).
-import { construyeIndiceMunicipios, resuelvePrediccion, frescuraTiempo } from '../../scripts/lib/tiempo.mjs'
-import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
-import { buildTiempoIndexPage, buildTiempoProvinciaPage, buildTiempoMunicipioPage, tiempoHeaders } from '../html/tiempo'
-import { DATA_SCHEMA_VER } from '../lib/schemas'   // M2: versiona la clave de caché persistente de la predicción
+import { canonicalBase, cfCache, genNonce, loadSnapshot, MUNI_INDEX_TTL } from '../lib/runtime'
+import { consultaAvisos } from '../lib/tiempo-avisos'
+import { buscaTiempo, catalogoTiempo, preparaBuscadorTiempo, rutaMunicipioTiempo, type IndiceBusquedaTiempo } from '../lib/tiempo-municipios'
+import { construyeIndiceMunicipios, horasVigentes, prediccionVigente, resuelveHoras, resuelvePrediccion } from '../../scripts/lib/tiempo.mjs'
+import type { MunicipioLista, ParteHoras, Prediccion } from '../../scripts/lib/tiempo.mjs'
+import { buildTiempoBusquedaPage, buildTiempoIndexPage, buildTiempoMunicipioPage, buildTiempoProvinciaPage, tiempoHeaders } from '../html/tiempo'
 
-// Contrato de dependencias compartidas que el vertical necesita del runtime del
-// index. Se pasan explicitamente (en vez de importarlas) para acotar el radio de
-// impacto de la extraccion: index.tsx sigue siendo el dueño de esa infra.
+type Contexto = Context<{ Bindings: Env }>
+
+function preparaCatalogo(base: MunicipioLista[]) {
+  const municipios = catalogoTiempo(base)
+  const porProvincia = new Map<string, MunicipioLista[]>()
+  for (const m of municipios) {
+    if (!porProvincia.has(m.provinciaSlug)) porProvincia.set(m.provinciaSlug, [])
+    porProvincia.get(m.provinciaSlug)!.push(m)
+  }
+  const provincias = [...porProvincia].map(([slug, lista]) => ({ slug, name: lista[0].provinciaNombre }))
+    .sort((a,b) => a.name.localeCompare(b.name, 'es'))
+  let indiceCompatible: ReturnType<typeof construyeIndiceMunicipios> | undefined
+  return { municipios, porProvincia, provincias,
+    listadoCompatible: () => indiceCompatible ??= construyeIndiceMunicipios(municipios) }
+}
+
+// La caché guarda partes con fecha. Al leerlos volvemos a calcular qué horas y días siguen vigentes.
+async function parteEnCache<T extends Prediccion | ParteHoras>(
+  c: Contexto, ruta: string, vigente: (p: T) => T | null, descargar: () => Promise<T>,
+): Promise<T | null> {
+  const cache = cfCache()
+  const key = new Request(new URL('/_cache/tiempo/v2/'+ruta, c.req.url))
+  if (cache) {
+    try {
+      const hit = await cache.match(key)
+      if (hit) {
+        const parte = vigente(await hit.json() as T)
+        if (parte) return parte
+      }
+    } catch { /* Sigue disponible la consulta al proveedor. */ }
+  }
+  let parte: T | null
+  try { parte = vigente(await descargar()) } catch { return null }
+  if (parte && cache) {
+    const ttl = parte.fuente === 'Open-Meteo' ? 900 : 1800
+    const res = new Response(JSON.stringify(parte),{headers:{'Content-Type':'application/json','Cache-Control':'public, max-age='+ttl}})
+    const guardar = cache.put(key,res).catch(() => {})
+    try { c.executionCtx.waitUntil(guardar) } catch { await guardar }
+  }
+  return parte
+}
+
+async function prediccionDiaria(c: Contexto, m: MunicipioLista) {
+  const snap = await loadSnapshot<{predicciones:Record<string,Prediccion>}>(c.req.url,'tiempo/snapshot/'+m.provinciaSlug+'.json',c.env.ASSETS)
+  const copia = prediccionVigente(snap?.predicciones?.[m.ine])
+  if (copia?.fuente === 'AEMET' && copia.versionPeriodos === 2) return copia
+  return await parteEnCache<Prediccion>(c,m.ine+'/dias',prediccionVigente,() => resuelvePrediccion({
+    ...m, provincia:m.provinciaNombre, lat:m.lat ?? NaN, lng:m.lng ?? NaN,
+  })) ?? copia
+}
+
 export function registerTiempoRoutes(app: Hono<{ Bindings: Env }>): void {
+  let cacheCatalogo: { ts:number; datos:ReturnType<typeof preparaCatalogo> } | undefined
+  let cacheBusqueda: { ts:number; datos:IndiceBusquedaTiempo } | undefined
+  async function carga(c: Contexto) {
+    if (cacheCatalogo && Date.now()-cacheCatalogo.ts < MUNI_INDEX_TTL) return cacheCatalogo.datos
+    const base = await loadSnapshot<{municipios:MunicipioLista[]}>(c.req.url,'tiempo/municipios.json',c.env.ASSETS)
+    if (!base?.municipios?.length) return preparaCatalogo([])
+    const datos = preparaCatalogo(base.municipios)
+    cacheCatalogo = { ts:Date.now(), datos }
+    return datos
+  }
 
-  // Indice de municipios con predicción para el autocompletado de /tiempo/.
-  // Lee public/data/tiempo/municipios.json (generado desde el maestro de AEMET) y
-  // devuelve [{n,p,u}]. Cache en memoria (mismo patrón que guardias/itv).
-  let muniTiempoIndex: { ts: number; data: Array<{ n: string; p: string; u: string }> } | null = null
+  async function cargaBusqueda(c: Contexto): Promise<IndiceBusquedaTiempo> {
+    if (cacheBusqueda && Date.now()-cacheBusqueda.ts < MUNI_INDEX_TTL) return cacheBusqueda.datos
+    const estatico = await loadSnapshot<IndiceBusquedaTiempo>(c.req.url,'tiempo/buscador-v1.json',c.env.ASSETS)
+    const datos = Array.isArray(estatico) && estatico.length ? estatico : preparaBuscadorTiempo((await carga(c)).municipios)
+    if (datos.length) cacheBusqueda = { ts: Date.now(), datos }
+    return datos
+  }
 
   app.get('/api/tiempo/municipios', async c => {
-    const CACHE = { 'Cache-Control': 'public, max-age=3600, s-maxage=86400' }
-    if (muniTiempoIndex && Date.now() - muniTiempoIndex.ts < MUNI_INDEX_TTL) {
-      return c.json(muniTiempoIndex.data, 200, CACHE)
+    const q = c.req.query('q')
+    if (q === undefined) {
+      const lista = (await carga(c)).listadoCompatible()
+      return c.json(lista,200,{'Cache-Control':lista.length ? 'public, max-age=300' : 'no-store'})
     }
-    const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
-    const data = construyeIndiceMunicipios((raw && raw.municipios) || [])
-    muniTiempoIndex = { ts: Date.now(), data }
-    return c.json(data, 200, CACHE)
+    if (q.trim().length < 2) return c.json([],200,{'Cache-Control':'public, max-age=300'})
+    const indice = await cargaBusqueda(c)
+    return c.json(buscaTiempo(indice,q).resultados,200,{'Cache-Control':indice.length ? 'public, max-age=300' : 'no-store'})
   })
-
-  // ---- El tiempo (AEMET, con suplente Open-Meteo) ----
-  // Municipios cargados de tiempo/municipios.json (generado del maestro de AEMET),
-  // cacheados en memoria e indexados por provincia y por slug.
-  interface TiempoMuniCache {
-    ts: number
-    byProv: Map<string, MunicipioLista[]>
-    provincias: Array<{ slug: string; name: string }>
-  }
-  let tiempoMuniCache: TiempoMuniCache | null = null
-  async function cargaTiempoMunicipios(c: { req: { url: string }; env: Env }): Promise<TiempoMuniCache> {
-    if (tiempoMuniCache && Date.now() - tiempoMuniCache.ts < MUNI_INDEX_TTL) return tiempoMuniCache
-    const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
-    const all = (raw && raw.municipios) || []
-    const byProv = new Map<string, MunicipioLista[]>()
-    const provName = new Map<string, string>()
-    for (const m of all) {
-      const arr = byProv.get(m.provinciaSlug) || []
-      arr.push(m)
-      byProv.set(m.provinciaSlug, arr)
-      provName.set(m.provinciaSlug, m.provinciaNombre)
-    }
-    const provincias = [...provName.entries()]
-      .map(([slug, name]) => ({ slug, name }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'es'))
-    tiempoMuniCache = { ts: Date.now(), byProv, provincias }
-    return tiempoMuniCache
-  }
-
-  // Resuelve la predicción de un municipio: Cache API (borde) -> AEMET -> Open-Meteo.
-  // La clave de AEMET viene del secreto c.env.AEMET_API_KEY; si falta o AEMET falla,
-  // resuelvePrediccion cae a Open-Meteo (etiquetado). Devuelve null si ambas fallan.
-  async function resuelveTiempo(c: { env: Env; executionCtx?: { waitUntil: (p: Promise<unknown>) => void } }, m: MunicipioLista): Promise<Prediccion | null> {
-    const cache = (caches as unknown as { default: Cache }).default
-    const cacheKey = new Request('https://tiempo.cercaya.internal/v' + DATA_SCHEMA_VER + '/' + m.ine)
-    try {
-      const hit = await cache.match(cacheKey)
-      if (hit) { const p = await hit.json() as Prediccion; if (frescuraTiempo(p.elaborado).fiable) return p }
-    } catch { /* cache miss/parse: seguimos a la fuente */ }
-
-    let pred: Prediccion
-    try {
-      pred = await resuelvePrediccion(
-        { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre, lat: m.lat ?? 0, lng: m.lng ?? 0 },
-        { key: (c.env as Record<string, string | undefined>).AEMET_API_KEY },
-      )
-    } catch { return null }
-
-    // Guardar en caché con TTL segun la fuente (mas corto si vino del suplente).
-    try {
-      const ttl = pred.fuente === 'AEMET' ? 7200 : 1800
-      const resp = new Response(JSON.stringify(pred), {
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'max-age=' + ttl },
-      })
-      if (c.executionCtx && c.executionCtx.waitUntil) c.executionCtx.waitUntil(cache.put(cacheKey, resp))
-      else await cache.put(cacheKey, resp)
-    } catch { /* si el cache put falla, servimos igual */ }
-    return pred
-  }
-
-  app.get('/tiempo', c => c.redirect('/tiempo/' + (new URL(c.req.url).search || ''), 301))
-
+  app.get('/tiempo', c => c.redirect('/tiempo/'+new URL(c.req.url).search,301))
   app.get('/tiempo/', async c => {
-    const { provincias } = await cargaTiempoMunicipios(c)
+    const { provincias } = await carga(c)
     const nonce = genNonce()
-    const canonical = canonicalBase(c) + '/tiempo/'
-    return new Response(buildTiempoIndexPage(nonce, provincias, canonical), { headers: tiempoHeaders(nonce) })
+    return new Response(buildTiempoIndexPage(nonce,provincias,canonicalBase(c)+'/tiempo/'),{headers:tiempoHeaders(nonce)})
   })
-
+  app.get('/tiempo/buscar', async c => {
+    const q = (c.req.query('q') || '').trim().slice(0,100)
+    if (q.length<2) return c.redirect('/tiempo/',302)
+    const { destino, resultados } = buscaTiempo(await cargaBusqueda(c),q)
+    if (destino) return c.redirect(destino,302)
+    const nonce = genNonce()
+    return new Response(buildTiempoBusquedaPage(nonce,q,resultados,canonicalBase(c)+'/tiempo/buscar'),{headers:tiempoHeaders(nonce)})
+  })
   app.get('/tiempo/:prov', async c => {
-    const provSlug = c.req.param('prov')
-    const { byProv } = await cargaTiempoMunicipios(c)
-    const munis = byProv.get(provSlug)
-    if (!munis || !munis.length) return c.notFound()
-    const municipios = munis
-      .map(m => ({ slug: m.slug, nombre: m.nombre }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
+    const provinciaSlug = c.req.param('prov')
+    const lista = (await carga(c)).porProvincia.get(provinciaSlug)
+    if (!lista) return c.notFound()
+    const municipios = lista.map(({nombre,slug})=>({nombre,slug})).sort((a,b)=>a.nombre.localeCompare(b.nombre,'es'))
     const nonce = genNonce()
-    const canonical = canonicalBase(c) + '/tiempo/' + provSlug
-    return new Response(buildTiempoProvinciaPage(nonce, {
-      provinciaSlug: provSlug, provinciaName: munis[0].provinciaNombre, municipios, canonical,
-    }), { headers: tiempoHeaders(nonce) })
+    return new Response(buildTiempoProvinciaPage(nonce,{provinciaSlug,provinciaName:lista[0].provinciaNombre,municipios,canonical:canonicalBase(c)+'/tiempo/'+provinciaSlug}),{headers:tiempoHeaders(nonce)})
   })
-
   app.get('/tiempo/:prov/:mun', async c => {
-    const provSlug = c.req.param('prov')
-    const munSlug = c.req.param('mun')
-    const { byProv } = await cargaTiempoMunicipios(c)
-    const munis = byProv.get(provSlug)
-    if (!munis) return c.notFound()
-    const m = munis.find(x => x.slug === munSlug)
-    if (!m) return c.notFound()
-    // Snapshot primero (municipios importantes precacheados por el robot): fichero
-    // por provincia con las predicciones por código INE. Si está y es fresca, se usa
-    // sin llamar a AEMET. Si no (municipio pequeño o snapshot viejo), bajo demanda.
-    let pred: Prediccion | null = null
-    const snap = await loadSnapshot<{ predicciones: Record<string, Prediccion> }>(
-      c.req.url, 'tiempo/snapshot/' + provSlug + '.json', c.env.ASSETS)
-    const desdeSnap = snap && snap.predicciones && snap.predicciones[m.ine]
-    // Solo servimos el snapshot si es AEMET y fresco: nunca degradamos por debajo
-    // del bajo-demanda (que consigue AEMET de uno en uno sin tocar el limite).
-    if (desdeSnap && desdeSnap.fuente === 'AEMET' && frescuraTiempo(desdeSnap.elaborado).fiable) pred = desdeSnap
-    if (!pred) pred = await resuelveTiempo(c, m)
+    const provincia = c.req.param('prov')
+    const catalogo = await carga(c)
+    const lista = catalogo.porProvincia.get(provincia)
+    if (!lista) return c.notFound()
+    const lugar = rutaMunicipioTiempo(lista,c.req.param('mun'))
+    if (!lugar) return c.notFound()
+    const m = lugar.municipio
+    const ruta = '/tiempo/'+m.provinciaSlug+'/'+m.slug
+    if (lugar.redirigir) return c.redirect(ruta,301)
+    const [pred,horas,avisos] = await Promise.all([
+      prediccionDiaria(c,m),
+      parteEnCache<ParteHoras>(c,m.ine+'/horas',p=>horasVigentes(p,m.ine),()=>resuelveHoras({
+        ...m, provincia:m.provinciaNombre, lat:m.lat ?? NaN, lng:m.lng ?? NaN,
+      })),
+      consultaAvisos(m.ine,{slug:m.slug,cache:cfCache() ?? undefined,origenCache:c.req.url}),
+    ])
     const nonce = genNonce()
-    const canonical = canonicalBase(c) + '/tiempo/' + provSlug + '/' + munSlug
-    if (!pred) {
-      // Degradación: ni AEMET ni Open-Meteo respondieron.
-      return new Response(buildTiempoMunicipioPage(nonce, {
-        pred: { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre, elaborado: '', fuente: 'AEMET', dias: [] },
-        frescura: { fiable: false, horas: Infinity }, provinciaSlug: provSlug, canonical,
-      }), { headers: tiempoHeaders(nonce), status: 200 })
-    }
-    return new Response(buildTiempoMunicipioPage(nonce, {
-      pred, frescura: frescuraTiempo(pred.elaborado), provinciaSlug: provSlug, canonical,
-    }), { headers: tiempoHeaders(nonce) })
+    return new Response(buildTiempoMunicipioPage(nonce,{municipio:m,pred,horas,avisos,canonical:canonicalBase(c)+ruta}),{headers:tiempoHeaders(nonce)})
   })
 }

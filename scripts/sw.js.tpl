@@ -144,9 +144,11 @@ self.addEventListener('fetch', event => {
     try { ruta = decodeURI(ruta); } catch { /* Una URL mal codificada conserva su ruta original. */ }
   }
   const turnoFarmacia = /^\/farmacias\/(?!guardia\/?$|buscar\/?$)[a-z0-9-]+(?:\/[a-z0-9-]+)?\/?$/.test(ruta);
-  if (url.origin === self.location.origin && (turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
+  const parteTiempo = /^\/tiempo\/[a-z0-9-]+\/[a-z0-9-]+\/?$/.test(ruta);
+  if (url.origin === self.location.origin && (parteTiempo || turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() =>
-      new Response(turnoFarmacia ? 'Sin conexión. Vuelve a conectar para consultar el turno actualizado de la farmacia.' : 'Se necesita conexión para consultar los sondeos.', {
+      new Response(parteTiempo ? 'Sin conexión. Vuelve a conectar para consultar la previsión y los avisos vigentes.'
+        : turnoFarmacia ? 'Sin conexión. Vuelve a conectar para consultar el turno actualizado de la farmacia.' : 'Se necesita conexión para consultar los sondeos.', {
         status: 503,
         headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
       })

@@ -4,8 +4,7 @@
 import { corrigeZonaCervera } from '../../scripts/lib/guardias-rioja.mjs'
 import { frescuraGuardia, estadoGuardia, textoHorarioGuardia, tipoAtencionGuardia, zonaGuardia, fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
-import { mastheadHtml, MASTHEAD_CSS } from './masthead'
-import { CABECERA_FARMACIAS_CSS } from './farmacias'
+import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 export interface GuardiaPageData {
@@ -341,7 +340,7 @@ export function envoltorioIndice(nonce: string, title: string, desc: string, can
     + '<meta property="og:url" content="' + esc(canonical) + '" />'
     + ogSocialTags(originFromCanonical(canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + datos + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + CABECERA_FARMACIAS_CSS + '</style></head><body>'
+    + datos + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + '</style></head><body>'
     + mastheadHtml('farmacias', { compact: true, hideMunicipioSearch: true }) + '<main>' + cuerpo + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmacéuticos. '
     + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'

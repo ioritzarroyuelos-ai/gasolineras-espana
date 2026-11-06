@@ -20,6 +20,7 @@ import {
   type GuardiasFile,
 } from '../lib/guardias'
 import type { MunicipioLista } from '../../scripts/lib/tiempo.mjs'
+import { catalogoTiempo } from '../lib/tiempo-municipios'
 import { ELECCIONES } from '../../scripts/lib/politica-catalogo.mjs'
 
 export function registerMetaRoutes(app: Hono<{ Bindings: Env }>): void {
@@ -237,7 +238,7 @@ app.get('/sitemap-tiempo.xml', async c => {
   } catch (err) {
     slog('warn', 'sitemap_tiempo.snapshot_failed', { err: String(err).slice(0, 200) })
   }
-  const munis = (raw && raw.municipios) || []
+  const munis = catalogoTiempo(raw?.municipios || [])
   // SIN lastmod: el unico dato disponible aqui es `raw.generado` (fecha de la
   // LISTA de municipios, semanas atras), no la de cada prediccion (que se
   // refresca a diario en snapshots aparte). Un lastmod global y estatico con

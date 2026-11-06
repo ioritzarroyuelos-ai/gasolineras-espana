@@ -62,4 +62,17 @@ describe('copias sin conexión y veda de sondeos', () => {
     expect(almacen.match).not.toHaveBeenCalled()
     expect(await (await pedir('/farmacias/guardia', 'text/html')).text()).toBe('copia anterior')
   })
+
+  it('sin conexión nunca reutiliza una ficha del tiempo con un pronóstico o avisos antiguos', async () => {
+    const { pedir, almacen } = navegadorSinConexion()
+    for (const url of ['/tiempo/bizkaia/durango', '/tiempo/las-palmas/arrecife/?v=ayer', '/tiempo/madrid/%6dadrid']) {
+      const respuesta = await pedir(url, 'text/html')
+      expect(respuesta.status).toBe(503)
+      expect(respuesta.headers.get('cache-control')).toBe('no-store')
+      expect(await respuesta.text()).toContain('previsión y los avisos vigentes')
+    }
+    expect(almacen.match).not.toHaveBeenCalled()
+    for (const indice of ['/tiempo/', '/tiempo/bizkaia'])
+      expect(await (await pedir(indice, 'text/html')).text()).toBe('copia anterior')
+  })
 })

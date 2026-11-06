@@ -158,9 +158,19 @@ test('el estilo vectorial real se aplica y satélite conserva selección y preci
   expect(mapErrors).toEqual([])
 })
 
+const pruebaTactil = test.extend({ hasTouch: true })
 for (const width of [390, 320]) {
-  test('móvil ' + width + 'px: ficha y filtros dejan controles accesibles y no desbordan', async ({ page }, info) => {
+  pruebaTactil('móvil ' + width + 'px: ficha y filtros dejan controles accesibles y no desbordan', async ({ page }, info) => {
     await page.setViewportSize({ width, height: 844 })
+    async function tocarVisible(control: Locator) {
+      await expectUncovered(control)
+      const { x, y } = await control.evaluate(el => {
+        const rect = el.getBoundingClientRect()
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      })
+      await page.touchscreen.tap(x, y)
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+    }
     // A 390 px hacemos aparecer la franja cuando el usuario ya está en los
     // filtros. La comprobación en producción conserva las respuestas oficiales.
     const tendencia = width === 390 && !info.config.metadata.live ? Promise.withResolvers<Route>() : undefined
@@ -171,10 +181,16 @@ for (const width of [390, 320]) {
     // Con resultados ya cargados el asa prioriza la lista; antes de recibirlos
     // abre los filtros. Esperar la tarjeta en el DOM fija el caso que probamos.
     await expect(card).toBeAttached({ timeout: 20000 })
-    await page.locator('#btn-sheet-toggle').click()
+    await tocarVisible(page.locator('#btn-sheet-toggle'))
+    await expect(page.locator('#sidebar')).toHaveClass(/\bopen\b/)
+    // Antes de tocar los filtros, deja que el panel llegue a su altura final.
+    // Un toque por coordenadas no lleva el control al centro de la ventana.
+    await page.locator('#sidebar').evaluate(async el => {
+      await Promise.all(el.getAnimations().map(animacion => animacion.finished))
+    })
     await expect(card).toBeVisible({ timeout: 20000 })
     await expect(page.locator('#filter-fields')).toBeHidden()
-    await page.locator('#btn-toggle-filters').click()
+    await tocarVisible(page.locator('#btn-toggle-filters'))
     await expect(page.locator('#sel-combustible')).toBeVisible()
     if (tendencia) {
       // Un clic o un cambio de foco puede consultar la geometría justo cuando
@@ -200,11 +216,10 @@ for (const width of [390, 320]) {
       await primerEncuadre.dispose()
       await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
     }
-    await page.locator('#btn-toggle-filters').click()
+    await tocarVisible(page.locator('#btn-toggle-filters'))
     await expect(page.locator('#filter-fields')).toBeHidden()
     await expect(card).toBeVisible()
-    await card.click()
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+    await tocarVisible(card)
     const detail = page.locator('#station-detail')
     await expect(detail).toBeVisible()
     await expect(page.locator('#sidebar')).not.toHaveClass(/\bopen\b/)
@@ -221,7 +236,7 @@ for (const width of [390, 320]) {
     await expectUncovered(page.locator('#map-navigation .leaflet-control-zoom-out'))
     const accessible = await new AxeBuilder({ page }).include('#station-detail').include('#map-navigation').withTags(['wcag2a', 'wcag2aa']).analyze()
     expect(accessible.violations.filter(item => item.impact === 'serious' || item.impact === 'critical')).toEqual([])
-    await page.locator('#btn-station-detail-close').click()
+    await tocarVisible(page.locator('#btn-station-detail-close'))
     await expect(detail).toBeHidden()
     await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)

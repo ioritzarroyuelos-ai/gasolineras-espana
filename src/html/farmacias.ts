@@ -13,16 +13,8 @@
 // de guardias en el cliente: solo un indice pequeno de municipios.
 
 import { APP_VERSION } from '../lib/version'
-import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
-
-export const CABECERA_FARMACIAS_CSS = `
-.masthead.masthead--compact{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px;padding:4px max(12px,calc((100% - 1024px)/2));border-bottom:1px solid var(--mh-rule)}
-.masthead--compact .mh-inner,.masthead--compact .mh-nav{margin:0}.masthead--compact .mh-brand{display:flex;align-items:center;gap:7px}
-.masthead--compact .mh-logo{width:23px;height:23px;margin:0}.masthead--compact .mh-title{font-size:22px}
-.masthead--compact .mh-nav{border:0}.masthead--compact .mh-nav a{padding:11px 8px;font-size:12px}
-@media(max-width:650px){.masthead.masthead--compact{justify-content:center;padding:6px 10px 0}
-.masthead--compact .mh-nav{flex-basis:100%;justify-content:space-around}.masthead--compact .mh-nav a{padding:10px 2px;font-size:11px;letter-spacing:.01em}}`
 
 export function buildFarmaciasPage(
   nonce: string = '',
@@ -96,7 +88,7 @@ export function buildFarmaciasPage(
     body { margin: 0; font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
       color: var(--c-text); background: var(--c-bg); line-height: 1.5; }
     ${MASTHEAD_CSS}
-    ${CABECERA_FARMACIAS_CSS}
+    ${CABECERA_COMPACTA_CSS}
     main { max-width: 640px; margin: 0 auto; padding: 24px 18px 40px; }
     h1 { font-size: 26px; line-height: 1.2; margin: 8px 0 6px; }
     .lead { color: var(--c-muted); margin: 0 0 22px; font-size: 15px; }

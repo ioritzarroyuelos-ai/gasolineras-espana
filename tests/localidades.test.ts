@@ -3,6 +3,15 @@ import { buscaLocalidades, construyeLocalidades, serviciosLocalidad } from '../s
 import type { MunicipioLista } from '../scripts/lib/tiempo.mjs'
 const municipio = { ine: '28079', nombre: 'Madrid', provinciaNombre: 'Madrid', provinciaId: '28', provinciaSlug: 'madrid', slug: 'madrid' } as MunicipioLista
 describe('resultados del municipio', () => {
+  it('el resumen de tiempo de la portada descarta la descripción sin periodo del formato antiguo', () => {
+    const ahora = Date.parse('2026-11-07T00:30:00Z')
+    const pred = { ine: municipio.ine, nombre: 'Madrid', provincia: 'Madrid', fuente: 'AEMET' as const,
+      elaborado: '2026-11-06T22:00:00Z',
+      dias: [{fecha:'2026-11-07', tmax:20, tmin:5, cielo:'Niebla', probLluvia:10, viento:4}] }
+    const [m] = construyeLocalidades([municipio], [], '', {}, { estaciones: [] }, { [municipio.ine]:pred })
+    const tarjeta = serviciosLocalidad(m, ahora).find(s => s.titulo === 'El tiempo')
+    expect(tarjeta?.detalle).toBe('Máx. 20° · Mín. 5° · AEMET')
+  })
   it('distingue homónimos y busca sin tildes', () => {
     const all = [{ ine: '1', nombre: 'Ávila', provinciaNombre: 'Ávila' }, { ine: '2', nombre: 'Villa', provinciaNombre: 'Madrid' }, { ine: '3', nombre: 'Villa', provinciaNombre: 'Toledo' }]
     expect(buscaLocalidades(all, 'avila').map(m => m.ine)).toEqual(['1'])

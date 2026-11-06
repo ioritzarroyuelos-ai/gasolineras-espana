@@ -21,6 +21,6 @@ for (const item of seccion.filter(v => v.y > cabecera.y).sort((a,b) => a.y-b.y |
   const y = Math.round(item.y * 1000)
   lineas.set(y, [...(lineas.get(y) || []), item.texto])
 }
-const guardias = [...lineas.values()].map(linea => linea.join(' ')).filter(linea => /^(?:p[ºº.]|paseo|av[de.]|c\/|calle|plaza|pz[.]|avenida)\s*/i.test(linea))
+const guardias = [...lineas.values()].map(linea => linea.join(' ')).filter(linea => /^(?:p[º.]|paseo|av[de.]|c\/|calle|plaza|pz[.]|avenida)\s*/i.test(linea))
   .map(direccion => [0, 0, direccion, 'Huelva', '', '', '24 horas', 'Atención continuada'])
 guardarGuardias('huelva', 'cofhuelva.org', guardias, { fecha, sourceUrl: pdf.href, guardiasVerificadas: true, cobertura: 'Farmacias de 24 horas de Huelva capital. El colegio también publica turnos diurnos y los calendarios de la provincia.' })

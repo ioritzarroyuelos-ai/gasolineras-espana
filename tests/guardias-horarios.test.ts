@@ -1,16 +1,39 @@
 import { describe, expect, it } from 'vitest'
 import { turnosLasPalmas } from '../scripts/lib/guardias-fuentes.mjs'
-import { estadoGuardia, parseGuardias, textoHorarioGuardia, tipoAtencionGuardia } from '../src/lib/guardias'
+import { estadoGuardia, textoHorarioGuardia, tipoAtencionGuardia } from '../src/lib/guardias'
 
 const fecha = '2026-11-06'
 const captura = fecha + 'T07:30:00Z'
 const ahora = new Date(fecha + 'T15:00:00Z')
 const canarias = 'Atlantic/Canary'
 function farmacia(territorio: string, horario: string, nota = '', fechaTurno: string | undefined = fecha, completos = true) {
-  return parseGuardias({ territorio, fecha: fechaTurno, horariosCompletos: completos, guardias: [[0, 0, 'Farmacia', '', '', '', horario, nota]] })[0]
+  return { territorio, fechaTurno, horarioCompleto: completos, direccion: 'Farmacia', municipio: '', telefono: '', cp: '', lat: 0, lng: 0, horario, horarioDesc: nota }
 }
 
 describe('horarios completos de los colegios', () => {
+  it('en Corvera el domingo comienza a las diez y una mañana laborable con posible festivo conserva la duda hasta esa hora', () => {
+    const nota = 'Lunes a sábado de 9,30 de la mañana a 10 de la noche. Domingos y festivos: de 10 de la mañana a 10 de la noche'
+    const domingo = farmacia('asturias','',nota,'2026-11-01')
+    expect(estadoGuardia(domingo,'2026-11-01T07:00Z',new Date('2026-11-01T08:45Z')).abierta).toBe(false)
+    expect(estadoGuardia(domingo,'2026-11-01T07:00Z',new Date('2026-11-01T09:00Z')).abierta).toBe(true)
+    expect(estadoGuardia(farmacia('asturias','',nota),captura,new Date(fecha+'T08:45Z')).conocida).toBe(false)
+    expect(estadoGuardia(farmacia('asturias','',nota),captura,ahora).abierta).toBe(true)
+  })
+  it('en Soria una posibilidad de atención localizada no asegura que la farmacia atienda a puerta cerrada ni que esté abierta', () => {
+    const g = farmacia('soria','09:00-22:00','El colegio indica que la atención puede ser localizada. Llama antes de acudir.')
+    expect(tipoAtencionGuardia(g)).toBe('guardia')
+    expect(estadoGuardia(g,captura,ahora).conocida).toBe(false)
+  })
+  it('entiende los dos extremos publicados en Córdoba y por el Consejo, y conserva las excepciones sin dar por abierta la farmacia', () => {
+    const dia = farmacia('cordoba', 'DE 9:30 DE LA MAÑANA A 22:00 DE LA NOCHE')
+    expect(estadoGuardia(dia, captura, ahora).abierta).toBe(true)
+    expect(estadoGuardia(dia, captura, new Date(fecha + 'T21:00Z')).abierta).toBe(false)
+    const continua = farmacia('malaga', 'GUARDIAS TODO EL DÍA · DE 9.30 DE HOY A 9.30 DE MAÑANA')
+    expect(estadoGuardia(continua, captura, new Date('2026-11-07T06:00Z')).todoElDia).toBe(true)
+    for (const h of ['HASTA LAS 22:00 HORAS', 'GUARDIAS DE NOCHE · DE 01.00 A 09.30', 'DE 9:00 A 21:00 SALVO FESTIVOS']) {
+      expect(estadoGuardia(farmacia('malaga', h), captura, ahora).conocida).toBe(false)
+    }
+  })
   it('Almenara abre exactamente desde las 9 hasta las 9 del día siguiente', () => {
     const g = farmacia('castellon', '06/11/2026 De 9 a 9 del día siguiente')
     expect(estadoGuardia(g, captura, new Date('2026-11-06T07:59Z')).abierta).toBe(false)

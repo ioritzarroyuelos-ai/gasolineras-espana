@@ -39,15 +39,9 @@ const USER_AGENT = 'cercaya-guardias/1.27 (+https://webapp-3ft.pages.dev)'
 
 // Bbox provincia Castellon (Comunidad Valenciana norte). Incluye costa
 // (Vinaros, Benicasim) e interior (Morella, Vilafranca).
-const BBOX = { minLat: 39.55, maxLat: 40.85, minLng: -0.85, maxLng: 0.45 }
+const BBOX = { minLat: 39.55, maxLat: 40.85, minLng: -0.85, maxLng: 0.6 }
 
-function todayDDMMYYYY() {
-  const d = new Date()
-  const dd = String(d.getDate()).padStart(2, '0')
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const yy = d.getFullYear()
-  return `${dd}/${mm}/${yy}`
-}
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 
 // Extrae JSESSIONID del header set-cookie del GET inicial.
 async function getSessionCookie() {
@@ -121,7 +115,8 @@ function parseCoord(rawLat, rawLng) {
 }
 
 async function main() {
-  const fecha = todayDDMMYYYY()
+  const dia = fechaMadrid()
+  const fecha = dia.split('-').reverse().join('/')
   console.log(`Descargando guardias Castellon (${fecha}) — JSP+JSESSIONID...`)
   const cookie = await getSessionCookie()
   console.log(`  sesion JSP obtenida`)
@@ -141,11 +136,9 @@ async function main() {
   let descartadasCoord = 0
   for (const f of lista) {
     if (!f) continue
-    const coord = parseCoord(f.latitud, f.longitud)
-    if (!coord) {
-      descartadasCoord++
-      continue
-    }
+    if (!String(f.horario).startsWith(fecha + ' ')) throw new Error('COF Castellón: horario de otro día')
+    const coord = parseCoord(f.latitud, f.longitud) || [0, 0]
+    if (!coord[0]) descartadasCoord++
     const key = String(f.id || `${f.farmacia}|${f.direccion}`)
     if (dedupe.has(key)) continue
     dedupe.set(key, {
@@ -161,7 +154,7 @@ async function main() {
   }
 
   if (descartadasCoord > 0) {
-    console.log(`  ${descartadasCoord} registros descartados por coords fuera del bbox provincial`)
+    console.log(`  ${descartadasCoord} farmacias con dirección y sin coordenadas`)
   }
   console.log(`  ${dedupe.size} farmacias unicas tras dedupe`)
 
@@ -188,6 +181,7 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'cofcastellon.org',
     territorio: 'castellon',
+    fecha: dia,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

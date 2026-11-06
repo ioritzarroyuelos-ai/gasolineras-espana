@@ -1,13 +1,21 @@
 import { coordenadas, desplazaFecha, rangoGuardia, texto } from './guardias-fetch.mjs'
 
+// Nombres completos del catálogo municipal: COFA recorta a 30 caracteres.
+const LOCALIDADES_COFA = new Map([
+  ['Benitachell/Poble Nou de Benit', 'Benitachell/Poble Nou de Benitatxell, el'],
+  ['San Vicente del Raspeig/Sant V', 'San Vicente del Raspeig/Sant Vicent del Raspeig'],
+  ['Calpe/Calp', 'Calp'],
+])
+
 // COFA v2 devuelve también el turno que comenzó ayer. Conservamos su fecha real.
 export function parseAlicante(response, fecha) {
   const lista = response?.data?.pharmacies
-  if (!Array.isArray(lista)) throw new Error('COFA: respuesta v2 sin pharmacies')
+  if (!Array.isArray(lista) || !response.data.query_datetime?.startsWith(fecha + ' ')) throw new Error('COFA: respuesta sin fecha o de otro día')
   return lista.map(f => {
     if (!['today', 'yesterday'].includes(f.open) || !f.code || !f.address || !f.location) throw new Error('COFA: turno incompleto')
     const dia = f.open === 'yesterday' ? desplazaFecha(fecha, -1) : fecha
-    return [0, 0, `${texto(f.name)} · ${texto(f.address)}`, texto(f.location), texto(f.phone || f.alternative_phone), texto(f.pc),
+    const municipio = texto(f.location)
+    return [0, 0, `${texto(f.name)} · ${texto(f.address)}`, LOCALIDADES_COFA.get(municipio) || municipio, texto(f.phone || f.alternative_phone), texto(f.pc),
       rangoGuardia(dia, f.from, f.until), f.is_delegated ? 'Guardia localizada: llama antes de acudir' : '']
   })
 }
@@ -17,15 +25,20 @@ export function parseCLM(response, fecha) {
   if (response?.success !== true || response.fecha !== fecha || !Array.isArray(response.data) || response.total !== response.data.length) {
     throw new Error('COFCAM: respuesta incompleta o de otra fecha')
   }
-  return response.data.map(f => {
-    const provinciaId = PROVINCIAS_CLM[texto(f.provincia).toLowerCase()]
+  // Algunos turnos de la zona de Guadalajara se prestan en Teruel. El
+  // listado se refiere a la farmacia donde se atiende, no a la zona cubierta.
+  return response.data.filter(f => !(f.numero_farmacia?.startsWith('TE-') && /\(Teruel\)$/i.test(texto(f.localidad)))).map(f => {
+    const esRuidera = f.numero_farmacia === 'CR-0220-F' && texto(f.localidad).toUpperCase() === 'RUIDERA'
+    const provinciaId = esRuidera ? '13' : PROVINCIAS_CLM[texto(f.provincia).toLowerCase()]
+    const localidad = provinciaId === '45' && texto(f.localidad).toUpperCase() === 'VILLAFRANCA' && texto(f.zona).toUpperCase() === 'VILLAFRANCA DE LOS CABALLEROS'
+      ? 'Villafranca de los Caballeros' : texto(f.localidad)
     if (!provinciaId || !f.domicilio || !f.localidad || !/^\d{4}-\d{2}-\d{2}$/.test(f.fecha_inicio) || !/^\d{4}-\d{2}-\d{2}$/.test(f.fecha_fin)) throw new Error('COFCAM: turno incompleto')
     // Validación horaria compartida; las fechas explícitas del colegio prevalecen.
     rangoGuardia(f.fecha_inicio, f.hora_inicio, f.hora_fin)
     const inicio = `${f.fecha_inicio} ${f.hora_inicio}`, fin = `${f.fecha_fin} ${f.hora_fin}`
     if (fin <= inicio) throw new Error('COFCAM: intervalo no válido')
     return [...coordenadas(f.lat, f.lng, [37.9, 41.4, -5.4, -1]), `${texto(f.nombre)} · ${texto(f.domicilio)}`,
-      texto(f.localidad), texto(f.telefono || f.telefono2), '', `${inicio}-${fin}`,
+      localidad, texto(f.telefono || f.telefono2), '', `${inicio}-${fin}`,
       f.guardia_localizada ? 'Guardia localizada: llama antes de acudir' : '', provinciaId]
   })
 }
@@ -46,6 +59,7 @@ export function parseCantabria(calendario, listado, fecha) {
         const h = texto(g.hours).match(/^(\d{2}:\d{2})\s*[—–-]\s*(\d{2}:\d{2})$/)
         if (!f || !h || !f.direccion || !f.localidad) throw new Error(`Cantabria: farmacia u horario sin identificar en ${z.name}`)
         const rango = rangoGuardia(dia, h[1], h[2])
+        if (dia !== fecha && rango.slice(17) <= fecha + ' 00:00') continue
         rows.set(`${f.n}|${rango}`, [...coordenadas(f.lat, f.lng, [42.8, 43.6, -5, -2.9]), `${texto(f.nombre)} · ${texto(f.direccion)}`,
           texto(f.localidad), texto(f.telefono || g.phone), texto(f.cp), rango, ''])
       }

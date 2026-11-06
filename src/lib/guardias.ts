@@ -12,13 +12,11 @@
 // SI viene. En la mayoria de los demas el CP esta vacio, por eso no se usa como
 // criterio general: para ellos la provincia la da el propio fichero.
 //
-// Cobertura medida el 2026-07-18: 3.165 guardias, 3.048 con municipio (96%).
-// Baleares y Huesca no traen municipio, asi que solo admiten pagina provincial.
 
 import { slugifyMunicipio } from './municipios'
 import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
 
-import { estadoHorarioGuardia, fechaValida, turnoBizkaiaDelDia } from './guardias-horarios'
+import { estadoHorarioGuardia, fechaValida, horarioParaListado, intervaloDelDia } from './guardias-horarios'
 export { textoHorarioGuardia, tipoAtencionGuardia } from './guardias-horarios'
 
 export interface Guardia {
@@ -38,6 +36,7 @@ export interface Guardia {
 }
 
 export interface GuardiasFile {
+  guardiasVerificadas?: boolean
   ts?: string
   source?: string
   territorio?: string
@@ -47,6 +46,7 @@ export interface GuardiasFile {
   sourceUrl?: string
   cobertura?: string
   incidencias?: string[]
+  avisosMunicipales?: Record<string, string[]>
   coordenadasOficiales?: boolean
   guardias?: unknown[][]
 }
@@ -122,21 +122,37 @@ function num(v: unknown): number {
   return isFinite(n) ? n : NaN
 }
 
+// Estos lectores antiguos mezclaban horarios de apertura, remisiones a otros
+// pueblos o turnos de otro día. Un intento fallido del robot conserva la copia
+// anterior en disco, por lo que también se comprueba su procedencia al leerla.
+const REQUIEREN_NUEVA_LECTURA = new Set([
+  'alava', 'asturias', 'badajoz', 'baleares', 'barcelona', 'bizkaia', 'burgos', 'caceres', 'cadiz',
+  'clm', 'cordoba', 'coruna', 'gipuzkoa', 'girona', 'huelva', 'huesca', 'jaen', 'leon', 'lleida',
+  'malaga', 'melilla', 'murcia', 'navarra', 'ourense', 'palencia', 'pontevedra', 'rioja',
+  'salamanca', 'segovia', 'sevilla', 'soria', 'tarragona', 'valladolid', 'zamora', 'zaragoza',
+])
+const TERRITORIOS = new Set(Object.values(GUARDIAS_TERRITORIO_BY_PROVINCIA))
+
 // Convierte los arrays posicionales del snapshot en objetos manejables.
 export function parseGuardias(file: GuardiasFile | null, ahora = new Date()): Guardia[] {
   if (!file || !Array.isArray(file.guardias)) return []
+  if (file.territorio && !TERRITORIOS.has(file.territorio)) return []
+  if (REQUIEREN_NUEVA_LECTURA.has(file.territorio || '') &&
+      (file.guardiasVerificadas !== true || !fechaValida(file.fecha || ''))) return []
   // El antiguo directorio de Bizkaia mezclaba horarios de apertura y guardias.
   // Sólo la tabla fechada del colegio identifica qué farmacias cubren el turno.
   const bizkaia = file.territorio === 'bizkaia'
   if (bizkaia && (file.source !== 'cofbizkaia.eus' || !fechaValida(file.fecha || ''))) return []
-  const ahoraLocal = bizkaia ? fechaHoraLocal(ahora, 'Europe/Madrid') : ''
+  const zona = file.territorio === 'laspalmas' || file.territorio === 'tenerife' ? 'Atlantic/Canary' : 'Europe/Madrid'
+  const ahoraLocal = fechaHoraLocal(ahora, zona)
+  const captura = Date.parse(file.ts || '')
+  const fechaConsulta = file.fecha || (Number.isFinite(captura) ? fechaHoraLocal(new Date(captura), zona).slice(0, 10) : '')
   const out: Guardia[] = []
   for (const row of file.guardias) {
     if (!Array.isArray(row)) continue
     const horario = str(row[6])
-    if (bizkaia && !turnoBizkaiaDelDia(horario, ahoraLocal)) continue
     const lat = num(row[0]), lng = num(row[1])
-    out.push({
+    const farmacia: Guardia = {
       lat, lng,
       direccion:   str(row[2]),
       municipio:   str(row[3]),
@@ -150,7 +166,13 @@ export function parseGuardias(file: GuardiasFile | null, ahora = new Date()): Gu
       provinciaId: str(row[8]) || undefined,
       // Madrid ya publicaba coordenadas nativas verificadas antes de añadir la marca.
       coordenadasFiables: (file.coordenadasOficiales === true || (file.territorio === 'madrid' && file.source === 'cofm.es')) && lat >= 27 && lat <= 44 && lng >= -19 && lng <= 5,
-    })
+    }
+    if (file.territorio && fechaConsulta) {
+      const vigente = horarioParaListado(farmacia, fechaConsulta, ahora, zona, ahoraLocal)
+      if (vigente === null) continue
+      farmacia.horario = vigente
+    }
+    out.push(farmacia)
   }
   return out
 }
@@ -202,7 +224,7 @@ const FUENTES_RECUPERADAS: Record<string, string> = {
   madrid: 'https://www.cofm.es/es/buscador-de-farmacias/',
   bizkaia: 'https://www.cofbizkaia.eus/farmacia_de_guardia/',
   barcelona: 'https://www.farmaguia.net/',
-  tenerife: 'https://www.coftenerife.es/farmacias/',
+  tenerife: 'https://www.coftenerife.es/ciudadanos/farmacias-de-guardia/',
   palencia: 'https://www.cofpalencia.org/PUBLICO/CALENDARIOS%20DE%20GUARDIA/menu_calendarios_guardia.htm',
   alicante: 'https://www.cofalicante.com/farmacias-de-guardia/',
   almeria: 'https://www.cofalmeria.com/buscador-de-farmacias/?activo_guardias=on',
@@ -219,7 +241,7 @@ export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile, ahora 
     const ahoraLocal = fechaHoraLocal(ahora)
     let fecha = ahoraLocal.slice(0, 10)
     if (file?.source === 'cofbizkaia.eus' && file.fecha && file.fecha < fecha && fechaValida(file.fecha)
-      && frescuraGuardia(file.ts, ahora).fiable && file.guardias?.some(row => Array.isArray(row) && turnoBizkaiaDelDia(str(row[6]), ahoraLocal))) {
+      && frescuraGuardia(file.ts, ahora).fiable && file.guardias?.some(row => Array.isArray(row) && intervaloDelDia(str(row[6]), ahoraLocal))) {
       fecha = file.fecha // el turno de la noche sigue en el calendario de ayer
     }
     const url = new URL(known)

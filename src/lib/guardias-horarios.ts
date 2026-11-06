@@ -6,15 +6,20 @@ const desconocida = { conocida: false, abierta: false, todoElDia: false }
 type Tramo = [string, string]
 
 function normaliza(s: string) { return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') }
+const modalidadCondicional = /puede ser localizada|localizada fuera (?:del|de) horario (?:de )?apertura/
 
-export function tipoAtencionGuardia(g: Guardia): 'guardia' | 'apertura' | 'localizada' | 'sin_confirmar' {
+export function tipoAtencionGuardia(g: Guardia): 'guardia' | 'apertura' | 'localizada' | 'observada' | 'sin_confirmar' {
   const texto = normaliza(g.horario + ' ' + g.horarioDesc)
+  if (!g.territorio) return 'sin_confirmar'
+  if (g.territorio === 'caceres' && texto.includes('en servicio de urgencias en el momento de la consulta')) return 'observada'
+  if (['tenerife','valencia'].includes(g.territorio) && !g.horarioDesc.startsWith('Calendario de guardias del colegio')) return 'apertura'
+  if (g.territorio === 'caceres') return 'apertura'
+  if (modalidadCondicional.test(texto)) return 'guardia'
   if (/localizad[ao]|no presencial|puerta cerrada|previo aviso|previa llamada/.test(texto)) return 'localizada'
   if (g.territorio === 'laspalmas' && !g.horarioDesc && !iso.test(g.horario)) return 'sin_confirmar'
   if (g.territorio === 'huesca' && !/farmacia de guardia/.test(texto)) return 'sin_confirmar'
   if (g.territorio === 'palencia' && !g.fechaTurno) return 'sin_confirmar'
   if (/rotacion|por confirmar|confirmar horario/.test(texto)) return 'sin_confirmar'
-  if (['tenerife', 'valencia', 'caceres'].includes(g.territorio || '')) return 'apertura'
   return 'guardia'
 }
 
@@ -47,6 +52,26 @@ function horasSimples(texto: string, fecha: string): Tramo[] {
   for (const parte of texto.split(/\s*(?:,|;|\sy\s)\s*/i)) {
     const m = /^(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})$/.exec(parte)
     const t = m && tramo(fecha, m[1], m[2])
+    if (!t) return []
+    tramos.push(t)
+  }
+  return tramos
+}
+
+// Algunos calendarios indican los extremos con palabras («de hoy a mañana»).
+// Sólo se usa un tramo si su texto entero identifica las dos horas.
+function horasDelCalendario(texto: string, fecha: string): Tramo[] {
+  const tramos: Tramo[] = []
+  for (const fragmento of normaliza(texto).split(' / ')) {
+    let horario = fragmento.replace(/^guardias (?:de dia|de noche|todo el dia) · /, '')
+    horario = horario.replace(/^(?:dia|diurno|noche|nocturno) \(([^()]+)\)$/, '$1')
+      .replace(/^desde las /, 'de ').replace(' hasta las ', ' a ')
+    const m = /^de (\d{1,2}[:.,]\d{2})(?: h(?:oras)?)?(?: de (?:hoy|la manana|la noche))? a (\d{1,2}[:.,]\d{2})(?: h(?:oras)?)?(?: (de manana|del dia siguiente|de la noche|de la manana))?$/.exec(horario)
+    if (!m) return []
+    const a = m[1].replace(/[.,]/, ':'), b = m[2].replace(/[.,]/, ':')
+    // «De noche, 01:00 a 09:00» por sí solo no dice de cuál madrugada se trata.
+    if (/^(?:guardias de noche|noche|nocturno)/.test(fragmento) && Number(a.split(':')[0]) < 9) return []
+    const t = tramo(fecha, a, b, m[3] === 'de manana' || m[3] === 'del dia siguiente')
     if (!t) return []
     tramos.push(t)
   }
@@ -105,17 +130,37 @@ function tramosTenerife(g: Guardia, ahora: Date, zona: string) {
 
 const iso = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s*-\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$/
 
-// La consulta diaria de Bizkaia incluye el relevo de anoche si seguía de
-// guardia al descargarla. Cada turno tiene inicio y fin en hora local.
-export function turnoBizkaiaDelDia(horario: string, ahoraLocal: string): boolean {
+// Un turno que empezó ayer sólo pertenece a la lista mientras sigue vigente.
+export function intervaloDelDia(horario: string, ahoraLocal: string): boolean {
   const m = iso.exec(horario)
   if (!m || m[2] <= m[1]) return false
   const hoy = ahoraLocal.slice(0, 10)
   return m[1].slice(0, 10) === hoy || (m[1] < ahoraLocal && ahoraLocal < m[2])
 }
 
+export function horarioParaListado(g: Guardia, fechaConsulta: string, ahora: Date, zona: string, ahoraLocal: string): string | null {
+  const horario = g.horario
+  if (g.territorio === 'bizkaia' || /^\d{4}-\d\d-\d\d /.test(horario)) {
+    const intervalos = horario.split(' / ').filter(h => intervaloDelDia(h, ahoraLocal))
+    return intervalos.length ? intervalos.join(' / ') : null
+  }
+  const hoy = ahoraLocal.slice(0, 10)
+  if (fechaConsulta === hoy) return horario
+  const sigueVigente = datosHorario(g, ahora, zona).tramos.some(([inicio, fin]) => inicio <= ahoraLocal && ahoraLocal < fin)
+  return sigueVigente ? horario : null
+}
+
 function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; tramos: Tramo[] } {
   const h = g.horario.trim()
+  if (g.territorio === 'asturias' && g.fechaTurno && !h && /^lunes a sabado de 9,30 de la manana a 10 de la noche\. domingos y festivos: de 10 de la manana a 10 de la noche\.?$/.test(normaliza(g.horarioDesc))) {
+    const local = fechaHoraLocal(ahora,zona)
+    // De 09:30 a 10:00 depende del festivo municipal. A partir de las 10:00
+    // ambas reglas coinciden. El domingo sí queda identificado por la fecha.
+    const domingo = new Date(g.fechaTurno+'T12:00Z').getUTCDay()===0
+    const dependeDelFestivo = !domingo && local >= g.fechaTurno+' 09:30' && local < g.fechaTurno+' 10:00'
+    const comun = tramo(g.fechaTurno,'10:00','22:00')
+    return { texto:'', tramos: comun && !dependeDelFestivo ? [comun] : [] }
+  }
   if (g.territorio === 'tenerife' && /(?:lunes|martes|miércoles|jueves|viernes|sábado|domingo):/i.test(h)) return tramosTenerife(g, ahora, zona)
   if (iso.test(h.split(' / ')[0])) {
     const tramos: Tramo[] = [], etiquetas: string[] = []
@@ -145,7 +190,8 @@ function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; t
     if (hora(a) === hora(b)) return { texto: h + ' · Fin del turno por confirmar', tramos: [] }
   }
   const simple = h.replace(/ \(incluye horario de urgencias\)$/i, '')
-  return { texto: h, tramos: g.fechaTurno ? horasSimples(simple, g.fechaTurno) : [] }
+  const simples = g.fechaTurno ? horasSimples(simple, g.fechaTurno) : []
+  return { texto: h, tramos: !simples.length && g.fechaTurno ? horasDelCalendario(simple, g.fechaTurno) : simples }
 }
 
 export function textoHorarioGuardia(g: Guardia, _actualizado?: string, ahora = new Date(), zona = 'Europe/Madrid'): string {
@@ -160,7 +206,8 @@ export function textoHorarioGuardia(g: Guardia, _actualizado?: string, ahora = n
 
 export function estadoHorarioGuardia(g: Guardia, ahora: Date, zona: string) {
   const tipo = tipoAtencionGuardia(g)
-  if (tipo === 'localizada' || tipo === 'sin_confirmar') return desconocida
+  if (tipo !== 'guardia' && tipo !== 'apertura') return desconocida
+  if (modalidadCondicional.test(normaliza(g.horario + ' ' + g.horarioDesc))) return desconocida
   const { tramos } = datosHorario(g, ahora, zona)
   if (!tramos.length) return desconocida
   const unidos: Tramo[] = []

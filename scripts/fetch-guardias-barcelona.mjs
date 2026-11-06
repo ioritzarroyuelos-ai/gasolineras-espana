@@ -166,10 +166,9 @@ async function main() {
       municipio: adr.ciudad,
       cp: adr.cp,
       telefono: clean(f.Telefon, 30).replace(/\s+/g, ''),
-      horario: clean(f.Horari),
-      // El campo Serveis trae extras (MHDA, ortopedia, etc.) — info util
-      // de descripcion de la farmacia.
-      horarioDesc: clean(f.Serveis),
+      // Farmaguia reúne en Horari las horas ordinarias y las de urgencia.
+      // Su propia ficha solo asocia expresamente «24H» con Guardia=1.
+      horario: clean(f.Horari).toUpperCase() === '24H' ? 'Guardia de 24 horas' : '',
     })
   }
 
@@ -193,7 +192,7 @@ async function main() {
       f.telefono,
       f.cp,
       f.horario,
-      f.horarioDesc,
+      '',
     ])
   }
 
@@ -202,6 +201,7 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'farmaguia.net',
     territorio: 'barcelona',
+    guardiasVerificadas: true,
     fecha,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

@@ -58,7 +58,7 @@ async function main() {
   for (const z of zonas) {
     try {
       const html = await fetchHtmlGuardias(PROVINCIA_ID, z.id, fecha, cookies, referer, USER_AGENT)
-      const items = extraerFarmaciasDelHtml(html)
+      const items = extraerFarmaciasDelHtml(html, fecha)
       for (const it of items) {
         if (!farmaciasMap.has(it.id)) farmaciasMap.set(it.id, { id: it.id, tipos: new Set() })
         if (it.tipo) farmaciasMap.get(it.id).tipos.add(it.tipo)
@@ -152,6 +152,9 @@ async function main() {
   const out = {
     ts: new Date().toISOString(),
     source: 'farmaciasguardia.farmaceuticos.com',
+    sourceUrl: referer,
+    fecha: fecha.split('/').reverse().map(n => n.padStart(2, '0')).join('-'),
+    guardiasVerificadas: true,
     territorio: 'burgos',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

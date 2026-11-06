@@ -18,8 +18,12 @@ const normaliza = (s: string) => slugifyMunicipio(s).replace(/-/g, ' ')
 // Formas documentadas del mismo municipio. La comparación siempre va dentro de su provincia.
 export function slugsMunicipioGuardia(m: Pick<MunicipioLista, 'ine' | 'nombre'>): string[] {
   const slugs = new Set([slugifyMunicipio(m.nombre)])
-  const conArticulo = m.nombre.match(/^(.+),\s*(las?|los?|el|as?|os?|els|les|es|sa|ses|l['’])$/i)
-  if (conArticulo) slugs.add(slugifyMunicipio(conArticulo[2] + ' ' + conArticulo[1]))
+  // El INE puede dar ambos nombres oficiales. Algunos colegios usan sólo uno.
+  for (const nombre of m.nombre.split('/')) {
+    slugs.add(slugifyMunicipio(nombre))
+    const conArticulo = nombre.trim().match(/^(.+),\s*(las?|los?|el|as?|os?|els|les|es|sa|ses|l['’])$/i)
+    if (conArticulo) slugs.add(slugifyMunicipio(conArticulo[2] + ' ' + conArticulo[1]))
+  }
   if (m.ine === '28127') slugs.add('las-rozas') // El Colegio de Madrid publica «LAS ROZAS».
   return [...slugs]
 }
@@ -71,7 +75,7 @@ export function serviciosLocalidad(m: Localidad, now = Date.now()): ServicioLoca
   const dia = p?.dias.find(d => d.fecha.slice(0, 10) === hoy)
   return [
     { titulo: 'Gasolineras', url: m.gas.url, detalle: m.gas.count ? (fresco(m.gas.ts, 24) && m.gas.min95 ? 'Gasolina 95 desde ' + m.gas.min95.toFixed(3).replace('.', ',') + ' €/L · ' : '') + m.gas.count + ' estaciones' + (fresco(m.gas.ts, 24) ? '' : ' · precios pendientes de actualizar') : 'Consultar la provincia' },
-    { titulo: 'Farmacias de guardia', url: m.farmacias.url, detalle: m.farmacias.count && frescuraGuardia(m.farmacias.ts, new Date(now), m.farmacias.zona).fiable ? m.farmacias.count + ' turnos publicados · comprueba el horario' : 'Consultar turnos y fuentes oficiales' },
+    { titulo: 'Farmacias de guardia', url: m.farmacias.url, detalle: m.farmacias.count && frescuraGuardia(m.farmacias.ts, new Date(now), m.farmacias.zona).esHoy ? 'Consultar las farmacias y sus horarios' : 'Consultar turnos y fuentes oficiales' },
     { titulo: 'El tiempo', url: m.tiempo.url, detalle: p && dia && frescuraTiempo(p.elaborado, now).fiable ? `${dia.tmin ?? '—'}° / ${dia.tmax ?? '—'}° · ${dia.cielo || p.fuente}` : 'Consultar la predicción del municipio' },
     { titulo: 'ITV', url: m.itv.url, detalle: m.itv.count ? m.itv.count + ' estaciones' + (fresco(m.itv.ts, 40 * 24) ? '' : ' · directorio pendiente de actualizar') : 'Consultar estaciones en la provincia' },
   ]

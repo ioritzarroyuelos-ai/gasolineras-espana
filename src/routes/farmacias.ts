@@ -17,7 +17,8 @@ import {
   GUARDIAS_TERRITORIO_BY_PROVINCIA, type GuardiasFile,
 } from '../lib/guardias'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
-import { slugsMunicipioGuardia, type LocalidadIndex } from '../lib/localidades'
+import type { LocalidadIndex } from '../lib/localidades'
+import { municipiosFarmacia, slugsFarmacia, municipioFusionado } from '../lib/guardias-municipios-ine'
 import { slugifyMunicipio } from '../lib/municipios'
 import { paginaBusquedaGuardia, paginaSinTurno, type LugarGuardia } from '../html/guardia-consulta'
 
@@ -114,8 +115,18 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
         if (!seen.has(u)) { seen.add(u); out.push({ n: prov.name, p: prov.name, u }) }
       }
     }
-    if (![...cache.values()].some(Boolean)) return { lugares: [], completo: false }
-    const completos = [...cache.values()].every(Boolean)
+    const indice = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS)
+    if (Array.isArray(indice)) {
+      const provincias = new Map(PROVINCIAS.map(p => [p.id, p]))
+      for (const m of municipiosFarmacia(indice)) {
+        const prov = provincias.get(m.ine.slice(0, 2))
+        if (!prov) continue
+        const u = '/farmacias/' + prov.slug + '/' + slugsFarmacia(m)[0]
+        if (!seen.has(u)) { seen.add(u); out.push({ n: m.nombre, p: prov.name, u }) }
+      }
+    }
+    if (!out.length) return { lugares: [], completo: false }
+    const completos = Array.isArray(indice) && [...cache.values()].every(Boolean)
     out.push({ n: 'Lugo', p: 'Lugo', u: '/farmacias/lugo' })
     out.sort((a, b) => a.n.localeCompare(b.n, 'es'))
     if (completos) muniGuardiaIndex = { ts: Date.now(), data: out }
@@ -136,10 +147,10 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const localidades = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS)
     const exactas: LugarGuardia[] = [], parciales: LugarGuardia[] = []
     const provincias = new Map(PROVINCIAS.map(p => [p.id, p]))
-    for (const m of localidades ?? []) {
+    for (const m of localidades ? municipiosFarmacia(localidades) : []) {
       const prov = provincias.get(m.ine.slice(0, 2))
       if (!prov) continue
-      const nombres = slugsMunicipioGuardia(m)
+      const nombres = slugsFarmacia(m)
       const exacta = nombres.includes(clave)
       if (!exacta && (parciales.length >= 20 || !nombres.some(n => n.includes(clave)))) continue
       const lista = exacta ? exactas : parciales
@@ -157,6 +168,8 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
       }
     }
     if (exactas.length === 1 && localidades) return c.redirect(exactas[0].ruta, 302)
+    const fusion = municipioFusionado('36', clave)
+    if (!exactas.length && fusion && localidades) return c.redirect('/farmacias/pontevedra/' + fusion, 302)
     const provincia = PROVINCIAS.find(p => p.slug === clave)
     if (!exactas.length && provincia) return c.redirect('/farmacias/' + provincia.slug, 302)
     const nonce = genNonce()
@@ -213,12 +226,17 @@ export function registerFarmaciasRoutes(app: Hono<{ Bindings: Env }>): void {
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/farmacias/' + provSlug + '/' + munSlug
     if (!munEntry || !raw) {
+      const fusion = municipioFusionado(prov.id, munSlug)
+      if (fusion) {
+        const turno = turnoPedido(c)
+        return c.redirect('/farmacias/' + provSlug + '/' + fusion + (turno === 'todas' ? '' : '?turno=' + turno), 302)
+      }
       const indice = await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades/' + prov.id + '.json', c.env.ASSETS)
       if (!indice) return c.html(paginaSinTurno(nonce, canonical, prov, undefined, raw, true), 503, sinIndice(nonce))
-      const conocidos = indice.filter(m => slugsMunicipioGuardia(m).includes(munSlug))
+      const conocidos = municipiosFarmacia(indice, prov.id).filter(m => slugsFarmacia(m).includes(munSlug))
       if (conocidos.length !== 1) return c.notFound()
       const lugar = conocidos[0]
-      const slugs = slugsMunicipioGuardia(lugar)
+      const slugs = slugsFarmacia(lugar)
       const publicado = municipios.find(m => slugs.includes(m.slug))
       if (publicado) {
         const turno = turnoPedido(c)

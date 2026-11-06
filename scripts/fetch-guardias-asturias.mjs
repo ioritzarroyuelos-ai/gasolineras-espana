@@ -6,6 +6,6 @@ const URL = 'https://www.farmasturias.org/GESCOF/cms/Guardias/FarmaciaBuscar.asp
 async function main() {
   const fecha = fechaMadrid()
   const html = await descargarGuardiaHTML('asturias', URL)
-  guardarGuardias('asturias', 'farmasturias.org', parseFuente(html, fecha), { fecha, min: 20, max: 250, sourceUrl: URL })
+  guardarGuardias('asturias', 'farmasturias.org', parseFuente(html, fecha), { fecha, min: 20, max: 250, sourceUrl: URL, guardiasVerificadas: true })
 }
 main().catch(e => { console.error('ERROR:', e.message); process.exitCode = 1 })

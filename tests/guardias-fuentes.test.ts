@@ -33,7 +33,7 @@ describe('fuentes oficiales de guardias', () => {
   })
   it('CLM no inventa códigos postales y conserva la provincia y las fechas', () => {
     const rows = parseCLM(clm, fecha)
-    const farmacias = parseGuardias({ territorio: 'clm', guardias: rows })
+    const farmacias = parseGuardias({ territorio: 'clm', guardiasVerificadas: true, fecha, guardias: rows }, new Date(fecha + 'T07:30:00Z'))
     expect(guardiasForProvincia(farmacias, '13', 'clm')).toHaveLength(1)
     expect(guardiasForProvincia(farmacias, '45', 'clm')).toHaveLength(1)
     expect(guardiasForProvincia(farmacias, '02', 'clm')).toHaveLength(0)

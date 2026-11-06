@@ -55,7 +55,7 @@ describe('rutas /farmacias/* tras extraer a src/routes/farmacias.ts (B1)', () =>
         const guardias = file === 'guardias-clm.json'
           ? [[0, 0, 'Calle 1', 'Toledo', '', '', '', '', '45'], [0, 0, 'Calle 2', 'Cuenca', '', '', '', '', '16']]
           : file === 'guardias-madrid.json' ? [[0, 0, 'Calle 3', 'Madrid', '', '', '', '']] : null
-        return guardias ? Response.json({ territorio, guardias, count: guardias.length }) : new Response(null, { status: 404 })
+        return guardias ? Response.json({ territorio, fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date()), guardiasVerificadas: true, guardias, count: guardias.length }) : new Response(null, { status: 404 })
       } finally { activas-- }
     } }
     const res = await app.request('/api/guardias/municipios', {}, { ASSETS })
@@ -63,8 +63,8 @@ describe('rutas /farmacias/* tras extraer a src/routes/farmacias.ts (B1)', () =>
     expect(res.status).toBe(200)
     expect(maximas).toBeGreaterThan(1)
     expect(maximas).toBeLessThanOrEqual(6)
-    expect(llamadas).toHaveLength(47)
-    expect(new Set(llamadas).size).toBe(47)
+    expect(llamadas).toHaveLength(48) // 47 listados colegiales y el catálogo nacional
+    expect(new Set(llamadas).size).toBe(48)
     expect(data.map(m => m.u)).toEqual(['/farmacias/cuenca/cuenca', '/farmacias/lugo', '/farmacias/madrid/madrid', '/farmacias/toledo/toledo'])
   })
 

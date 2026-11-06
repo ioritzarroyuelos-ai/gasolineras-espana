@@ -66,7 +66,7 @@ describe('frescuraGuardia', () => {
 describe('turnos comprobables y coordenadas oficiales', () => {
   const date = '2026-11-03T08:00:00Z'
   const ahora = new Date('2026-11-03T23:30:00Z')
-  const turno = parseGuardias({ guardias: [[40.4,-3.7,'Farmacia A','Madrid','','','2026-11-03 09:30-2026-11-04 09:30','']] })[0]
+  const turno = parseGuardias({ territorio: 'madrid', ts: date, guardias: [[40.4,-3.7,'Farmacia A','Madrid','','','2026-11-03 09:30-2026-11-04 09:30','']] }, ahora)[0]
   it('reconoce el turno nocturno de 24 h y deja de marcarlo al finalizar', () => {
     expect(estadoGuardia(turno, date, ahora)).toEqual({ conocida: true, abierta: true, todoElDia: true })
     expect(estadoGuardia(turno, date, new Date('2026-11-04T08:30:00Z')).abierta).toBe(false)

@@ -62,7 +62,7 @@ async function main() {
   for (const z of zonas) {
     try {
       const html = await fetchHtmlGuardias(PROVINCIA_ID, z.id, fecha, cookies, referer, USER_AGENT)
-      const items = extraerFarmaciasDelHtml(html)
+      const items = extraerFarmaciasDelHtml(html, fecha)
       for (const it of items) {
         if (!farmaciasMap.has(it.id)) farmaciasMap.set(it.id, { id: it.id, tipos: new Set() })
         if (it.tipo) farmaciasMap.get(it.id).tipos.add(it.tipo)
@@ -85,6 +85,10 @@ async function main() {
   for (const f of farmaciasMap.values()) {
     try {
       const d = await fetchDatosFarmacia(PROVINCIA_ID, f.id, cookies, referer, USER_AGENT)
+      // Algunas zonas remiten a una farmacia de Huesca o solo al nombre
+      // de una localidad navarra. No son oficinas situadas en Zaragoza.
+      if (d && ((/^\d{5}$/.test(d.cp) && !d.cp.startsWith(PROVINCIA_ID))
+        || (/\(NAVARRA\)/i.test(d.municipio) && d.direccion === d.municipio))) continue
       if (d && d.direccion) {
         d.id = f.id
         d.tipoGuardia = Array.from(f.tipos).join(' / ')
@@ -168,6 +172,9 @@ async function main() {
   const out = {
     ts: new Date().toISOString(),
     source: 'farmaciasguardia.farmaceuticos.com',
+    sourceUrl: referer,
+    fecha: fecha.split('/').reverse().map(n => n.padStart(2, '0')).join('-'),
+    guardiasVerificadas: true,
     territorio: 'zaragoza',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

@@ -31,7 +31,8 @@
 // Umbral defensivo:
 //   - Si <20 farmacias unicas tras dedupe → abort.
 
-import { guardarGuardias } from './lib/guardias-fetch.mjs'
+import { descargar, fechaMadrid, guardarGuardias } from './lib/guardias-fetch.mjs'
+import { urgenciasMICOF } from './lib/guardias-micof.mjs'
 
 const PAGE_URL = 'https://www.micof.es/ver/124/'
 const USER_AGENT = 'cercaya-guardias/1.20 (+https://webapp-3ft.pages.dev)'
@@ -161,6 +162,7 @@ function farmaciaId(urlPath) {
 }
 
 async function main() {
+  const fecha = fechaMadrid()
   console.log('Obteniendo cookie + palabra captcha del portal MICOF...')
   const { cookie, palabra } = await fetchPageWithCookie()
   console.log(`  sesión pública: ${cookie ? 'OK' : 'sin cookie'}`)
@@ -184,6 +186,7 @@ async function main() {
         const coord = parseCoord(row[1], row[2])
         if (!coord) continue
         dedupe.set(id, {
+          id,
           coord,
           direccion: clean(row[3], 120),
           municipio: titleCase(clean(row[4], 60)),
@@ -217,8 +220,18 @@ async function main() {
   }
 
   const guardias = []
+  let detallesSinConsultar = 0
   for (const f of dedupe.values()) {
     const dirFinal = `${f.direccion} · ${f.municipio}`
+    let urgenciaDelDia = false
+    if (/urgencia/i.test(f.horario + ' ' + f.estado)) {
+      try {
+        const url = new URL('/farmacia/ver/' + f.id + '/?guardia=1', PAGE_URL)
+        urgenciaDelDia = urgenciasMICOF(await (await descargar(url)).text(), fecha)
+      } catch {
+        detallesSinConsultar++
+      }
+    }
     guardias.push([
       f.coord[0],
       f.coord[1],
@@ -226,15 +239,18 @@ async function main() {
       f.municipio,
       f.telefono,
       f.cp,
-      f.horario,
-      f.estado,
+      urgenciaDelDia ? '' : f.horario,
+      urgenciaDelDia ? 'Calendario de guardias del colegio · Servicio de urgencias en esta fecha. Llama para confirmar las horas de guardia.' : f.estado,
     ])
   }
 
   guardarGuardias('valencia', 'micof.es', guardias, {
-    min: 20, max: 2000, sourceUrl: PAGE_URL,
+    fecha, min: 20, max: 2000, sourceUrl: PAGE_URL, guardiasVerificadas: true,
     cobertura: 'Farmacias de urgencia y abiertas publicadas por el MICOF al consultar las localidades cabecera. Confirma por teléfono antes de acudir.',
-    incidencias: totalErr ? [`Cobertura parcial: ${totalErr} de ${LOCALIDADES.length} consultas de localidades no se pudieron completar.`] : [],
+    incidencias: [
+      ...(totalErr ? [`Cobertura parcial: ${totalErr} de ${LOCALIDADES.length} consultas de localidades no se pudieron completar.`] : []),
+      ...(detallesSinConsultar ? [`El calendario de ${detallesSinConsultar} farmacias no se pudo consultar. Solo se indica su apertura.`] : []),
+    ],
   })
 }
 

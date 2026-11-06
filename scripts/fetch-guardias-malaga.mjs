@@ -57,12 +57,14 @@ async function main() {
   }
 
   // Recolectar todos los IDs unicos de farmacia de todas las zonas.
+  const capital = new Set()
   const farmaciasMap = new Map() // id -> { id, tipos: Set }
   for (const z of zonas) {
     try {
       const html = await fetchHtmlGuardias(PROVINCIA_ID, z.id, fecha, cookies, referer, USER_AGENT)
-      const items = extraerFarmaciasDelHtml(html)
+      const items = extraerFarmaciasDelHtml(html, fecha)
       for (const it of items) {
+        if (/^m[aá]laga capital$/i.test(z.nombre)) capital.add(it.id)
         if (!farmaciasMap.has(it.id)) farmaciasMap.set(it.id, { id: it.id, tipos: new Set() })
         if (it.tipo) farmaciasMap.get(it.id).tipos.add(it.tipo)
       }
@@ -101,7 +103,7 @@ async function main() {
   // sector por "Málaga" como municipio real y guardamos el sector en zona.
   for (const d of detalles) {
     const cpNum = parseInt(d.cp, 10)
-    if (cpNum >= 29001 && cpNum <= 29018 && /^SECTOR\b/i.test(d.municipio)) {
+    if (capital.has(d.id) || (cpNum >= 29001 && cpNum <= 29018 && /^SECTOR\b/i.test(d.municipio))) {
       d.zona = d.municipio
       d.municipio = 'Málaga'
     } else if (!d.municipio || d.municipio === '') {
@@ -171,6 +173,9 @@ async function main() {
   const out = {
     ts: new Date().toISOString(),
     source: 'farmaciasguardia.farmaceuticos.com',
+    sourceUrl: referer,
+    fecha: fecha.split('/').reverse().map(n => n.padStart(2, '0')).join('-'),
+    guardiasVerificadas: true,
     territorio: 'malaga',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

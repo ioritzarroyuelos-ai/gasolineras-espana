@@ -20,6 +20,8 @@
 // Umbral defensivo:
 //   - Si <10 farmacias unicas → abort.
 
+import { turnosCadiz } from './lib/guardias-cadiz.mjs'
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -85,33 +87,6 @@ function parseCoord(raw) {
   return [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5]
 }
 
-// "09:00:00" → "9:00"
-function fmtHora(s) {
-  const m = String(s || '').match(/(\d{1,2}):(\d{2})/)
-  if (!m) return ''
-  return `${parseInt(m[1], 10)}:${m[2]}`
-}
-
-// Convierte la lista de horarios en string compacto "9:00-9:00 / 22:00-9:00".
-function buildHorario(horarios) {
-  if (!Array.isArray(horarios) || horarios.length === 0) return ''
-  const slots = horarios
-    .map(h => {
-      const ini = fmtHora(h.hora_apertura)
-      const fin = fmtHora(h.hora_cierre)
-      if (!ini || !fin) return ''
-      return `${ini}-${fin}`
-    })
-    .filter(Boolean)
-  return Array.from(new Set(slots)).sort().join(' / ')
-}
-
-function buildHorarioDesc(horarios) {
-  if (!Array.isArray(horarios) || horarios.length === 0) return ''
-  const tipos = horarios.map(h => clean(h.tipo, 40)).filter(Boolean)
-  return Array.from(new Set(tipos)).join(' / ').slice(0, 80)
-}
-
 async function main() {
   console.log('Descargando guardias Cadiz (GET vcomm/v1/farmacias/guardia)...')
   const data = await fetchGuardias()
@@ -128,22 +103,21 @@ async function main() {
   // Dedupe por soe (id). Cada registro suele tener 1 contacto profesional.
   const dedupe = new Map()
   for (const f of lista) {
-    if (!f.soe) continue
+    if (!f.soe || f.fecha !== fechaMadrid()) continue
     const cp = (f.contactos_profesionales || [])[0]
     if (!cp) continue
     const coord = parseCoord(cp.coordenadas)
-    if (!coord) continue
+    if (!cp.direccion || !cp.municipio) continue
     const key = String(f.soe)
     if (dedupe.has(key)) continue
     dedupe.set(key, {
-      coord,
+      coord: coord || [0,0],
       nombre: titleCase(clean(f.nombre, 80)),
       direccion: clean(cp.direccion, 120),
       telefono: clean(cp.telefono, 30).replace(/\s+/g, ''),
       municipio: titleCase(clean(cp.municipio, 60)),
       cp: clean(cp.codigo_postal, 5),
-      horario: buildHorario(f.horarios),
-      horarioDesc: buildHorarioDesc(f.horarios),
+      turnos: turnosCadiz(f.horarios, f.fecha),
     })
   }
 
@@ -156,21 +130,17 @@ async function main() {
   const guardias = []
   for (const f of dedupe.values()) {
     const dirFinal = `${f.nombre} · ${f.direccion}`
-    guardias.push([
-      f.coord[0],
-      f.coord[1],
-      dirFinal.slice(0, 140),
-      f.municipio,
-      f.telefono,
-      f.cp,
-      f.horario,
-      f.horarioDesc,
-    ])
+    for (const { horario, nota } of f.turnos) {
+      guardias.push([f.coord[0],f.coord[1],dirFinal.slice(0,140),f.municipio,f.telefono,f.cp,horario,nota])
+    }
   }
 
   const out = {
     ts: new Date().toISOString(),
     source: 'cofcadiz.es',
+    sourceUrl: API_URL,
+    fecha: fechaMadrid(),
+    guardiasVerificadas: true,
     territorio: 'cadiz',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

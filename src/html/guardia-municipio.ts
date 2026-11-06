@@ -1,6 +1,7 @@
 // Listados del colegio y fichas de farmacias. La búsqueda por zona y por
 // turno funciona sin JavaScript; sólo la ordenación por GPS lo necesita.
 
+import { corrigeZonaCervera } from '../../scripts/lib/guardias-rioja.mjs'
 import { frescuraGuardia, estadoGuardia, textoHorarioGuardia, tipoAtencionGuardia, zonaGuardia, fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
@@ -38,7 +39,7 @@ function fuenteHtml(provinciaSlug: string, metadatos?: GuardiasFile, ahora?: Dat
 export function avisosDelMunicipio(provincia: string, slug: string, datos?: GuardiasFile | null, ahora = new Date()) {
   const vigencia = frescuraGuardia(datos?.ts, ahora, zonaGuardia(provincia))
   if (!datos?.guardiasVerificadas || !vigencia.esHoy || datos.fecha !== vigencia.fecha) return ''
-  const avisos = datos.avisosMunicipales?.[slug]
+  const avisos = (provincia === 'la-rioja' ? corrigeZonaCervera(datos) : datos).avisosMunicipales?.[slug]
   if (!Array.isArray(avisos)) return ''
   return avisos.map(aviso => '<p class="aviso">' + esc(aviso) + '</p>').join('')
 }

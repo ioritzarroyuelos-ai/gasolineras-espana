@@ -1,5 +1,5 @@
 import { escapeHtml as esc } from './html'
-import { avisosDelMunicipio, envoltorioIndice } from './guardia-municipio'
+import { avisosDelMunicipio, avisoZonaAlustanteCheca, envoltorioIndice } from './guardia-municipio'
 import { slugifyMunicipio } from '../lib/municipios'
 import type { ProvinciaEntry } from '../lib/provincias'
 import { fuenteGuardia, type GuardiasFile } from '../lib/guardias'
@@ -15,6 +15,7 @@ export function paginaSinTurno(nonce: string, canonical: string, provincia: Prov
   const mensaje = temporal ? 'Ahora no podemos comprobar los turnos de ' : 'Hoy no tenemos un turno confirmado en '
   const avisos = municipio ? avisosDelMunicipio(provincia.slug, slugifyMunicipio(municipio), datos) : ''
   const cuerpo = '<h1>' + esc(titulo) + '</h1>' + (avisos || '<p>' + mensaje + esc(lugar) + '.</p>')
+    + (municipio ? avisoZonaAlustanteCheca(provincia.slug, slugifyMunicipio(municipio), false) : '')
     + '<p><a class="btn" href="' + esc(enlace) + '">' + accion + '</a></p>'
     + (municipio && provincia.slug !== 'lugo' ? '<p><a href="/farmacias/' + esc(provincia.slug) + '">Ver los turnos de la provincia de ' + esc(provincia.name) + '</a></p>' : '')
     + '<p><a href="/farmacias/">Buscar otro municipio</a></p>'

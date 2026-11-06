@@ -123,6 +123,45 @@ describe('rutas /farmacias/* tras extraer a src/routes/farmacias.ts (B1)', () =>
     expect(vacia.headers.get('X-Robots-Tag')).toContain('noindex')
   })
 
+  it('enlaza el calendario de Alustante-Checa sin adjudicar su guardia a una farmacia fija', async () => {
+    const enlace = 'IdRepositorioDocumento=2'
+    const ASSETS = { fetch: async (req: Request) => {
+      const ruta = new URL(req.url).pathname
+      const ts = new Date().toISOString()
+      const fecha = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date())
+      if (ruta === '/data/localidades/19.json') return Response.json([
+        { ine: '19027', nombre: 'Alustante' }, { ine: '19103', nombre: 'Checa' },
+      ])
+      if (ruta === '/data/guardias-clm.json') return Response.json({ territorio: 'clm', guardiasVerificadas: true, ts, fecha,
+        guardias: [[0, 0, 'Farmacia local', 'Checa', '', '', '', '', '19']] })
+      if (ruta === '/data/guardias-teruel.json') return Response.json({ territorio: 'teruel', ts, fecha, guardias: [
+        [0, 0, 'Calle Mayor', 'Bronchales', '978701123', '', 'De guardia 24 horas', ''],
+        [0, 0, 'Calle San Roque', 'Calamocha', '', '', 'De guardia 24 horas', ''],
+      ] })
+      return new Response(null, { status: 404 })
+    } }
+    const pagina = async (ruta: string) => (await app.request('/farmacias/' + ruta, {}, { ASSETS })).text()
+    const origen = await pagina('guadalajara/alustante')
+    expect(origen).toContain(enlace)
+    expect(origen).not.toMatch(/Bronchales|class="g-card"/)
+    expect(await pagina('guadalajara/checa')).not.toContain(enlace) // El colegio sí da una farmacia local.
+    const destino = await pagina('teruel/bronchales')
+    expect(destino).toContain(enlace)
+    expect(destino).toContain('confirma por teléfono el número del portal')
+    expect(destino).toContain('href="tel:+34978701123"')
+    expect(destino).not.toContain('<strong>De guardia ahora</strong>')
+    expect(await pagina('teruel/calamocha')).not.toContain(enlace)
+  })
+
+  it('limita las condiciones de atención a los meses que cubre el calendario del colegio', async () => {
+    const { avisoZonaAlustanteCheca } = await import('../src/html/guardia-municipio')
+    const aviso = (dia: string) => avisoZonaAlustanteCheca('guadalajara', 'checa', false, new Date(dia))
+    expect(aviso('2026-11-06T18:00:00Z')).toContain('20 minutos')
+    const enero = aviso('2026-12-31T23:01:00Z')
+    expect(enero).not.toContain('20 minutos')
+    expect(enero).toContain('Si indica «guardia localizada»')
+  })
+
   it('incluye Lugo en el directorio y enlaza al buscador de su colegio', async () => {
     const dir = await app.request('/farmacias/guardia', {}, sitio())
     expect(await dir.text()).toContain('href="/farmacias/lugo"')

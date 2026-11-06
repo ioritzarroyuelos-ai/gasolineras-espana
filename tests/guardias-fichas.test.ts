@@ -1,7 +1,7 @@
 import { parse } from 'node-html-parser'
 import { describe, expect, it, vi } from 'vitest'
 import { buildGuardiaMunicipioPage, buildGuardiaProvinciaFlatPage, type GuardiaPageData } from '../src/html/guardia-municipio'
-import type { Guardia } from '../src/lib/guardias'
+import { fuenteGuardia, municipiosConGuardia, parseGuardias, type Guardia } from '../src/lib/guardias'
 
 const ahora = new Date('2026-11-05T11:00:00Z')
 const base = {
@@ -88,5 +88,51 @@ describe('acciones de la ficha de farmacia', () => {
     expect(html.querySelector('h1')?.text).toBe('Horarios de farmacias en Alcalá de Henares')
     expect(html.querySelector('title')?.text).toContain('Horarios de farmacias')
     expect(html.querySelector('.g-tipo')?.text).toContain('Horario de apertura · guardia sin confirmar')
+  })
+})
+
+describe('guardia oficial de Durango al cambiar el día', () => {
+  const ayer = [0, 0, 'Campillo · Avda. Montevideo, 24', 'Durango', '946811809', '', '2026-11-05 09:00-2026-11-06 09:00', '']
+  const hoy = [0, 0, 'Navarro Aranda · Artecalle, 6', 'Durango', '946810223', '', '2026-11-06 09:00-2026-11-07 09:00', '']
+  const fichero = { territorio: 'bizkaia', source: 'cofbizkaia.eus', fecha: '2026-11-06', ts: '2026-11-06T05:45:00Z', guardias: [hoy, ayer] }
+  function durango(instante: string, turno: GuardiaPageData['turno'] = 'todas') {
+    const visita = new Date(instante)
+    return pagina(parseGuardias(fichero, visita), { provinciaSlug: 'bizkaia', provinciaName: 'Bizkaia', municipioName: 'Durango',
+      municipioSlug: 'durango', actualizado: fichero.ts, metadatos: fichero, ahora: visita, turno })
+  }
+
+  it('descarta el directorio antiguo de todas las listas y enlaza al calendario del colegio para la fecha local', () => {
+    const visita = new Date('2026-11-05T23:30:00Z')
+    for (const source of ['cofbizkaia.net', undefined]) {
+      const antigua = { ...fichero, source, guardias: [[0, 0, 'Farmacia A', 'Durango', '', '', '09:00 - 13:30 y 16:00 - 19:30', '']] }
+      expect(municipiosConGuardia(parseGuardias(antigua, visita))).toEqual([])
+      expect(fuenteGuardia('bizkaia', antigua, visita)).toBe('https://www.cofbizkaia.eus/farmacia_de_guardia/?fecha_guardia=06%2F11%2F2026')
+    }
+    expect(parseGuardias({ ...fichero, fecha: undefined }, visita)).toEqual([])
+    expect(parseGuardias({ ...fichero, fecha: '2026-11-31' }, visita)).toEqual([])
+  })
+
+  it('prioriza al de noche a las 08:59 y conserva el turno válido durante la madrugada anterior a la nueva descarga', () => {
+    const antes = durango('2026-11-06T07:59:59Z')
+    expect(antes.querySelectorAll('.g-dir').map(h => h.text)).toEqual([ayer[2], hoy[2]])
+    expect(antes.querySelector('.g-tipo')?.text).toBe('De guardia ahora')
+    expect(antes.querySelectorAll('.g-tipo')[1].text).not.toContain('De guardia ahora')
+    const madrugada = new Date('2026-11-06T02:00:00Z')
+    const copiaDelJueves = { ...fichero, fecha: '2026-11-05', ts: '2026-11-05T08:00:00Z', guardias: [ayer] }
+    expect(parseGuardias(copiaDelJueves, madrugada).map(g => g.direccion)).toEqual([ayer[2]])
+    expect(fuenteGuardia('bizkaia', copiaDelJueves, madrugada)).toContain('fecha_guardia=05%2F11%2F2026')
+    expect(parseGuardias(copiaDelJueves, new Date('2026-11-06T08:00:00Z'))).toEqual([])
+    expect(fuenteGuardia('bizkaia', copiaDelJueves, new Date('2026-11-06T08:00:00Z'))).toContain('fecha_guardia=06%2F11%2F2026')
+    expect(fuenteGuardia('bizkaia', copiaDelJueves, new Date('2026-11-08T12:00:00Z'))).toContain('fecha_guardia=08%2F11%2F2026')
+  })
+
+  it.each(['todas', 'ahora', '24h'] as const)('retira al saliente a las 09:00 de %s y señala la guardia hasta las 09:00 del día siguiente', turno => {
+    const despues = durango('2026-11-06T08:00:00Z', turno)
+    expect(despues.querySelectorAll('.g-dir').map(h => h.text)).toEqual([hoy[2]])
+    expect(despues.querySelector('.g-tipo strong')?.text).toBe('De guardia ahora')
+    expect(despues.querySelector('.g-hora')?.text).toContain('hasta las 09:00 del 07/11/2026')
+    expect(despues.querySelector('a[href="tel:+34946810223"]')).not.toBeNull()
+    expect(despues.querySelector('a[href="?turno=ahora"]')?.text).toBe('Abierta ahora')
+    expect(despues.querySelector('#g-fuente a')?.getAttribute('href')).toContain('fecha_guardia=06%2F11%2F2026')
   })
 })

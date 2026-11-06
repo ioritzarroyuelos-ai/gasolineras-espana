@@ -28,8 +28,8 @@ function esc(s: unknown): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
 }
 
-function fuenteHtml(provinciaSlug: string, metadatos?: GuardiasFile): string {
-  const url = fuenteGuardia(provinciaSlug, metadatos)
+function fuenteHtml(provinciaSlug: string, metadatos?: GuardiasFile, ahora?: Date): string {
+  const url = fuenteGuardia(provinciaSlug, metadatos, ahora)
   return (url ? '<p class="g-nota"><a href="' + esc(url) + '" target="_blank" rel="noopener">Consultar la fuente oficial y sus últimos avisos</a></p>' : '')
     + (metadatos?.cobertura ? '<p class="g-nota">' + esc(metadatos.cobertura) + '</p>' : '')
     + (metadatos?.incidencias?.length ? '<p class="g-nota">' + metadatos.incidencias.map(esc).join(' · ') + '</p>' : '')
@@ -130,9 +130,12 @@ function guardiaCard(fila: FilaFarmacia, municipio: string, provincia: string, a
   const numeros = telefonos(g.telefono)
   const mapa = mapsHref(g, municipio, provincia)
   const horario = textoHorarioGuardia(g, actualizado, ahora, zona)
+  const tipo = tipoAtencionGuardia(g)
+  const deGuardiaAhora = g.territorio === 'bizkaia' && tipo === 'guardia' && estado.abierta
+  const etiqueta = deGuardiaAhora ? '<strong>De guardia ahora</strong>' : ETIQUETAS_ATENCION[tipo]
+    + (estado.conocida ? ' · <strong>' + (estado.abierta ? 'Abierta ahora' : 'Fuera del horario publicado') + '</strong>' : '')
   return '<article class="g-card"' + (g.coordenadasFiables ? ' data-lat="' + g.lat + '" data-lng="' + g.lng + '"' : '') + '>'
-    + '<p class="g-tipo">' + ETIQUETAS_ATENCION[tipoAtencionGuardia(g)]
-    + (estado.conocida ? ' · <strong>' + (estado.abierta ? 'Abierta ahora' : 'Fuera del horario publicado') + '</strong>' : '') + '</p>'
+    + '<p class="g-tipo">' + etiqueta + '</p>'
     + '<h3 class="g-dir">' + esc(g.direccion || 'Farmacia') + '</h3>'
     + (g.cp ? '<p class="g-meta">' + esc(g.cp + ' ' + (g.municipio || municipio || provincia)) + '</p>' : '')
     + '<p class="g-hora">' + esc(horario) + '</p>'
@@ -146,12 +149,13 @@ function guardiaCard(fila: FilaFarmacia, municipio: string, provincia: string, a
 function listadoTurnos(d: Pick<GuardiaPageData, 'guardias' | 'municipioName' | 'provinciaName' | 'provinciaSlug' | 'turno' | 'actualizado' | 'metadatos' | 'fuente'>, ahora: Date) {
   const zona = zonaGuardia(d.provinciaSlug)
   const frescura = piezasFrescura(frescuraGuardia(d.actualizado, ahora, zona), d.municipioName || d.provinciaName)
-  const fuente = fuenteHtml(d.provinciaSlug, d.metadatos ?? { source: d.fuente })
+  const fuente = fuenteHtml(d.provinciaSlug, d.metadatos ?? { source: d.fuente }, ahora)
   const pie = fuente ? '<section id="g-fuente" aria-label="Fuente y avisos">' + fuente + '</section>' : ''
   const filas = frescura.mostrarCards ? d.guardias.map(farmacia => ({ farmacia, estado: estadoGuardia(farmacia, d.actualizado, ahora, zona) })) : []
   const confirmables = filas.some(f => f.estado.conocida)
   const turno = d.turno ?? 'todas'
   const visibles = filas.filter(f => turno === 'todas' || (turno === 'ahora' ? f.estado.abierta : f.estado.todoElDia))
+  if (d.provinciaSlug === 'bizkaia') visibles.sort((a, b) => Number(b.estado.abierta) - Number(a.estado.abierta))
   if (!frescura.mostrarCards) return { frescura, visibles, html: frescura.banner + pie, script: '' }
 
   const filtros = confirmables ? '<nav class="g-filtros" aria-label="Filtrar turnos">'

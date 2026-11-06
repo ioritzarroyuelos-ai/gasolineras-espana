@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        territorio: [alicante, almeria, asturias, avila, cantabria, ceuta, clm, valencia, tenerife]
+        territorio: [alicante, almeria, asturias, avila, bizkaia, cantabria, ceuta, clm, valencia, tenerife]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

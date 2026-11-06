@@ -18,7 +18,7 @@
 import { slugifyMunicipio } from './municipios'
 import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
 
-import { estadoHorarioGuardia } from './guardias-horarios'
+import { estadoHorarioGuardia, fechaValida, turnoBizkaiaDelDia } from './guardias-horarios'
 export { textoHorarioGuardia, tipoAtencionGuardia } from './guardias-horarios'
 
 export interface Guardia {
@@ -123,11 +123,18 @@ function num(v: unknown): number {
 }
 
 // Convierte los arrays posicionales del snapshot en objetos manejables.
-export function parseGuardias(file: GuardiasFile | null): Guardia[] {
+export function parseGuardias(file: GuardiasFile | null, ahora = new Date()): Guardia[] {
   if (!file || !Array.isArray(file.guardias)) return []
+  // El antiguo directorio de Bizkaia mezclaba horarios de apertura y guardias.
+  // Sólo la tabla fechada del colegio identifica qué farmacias cubren el turno.
+  const bizkaia = file.territorio === 'bizkaia'
+  if (bizkaia && (file.source !== 'cofbizkaia.eus' || !fechaValida(file.fecha || ''))) return []
+  const ahoraLocal = bizkaia ? fechaHoraLocal(ahora, 'Europe/Madrid') : ''
   const out: Guardia[] = []
   for (const row of file.guardias) {
     if (!Array.isArray(row)) continue
+    const horario = str(row[6])
+    if (bizkaia && !turnoBizkaiaDelDia(horario, ahoraLocal)) continue
     const lat = num(row[0]), lng = num(row[1])
     out.push({
       lat, lng,
@@ -135,7 +142,7 @@ export function parseGuardias(file: GuardiasFile | null): Guardia[] {
       municipio:   str(row[3]),
       telefono:    str(row[4]),
       cp:          str(row[5]),
-      horario:     str(row[6]),
+      horario,
       horarioDesc: str(row[7]),
       territorio: file.territorio,
       fechaTurno: file.fecha,
@@ -193,6 +200,7 @@ export function estadoGuardia(g: Guardia, actualizado?: string, ahora = new Date
 const FUENTES_RECUPERADAS: Record<string, string> = {
   lugo: 'https://www.coflugo.org/farmacia-guardia',
   madrid: 'https://www.cofm.es/es/buscador-de-farmacias/',
+  bizkaia: 'https://www.cofbizkaia.eus/farmacia_de_guardia/',
   barcelona: 'https://www.farmaguia.net/',
   tenerife: 'https://www.coftenerife.es/farmacias/',
   palencia: 'https://www.cofpalencia.org/PUBLICO/CALENDARIOS%20DE%20GUARDIA/menu_calendarios_guardia.htm',
@@ -204,8 +212,20 @@ const FUENTES_RECUPERADAS: Record<string, string> = {
   ceuta: 'https://ipsi.ceuta.es:8443/sanidad/farmacia/controlfarmacia?cmd=guardias-nuevo',
   clm: 'https://farmaciasdeguardia.cofcam.es/',
 }
-export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile): string | null {
+export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile, ahora = new Date()): string | null {
   const known = FUENTES_RECUPERADAS[GUARDIAS_TERRITORIO_BY_PROVINCIA[provinciaSlug] || provinciaSlug]
+  if (provinciaSlug === 'bizkaia') {
+    // El colegio puede servir una copia de otro día cuando se abre la portada sin fecha.
+    const ahoraLocal = fechaHoraLocal(ahora)
+    let fecha = ahoraLocal.slice(0, 10)
+    if (file?.source === 'cofbizkaia.eus' && file.fecha && file.fecha < fecha && fechaValida(file.fecha)
+      && frescuraGuardia(file.ts, ahora).fiable && file.guardias?.some(row => Array.isArray(row) && turnoBizkaiaDelDia(str(row[6]), ahoraLocal))) {
+      fecha = file.fecha // el turno de la noche sigue en el calendario de ayer
+    }
+    const url = new URL(known)
+    url.searchParams.set('fecha_guardia', fecha.split('-').reverse().join('/'))
+    return url.href
+  }
   const value = known || file?.sourceUrl || (file?.source && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(file.source) ? 'https://' + file.source : '')
   try { const url = new URL(value); return url.protocol === 'https:' && !url.username && !url.password ? url.href : null } catch { return null }
 }

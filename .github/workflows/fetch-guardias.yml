@@ -254,7 +254,7 @@ jobs:
         id: valencia
         if: inputs.solo_avila != true && inputs.solo_almeria != true
         continue-on-error: true
-        timeout-minutes: 5
+        timeout-minutes: 15
         run: node scripts/fetch-guardias-valencia.mjs
 
       - name: Guardias Castilla-La Mancha (SESCAM backend)

@@ -13,7 +13,7 @@ jobs:
   fuente:
     name: Fuente oficial · ${{ matrix.territorio }}
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: ${{ matrix.territorio == 'valencia' && 17 || 8 }}
     strategy:
       fail-fast: false
       matrix:

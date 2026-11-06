@@ -14,6 +14,6 @@ async function main() {
     for (const row of parseAlicante(data, fecha)) turnos.set(JSON.stringify(row), row)
     await new Promise(r => setTimeout(r, 150))
   }
-  guardarGuardias('alicante', 'cofalicante.com', [...turnos.values()], { fecha, min: 10, max: 600, sourceUrl: 'https://cofalicante.com/farmacias-de-guardia/' })
+  guardarGuardias('alicante', 'cofalicante.com', [...turnos.values()], { fecha, min: 10, max: 600, guardiasVerificadas: true, sourceUrl: 'https://cofalicante.com/farmacias-de-guardia/' })
 }
 main().catch(e => { console.error('ERROR:', e.message); process.exitCode = 1 })

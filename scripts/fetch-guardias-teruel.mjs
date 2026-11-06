@@ -182,6 +182,9 @@ async function main() {
 
   const url = `${BASE}/ciudadanos/listado-de-farmacias/?gl=0&localidad=all&guardia=1&fecha=${encodeURIComponent(fecha)}`
   const html = await fetchHtml(url)
+  if (!html.includes(`name="fecha" value="${fecha}"`) || !/name="guardia"\s+value="1"\s+checked/i.test(html)) {
+    throw new Error('COF Teruel: el colegio no ha confirmado el filtro de guardia y la fecha')
+  }
   const items = parseListado(html)
   console.log(`  ${items.length} farmacias de guardia detectadas`)
   if (items.length < 1) {

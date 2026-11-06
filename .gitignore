@@ -70,6 +70,5 @@ politica-run.json
 # desde cero; solo es util en dev local para evitar ratelimit de Nominatim.
 scripts/cache/
 
-# tesseract.js descarga automaticamente el modelo de idioma 'spa' al CWD la
-# primera vez que se ejecuta el OCR. No commitear (~10MB) — se regenera.
+# Modelo de lectura que puede quedar en copias locales antiguas.
 spa.traineddata

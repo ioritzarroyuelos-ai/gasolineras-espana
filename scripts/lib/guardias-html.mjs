@@ -73,8 +73,12 @@ export function parseAsturias(html, fecha) {
       if (!args || !municipio) throw new Error('Asturias: ficha sin identificar')
       const tel = texto(node.parentNode.querySelector('.ico-telefono')?.text).match(/\d[\d\s]{7,}/)?.[0]?.replace(/\s/g, '') || ''
       const h = horario.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/)
+      let intervalo = h ? rangoGuardia(fecha, h[1], h[2]) : ''
+      if (/festivos|viernes siguiente/i.test(desc)) intervalo = ''
+      if (/^Desde las 10 de la noche de ayer a las 9,30 horas de hoy$/i.test(desc) && h?.[2]==='09:30')
+        intervalo = rangoGuardia(desplazaFecha(fecha,-1),'22:00','09:30')
       rows.push([0, 0, `${texto(args[2])} · ${texto(args[3])}`, texto(args[5]) || municipio, tel, texto(args[4]),
-        h ? rangoGuardia(fecha, h[1], h[2]) : '', desc])
+        intervalo, desc])
     }
   }
   return rows

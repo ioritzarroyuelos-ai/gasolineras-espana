@@ -89,7 +89,7 @@ async function main() {
   const guardias = []
   let skipped = 0
   for (const f of all) {
-    if (!f || !f.guardia) { skipped++; continue }
+    if (f?.guardia !== true) { skipped++; continue }
 
     const lat = parseCoord(f.latitud)
     const lng = parseCoord(f.longitud)

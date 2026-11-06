@@ -6,6 +6,6 @@ import { parseCLM } from './lib/guardias-fuentes.mjs'
 async function main() {
   const fecha = fechaMadrid()
   const data = await descargarJSON('https://farmaciasdeguardia.cofcam.es/api.php?action=list&fecha=' + fecha)
-  guardarGuardias('clm', 'farmaciasdeguardia.cofcam.es', parseCLM(data, fecha), { fecha, coordenadasOficiales: true, min: 30, max: 1500, sourceUrl: 'https://farmaciasdeguardia.cofcam.es/' })
+  guardarGuardias('clm', 'farmaciasdeguardia.cofcam.es', parseCLM(data, fecha), { fecha, guardiasVerificadas: true, coordenadasOficiales: true, min: 30, max: 1500, sourceUrl: 'https://farmaciasdeguardia.cofcam.es/' })
 }
 main().catch(e => { console.error('ERROR:', e.message); process.exitCode = 1 })

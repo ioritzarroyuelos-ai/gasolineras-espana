@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { fechaMadrid } from './lib/guardias-fetch.mjs'
 // v1.50 — Descarga las farmacias de guardia de la PROVINCIA de Jaén desde
 // los PDFs publicados por COF Jaén (farmaceuticosdejaen.es).
 //
@@ -101,19 +102,14 @@ async function buscarPdfs(idPoblacion) {
 function elegirPdfMensual(docs, d) {
   const mes = MESES[d.getMonth()].toUpperCase()
   const year = d.getFullYear()
-  const target = docs.find(doc => doc.toUpperCase().includes(mes) && doc.includes(String(year)))
-  if (target) return target
-  // Fallback: el mas reciente del año (excluyendo BORRADOR).
-  const conYear = docs.filter(doc => doc.includes(String(year)) && !/BORRADOR/i.test(doc))
-  return conYear[conYear.length - 1] || docs[0]
+  return docs.find(doc => doc.toUpperCase().includes(mes) && doc.includes(String(year)) && !/BORRADOR/i.test(doc))
 }
 
 // Para Baeza/Úbeda/Martos/Alcalá: PDF anual unico — el primero que no sea BORRADOR.
 function elegirPdfAnual(docs, d) {
   const year = d.getFullYear()
   const conYear = docs.filter(doc => doc.includes(String(year)) && !/BORRADOR/i.test(doc))
-  if (conYear.length > 0) return conYear[0]
-  return docs.find(d => !/BORRADOR/i.test(d)) || docs[0]
+  return conYear[0]
 }
 
 async function fetchPdf(filename) {
@@ -300,6 +296,7 @@ async function parsePdfMartos(data, today) {
   // Lado izquierdo: nombres+direcciones (x < 300)
   const izq = items.filter(it => it.x < 300).sort((a, b) => b.y - a.y)
   // Filtrar headers ("FARMACIAS EN SERVICIO...") por Y altos.
+  if (!normalize(items.map(it => it.s).join(' ')).includes('mes de ' + MESES[today.getMonth()] + ' de ' + today.getFullYear())) return []
   const yHeader = items.find(it => /FARMACIAS EN SERVICIO|DURANTE 24 HORAS/.test(it.s))?.y || 999
   const datos = izq.filter(it => it.y < yHeader - 5)
   // Las farmacias suelen tener nombre que empieza con "D." o "D.ª".
@@ -337,7 +334,7 @@ async function parsePdfMartos(data, today) {
   if (!elegida) return []
   // Limpiar nombre quitando "D." / "D.ª" / "C. B."
   const nombreLimpio = elegida.nombre.replace(/^D\.(ª|\s+)/, '').replace(/,?\s*C\.\s*B\.\s*$/i, '').trim()
-  return [{ nombre: nombreLimpio, direccion: elegida.direccion, horario: 'Diurna+Nocturna 9:00-9:00' }]
+  return [{ nombre: nombreLimpio, direccion: elegida.direccion, horario: 'Guardia de 24 horas. Consulta el horario de relevo del calendario.' }]
 }
 
 // Parser ALCALA — calendario semanal con farmacia por semana.
@@ -373,7 +370,7 @@ async function parsePdfAlcala(data, today) {
     // siguiente fila que la tenga.
     const derecha = bloque.filter(it => it.x > 290)
     const candidatos = derecha
-      .filter(it => Math.abs(it.y - dayY) < 30)
+      .filter(it => Math.abs(it.y - dayY) < 5)
       .sort((a, b) => Math.abs(a.y - dayY) - Math.abs(b.y - dayY))
     let dir = '', nombre = ''
     if (candidatos.length > 0) {
@@ -419,6 +416,7 @@ async function procesarMunicipio(mun, today) {
     ? elegirPdfMensual(docs, today)
     : elegirPdfAnual(docs, today)
   console.log(`    PDF: ${filename}`)
+  if (!filename) return []
   const data = await fetchPdf(filename)
   let farms = []
   if (mun.formato === 'MARTOS') {
@@ -438,7 +436,7 @@ async function procesarMunicipio(mun, today) {
 }
 
 async function main() {
-  const today = new Date()
+  const today = new Date(fechaMadrid() + 'T12:00:00')
   console.log(`Descargando guardias provincia Jaén — farmaceuticosdejaen.es...`)
 
   const farmaciasAll = []
@@ -508,6 +506,9 @@ async function main() {
   const out = {
     ts: new Date().toISOString(),
     source: 'farmaceuticosdejaen.es',
+    sourceUrl: BASE + '/paginas/Farmacias_Guardia.asp',
+    fecha: fechaMadrid(today),
+    guardiasVerificadas: true,
     territorio: 'jaen',
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],

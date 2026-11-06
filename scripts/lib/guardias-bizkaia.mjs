@@ -12,6 +12,8 @@ export function parseGuardiasBizkaia(html, fecha) {
   if (!total || Number(total[1]) < 1) throw new Error('COFBi: falta el total provincial de guardias')
 
   const guardias = []
+  const codigos = new Map(listado.querySelectorAll('option[data_municipio][data_id]').map(op =>
+    [texto(op.getAttribute('data_municipio')).toUpperCase(), op.getAttribute('data_id')]))
   for (const titulo of listado.querySelectorAll('h2')) {
     const horario = /^Horario\s*:\s*(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})$/i.exec(texto(titulo.text))
     const filas = titulo.nextElementSibling?.querySelectorAll('table tbody tr')
@@ -26,8 +28,11 @@ export function parseGuardiasBizkaia(html, fecha) {
       const municipio = texto(campo('Municipio'))
       const [direccion, contacto] = texto(campo('Dirección')).split(/\s+(?=Contacto para guardias\b)/i)
       if (!titular || !municipio || !direccion) throw new Error('COFBi: farmacia sin titular, dirección o municipio')
-      guardias.push([0, 0, texto(titular) + ' · ' + direccion, municipio, texto(campo('Teléfono')), '', intervalo,
-        [...notas, contacto].filter(Boolean).map(texto).join(' · ')])
+      const farmacia = [0, 0, texto(titular) + ' · ' + direccion, municipio, texto(campo('Teléfono')), '', intervalo,
+        [...notas, contacto].filter(Boolean).map(texto).join(' · ')]
+      const codigo = codigos.get(municipio.toUpperCase())
+      if (codigo && !codigo.startsWith('48')) farmacia.push(codigo.slice(0,2), texto(campo('Zona')))
+      guardias.push(farmacia)
     }
   }
   if (guardias.length !== Number(total[1])) throw new Error('COFBi: el número de filas no cuadra con el total publicado')

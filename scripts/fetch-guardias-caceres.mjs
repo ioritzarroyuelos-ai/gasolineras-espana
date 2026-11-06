@@ -1,66 +1,11 @@
 #!/usr/bin/env node
-// v1.30 — Descarga las farmacias de guardia (mas en general "abiertas
-// ahora") de Caceres desde el portal del COF Caceres. Stack: Laravel +
-// Hugo, sin Cloudflare, sin login. Requiere CSRF token + cookies de
-// sesion obtenidos en el GET inicial.
-//
-// Fuente:
-//   GET  https://farmacias.cofcaceres.es/  → CSRF + XSRF/laravel_session
-//   POST https://farmacias.cofcaceres.es/buscar-farmacias-por-municipios
-//        body: _token=<csrf>&municipio_id=<id>&buscar_abiertas=1
-//   → HTML con div.row-item-listado-farmacia por farmacia. Coordenadas
-//   en URL `google.es/maps/dir//<lat>,<lng>`.
-//
-// Estrategia:
-//   El COF Caceres no tiene un endpoint "todas las guardias provincia".
-//   Hay que iterar los 197 municipios. Con pausa 80ms son ~16s totales.
-//   Cacheamos la lista de municipios validos en `scripts/cache/caceres-mun.json`
-//   para evitar pedir municipios sin farmacias en futuras runs.
-//
-// CAVEAT — "Abierta" vs "guardia":
-//   El COF marca solo "Diurna"/"Abierta" en sus badges. No hay una
-//   etiqueta "guardia 24h" diferenciada — el filtro `buscar_abiertas=1`
-//   devuelve todas las que estan abiertas en este momento (regulares
-//   + guardia). Para CercaYa esto coincide con lo que quiere el usuario:
-//   "donde puedo comprar paracetamol AHORA".
-//
-// Schema output (compatible con el resto de guardias-*.json):
-//   [lat, lng, direccion, poblacion, telefono, cp, horarioGuardia, horarioGuardiaDesc]
-
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
-const CACHE_DIR = resolve(__dirname, 'cache')
-const CACHE_MUN_FILE = resolve(CACHE_DIR, 'caceres-mun.json')
-const OUT_FILE = resolve(DATA_DIR, 'guardias-caceres.json')
+import { guardarGuardias } from './lib/guardias-fetch.mjs'
 
 const HOME_URL = 'https://farmacias.cofcaceres.es/'
-const POST_URL = 'https://farmacias.cofcaceres.es/buscar-farmacias-por-municipios'
-const USER_AGENT = 'cercaya-guardias/1.30 (+https://webapp-3ft.pages.dev)'
-
-// Bbox provincia Caceres (Trujillo, Plasencia, Coria, Hervas, Las Hurdes,
-// Valle del Jerte). Defensa contra coords en otra provincia.
-const BBOX = { minLat: 39.05, maxLat: 40.55, minLng: -7.55, maxLng: -5.0 }
-
+const POST_URL = HOME_URL + 'buscar-farmacias-por-municipios'
+const USER_AGENT = 'EspanaUtil/1.8 (+https://webapp-3ft.pages.dev/acerca)'
+const BBOX = { minLat: 38.9, maxLat: 40.55, minLng: -7.6, maxLng: -4.8 }
 const PAUSE_MS = 80
-
-function loadCacheMun() {
-  if (!existsSync(CACHE_MUN_FILE)) return null
-  try {
-    return JSON.parse(readFileSync(CACHE_MUN_FILE, 'utf8'))
-  } catch {
-    return null
-  }
-}
-
-function saveCacheMun(cache) {
-  mkdirSync(CACHE_DIR, { recursive: true })
-  writeFileSync(CACHE_MUN_FILE, JSON.stringify(cache, null, 2))
-}
 
 async function fetchHome() {
   const res = await fetch(HOME_URL, {
@@ -161,8 +106,9 @@ function parseMunicipio(html) {
   let b
   while ((b = reBloque.exec(html)) !== null) {
     const card = b[1]
+    if (!/<span[^>]*class="[^"]*badge-warning[^"]*"[^>]*>\s*En Servicio de Urgencias\s*<\/span>/i.test(card)) continue
     const nombreM = card.match(/<strong\s+class="d-block d-md-inline texto-rojizo">([^<]+)<\/strong>/)
-    if (!nombreM) continue
+    if (!nombreM || /prueba/i.test(nombreM[1])) continue
     const nombre = clean(nombreM[1], 80)
     const dirM = card.match(/<i\s+class="fa fa-map-marker-alt[^"]*"><\/i>\s*([^<]+)/)
     const telM = card.match(/<i\s+class="fa fa-phone[^"]*"><\/i>\s*\n*\s*([^<]+)/)
@@ -174,6 +120,7 @@ function parseMunicipio(html) {
     if (lat < BBOX.minLat || lat > BBOX.maxLat) continue
     if (lng < BBOX.minLng || lng > BBOX.maxLng) continue
     const dirParseada = dirM ? parseDireccion(dirM[1]) : { calle: '', cp: '', ciudad: '' }
+    if (!dirParseada.ciudad || !dirParseada.calle || /prueba/i.test(dirParseada.ciudad + dirParseada.calle) || !/^10\d{3}$/.test(dirParseada.cp)) continue
     const telefono = telM ? clean(telM[1], 30).replace(/[\s,]+/, '').replace(/[^0-9]+$/, '') : ''
     farmacias.push({
       coord: [Math.round(lat * 1e5) / 1e5, Math.round(lng * 1e5) / 1e5],
@@ -192,32 +139,29 @@ async function main() {
   const { token, cookie, municipios: munList } = await fetchHome()
   console.log(`  CSRF + sesion obtenidos. Lista municipios = ${munList.length}`)
 
-  // Si tenemos cache de municipios validos (con farmacias en runs previas),
-  // limitamos a esos para acelerar. Si no, iteramos todos.
-  let cacheMun = loadCacheMun()
-  const municipiosAEvaluar = cacheMun?.idsValidos
-    ? munList.filter(m => cacheMun.idsValidos.includes(m.id))
-    : munList
-  console.log(`  Iterando ${municipiosAEvaluar.length} municipios...`)
-
+  const municipiosAEvaluar = munList.filter(m => !/prueba/i.test(m.nombre))
+  if (municipiosAEvaluar.length < 100) throw new Error('El colegio no ha devuelto su lista provincial de municipios')
+  const fallos = []
+  const sinCalendario = []
   const todas = []
-  const idsConFarmacia = new Set()
   let procesados = 0
   let conFarmacia = 0
   for (const mun of municipiosAEvaluar) {
     try {
       const html = await fetchMunicipio(mun.id, token, cookie)
+      if (/no existe un calendario de farmacias para el municipio/i.test(html)) sinCalendario.push(mun.nombre)
+      else if (!/Listado de farmacias|No existen farmacias para el filtro indicado/i.test(html)) throw new Error('Respuesta sin listado municipal')
       const lista = parseMunicipio(html)
       if (lista.length > 0) {
-        idsConFarmacia.add(mun.id)
+
         conFarmacia++
         for (const f of lista) {
-          f.municipio = f.ciudad || titleCase(mun.nombre)
+          f.municipio = f.ciudad
           todas.push(f)
         }
       }
     } catch {
-      // ignoramos errores aislados
+      fallos.push(mun.nombre)
     }
     procesados++
     if (procesados % 20 === 0) {
@@ -228,12 +172,12 @@ async function main() {
   console.log(`  ${procesados} municipios procesados, ${conFarmacia} con guardia, ${todas.length} farmacias raw`)
 
   // Persistimos los ids validos para futuras runs (si no teniamos cache).
-  if (!cacheMun?.idsValidos) {
-    saveCacheMun({ ts: new Date().toISOString(), idsValidos: [...idsConFarmacia].sort((a, b) => a - b) })
-    console.log(`  cache de ${idsConFarmacia.size} ids validos guardada`)
-  }
+
 
   // Dedupe por (nombre+direccion+cp).
+  if (fallos.length > municipiosAEvaluar.length * 0.1) throw new Error('Demasiadas consultas municipales fallidas; se conserva la última consulta válida')
+  const incidencias = fallos.length ? ['Cobertura parcial. No se pudo consultar el colegio para: ' + fallos.join(', ')] : []
+  if (sinCalendario.length) incidencias.push('El colegio indica que todavía no dispone de calendario para: ' + sinCalendario.join(', '))
   const dedupe = new Map()
   for (const f of todas) {
     const key = `${f.nombre}|${f.direccion}|${f.cp}`.toLowerCase()
@@ -242,9 +186,7 @@ async function main() {
   }
   console.log(`  ${dedupe.size} farmacias unicas tras dedupe`)
 
-  if (dedupe.size < 5) {
-    throw new Error(`Solo ${dedupe.size} farmacias. Esperado >20. Abortamos.`)
-  }
+
   if (dedupe.size > 800) {
     throw new Error(`Sospechoso: ${dedupe.size} farmacias. Max razonable ~400. Abortamos.`)
   }
@@ -259,26 +201,12 @@ async function main() {
       f.municipio,
       f.telefono,
       f.cp,
-      // El COF marca el horario en estructura compleja por dia — para MVP
-      // dejamos vacio y guardamos "Abierta" en horarioDesc para indicar
-      // que estaba abierta en el momento del scrape.
       '',
-      'Abierta',
+      'En servicio de urgencias en el momento de la consulta.',
     ])
   }
 
-  const out = {
-    ts: new Date().toISOString(),
-    source: 'farmacias.cofcaceres.es',
-    territorio: 'caceres',
-    count: guardias.length,
-    schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
-    guardias,
-  }
-
-  mkdirSync(DATA_DIR, { recursive: true })
-  writeFileSync(OUT_FILE, JSON.stringify(out))
-  console.log(`OK — ${guardias.length} guardias guardadas en ${OUT_FILE}`)
+  guardarGuardias('caceres', 'farmacias.cofcaceres.es', guardias, { sourceUrl: HOME_URL, guardiasVerificadas: true, incidencias, cobertura: 'Farmacias marcadas por el colegio como en servicio de urgencias al consultar. El colegio no indica cuándo termina cada guardia.' })
 }
 
 main().catch(e => {

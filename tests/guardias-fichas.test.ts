@@ -10,7 +10,7 @@ const base = {
 }
 const ficha: Guardia = {
   direccion: 'Calle Mayor 1', telefono: '', horario: '2026-11-05 09:00-2026-11-06 09:00', horarioDesc: '',
-  municipio: 'Alcalá de Henares', cp: '28801', lat: 0, lng: 0,
+  municipio: 'Alcalá de Henares', territorio: 'madrid', cp: '28801', lat: 0, lng: 0,
 }
 function pagina(guardias: Guardia[], opciones: Partial<GuardiaPageData> = {}) {
   return parse(buildGuardiaMunicipioPage('prueba', { ...base, guardias, ...opciones }))
@@ -73,9 +73,9 @@ describe('acciones de la ficha de farmacia', () => {
   it('distingue apertura y guardia localizada y oculta teléfonos, rutas y datos estructurados caducados', () => {
     const html = pagina([{ ...ficha, territorio: 'valencia' }, { ...ficha, horarioDesc: 'Guardia no presencial' }])
     expect(html.querySelector('h1')?.text).toBe('Farmacias y turnos en Alcalá de Henares')
-    expect(html.querySelectorAll('.g-tipo')[0].text).toContain('guardia sin confirmar')
-    expect(html.querySelectorAll('.g-tipo')[1].text).toContain('Guardia localizada')
-    expect(html.querySelectorAll('.g-tipo')[1].text).not.toContain('Abierta ahora')
+    expect(html.querySelectorAll('.g-tipo')[0].text).toContain('Guardia localizada')
+    expect(html.querySelectorAll('.g-tipo')[0].text).not.toContain('Abierta ahora')
+    expect(html.querySelectorAll('.g-tipo')[1].text).toContain('guardia sin confirmar')
     const antigua = pagina([{ ...ficha, telefono: '945607191' }], { ahora: new Date('2026-11-08T12:00:00Z') })
     expect(antigua.querySelector('.g-caducado')).not.toBeNull()
     expect(antigua.querySelector('.g-card')).toBeNull()
@@ -94,7 +94,7 @@ describe('acciones de la ficha de farmacia', () => {
 describe('guardia oficial de Durango al cambiar el día', () => {
   const ayer = [0, 0, 'Campillo · Avda. Montevideo, 24', 'Durango', '946811809', '', '2026-11-05 09:00-2026-11-06 09:00', '']
   const hoy = [0, 0, 'Navarro Aranda · Artecalle, 6', 'Durango', '946810223', '', '2026-11-06 09:00-2026-11-07 09:00', '']
-  const fichero = { territorio: 'bizkaia', source: 'cofbizkaia.eus', fecha: '2026-11-06', ts: '2026-11-06T05:45:00Z', guardias: [hoy, ayer] }
+  const fichero = { territorio: 'bizkaia', guardiasVerificadas: true, source: 'cofbizkaia.eus', fecha: '2026-11-06', ts: '2026-11-06T05:45:00Z', guardias: [hoy, ayer] }
   function durango(instante: string, turno: GuardiaPageData['turno'] = 'todas') {
     const visita = new Date(instante)
     return pagina(parseGuardias(fichero, visita), { provinciaSlug: 'bizkaia', provinciaName: 'Bizkaia', municipioName: 'Durango',

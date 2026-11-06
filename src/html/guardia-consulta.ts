@@ -1,5 +1,6 @@
 import { escapeHtml as esc } from './html'
-import { envoltorioIndice } from './guardia-municipio'
+import { avisosDelMunicipio, envoltorioIndice } from './guardia-municipio'
+import { slugifyMunicipio } from '../lib/municipios'
 import type { ProvinciaEntry } from '../lib/provincias'
 import { fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 
@@ -12,7 +13,8 @@ export function paginaSinTurno(nonce: string, canonical: string, provincia: Prov
   const enlace = fuente || 'https://www.farmaceuticos.com/farmacias-de-guardia/'
   const accion = fuente ? 'Consultar las guardias en la fuente oficial' : 'Buscar el colegio farmacéutico de la provincia'
   const mensaje = temporal ? 'Ahora no podemos comprobar los turnos de ' : 'Hoy no tenemos un turno confirmado en '
-  const cuerpo = '<h1>' + esc(titulo) + '</h1><p>' + mensaje + esc(lugar) + '.</p>'
+  const avisos = municipio ? avisosDelMunicipio(provincia.slug, slugifyMunicipio(municipio), datos) : ''
+  const cuerpo = '<h1>' + esc(titulo) + '</h1>' + (avisos || '<p>' + mensaje + esc(lugar) + '.</p>')
     + '<p><a class="btn" href="' + esc(enlace) + '">' + accion + '</a></p>'
     + (municipio && provincia.slug !== 'lugo' ? '<p><a href="/farmacias/' + esc(provincia.slug) + '">Ver los turnos de la provincia de ' + esc(provincia.name) + '</a></p>' : '')
     + '<p><a href="/farmacias/">Buscar otro municipio</a></p>'

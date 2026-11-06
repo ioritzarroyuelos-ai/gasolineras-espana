@@ -33,6 +33,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { fechaMadrid, desplazaFecha, rangoGuardia } from './lib/guardias-fetch.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -137,26 +138,13 @@ function clean(s, max) {
   return max ? t.slice(0, max) : t
 }
 
-// Normaliza "09:30 - 13:45 | 17:30 - 20:30" a "09:30-20:30" (primer inicio,
-// ultimo cierre) — simplificacion pragmatica: el usuario ve "de 09:30 a
-// 20:30" y el detalle real ya lo ve al llegar. Mismo formato que el resto
-// de scrapers.
-function parseHorario(raw) {
-  if (!raw) return ''
-  const matches = String(raw).match(/(\d{1,2}:\d{2})/g)
-  if (!matches || matches.length < 2) return clean(raw, 40)
-  const ini = matches[0]
-  const fin = matches[matches.length - 1]
-  return `${ini}-${fin}`
-}
-
 async function main() {
   console.log('Descargando farmacias de guardia de Murcia (COF Region de Murcia)...')
+  const fecha = fechaMadrid()
   const all = await fetchAPI()
   console.log(`  API devolvio ${all.length} farmacias en total`)
 
-  const onCall = all.filter(p => p && p.isOnCallRotation === true)
-  console.log(`  ${onCall.length} con isOnCallRotation=true`)
+  const onCall = all.filter(p => p?.isOnCallRotation === true || p?.isYesterdayOnCallRotation === true)
 
   if (onCall.length === 0) {
     throw new Error('Cero farmacias de guardia hoy. Murcia suele tener 40-60. Abortamos sin sobrescribir.')
@@ -189,7 +177,15 @@ async function main() {
     const poblacion = clean(p.town || '', 60)
     const telefono = clean(p.phone || '', 30)
     const cp = clean(p.postalCode || '', 10)
-    const horarioGuardia = parseHorario(p.currentDaySchedule)
+    // El buscador COFRM conserva el turno de ayer hasta las 09:30. Su campo
+    // currentDaySchedule también incluye apertura ordinaria y recorta a 23:59.
+    const intervalos = []
+    if (p.isYesterdayOnCallRotation === true) intervalos.push(rangoGuardia(desplazaFecha(fecha, -1), '09:30', '09:30'))
+    if (p.isOnCallRotation === true) {
+      if (!['09:30 - 23:59', '00:00 - 23:59'].includes(p.currentDaySchedule)) throw new Error('COFRM: horario de rotación desconocido')
+      intervalos.push(rangoGuardia(fecha, '09:30', '09:30'))
+    }
+    const horarioGuardia = intervalos.join(' / ')
     // Desc: health zone si aporta (ej "11 - MURCIA/CENTRO"). Si no, ""
     const horDesc = clean(p.healthZone || p.municipality || '', 80)
 
@@ -206,6 +202,8 @@ async function main() {
     ts: new Date().toISOString(),
     source: 'cofrm.com',
     territorio: 'murcia',
+    fecha,
+    guardiasVerificadas: true,
     count: guardias.length,
     schema: ['lat', 'lng', 'direccion', 'poblacion', 'telefono', 'cp', 'horarioGuardia', 'horarioGuardiaDesc'],
     guardias,

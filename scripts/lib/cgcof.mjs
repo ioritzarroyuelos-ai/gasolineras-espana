@@ -22,6 +22,9 @@
 //   El portal NO expone lat/lng. Hay que geocodificar con Nominatim
 //   (1 req/s) usando direccion + localidad + provincia.
 
+import { parse } from 'node-html-parser'
+import { fechaMadrid } from './guardias-fetch.mjs'
+
 const CGCOF_HOST = 'https://farmaciasguardia.farmaceuticos.com'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 
@@ -59,7 +62,7 @@ export async function obtenerSesionYZonas(provinciaId, userAgent) {
   while ((m = reOpt.exec(mSelect[0])) !== null) {
     const id = m[1]
     if (id === '0') continue
-    zonas.push({ id, nombre: m[2].replace(/\s+/g, ' ').trim() })
+    zonas.push({ id, nombre: parse(m[2]).text.replace(/\s+/g, ' ').trim() })
   }
   return { cookies, zonas, referer: url }
 }
@@ -129,35 +132,28 @@ export async function fetchDatosFarmacia(provinciaId, farmaciaId, cookies, refer
 }
 
 /** Extrae IDs de farmacia del HTML de Guardias.asp + tipo de guardia (DIA/NOCHE). */
-export function extraerFarmaciasDelHtml(html) {
-  // El HTML tiene secciones que empiezan por
-  //   GUARDIAS DE D&Iacute;A   ó   GUARDIAS DE NOCHE
-  // Trackear la seccion activa para asignar tipo a cada farmacia.
-  const out = []
-  // Splitter por sub-secciones (DIA vs NOCHE).
-  const idxDia = html.search(/GUARDIAS\s+DE\s+D[^A-Z]*A/i)
-  const idxNoche = html.search(/GUARDIAS\s+DE\s+NOCHE/i)
-  const seccion = (offset) => {
-    if (idxDia !== -1 && idxNoche !== -1) {
-      if (idxDia < idxNoche) return offset < idxNoche ? 'DIA' : 'NOCHE'
-      return offset < idxDia ? 'NOCHE' : 'DIA'
+export function extraerFarmaciasDelHtml(html, fecha) {
+  const marco = parse(html).querySelector('#marco-aux')
+  if (!marco) return []
+  const [dia, mes, anio] = fecha.split('/')
+  const esperada = [dia.padStart(2, '0'), mes.padStart(2, '0'), anio].join('/')
+  if (!marco.querySelectorAll('div').some(div => !div.children.length && div.text.includes(esperada))) return []
+  const filas = []
+  let tipo = '', horario = ''
+  for (const bloque of marco.querySelectorAll('div, p')) {
+    const linea = bloque.text.replace(/\s+/g, ' ').trim()
+    if (bloque.tagName === 'DIV' && bloque.querySelector('img') && /^GUARDIAS\b/i.test(linea)) {
+      tipo = /^GUARDIAS (?:TODO EL D[IÍ]A|DE (?:D[IÍ]A|NOCHE))$/i.test(linea) ? linea : ''
+      horario = ''
+    } else if (bloque.tagName === 'P' && /padding-left:\s*40px/i.test(bloque.getAttribute('style') || '')) {
+      horario = linea
+    } else if (tipo && bloque.tagName === 'P') {
+      const href = bloque.querySelector('a[href]')?.getAttribute('href') || ''
+      const id = href.match(/^javascript:abbre\(\d+,(\d+),0\)$/i)?.[1]
+      if (id) filas.push({ id, tipo: [tipo, horario].filter(Boolean).join(' · ') })
     }
-    if (idxDia !== -1) return 'DIA'
-    if (idxNoche !== -1) return 'NOCHE'
-    return ''
   }
-  const re = /abbre\(\d+,(\d+),0\)/g
-  let m
-  const seen = new Set()
-  while ((m = re.exec(html)) !== null) {
-    const id = m[1]
-    const tipo = seccion(m.index)
-    const key = `${id}|${tipo}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    out.push({ id, tipo })
-  }
-  return out
+  return filas
 }
 
 /** Geocoding via Nominatim respetuoso (1.1s entre peticiones). Retorna [lat,lng] o null.
@@ -195,6 +191,6 @@ export async function geocodeNominatim(direccion, municipio, provincia, bbox, us
 }
 
 export function fechaCgcof(d = new Date()) {
-  // El portal usa formato DD/M/YYYY (sin cero a la izquierda en mes).
-  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear()}`
+  const [anio, mes, dia] = fechaMadrid(d).split('-')
+  return [Number(dia), Number(mes), anio].join('/')
 }

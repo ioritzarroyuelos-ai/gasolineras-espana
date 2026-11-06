@@ -11,6 +11,49 @@ function farmacia(territorio: string, horario: string, nota = '', fechaTurno: st
 }
 
 describe('horarios completos de los colegios', () => {
+  it('Zaragoza capital confirma las urgencias de 24 h dentro del tramo común y pide llamar durante el relevo', () => {
+    const aviso = 'GUARDIAS TODO EL DÍA · DE 9:30 DE HOY A 9:30 DE MAÑANA. DE 12 DE LA NOCHE A 9:15 DE LA MAÑANA, CONSULTE LAS FARMACIAS DE GUARDIA DE AYER'
+    const f = { ...farmacia('zaragoza',aviso), municipio: 'Zaragoza' }
+    expect(estadoGuardia(f,captura,new Date(fecha+'T08:29Z')).conocida).toBe(false)
+    expect(estadoGuardia(f,captura,new Date(fecha+'T08:30Z'))).toEqual({conocida:true, abierta:true, todoElDia:true})
+    expect(estadoGuardia(f,captura,new Date('2026-11-07T08:14Z')).abierta).toBe(true)
+    expect(estadoGuardia(f,captura,new Date('2026-11-07T08:15Z')).conocida).toBe(false)
+    expect(estadoGuardia(f,captura,new Date('2026-11-07T08:30Z')).abierta).toBe(false)
+    expect(textoHorarioGuardia(f,captura,ahora)).toContain('llama para confirmar el relevo')
+    expect(estadoGuardia({...f,municipio:'Otro municipio'},captura,ahora).conocida).toBe(false)
+  })
+  it('Burgos respeta la hora de relevo del colegio aunque el título diga 24 horas', () => {
+    const exacta = farmacia('burgos', 'GUARDIAS TODO EL DÍA · DE 9:50 A 9:50 (24 HORAS)')
+    expect(estadoGuardia(exacta, captura, new Date('2026-11-06T08:49Z')).abierta).toBe(false)
+    expect(estadoGuardia(exacta, captura, new Date('2026-11-07T08:49Z')).todoElDia).toBe(true)
+    expect(estadoGuardia(exacta, captura, new Date('2026-11-07T08:50Z')).abierta).toBe(false)
+    const relevo = farmacia('burgos', 'GUARDIAS TODO EL DÍA · DE 9:30 DE HOY A 10:15 DE MAÑANA (24 HORAS)')
+    expect(estadoGuardia(relevo, captura, new Date('2026-11-07T09:14Z')).abierta).toBe(true)
+    expect(estadoGuardia(relevo, captura, new Date('2026-11-07T09:15Z')).abierta).toBe(false)
+  })
+  it('reconoce los horarios explícitos de Jaén y Pontevedra si concuerdan con el turno', () => {
+    const noche = farmacia('jaen','Nocturna 22:00-9:30')
+    expect(estadoGuardia(noche,captura,new Date(fecha+'T20:59Z')).abierta).toBe(false)
+    expect(estadoGuardia(noche,captura,new Date(fecha+'T21:00Z')).abierta).toBe(true)
+    expect(estadoGuardia(noche,captura,new Date('2026-11-07T08:30Z')).abierta).toBe(false)
+    expect(estadoGuardia(farmacia('jaen','Diurna 9:30-22:00'),captura,ahora).abierta).toBe(true)
+    const dia = farmacia('pontevedra','Turno diurno','De 9:30 h. a 22 h.')
+    expect(estadoGuardia(dia,captura,new Date(fecha+'T20:59Z')).abierta).toBe(true)
+    expect(estadoGuardia(dia,captura,new Date(fecha+'T21:00Z')).abierta).toBe(false)
+    const redondela = farmacia('pontevedra','Turno nocturno','Estando de guardia desde las 22:00 hasta las 9:30.')
+    expect(estadoGuardia(redondela,captura,new Date('2026-11-07T08:29Z')).abierta).toBe(true)
+    expect(estadoGuardia(redondela,captura,new Date('2026-11-07T08:30Z')).abierta).toBe(false)
+    expect(estadoGuardia(farmacia('pontevedra','Turno diurno','Desde las 9:30 h hasta las 22 h. Cambio de turno: sábados a las 9:30.'),captura,ahora).abierta).toBe(true)
+    expect(estadoGuardia(farmacia('pontevedra','Turno nocturno','De 9:30 h. a 22 h.'),captura,ahora).conocida).toBe(false)
+    expect(estadoGuardia(farmacia('pontevedra','Turno diurno y nocturno','De 9:30 h. a 22 h.'),captura,ahora).conocida).toBe(false)
+  })
+  it('las etiquetas de duración sin relevo, las aperturas ordinarias y las localizadas siguen fuera de los filtros de guardia', () => {
+    for (const f of [farmacia('badajoz','GUARDIAS TODO EL DÍA · DE 24 HORAS'), farmacia('valladolid','Día y noche (24 horas)'),
+      farmacia('jaen','Guardia de 24 horas. Consulta el horario de relevo del calendario.'), farmacia('teruel','De guardia 24 horas'),
+      farmacia('huelva','24 horas','Horario habitual'), farmacia('burgos','GUARDIAS TODO EL DÍA · DE 10 A 10 (24 HORAS) - GUARDIA LOCALIZADA')]) {
+      expect(estadoGuardia(f,captura,ahora).abierta).toBe(false)
+    }
+  })
   it('en Corvera el domingo comienza a las diez y una mañana laborable con posible festivo conserva la duda hasta esa hora', () => {
     const nota = 'Lunes a sábado de 9,30 de la mañana a 10 de la noche. Domingos y festivos: de 10 de la mañana a 10 de la noche'
     const domingo = farmacia('asturias','',nota,'2026-11-01')

@@ -14,6 +14,7 @@ import { parse } from 'node-html-parser'
 
 const RE_EMPRESA = /encuestadora|polling firm|casa encuestadora|pollster|comisionista|commissioner/i
 const RE_CAMPO = /trabajo de campo|fieldwork|fecha/i
+const RE_PUBLICACION = /publicaci[oó]n|publicad[oa]|publicaci[óo]|publication|published|release/i
 const RE_MUESTRA = /muestra|sample/i
 const RE_PARTICIPACION = /participaci[oó]n|turnout|% ?voto|% ?vote/i
 const RE_VENTAJA = /ventaja|lead|dif\.?|advantage/i
@@ -111,6 +112,87 @@ function tituloDe(el) {
   return (a && a.getAttribute('title')) || (img && img.getAttribute('alt')) || el.getAttribute('title') || ''
 }
 
+// Cada referencia bibliográfica (COinS) enlaza un artículo con su fecha de
+// publicación. Las fechas de consulta de Wikipedia no pertenecen al sondeo.
+function fechaBibliografica(texto) {
+  const s = limpiaTexto(texto).toLowerCase()
+  const numerica = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s)
+  if (numerica) return iso(+numerica[3], +numerica[2], +numerica[1])
+  const literal = /^(\d{1,2})(?: de | )([a-z]+)(?: de | )(\d{4})$/.exec(s)
+  if (literal) return iso(+literal[1], MESES[literal[2]], +literal[3])
+}
+
+function urlCitada(raw) {
+  try {
+    const u = new URL(raw)
+    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password || u.port || u.pathname === '/') return
+    u.protocol = 'https:'
+    u.hash = ''
+    if (u.hostname === 'twitter.com' || u.hostname === 'x.com') {
+      u.hostname = 'x.com'
+      u.search = ''
+    }
+    return u
+  } catch { /* Un texto o enlace relativo no identifica la publicación. */ }
+}
+
+// Conserva las citas en la propia celda antes de quitar sus superíndices.
+// Así no se hereda por error una publicación de la fila o del partido vecino.
+export function citasPorCelda(root) {
+  const notas = new Map()
+  for (const nota of root.querySelectorAll('li[id]')) {
+    const meta = nota.querySelector('.Z3988')
+    if (!meta) continue
+    const rft = new URLSearchParams(meta.getAttribute('title'))
+    const url = urlCitada(rft.get('rft_id'))
+    if (!url) continue
+    const enlaces = nota.querySelectorAll('.citation a.external, cite a.external')
+    if (!enlaces.some(a => urlCitada(a.getAttribute('href'))?.href === url.href)) continue
+    notas.set(nota.getAttribute('id'), {
+      url, editorial: rft.get('rft.jtitle') || rft.get('rft.pub'),
+      fecha: fechaBibliografica(rft.get('rft.date')),
+    })
+  }
+  const porCelda = new WeakMap()
+  for (const a of root.querySelectorAll('td sup a')) {
+    const href = a.getAttribute('href') || ''
+    const nota = href.startsWith('#') && notas.get(href.slice(1))
+    if (!nota) continue
+    const celda = a.closest('td')
+    const citas = porCelda.get(celda) ?? []
+    citas.push(nota)
+    porCelda.set(celda, citas)
+  }
+  return porCelda
+}
+
+const identidad = nombre => norm((nombre || '').replace(/\.(?:es|com|org|net)$/i, ''))
+const fechaMadrid = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' })
+
+function editorDelDominio(url) {
+  const host = url.hostname.replace(/^www\./, '')
+  if (host === 'moreincommones.substack.com') return 'MOREINCOMMON'
+  if (host === 'x.com' && /^\/la_septima_tv\/status\/\d+\/?$/i.test(url.pathname)) return 'LASEPTIMA'
+  // elmundo.es identifica al medio; elmundo.es.ejemplo.com no lo hace.
+  const m = /(?:^|\.)([a-z0-9-]+)\.(?:com|es|org|net)$/.exec(host)
+  return m && norm(m[1])
+}
+
+export function fuentePrimaria(citas, empresa, comitente, campoFin, hoy = fechaMadrid.format(new Date())) {
+  if (!citas?.length || !campoFin) return
+  const originales = new Set([empresa, ...(comitente || '').split('/')].map(s => identidad(s.trim())).filter(Boolean))
+  const validas = citas.filter(c => originales.has(editorDelDominio(c.url))
+    && (!c.editorial || originales.has(identidad(c.editorial)))
+    && (!c.fecha || (c.fecha >= campoFin && c.fecha <= hoy)))
+  const fechadas = validas.filter(c => c.fecha)
+  // Con publicaciones originales en días distintos no podemos identificar de
+  // forma inequívoca la fecha. Tampoco escogemos la primera por orden de cita.
+  if (new Set(fechadas.map(c => c.fecha)).size > 1) return
+  const elegida = fechadas[0] || validas[0]
+  if (!elegida) return
+  return elegida.fecha ? { fuenteUrl: elegida.url.href, publicacion: elegida.fecha } : { fuenteUrl: elegida.url.href }
+}
+
 function clasifica(th) {
   const txt = limpiaTexto(th.text)
   const title = tituloDe(th)
@@ -118,6 +200,7 @@ function clasifica(th) {
   if (hay(RE_EMPRESA)) return { rol: 'empresa' }
   if (hay(RE_MUESTRA)) return { rol: 'muestra' }
   if (hay(RE_PARTICIPACION)) return { rol: 'participacion' }
+  if (hay(RE_PUBLICACION)) return { rol: 'otro' }
   if (hay(RE_CAMPO)) return { rol: 'fecha' }
   if (hay(RE_VENTAJA)) return { rol: 'ventaja' }
   const siglas = txt || title
@@ -126,14 +209,9 @@ function clasifica(th) {
   return { rol: 'otro' }
 }
 
-function headerText(tab) {
-  const r0 = tab.querySelector('tr')
-  if (!r0) return ''
-  return r0.querySelectorAll('th,td').map((c) => limpiaTexto(c.text) || tituloDe(c)).join(' | ')
-}
 function esTablaSondeos(tab) {
-  const h = headerText(tab)
-  return RE_EMPRESA.test(h) && RE_CAMPO.test(h)
+  const cab = tab.querySelector('tr')?.querySelectorAll('th,td').map(clasifica) ?? []
+  return cab.some(c => c.rol === 'empresa') && cab.some(c => c.rol === 'fecha')
 }
 
 function parseCelda(td) {
@@ -227,10 +305,12 @@ function tablasDeEstimaciones(root) {
 
 /**
  * @param {string} html
- * @param {{ anioReferencia?: number }} [opts]
+ * @param {{ anioReferencia?: number, hoy?: string }} [opts]
  */
 export function parseSondeos(html, opts = {}) {
   const root = parse(html)
+  const citas = citasPorCelda(root)
+  const hoy = opts.hoy ?? fechaMadrid.format(new Date())
   root.querySelectorAll('sup').forEach((s) => s.remove())
   root.querySelectorAll('span,td,div').forEach((el) => {
     if (/display\s*:\s*none/i.test(el.getAttribute('style') || '')) el.remove()
@@ -309,6 +389,8 @@ export function parseSondeos(html, opts = {}) {
       if (fecha.inicio) s.campoInicio = fecha.inicio
       if (fecha.fin) s.campoFin = fecha.fin
       if (muestra != null) s.muestra = muestra
+      const publicada = fuentePrimaria(citas.get(celdaEmpresa), empresa, comitente, fecha.fin, hoy)
+      if (publicada?.publicacion) Object.assign(s, publicada)
       sondeos.push(s)
     }
   }

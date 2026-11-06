@@ -4,14 +4,8 @@
 // elección. Todo testeable en aislamiento.
 
 import type { EscanosEstim, EstadoEleccion, Sondeo } from './politica-schemas'
+export { enVeda } from '../../scripts/lib/politica-veda.mjs'
 
-const DIA_MS = 86_400_000
-// Margen para cubrir la diferencia horaria España↔UTC (UTC+1/+2, con DST) sin
-// hacer aritmética de zona horaria: la votación se maneja como 00:00Z, pero la
-// ventana legal es en hora peninsular. Ampliar 3 h por ambos lados garantiza que
-// NUNCA se difundan sondeos dentro de la franja legal (sobre-cumplimiento; como
-// mucho se ocultan ~3 h de más, que es lo seguro). Cubre también Canarias (UTC+0).
-const VEDA_MARGEN_MS = 3 * 3_600_000
 // Frescura: si la última comprobación correcta es más vieja que esto, el dato
 // se considera desactualizado (cadencia del robot: diaria).
 export const STALE_MS = 30 * 3_600_000 // 30 h
@@ -108,21 +102,6 @@ export function enlazaSondeosAnteriores(sondeos: readonly Sondeo[]): Map<Sondeo,
     }
   }
   return anteriores
-}
-
-// Veda electoral (LOREG art. 69.7): prohibida la publicación/difusión/reproducción
-// de sondeos durante los cinco días anteriores a la votación. Aplicamos la
-// ventana [votación − 5 días, fin del día de la votación] y SOLO cuando hay
-// fecha oficial confirmada. Se evalúa con la fecha del servidor en cada request,
-// para que la veda entre y salga sola sin depender de que el robot corra.
-export function enVeda(ahoraISO: string, fecha: { valor: string | null; confirmada: boolean }): boolean {
-  if (!fecha.confirmada || !fecha.valor) return false
-  const votacion = Date.parse(fecha.valor.slice(0, 10) + 'T00:00:00Z')
-  const ahora = Date.parse(ahoraISO)
-  if (Number.isNaN(votacion) || Number.isNaN(ahora)) return false
-  const inicio = votacion - 5 * DIA_MS - VEDA_MARGEN_MS
-  const fin = votacion + DIA_MS + VEDA_MARGEN_MS // incluye todo el día de la votación + margen
-  return ahora >= inicio && ahora < fin
 }
 
 // Deriva el estado de una elección a partir de su disponibilidad, si tiene

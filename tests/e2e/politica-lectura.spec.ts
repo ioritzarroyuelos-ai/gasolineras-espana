@@ -1,12 +1,15 @@
 import { expect, test } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { eleccionConHistorico } from './politica-datos'
+import type { EleccionFile, IndexFile } from '../../src/lib/politica-schemas'
 
 test.describe('Sondeos sin JavaScript', () => {
   test.use({ javaScriptEnabled: false })
 
   test('móvil: muestra tres partidos, abre los demás y cambia la referencia de escaños', async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 740 })
-    await page.goto('/politica/generales')
+    const { ruta, datos } = await eleccionConHistorico(page)
+    await page.goto(ruta)
     const ficha = page.locator('.pm-poll').first()
     const visibles = ficha.locator('.pm-inner > .pm-rows > li')
     await expect(page.locator('.pm-poll[open]')).toHaveCount(1)
@@ -15,6 +18,15 @@ test.describe('Sondeos sin JavaScript', () => {
     await expect(page.getByRole('link', { name: 'Encuesta anterior', exact: true })).toHaveAttribute('aria-current', 'true')
     const actuales = await visibles.locator('strong').allTextContents()
     const votos = await ficha.locator('b small').allTextContents()
+    const masReciente = [...datos.sondeos].sort((a, b) => (b.campoFin || '').localeCompare(a.campoFin || ''))[0]
+    await expect(ficha.locator('summary').first()).toContainText(masReciente.empresa)
+    if (masReciente.fuenteUrl) await expect(ficha.getByRole('link', { name: 'Ver la fuente de esta encuesta' })).toHaveAttribute('href', masReciente.fuenteUrl)
+    if (masReciente.publicacion) {
+      await expect(ficha.locator('summary > small').filter({ hasText: 'Publicación' }).locator('time')).toHaveAttribute('datetime', masReciente.publicacion)
+      await expect(page.locator('.fechas-sondeos')).toContainText('Última comprobación de las fuentes')
+    } else {
+      await expect(ficha.locator('.pm-source')).toContainText('Fecha de publicación desconocida')
+    }
     const otros = ficha.locator('.pm-extra')
     await expect(otros.locator('li').first()).toBeHidden()
     await otros.locator('summary').click()
@@ -28,6 +40,13 @@ test.describe('Sondeos sin JavaScript', () => {
     // El partido y su número se obtienen del resultado de la elección de esta
     // misma página. Las encuestas y los escaños podrán cambiar con el robot.
     const partido = await visibles.first().locator('b').evaluate(b => b.firstChild!.textContent!)
+    const id = datos.candidaturas.find(c => c.siglas === partido)?.id
+    const publicado = masReciente.datos.find(d => d.candidaturaId === id)
+    if (publicado?.escanos == null) {
+      await expect(visibles.first().locator('strong')).toHaveText('Sin dato de escaños')
+      await expect(visibles.first().locator(':scope > span')).toHaveCount(0)
+      if (publicado?.pct != null) await expect(visibles.first().locator('b small')).toContainText(/\d.*% del voto/)
+    }
     const oficial = page.locator('.leyenda-res .it').filter({ hasText: partido + ' ' }).first()
     const base = await oficial.locator('b').innerText()
     await expect(visibles.first().locator(':scope > small')).toHaveText('Elecciones · ' + base)
@@ -41,7 +60,8 @@ test.describe('Sondeos sin JavaScript', () => {
 
   test('ordenador: cada fila enlaza a su ficha y el teclado abre una cerrada con sus cifras base', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 768 })
-    await page.goto('/politica/generales?referencia=elecciones')
+    const { ruta } = await eleccionConHistorico(page)
+    await page.goto(ruta + '?referencia=elecciones')
     const tabla = page.getByRole('table', { name: 'Escaños por encuesta y partido' })
     await expect(tabla).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Escaños estimados por encuesta' })).toBeVisible()
@@ -75,13 +95,50 @@ test.describe('Sondeos sin JavaScript', () => {
     await page.keyboard.press('Enter')
     await expect(otros.locator('li').first()).toBeVisible()
   })
+
+  test('Congreso y Senado tienen fichas propias y el reparto europeo se consulta desde la portada', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto('/politica/')
+    const indice: IndexFile = await (await page.request.get('/api/politica/elecciones')).json()
+    const convocatoria = indice.elecciones.find(e => e.id === 'generales')!.fecha
+    const generales: EleccionFile = await (await page.request.get('/data/politica/generales.json')).json()
+    const tarjeta = page.locator('article.el').filter({ has: page.locator('a.go[href="/politica/generales"]') })
+    if (convocatoria.confirmada && convocatoria.fuente) {
+      await expect(tarjeta.locator('a.decreto')).toHaveAttribute('href', convocatoria.fuente)
+    } else {
+      await expect(tarjeta.locator('a.decreto')).toHaveCount(0)
+    }
+    await tarjeta.locator('a.go').click()
+    const camaras = page.getByRole('navigation', { name: 'Cámara de las elecciones generales' })
+    await expect(camaras.getByRole('link', { name: 'Congreso' })).toHaveAttribute('aria-current', 'page')
+    await camaras.getByRole('link', { name: 'Senado' }).click()
+    await expect(page).toHaveURL(/\/politica\/generales\/senado$/)
+    await expect(camaras.getByRole('link', { name: 'Senado' })).toHaveAttribute('aria-current', 'page')
+    const senado = generales.senado
+    await expect(page.locator('.resultado .cap')).toContainText((senado?.electivos ?? 208) + ' senadores elegidos en las urnas')
+    if (!senado || senado.referencia.fecha === '2023-07-23') {
+      await expect(page.locator('.resultado .leyenda-res')).toContainText('PP 120')
+    }
+    await expect(page.locator('.resultado a')).toHaveAttribute('href', senado?.referencia.url ?? 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2023-18907')
+    await expect(page.locator('.pm-poll,.evsvg')).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    await page.getByRole('navigation', { name: 'Volver' }).getByRole('link').click()
+    await page.locator('a.go[href="/politica/europeas"]').click()
+    await expect(page.locator('.fecha-eleccion')).toContainText('2029')
+    await expect(page.locator('.fecha-eleccion a')).toHaveAttribute('href', /^https:\/\/elections\.europa\.eu\//)
+    await expect(page.locator('.resultado .cap')).toContainText('61 eurodiputados elegidos en España')
+    await expect(page.locator('.resultado a')).toHaveAttribute('href', 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2024-13092')
+    await expect(page.locator('main')).not.toContainText(/mayoría/i)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+  })
 })
 
 test.describe('Gráfica en una pantalla táctil', () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 844 } })
 
   test('lee el punto tocado y recorre las encuestas con flechas y teclado', async ({ page }) => {
-    await page.goto('/politica/generales')
+    const { ruta } = await eleccionConHistorico(page)
+    await page.goto(ruta)
     const grafica = page.locator('.ev-chart')
     const control = grafica.getByRole('slider', { name: 'Punto del gráfico' })
     const lectura = grafica.locator('.ev-lectura')

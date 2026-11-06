@@ -157,6 +157,7 @@ app.get('/sitemap.xml', async c => {
   // aún no haya sondeos). changefreq semanal: el contenido cambia con los sondeos.
   entries.push(`  <url><loc>${base}/politica/</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>`)
   entries.push(`  <url><loc>${base}/politica/autonomicas/</loc><changefreq>weekly</changefreq><priority>0.6</priority></url>`)
+  entries.push(`  <url><loc>${base}/politica/generales/senado</loc><changefreq>weekly</changefreq><priority>0.8</priority></url>`)
   for (const e of ELECCIONES) {
     const ruta = e.tipo === 'autonomica' ? `/politica/autonomicas/${e.id}` : `/politica/${e.id}`
     entries.push(`  <url><loc>${base}${ruta}</loc><changefreq>weekly</changefreq><priority>${e.tipo === 'autonomica' ? '0.6' : '0.8'}</priority></url>`)

@@ -2,6 +2,17 @@ import { describe, it, expect } from 'vitest'
 import { ELECCIONES, eleccionPorId, colorPartido, normSiglas } from '../scripts/lib/politica-catalogo.mjs'
 
 describe('catálogo de elecciones', () => {
+  it('distingue la convocatoria del 29-N del año previsto para las europeas', () => {
+    expect(eleccionPorId('generales')?.proxima).toEqual({
+      valor: '2026-11-29', confirmada: true,
+      fuente: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-20742',
+    })
+    expect(eleccionPorId('europeas')?.proxima).toEqual({
+      valor: null, confirmada: false, anioPrevisto: 2029,
+      fuente: 'https://elections.europa.eu/es/how-elections-work',
+    })
+  })
+
   it('tiene 21 elecciones: 1 generales + 1 europeas + 19 autonómicas', () => {
     expect(ELECCIONES.length).toBe(21)
     expect(ELECCIONES.filter((e) => e.tipo === 'generales').length).toBe(1)

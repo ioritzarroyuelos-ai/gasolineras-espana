@@ -18,6 +18,7 @@ import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { RUTAS_SONDEOS_SIN_COPIA } from './lib/politica-catalogo.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -75,6 +76,7 @@ function main() {
   const sha = readShortSha()
   const buildId = version + '-' + sha
   const out = tpl.replaceAll('__BUILD_ID__', buildId)
+    .replace('__RUTAS_SONDEOS_CON_VEDA__', JSON.stringify(RUTAS_SONDEOS_SIN_COPIA))
 
   const existing = tryRead(DEST)
   if (existing === out) {

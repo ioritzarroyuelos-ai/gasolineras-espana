@@ -10,6 +10,7 @@
 // id es unico por commit -> toda release nueva invalida la cache vieja y
 // el usuario recibe la pagina fresca en el proximo navigate sin tocar nada.
 const CACHE_NAME = 'gasolineras-__BUILD_ID__';
+const RUTAS_SONDEOS_CON_VEDA = new Set(__RUTAS_SONDEOS_CON_VEDA__);
 const TILE_CACHE = CACHE_NAME + '-tiles';
 // Cache de respuestas API (snapshots por provincia). Network-first con
 // fallback a cache cuando el usuario esta offline. Separada de TILE/STATIC
@@ -134,6 +135,23 @@ function shouldCacheApi(url) {
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // La copia de una encuesta descargada antes de medianoche puede entrar en
+  // veda mientras el dispositivo está desconectado. Sólo estas rutas consultan
+  // siempre la hora del servidor. Las demás conservan su modo sin conexión.
+  let ruta = url.pathname;
+  if (ruta.includes('%')) {
+    try { ruta = decodeURI(ruta); } catch { /* Una URL mal codificada conserva su ruta original. */ }
+  }
+  if (url.origin === self.location.origin && RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, ''))) {
+    event.respondWith(fetch(request, { cache: 'no-store' }).catch(() =>
+      new Response('Se necesita conexión para consultar los sondeos.', {
+        status: 503,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+      })
+    ));
+    return;
+  }
 
   // Proxy API local /api/*:
   //   - Endpoints de lectura whitelisted (shouldCacheApi) -> Network-first con

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
+import { eleccionConHistorico } from './politica-datos'
 
 test('ITV conserva y muestra la fecha real del directorio en cada nivel', async ({ page }) => {
   const data = await (await page.request.get('/data/itv.json')).json()
@@ -42,7 +43,8 @@ test('búsqueda sin JavaScript y selección municipal siguen funcionando', async
 })
 
 test('histórico paginado conserva navegación, limita el peso y respeta páginas inexistentes', async ({ page }) => {
-  const response = await page.goto('/politica/generales')
+  const { ruta } = await eleccionConHistorico(page)
+  const response = await page.goto(ruta)
   expect((await response!.body()).length).toBeLessThan(150000)
   await expect(page.locator('table.s .empn')).toHaveCount(25)
   const first = await page.locator('table.s tbody').textContent()
@@ -50,8 +52,8 @@ test('histórico paginado conserva navegación, limita el peso y respeta página
   await expect(page).toHaveURL(/pagina=2/)
   expect(await page.locator('table.s tbody').textContent()).not.toBe(first)
   await page.getByRole('link', { name: '← Más recientes' }).first().click()
-  await expect(page).toHaveURL(/\/politica\/generales$/)
-  expect((await page.request.get('/politica/generales?pagina=99999')).status()).toBe(404)
+  await expect(page).toHaveURL(url => url.pathname === ruta && !url.search)
+  expect((await page.request.get(ruta + '?pagina=99999')).status()).toBe(404)
 })
 
 test('portada municipal móvil accesible y sin desbordamiento', async ({ page }) => {

@@ -127,7 +127,8 @@ export function renderGrafica(file: EleccionFile, muestra: Sondeo[], topIds: str
   const todos = series.flatMap(([, puntos]) => puntos)
   const fechas = todos.map(p => p.fecha)
   const primera = Math.min(...fechas), ultima = Math.max(...fechas)
-  const maximo = Math.max(file.camara.mayoria, ...todos.map(p => p.alto))
+  const mayoria = file.tipo === 'europeas' ? undefined : file.camara.mayoria
+  const maximo = Math.max(mayoria ?? 0, ...todos.map(p => p.alto))
   const multiplo = maximo > 20 ? 5 : 1
   const paso = Math.max(1, Math.ceil(maximo / (4 * multiplo)) * multiplo)
   const x = (fecha: number) => ((fecha - primera) * 100 / (ultima - primera)).toFixed(2)
@@ -138,8 +139,7 @@ export function renderGrafica(file: EleccionFile, muestra: Sondeo[], topIds: str
     eje += '<text x="27" y="' + y(valor) + '" dy=".35em" text-anchor="end">' + valor + '</text>'
     lineas += '<line class="ev-grid" y1="' + y(valor) + '" x2="100%" y2="' + y(valor) + '"/>'
   }
-  const mayoriaY = y(file.camara.mayoria)
-  lineas += '<line class="ev-mayoria" y1="' + mayoriaY + '" x2="100%" y2="' + mayoriaY + '"/>'
+  if (mayoria != null) lineas += '<line class="ev-mayoria" y1="' + y(mayoria) + '" x2="100%" y2="' + y(mayoria) + '"/>'
   let circulos = '', leyenda = ''
   for (const [id, puntos] of series) {
     const info = colores.get(id)!
@@ -169,8 +169,8 @@ export function renderGrafica(file: EleccionFile, muestra: Sondeo[], topIds: str
     + '<svg class="evsvg" role="img" aria-label="Estimaciones por partido según la fecha del sondeo">'
     + lineas + circulos + '<ellipse class="ev-foco" rx="7" ry="7" hidden="hidden"/></svg></div>'
     + '<div class="ev-fechas"><span>' + fechaEje(primera) + '</span><span>' + fechaEje(ultima) + '</span></div>'
-    + '<ul class="ev-leyenda" aria-label="Partidos y mayoría">' + leyenda
-    + '<li><i class="ev-raya"></i>Mayoría de ' + file.camara.mayoria + ' escaños</li></ul>'
+    + '<ul class="ev-leyenda" aria-label="Leyenda del gráfico">' + leyenda
+    + (mayoria != null ? '<li><i class="ev-raya"></i>Mayoría de ' + mayoria + ' escaños</li>' : '') + '</ul>'
     + '<div class="ev-explorar" hidden><p>Toca un punto o usa las flechas para consultar su encuesta.</p>'
     + '<div class="ev-mandos"><button class="ev-anterior" type="button" aria-label="Punto anterior">←</button>'
     + '<input class="ev-control" type="range" min="0" step="1" aria-label="Punto del gráfico">'

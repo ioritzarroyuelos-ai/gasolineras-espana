@@ -116,6 +116,48 @@ function fila(empresa: string, fecha: string) {
 }
 
 describe('fecha y procedencia de las estimaciones', () => {
+  const llamada = (id: string) => '<sup><a href="#cite_note-' + id + '">[1]</a></sup>'
+  const original = 'https://moreincommones.substack.com/p/rumbo-al-29n'
+  function cita(id: string, url: string, fecha?: string, editor = 'More in Common') {
+    const rft = new URLSearchParams({ rft_id: url, 'rft.jtitle': editor })
+    if (fecha) rft.set('rft.date', fecha)
+    return '<li id="cite&#95;note-' + id + '"><cite class="web"></cite><span class="citation web"><a class="external" href="' + url + '">Publicación</a></span>'
+      + '<span class="Z3988" title="' + rft.toString().replaceAll('&', '&amp;') + '"></span>Consultado el 6 de noviembre de 2026.</li>'
+  }
+  const conNotas = (refs: string, notas: string) => parseSondeos(
+    '<h2>2026</h2>' + tabla(fila('More in Common' + refs, '21–25 Oct') + fila('Otra casa', '25 Oct')) + '<ol>' + notas + '</ol>',
+    { hoy: '2026-11-06' },
+  ).sondeos
+
+  it('vincula las notas de la propia celda y conserva los días de campo y publicación de More in Common', () => {
+    const refs = llamada('12') + llamada('13')
+    const notas = cita('12', original, '3 de noviembre de 2026') + cita('13', 'https://moreincommon.es/pdfs/pulso-octubre.pdf', '2026-11-03')
+    const [sondeo, otro] = conNotas(refs, notas)
+    expect(sondeo).toMatchObject({ campoInicio: '2026-10-21', campoFin: '2026-10-25', publicacion: '2026-11-03', fuenteUrl: original })
+    expect(otro).not.toHaveProperty('publicacion')
+    expect(otro).not.toHaveProperty('fuenteUrl')
+  })
+
+  it('no confunde publicación con fecha de consulta, reportajes ajenos, fechas anteriores al campo o futuras', () => {
+    for (const nota of [cita('12', original), cita('12', original, '2026-10-24'), cita('12', original, '2026-11-07'),
+      cita('12', 'https://moreincommon.es.ejemplo.com/p/12', '3 November 2026'), cita('12', original, '3 November 2026', 'Otro medio')]) {
+      const [s] = conNotas(llamada('12'), nota)
+      expect(s).not.toHaveProperty('publicacion')
+      expect(s).not.toHaveProperty('fuenteUrl')
+    }
+    const [ambigua] = conNotas(llamada('12') + llamada('13'), cita('12', original, '3 November 2026') + cita('13', original, '4 November 2026'))
+    expect(ambigua).not.toHaveProperty('publicacion')
+  })
+
+  it('no interpreta la fecha de publicación como fecha de las entrevistas', () => {
+    const soloPublicacion = tabla(fila('A', '5 Nov')).replace('Fieldwork', 'Fecha de publicación')
+    expect(parseSondeos('<h2>2026</h2>' + soloPublicacion).sondeos).toEqual([])
+    const dosFechas = soloPublicacion.replace('<th>Sample', '<th>Trabajo de campo</th><th>Sample').replace('<td>1000', '<td>1–4 Nov</td><td>1000')
+    const [s] = parseSondeos('<h2>2026</h2>' + dosFechas).sondeos
+    expect(s).toMatchObject({ campoInicio: '2026-11-01', campoFin: '2026-11-04' })
+    expect(s).not.toHaveProperty('publicacion')
+  })
+
   it('conserva el año de la sección cuando las fechas de campo están fuera de orden y hereda el año de la sección superior', () => {
     const html = '<h2>Voting intention estimates</h2><h3>2026</h3>'
       + tabla(fila('A', '1–6 Oct') + fila('B', '10–11 Oct') + fila('C', '29 Dec–5 Jan'))

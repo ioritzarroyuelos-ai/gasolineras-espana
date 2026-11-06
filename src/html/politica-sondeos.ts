@@ -27,12 +27,20 @@ export const SONDEOS_CSS = [
 const larga = new Intl.DateTimeFormat('es-ES', { dateStyle: 'long', timeZone: 'UTC' })
 const numero = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 3 })
 
+export function urlFuenteHttps(valor?: string): string | undefined {
+  if (!valor || !/^https:\/\//i.test(valor)) return
+  try {
+    const url = new URL(valor)
+    if (url.protocol === 'https:' && !url.username && !url.password) return url.href
+  } catch { /* Un enlace incompleto no impide mostrar la encuesta. */ }
+}
+
 function fechaCampo(s: Sondeo): string {
   const fin = diaDeCampo(s.campoFin)
-  if (fin == null) return s.fechaTexto ? esc(s.fechaTexto) : 'Fecha de campo sin publicar'
+  if (fin == null) return s.fechaTexto ? 'Entrevistas · ' + esc(s.fechaTexto) : 'Fecha de las entrevistas desconocida'
   const inicio = diaDeCampo(s.campoInicio)
-  if (inicio == null || inicio > fin) return 'Hasta el ' + larga.format(fin)
-  return inicio === fin ? larga.format(fin) : larga.formatRange(inicio, fin)
+  if (inicio == null || inicio > fin) return 'Fin de las entrevistas · ' + larga.format(fin)
+  return 'Entrevistas · ' + (inicio === fin ? larga.format(fin) : larga.formatRange(inicio, fin))
 }
 
 function escanos(v: EscanosEstim | undefined): string {
@@ -64,7 +72,7 @@ function referenciaFicha(sondeo: Sondeo, anterior: Sondeo | undefined, file: Ele
   if (modo === 'elecciones') {
     return file.referencia.escanos.length ? 'Referencia · Elecciones del ' + fmtFecha(file.referencia.fecha) : 'Sin resultado electoral de referencia.'
   }
-  if (anterior) return 'Referencia · ' + esc(anterior.empresa) + ' · ' + fmtFecha(anterior.campoFin)
+  if (anterior) return 'Referencia · ' + esc(anterior.empresa) + ' · Fin de entrevistas el ' + fmtFecha(anterior.campoFin)
   if (!sondeo.comitente?.replace(/\p{Cf}/gu, '').trim()) return 'Sin encuesta anterior comparable. No consta quién encargó el sondeo.'
   return 'Sin encuesta anterior comparable de la misma casa para quien encargó este sondeo.'
 }
@@ -99,8 +107,13 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
     const datos = new Map<string, SondeoDato>(sondeo.datos.map(d => [d.candidaturaId, d]))
     const titulo = esc(sondeo.empresa) + (sondeo.comitente ? ' · ' + esc(sondeo.comitente) : '')
     const fecha = fechaCampo(sondeo)
+    const publicada = diaDeCampo(sondeo.publicacion) != null
+      ? '<time datetime="' + esc(sondeo.publicacion) + '">' + fmtFecha(sondeo.publicacion) + '</time>' : undefined
+    const fuente = urlFuenteHttps(sondeo.fuenteUrl)
     const ancla = 'sondeo-' + (i + 1)
-    tabla += '<tr><th scope="row"><a class="empn" href="#' + ancla + '">' + titulo + '</a><small>' + (sondeo.campoFin ? fmtFecha(sondeo.campoFin) : fecha) + '</small></th>'
+    tabla += '<tr><th scope="row"><a class="empn" href="#' + ancla + '">' + titulo + '</a><small>'
+      + (diaDeCampo(sondeo.campoFin) != null ? 'Fin de entrevistas · ' + fmtFecha(sondeo.campoFin) : fecha)
+      + '</small>' + (publicada ? '<small>Publicación · ' + publicada + '</small>' : '') + '</th>'
     const filas: string[] = []
     for (const id of orden) {
       const dato = datos.get(id)
@@ -117,8 +130,12 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
         referencia === 'elecciones' ? 'Elecciones' : 'Encuesta anterior', previos.size > 0))
     }
     tabla += '</tr>'
-    fichas += '<details class="pm-poll"' + (i === 0 ? ' open' : '') + '><summary>' + titulo + '<small>' + fecha + '</small></summary>'
-      + '<div class="pm-inner" id="' + ancla + '" tabindex="-1"><p class="pm-ref">' + referenciaFicha(sondeo, anterior, file, referencia) + '</p>'
+    fichas += '<details class="pm-poll"' + (i === 0 ? ' open' : '') + '><summary>' + titulo + '<small>' + fecha + '</small>'
+      + (publicada ? '<small>Publicación · ' + publicada + '</small>' : '') + '</summary>'
+      + '<div class="pm-inner" id="' + ancla + '" tabindex="-1">'
+      + (!publicada || fuente ? '<p class="pm-source">' + (publicada ? '' : 'Fecha de publicación desconocida.')
+        + (fuente ? ' <a href="' + esc(fuente) + '" rel="nofollow noreferrer">Ver la fuente de esta encuesta</a>' : '') + '</p>' : '')
+      + '<p class="pm-ref">' + referenciaFicha(sondeo, anterior, file, referencia) + '</p>'
       + '<ul class="pm-rows">' + filas.slice(0, 3).join('') + '</ul>'
       + (filas.length > 3 ? '<details class="pm-extra"><summary>Ver los demás partidos</summary><ul class="pm-rows">' + filas.slice(3).join('') + '</ul></details>' : '')
       + '</div></details>'

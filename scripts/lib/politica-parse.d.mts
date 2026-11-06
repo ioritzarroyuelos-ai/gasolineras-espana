@@ -6,6 +6,8 @@ export interface SondeoParseado {
   fechaTexto: string
   campoInicio?: string
   campoFin?: string
+  publicacion?: string
+  fuenteUrl?: string
   muestra?: number
   datos: { candidaturaId: string; pct: number | null; escanos: EscanosEstim }[]
 }
@@ -30,5 +32,5 @@ export function parseEscanos(raw: string): EscanosEstim
 export function parseFecha(text: string, anioContexto?: number): { texto: string; inicio?: string; fin?: string }
 export function parseSondeos(
   html: string,
-  opts?: { anioReferencia?: number },
+  opts?: { anioReferencia?: number; hoy?: string },
 ): ResultadoParse

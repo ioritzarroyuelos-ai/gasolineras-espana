@@ -66,12 +66,17 @@ function horasDelCalendario(texto: string, fecha: string): Tramo[] {
     let horario = fragmento.replace(/^guardias (?:de dia|de noche|todo el dia) · /, '')
     horario = horario.replace(/^(?:dia|diurno|noche|nocturno) \(([^()]+)\)$/, '$1')
       .replace(/^desde las /, 'de ').replace(' hasta las ', ' a ')
-    const m = /^de (\d{1,2}[:.,]\d{2})(?: h(?:oras)?)?(?: de (?:hoy|la manana|la noche))? a (\d{1,2}[:.,]\d{2})(?: h(?:oras)?)?(?: (de manana|del dia siguiente|de la noche|de la manana))?$/.exec(horario)
+    const rotulo24 = fragmento.startsWith('guardias todo el dia · ') && horario.endsWith(' (24 horas)')
+    if (rotulo24) horario = horario.slice(0, -' (24 horas)'.length)
+    const m = /^de (\d{1,2}(?:[:.,]\d{2})?)(?: h(?:oras)?\.?)?(?: de (?:hoy|la manana|la noche))? a (\d{1,2}(?:[:.,]\d{2})?)(?: h(?:oras)?\.?)?(?: (de manana|del dia siguiente|de la noche|de la manana|de hoy))?$/.exec(horario)
     if (!m) return []
     const a = m[1].replace(/[.,]/, ':'), b = m[2].replace(/[.,]/, ':')
     // «De noche, 01:00 a 09:00» por sí solo no dice de cuál madrugada se trata.
     if (/^(?:guardias de noche|noche|nocturno)/.test(fragmento) && Number(a.split(':')[0]) < 9) return []
-    const t = tramo(fecha, a, b, m[3] === 'de manana' || m[3] === 'del dia siguiente')
+    const siguiente = m[3] === 'de manana' || m[3] === 'del dia siguiente'
+    if (m[3] === 'de hoy' && hora(b) <= hora(a)) return []
+    if (rotulo24 && !siguiente && hora(a) !== hora(b)) return []
+    const t = tramo(fecha, a, b, siguiente || rotulo24)
     if (!t) return []
     tramos.push(t)
   }
@@ -150,8 +155,31 @@ export function horarioParaListado(g: Guardia, fechaConsulta: string, ahora: Dat
   return sigueVigente ? horario : null
 }
 
-function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; tramos: Tramo[] } {
+function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; tramos: Tramo[]; turno24h?: boolean } {
   const h = g.horario.trim()
+  // El colegio de Huelva identifica estas direcciones como permanentes en su
+  // cuadro mensual. Cada consulta confirma únicamente su fecha de referencia.
+  if (g.territorio === 'huelva' && g.fechaTurno && h === '24 horas' && g.horarioDesc === 'Atención continuada') {
+    const completo = tramo(g.fechaTurno, '00:00', '24:00')
+    return { texto: h, tramos: completo ? [completo] : [] }
+  }
+  if (g.territorio === 'zaragoza' && normaliza(g.municipio.trim()) === 'zaragoza' && g.fechaTurno &&
+      normaliza(h) === 'guardias todo el dia · de 9:30 de hoy a 9:30 de manana. de 12 de la noche a 9:15 de la manana, consulte las farmacias de guardia de ayer') {
+    // El colegio remite al turno anterior hasta las 09:15 y anuncia el siguiente
+    // a las 09:30; solo esas horas comunes permiten confirmar qué farmacia atiende.
+    const local = fechaHoraLocal(ahora, zona)
+    const enRelevo = local.slice(11) >= '09:15' && local.slice(11) < '09:30'
+    const confirmado = tramo(g.fechaTurno, '09:30', '09:15', true)
+    return { texto: h + ' · Entre las 09:15 y las 09:30, llama para confirmar el relevo.',
+      tramos: confirmado && !enRelevo ? [confirmado] : [], turno24h: true }
+  }
+  if (g.territorio === 'pontevedra' && g.fechaTurno && (h === 'Turno diurno' || h === 'Turno nocturno')) {
+    const nota = g.horarioDesc.replace(/^Estando de guardia /i, '')
+      .replace(/\. Cambio de turno: sábados a las 9:30\.$/i, '').replace(/\.$/, '')
+    const tramos = horasDelCalendario(nota, g.fechaTurno).filter(([a, b]) =>
+      h === 'Turno diurno' ? a.slice(0, 10) === b.slice(0, 10) : a.slice(0, 10) < b.slice(0, 10))
+    return { texto: h, tramos }
+  }
   if (g.territorio === 'asturias' && g.fechaTurno && !h && /^lunes a sabado de 9,30 de la manana a 10 de la noche\. domingos y festivos: de 10 de la manana a 10 de la noche\.?$/.test(normaliza(g.horarioDesc))) {
     const local = fechaHoraLocal(ahora,zona)
     // De 09:30 a 10:00 depende del festivo municipal. A partir de las 10:00
@@ -189,7 +217,7 @@ function datosHorario(g: Guardia, ahora: Date, zona: string): { texto: string; t
     const [a, b] = h.split(/\s*[-–]\s*/)
     if (hora(a) === hora(b)) return { texto: h + ' · Fin del turno por confirmar', tramos: [] }
   }
-  const simple = h.replace(/ \(incluye horario de urgencias\)$/i, '')
+  const simple = g.territorio === 'jaen' ? h.replace(/^(?:Diurna|Nocturna) /, '') : h.replace(/ \(incluye horario de urgencias\)$/i, '')
   const simples = g.fechaTurno ? horasSimples(simple, g.fechaTurno) : []
   return { texto: h, tramos: !simples.length && g.fechaTurno ? horasDelCalendario(simple, g.fechaTurno) : simples }
 }
@@ -208,7 +236,7 @@ export function estadoHorarioGuardia(g: Guardia, ahora: Date, zona: string) {
   const tipo = tipoAtencionGuardia(g)
   if (tipo !== 'guardia' && tipo !== 'apertura') return desconocida
   if (modalidadCondicional.test(normaliza(g.horario + ' ' + g.horarioDesc))) return desconocida
-  const { tramos } = datosHorario(g, ahora, zona)
+  const { tramos, turno24h } = datosHorario(g, ahora, zona)
   if (!tramos.length) return desconocida
   const unidos: Tramo[] = []
   for (const [a, b] of tramos.sort((l, r) => l[0].localeCompare(r[0]))) {
@@ -222,7 +250,7 @@ export function estadoHorarioGuardia(g: Guardia, ahora: Date, zona: string) {
     if (ahora.getTime() >= inicio && ahora.getTime() < fin) {
       // Un día de reloj local también puede durar 23 o 25 horas reales.
       const diaCompleto = Date.parse(b.replace(' ', 'T') + 'Z') - Date.parse(a.replace(' ', 'T') + 'Z') >= 86400000
-      return { conocida: true, abierta: true, todoElDia: diaCompleto }
+      return { conocida: true, abierta: true, todoElDia: diaCompleto || turno24h === true }
     }
   }
   return { conocida: true, abierta: false, todoElDia: false }

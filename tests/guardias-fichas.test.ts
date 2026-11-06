@@ -91,6 +91,24 @@ describe('acciones de la ficha de farmacia', () => {
   })
 })
 
+describe('farmacias de atención continuada de Huelva', () => {
+  const fichero = {
+    territorio: 'huelva', source: 'cofhuelva.org', fecha: '2026-11-06', ts: '2026-11-06T12:00:00Z', guardiasVerificadas: true,
+    guardias: ['Pº Las Palmeras, 23', 'Avd. Andalucía, Edificio Florida'].map(direccion => [0, 0, direccion, 'Huelva', '', '', '24 horas', 'Atención continuada']),
+  }
+  it.each(['ahora', '24h'] as const)('muestra las dos en %s hasta medianoche local y excluye la copia anterior al cambiar la fecha', turno => {
+    const direcciones = (instante: string) => {
+      const visita = new Date(instante)
+      const html = pagina(parseGuardias(fichero, visita), { provinciaSlug: 'huelva', provinciaName: 'Huelva',
+        municipioSlug: 'huelva', municipioName: 'Huelva', actualizado: fichero.ts, metadatos: fichero, ahora: visita, turno })
+      return html.querySelectorAll('.g-card .g-dir').map(n => n.text)
+    }
+    expect(direcciones('2026-11-06T22:59:59Z')).toEqual(fichero.guardias.map(f => f[2]))
+    expect(direcciones('2026-11-06T23:00:00Z')).toEqual([])
+    expect(parseGuardias({ ...fichero, guardiasVerificadas: false }, new Date(fichero.ts))).toEqual([])
+  })
+})
+
 describe('guardia oficial de Durango al cambiar el día', () => {
   const ayer = [0, 0, 'Campillo · Avda. Montevideo, 24', 'Durango', '946811809', '', '2026-11-05 09:00-2026-11-06 09:00', '']
   const hoy = [0, 0, 'Navarro Aranda · Artecalle, 6', 'Durango', '946810223', '', '2026-11-06 09:00-2026-11-07 09:00', '']

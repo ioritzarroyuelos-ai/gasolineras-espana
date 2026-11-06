@@ -43,6 +43,22 @@ export function avisosDelMunicipio(provincia: string, slug: string, datos?: Guar
   return avisos.map(aviso => '<p class="aviso">' + esc(aviso) + '</p>').join('')
 }
 
+export function avisoZonaAlustanteCheca(provincia: string, municipio: string, conTurnoPropio: boolean, ahora = new Date()): string {
+  const esOrigen = provincia === 'guadalajara' && (municipio === 'alustante' || municipio === 'checa')
+  const esBronchales = provincia === 'teruel' && municipio === 'bronchales'
+  if (!esBronchales && (!esOrigen || conTurnoPropio)) return ''
+  const enlace = '<a href="https://www.cofguadalajara.es/cofgu/cms/repositorios/RepositorioDetalle.asp?IdMenu=156&amp;IdRepositorio=36&amp;IdRepositorioDocumento=2">calendario de la zona Alustante–Checa</a>'
+  const consulta = esBronchales ? 'Si vienes por la guardia de Alustante–Checa, consulta el ' : 'La guardia puede atenderse en otro pueblo. Consulta el '
+  const fecha = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(ahora)
+  // Los seis meses del calendario colegial de julio a diciembre de 2026 especifican la misma modalidad.
+  const indicacion = fecha >= '2026-07-01' && fecha <= '2026-12-31'
+    ? 'El colegio indica que la guardia de esta zona es localizada. Llama antes de ir. El plazo que da para atenderte es de 20 minutos como máximo desde que lo solicitas.'
+    : 'Si indica «guardia localizada», llama a la farmacia antes de ir.'
+  return '<p class="aviso">' + consulta + enlace + ' y busca el día en el mes correspondiente. '
+    + indicacion
+    + (esBronchales ? ' Si te atienden en Bronchales, confirma por teléfono el número del portal.' : '') + '</p>'
+}
+
 // La ubicación se usa únicamente en este navegador; no se envía ni se guarda.
 const CERCANIA_JS = `
 document.getElementById('g-cerca').hidden=false;
@@ -272,6 +288,7 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
   const cuerpo = '<h1>' + esc(encabezado) + '</h1>'
     + (d.provinciaName === d.municipioName ? '' : '<p class="g-provincia">' + esc(d.provinciaName) + '</p>')
     + avisosDelMunicipio(d.provinciaSlug, d.municipioSlug, d.metadatos, ahora)
+    + avisoZonaAlustanteCheca(d.provinciaSlug, d.municipioSlug, true, ahora)
     + lista.html
     + '<p class="aviso">Algunas farmacias atienden a puerta cerrada. Llama antes de desplazarte o toca el timbre al llegar.</p>'
     + '<p><a class="g-btn" href="/farmacias/">Buscar en otro municipio</a></p>' + otros

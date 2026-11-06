@@ -1,5 +1,5 @@
 import catalogoMeteorologico from '../public/data/tiempo/municipios.json?raw'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import app from '../src/index'
 import { municipiosFarmacia, slugsFarmacia } from '../src/lib/guardias-municipios-ine'
 import { PROVINCIAS } from '../src/lib/provincias'
@@ -43,5 +43,20 @@ describe('catálogo INE de Farmacias', () => {
     expect((await get('/farmacias/girona/palamos')).status).toBe(200)
     expect((await get('/farmacias/pontevedra/cerdedo?turno=ahora')).headers.get('location')).toBe('/farmacias/pontevedra/cerdedo-cotobade?turno=ahora')
     expect((await get('/farmacias/buscar?q=Cotobade')).headers.get('location')).toBe('/farmacias/pontevedra/cerdedo-cotobade')
+  })
+
+  it('remite del nombre INE al turno que el colegio publica con una abreviatura de ese municipio', async () => {
+    vi.resetModules()
+    const aplicacion = (await import('../src/index')).default
+    const ASSETS = { fetch: async (req: Request) => {
+      if (!req.url.endsWith('guardias-sevilla.json')) return as.fetch(req)
+      return Response.json({ territorio: 'sevilla', ts: new Date().toISOString(), fecha: new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date()),
+        guardiasVerificadas: true, guardias: [[0,0,'28 de Febrero','San Juan Aznalfarache','954761233','','Día (de 9:30 a 22:00)','']] })
+    } }
+    const req = (ruta: string) => aplicacion.request(ruta, {}, { ASSETS } as never)
+    const respuesta = await req('/farmacias/sevilla/san-juan-de-aznalfarache?turno=ahora')
+    expect(respuesta.headers.get('location')).toBe('/farmacias/sevilla/san-juan-aznalfarache?turno=ahora')
+    expect(await (await req('/farmacias/sevilla/san-juan-aznalfarache')).text()).toContain('28 de Febrero')
+    expect((await req('/farmacias/huelva/san-juan-aznalfarache')).status).toBe(404)
   })
 })

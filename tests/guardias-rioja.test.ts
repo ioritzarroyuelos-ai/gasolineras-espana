@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { anotaDestinoRioja, corrigeZonaCervera, municipioOficinaRioja } from '../scripts/lib/guardias-rioja.mjs'
 import { avisosDelMunicipio } from '../src/html/guardia-municipio'
-import { parseGuardias } from '../src/lib/guardias'
+import { parseGuardias, type GuardiasFile } from '../src/lib/guardias'
 
 const hoy = new Date('2026-11-06T21:30:00Z')
 const zona = 'Cervera del Río Alhama'
@@ -19,6 +19,12 @@ describe('ubicación de las farmacias de Rioja Salud', () => {
     expect(avisosDelMunicipio('la-rioja','cervera-del-rio-alhama',antiguo,new Date('2026-11-07T12:00Z'))).toBe('')
     expect(antiguo.guardias[0][3]).toBe(zona)
   })
+  it('ignora filas dañadas del fichero anterior y conserva la guardia y el aviso válidos', () => {
+    const guardias = [null, 'fila dañada', [], ...antiguo.guardias] as unknown as unknown[][]
+    const fichero: GuardiasFile = { ...antiguo, guardias }
+    expect(parseGuardias(fichero,hoy).map(f=>f.municipio)).toEqual(['Aguilar del Río Alhama'])
+    expect(avisosDelMunicipio('la-rioja','cervera-del-rio-alhama',fichero,hoy)).toContain(calle)
+  })
   it('mantiene la oficina de Cervera y aparta la que no se puede situar sin usar la cabecera', () => {
     const raw = {...antiguo,guardias:[finca('Farmacia (calle) CERVERA',zona),finca('Farmacia sin localidad comprobable',zona)]}
     expect(parseGuardias(raw,hoy).map(f=>[f.direccion,f.municipio])).toEqual([['Farmacia (calle) CERVERA',zona]])
@@ -33,6 +39,7 @@ describe('ubicación de las farmacias de Rioja Salud', () => {
     expect(municipioOficinaRioja('Ldo. Roldán Yanguas (Farmacia Vigón) (Avda Solidaridad, 19)',registro,'Calahorra')).toBe('Logroño')
     expect(municipioOficinaRioja('Ldo. Roldán Yanguas (Dirección desconocida)',registro,'Calahorra')).toBeNull()
     expect(municipioOficinaRioja('Farmacia sin identificar (calle Grande, 1)',registro,'Calahorra')).toBeNull()
+    expect(municipioOficinaRioja('Mar Gómez (calle Grande, 1)',[oficina('Martínez Ruiz','Logroño','Grande','1')],zona)).toBeNull()
     expect(municipioOficinaRioja(calle,[oficina('JUAN PABLO CARDONA MONTOYA','Aguilar del Río Alhama','Plaza España','s/n')],zona)).toBe('Aguilar del Río Alhama')
     const avisos = {}
     anotaDestinoRioja(avisos,zona,calle,'Aguilar del Río Alhama')

@@ -25,8 +25,8 @@ export function municipioOficinaRioja(direccion, oficinas, zona) {
     const rotulo = palabras(comercial)
     const coincideRotulo = candidatos.length && rotulo.length && rotulo.every(p => completo.includes(' ' + p + ' '))
     const coincideCalle = calle.length && calle.every(p => completo.includes(' ' + p + ' '))
-    const nombre = palabras(f.DENOMINACION)
-    const coincideTitular = titular.some(p => nombre.includes(p))
+    const palabrasDelTitular = new Set(palabras(f.DENOMINACION))
+    const coincideTitular = titular.some(p => palabrasDelTitular.has(p))
     return coincideRotulo || (coincideCalle && (candidatos.length || (coincideTitular && numero && completo.includes(' ' + numero + ' '))))
   })
   const destinos = new Set(porDireccion.map(f => f.DESC_POBLACION))
@@ -52,6 +52,7 @@ export function corrigeZonaCervera(fichero) {
   if (fichero.territorio !== 'rioja' || fichero.avisosMunicipales || !Array.isArray(fichero.guardias)) return fichero
   const avisosMunicipales = {}, guardias = []
   for (const fila of fichero.guardias) {
+    if (!Array.isArray(fila) || fila.length < 4) continue
     if (fila[3] !== 'Cervera del Río Alhama') { guardias.push(fila); continue }
     const direccion = String(fila[2]), destino = normaliza(direccion)
     const lugar = /\baguilar(?: del rio alhama)?$/.test(destino) ? 'Aguilar del Río Alhama'

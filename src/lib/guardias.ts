@@ -15,6 +15,7 @@
 
 import { slugifyMunicipio } from './municipios'
 import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
+import { corrigeZonaCervera } from '../../scripts/lib/guardias-rioja.mjs'
 
 import { estadoHorarioGuardia, fechaValida, horarioParaListado, intervaloDelDia } from './guardias-horarios'
 export { textoHorarioGuardia, tipoAtencionGuardia } from './guardias-horarios'
@@ -135,6 +136,7 @@ const TERRITORIOS = new Set(Object.values(GUARDIAS_TERRITORIO_BY_PROVINCIA))
 
 // Convierte los arrays posicionales del snapshot en objetos manejables.
 export function parseGuardias(file: GuardiasFile | null, ahora = new Date()): Guardia[] {
+  if (file?.territorio === 'rioja') file = corrigeZonaCervera(file)
   if (!file || !Array.isArray(file.guardias)) return []
   if (file.territorio && !TERRITORIOS.has(file.territorio)) return []
   if (REQUIEREN_NUEVA_LECTURA.has(file.territorio || '') &&

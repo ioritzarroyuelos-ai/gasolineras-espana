@@ -3,14 +3,38 @@
 // tiempo.d.mts). Sin DOM. Las funciones de descarga (bajaAemet/bajaOpenMeteo) usan
 // `fetch` global, disponible en Node 22 y en Workers.
 //
-// De momento: modelo de frescura. El resto (adaptadores AEMET/Open-Meteo, fallback,
-// índice de municipios) se añade en las siguientes tareas del plan.
 
 // Umbral de frescura de la predicción: si el dato tiene más de estas horas, la web
 // avisa de que puede no estar actualizado (mismo espíritu que la red de seguridad de
 // guardias). El tiempo se refresca varias veces al día, así que 12 h es holgado.
-import { instanteLocal } from './fechas.mjs'
+import { fechaHoraLocal, instanteLocal } from './fechas.mjs'
 export const TIEMPO_STALE_HORAS = 12
+export const AEMET_MUNICIPIOS = 'https://www.aemet.es/es/eltiempo/prediccion/municipios/'
+
+// AEMET utiliza su propio nombre en la ruta (p. ej. «coruna-a-id15030»).
+// Ambos tipos de parte identifican la misma ficha, incluso si uno falta.
+export function urlMunicipioAemet(enlace, ine) {
+  if (typeof enlace !== 'string' || !enlace.startsWith(AEMET_MUNICIPIOS)) return undefined
+  const localidad = enlace.slice(AEMET_MUNICIPIOS.length).replace(/^horas\//, '')
+  const codigo = /^[a-z0-9-]+-id(\d{5})$/.exec(localidad)?.[1]
+  if (!codigo || codigo !== ine) return undefined
+  return AEMET_MUNICIPIOS + localidad
+}
+
+export function zonaTiempo(ine) {
+  return /^(35|38)/.test(ine) ? 'Atlantic/Canary' : 'Europe/Madrid'
+}
+
+function diaCivil(valor) {
+  if (typeof valor !== 'string' || !/^\d{4}-\d{2}-\d{2}(?:$|T)/.test(valor)) return ''
+  const fecha = valor.slice(0, 10)
+  const t = Date.parse(fecha + 'T00:00:00Z')
+  return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === fecha ? fecha : ''
+}
+
+function sumaDias(fecha, n) {
+  return new Date(Date.parse(fecha + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10)
+}
 
 /**
  * ¿Es fiable la predicción por su antigüedad?
@@ -41,15 +65,12 @@ const num = (v) => {
 }
 
 // AEMET da los valores por PERIODOS del dia (00-24, 00-12, 12-24, ...). El
-// "00-24" es el del dia entero; en el dia de HOY suele venir vacio (ya pasado),
-// asi que caemos al primer periodo con dato.
+// «00-24» abarca el día. En los últimos días el único valor no lleva periodo.
+// Una probabilidad de seis horas no equivale a la del día entero.
 function periodoDia(arr, campo) {
   if (!Array.isArray(arr)) return null
-  const full = arr.find(x => x && x.periodo === '00-24')
-  const val = (x) => (x == null || x[campo] === '' || x[campo] == null) ? null : x[campo]
-  if (full && val(full) != null) return val(full)
-  for (const x of arr) { const v = val(x); if (v != null) return v }
-  return null
+  const diario = arr.find(x => x?.periodo === '00-24') || (arr.length === 1 && !arr[0]?.periodo ? arr[0] : null)
+  return diario?.[campo] ?? null
 }
 function maxVelocidad(arr) {
   if (!Array.isArray(arr)) return null
@@ -61,7 +82,8 @@ function maxVelocidad(arr) {
 /** Predicción diaria de AEMET (respuesta del segundo paso) -> normalizada. */
 export function normalizaAemet(raw, meta) {
   const root = Array.isArray(raw) ? raw[0] : raw
-  const dias = ((root && root.prediccion && root.prediccion.dia) || []).map(d => ({
+  if (root?.id != null && String(root.id).padStart(5, '0') !== meta.ine) throw new Error('AEMET respondió para otro municipio')
+  const dias = (root?.prediccion?.dia || []).map(d => ({
     fecha: d.fecha,
     tmax: num(d.temperatura?.maxima),
     tmin: num(d.temperatura?.minima),
@@ -71,8 +93,8 @@ export function normalizaAemet(raw, meta) {
   }))
   return {
     ine: meta.ine, nombre: meta.nombre, provincia: meta.provincia,
-    elaborado: (root && root.elaborado) || new Date().toISOString(),
-    fuente: 'AEMET', dias,
+    urlMunicipio: urlMunicipioAemet(root?.origen?.enlace, meta.ine),
+    elaborado: root?.elaborado || '', fuente: 'AEMET', versionPeriodos: 2, dias,
   }
 }
 
@@ -83,14 +105,14 @@ const WMO = {
   56: 'Llovizna helada', 57: 'Llovizna helada',
   61: 'Lluvia', 63: 'Lluvia', 65: 'Lluvia fuerte',
   66: 'Lluvia helada', 67: 'Lluvia helada',
-  71: 'Nieve', 73: 'Nieve', 75: 'Nieve fuerte', 77: 'Granizo',
+  71: 'Nieve', 73: 'Nieve', 75: 'Nieve fuerte', 77: 'Nieve granulada',
   80: 'Chubascos', 81: 'Chubascos', 82: 'Chubascos fuertes',
   85: 'Chubascos de nieve', 86: 'Chubascos de nieve',
   95: 'Tormenta', 96: 'Tormenta con granizo', 99: 'Tormenta con granizo',
 }
 
 /** Predicción diaria de Open-Meteo -> normalizada (misma forma). */
-export function normalizaOpenMeteo(raw, meta) {
+export function normalizaOpenMeteo(raw, meta, ahora = Date.now()) {
   const d = (raw && raw.daily) || {}
   const t = Array.isArray(d.time) ? d.time : []
   const dias = t.map((fecha, i) => ({
@@ -103,7 +125,7 @@ export function normalizaOpenMeteo(raw, meta) {
   }))
   return {
     ine: meta.ine, nombre: meta.nombre, provincia: meta.provincia,
-    elaborado: new Date().toISOString(), fuente: 'Open-Meteo', dias,
+    elaborado: '', consultado: new Date(ahora).toISOString(), fuente: 'Open-Meteo', versionPeriodos: 2, dias,
   }
 }
 
@@ -114,58 +136,196 @@ const UA_TIEMPO = 'cercaya-tiempo/1.0 (+https://webapp-3ft.pages.dev)'
 export async function bajaAemet(ine, key) {
   const r1 = await fetch(
     'https://opendata.aemet.es/opendata/api/prediccion/especifica/municipio/diaria/' + ine,
-    { headers: { 'api_key': key, 'User-Agent': UA_TIEMPO, 'Accept': 'application/json' } },
+    { headers: { 'api_key': key, 'User-Agent': UA_TIEMPO, 'Accept': 'application/json' }, signal: AbortSignal.timeout(4000) },
   )
   if (!r1.ok) throw new Error('AEMET paso1 HTTP ' + r1.status)
   const j1 = await r1.json()
   if (!j1 || !j1.datos) throw new Error('AEMET sin datos (estado ' + (j1 && j1.estado) + ')')
-  const r2 = await fetch(j1.datos, { headers: { 'User-Agent': UA_TIEMPO } })
+  const r2 = await fetch(j1.datos, { headers: { 'User-Agent': UA_TIEMPO }, signal: AbortSignal.timeout(4000) })
   if (!r2.ok) throw new Error('AEMET paso2 HTTP ' + r2.status)
   const buf = await r2.arrayBuffer()
-  return JSON.parse(new TextDecoder('iso-8859-1').decode(buf))
+  const raw = JSON.parse(new TextDecoder('iso-8859-1').decode(buf))
+  const modificado = Date.parse(r2.headers.get('Last-Modified') || '')
+  const parte = Array.isArray(raw) ? raw[0] : raw
+  if (parte && Number.isFinite(modificado)) parte.elaborado = new Date(modificado).toISOString()
+  return raw
 }
 
-export async function bajaOpenMeteo(lat, lng) {
-  const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + lat + '&longitude=' + lng
-    + '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,wind_speed_10m_max'
-    + '&timezone=Europe%2FMadrid'
-  const r = await fetch(url, { headers: { 'User-Agent': UA_TIEMPO } })
+async function consultaOpenMeteo(lat, lng, opciones) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < 27 || lat > 44.5 || lng < -19 || lng > 5)
+    throw new Error('Faltan coordenadas válidas del municipio')
+  const qs = new URLSearchParams({latitude: String(lat), longitude: String(lng), ...opciones})
+  const r = await fetch('https://api.open-meteo.com/v1/forecast?' + qs, {
+    headers: { 'User-Agent': UA_TIEMPO }, signal: AbortSignal.timeout(4000),
+  })
   if (!r.ok) throw new Error('Open-Meteo HTTP ' + r.status)
   return r.json()
 }
 
-/**
- * Devuelve la predicción normalizada de un municipio: AEMET primero, y si falla
- * (tras reintentos), Open-Meteo. `deps` inyectable para tests. `key` = AEMET_API_KEY.
- */
-// Un dia es util si trae al menos una temperatura (min o max). Una respuesta
-// AEMET "exitosa" pero vacia (0 dias, o todos sin temperatura) NO debe bloquear
-// el suplente Open-Meteo ni publicarse como prediccion valida.
-function tieneDiasUtiles(pred) {
-  return !!(pred && Array.isArray(pred.dias) && pred.dias.some(d => d && (d.tmax != null || d.tmin != null)))
+export function bajaOpenMeteo(lat, lng, zona = 'Europe/Madrid') {
+  return consultaOpenMeteo(lat, lng, {
+    daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max,weathercode,wind_speed_10m_max',
+    timezone: zona,
+  })
+}
+
+export function prediccionVigente(pred, ahora = Date.now()) {
+  if (!pred || !frescuraTiempo(pred.elaborado || pred.consultado, ahora).fiable || !Array.isArray(pred.dias)) return null
+  const hoy = fechaHoraLocal(new Date(ahora), zonaTiempo(pred.ine)).slice(0, 10)
+  const limite = sumaDias(hoy, 6)
+  const dias = pred.dias.filter(d => {
+    const fecha = diaCivil(d?.fecha)
+    return fecha >= hoy && fecha <= limite && (d.tmin != null || d.tmax != null)
+  }).sort((a,b) => a.fecha.localeCompare(b.fecha)).map(d => {
+    // Los snapshots anteriores no conservaban el periodo de la lluvia o el cielo.
+    return pred.fuente === 'AEMET' && pred.versionPeriodos !== 2 ? { ...d, cielo: '', probLluvia: null } : d
+  })
+  return dias.length ? { ...pred, dias } : null
+}
+
+async function documentoAemet(ine, porHoras) {
+  if (!/^\d{5}$/.test(ine)) throw new Error('Municipio inválido')
+  const recurso = porHoras ? 'municipios_h/localidad_h_' : 'municipios/localidad_'
+  const r = await fetch('https://www.aemet.es/xml/' + recurso + ine + '.xml', {
+    headers: { 'User-Agent': UA_TIEMPO }, signal: AbortSignal.timeout(4000),
+  })
+  if (!r.ok) throw new Error('AEMET XML HTTP ' + r.status)
+  const cuerpo = new TextDecoder('iso-8859-15').decode(await r.arrayBuffer())
+  const { parse } = await import('node-html-parser')
+  const root = parse(cuerpo).querySelector('root')
+  if (root?.id !== ine || !root.querySelector('prediccion > dia')) throw new Error('XML sin el municipio solicitado')
+  // El XML no señala el huso en «elaborado». Last-Modified sí indica la hora
+  // de publicación en GMT tanto para Madrid como para Canarias.
+  const modificado = Date.parse(r.headers.get('Last-Modified') || '')
+  if (!Number.isFinite(modificado)) throw new Error('Falta la hora de publicación del parte')
+  return { dias: root.querySelectorAll('prediccion > dia'), publicado: new Date(modificado).toISOString(),
+    enlace: root.querySelector('origen > enlace')?.text.trim() }
+}
+
+async function diariaXml(muni) {
+  const { dias, publicado, enlace } = await documentoAemet(muni.ine, false)
+  const dia = dias.map(d => {
+    const periodos = selector => d.querySelectorAll(selector).map(el => ({
+      periodo: el.getAttribute('periodo'), value: el.text, descripcion: el.getAttribute('descripcion'),
+    }))
+    return {
+      fecha: d.getAttribute('fecha'),
+      temperatura: { maxima: d.querySelector('temperatura > maxima')?.text, minima: d.querySelector('temperatura > minima')?.text },
+      probPrecipitacion: periodos('prob_precipitacion'),
+      estadoCielo: periodos('estado_cielo'),
+      viento: d.querySelectorAll('viento > velocidad').map(v => ({ velocidad: v.text })),
+    }
+  })
+  return normalizaAemet({ id: muni.ine, origen: { enlace }, elaborado: publicado, prediccion: { dia } }, muni)
 }
 
 export async function resuelvePrediccion(muni, deps = {}) {
-  const meta = { ine: muni.ine, nombre: muni.nombre, provincia: muni.provincia }
-  const bajaA = deps.bajaAemet || ((ine) => bajaAemet(ine, deps.key || muni.key))
-  const bajaO = deps.bajaOpenMeteo || (() => bajaOpenMeteo(muni.lat, muni.lng))
-  const intentos = deps.intentos ?? 2
-  let ultimoError
-  for (let i = 0; i < intentos; i++) {
-    try {
-      const pred = normalizaAemet(await bajaA(muni.ine), meta)
-      if (tieneDiasUtiles(pred)) return pred
-      ultimoError = new Error('AEMET respondio sin dias utiles')
-    }
-    catch (e) { ultimoError = e }
-  }
-  // AEMET no responde (o vino vacio): suplente Open-Meteo (etiquetado como tal).
+  const ahora = deps.ahora ?? Date.now()
   try {
-    const pred = normalizaOpenMeteo(await bajaO(muni.lat, muni.lng), meta)
-    if (tieneDiasUtiles(pred)) return pred
-    throw new Error('Open-Meteo respondio sin dias utiles')
+    const parte = deps.bajaAemet ? normalizaAemet(await deps.bajaAemet(muni.ine), muni) : await diariaXml(muni)
+    const vigente = prediccionVigente(parte, ahora)
+    if (vigente) return vigente
+  } catch { /* El municipio puede carecer de XML o el servicio estar caído. */ }
+  const raw = await (deps.bajaOpenMeteo || bajaOpenMeteo)(muni.lat, muni.lng, zonaTiempo(muni.ine))
+  const suplente = normalizaOpenMeteo(raw, muni, ahora)
+  const vigente = prediccionVigente(suplente, ahora)
+  if (!vigente) throw new Error('Falta predicción vigente de las dos fuentes')
+  return vigente
+}
+
+// ---- Próximas horas y franjas de lluvia ------------------------------------
+async function horariaXml(ine) {
+  const { dias, publicado, enlace } = await documentoAemet(ine, true)
+  const horas = [], lluvia = []
+  for (const dia of dias) {
+    const fecha = diaCivil(dia.getAttribute('fecha'))
+    if (!fecha) continue
+    const lecturas = new Map()
+    const repetidas = new Set()
+    for (const el of dia.querySelectorAll('temperatura, viento, estado_cielo')) {
+      const h = el.getAttribute('periodo')
+      if (!/^(?:[01]\d|2[0-3])$/.test(h)) continue
+      const fila = lecturas.get(h) || { fechaHora: fecha + 'T' + h + ':00', temperatura: null, viento: null }
+      if (el.rawTagName === 'estado_cielo') {
+        const cielo = el.getAttribute('descripcion')?.trim()
+        if (!cielo) continue
+        if (fila.cielo != null) repetidas.add(h)
+        fila.cielo = cielo
+      } else {
+        const viento = el.rawTagName === 'viento'
+        const valor = num(viento ? el.querySelector('velocidad')?.text : el.text)
+        if (valor === null) continue
+        const campo = viento ? 'viento' : 'temperatura'
+        if (fila[campo] != null) repetidas.add(h)
+        fila[campo] = valor
+      }
+      lecturas.set(h, fila)
+    }
+    for (const h of repetidas) lecturas.delete(h)
+    horas.push(...lecturas.values())
+    for (const el of dia.querySelectorAll('prob_precipitacion')) {
+      const m = /^([01]\d|2[0-3])([01]\d|2[0-3]|24)$/.exec(el.getAttribute('periodo') || '')
+      const probabilidad = num(el.text)
+      if (!m || m[1] === m[2] || probabilidad === null || probabilidad < 0 || probabilidad > 100) continue
+      // El XML horario ya expresa los extremos UTC en la hora LOCAL de esta
+      // oficina: la misma ventana de invierno es 19–01 en Durango y 18–00 en Arrecife.
+      const fechaFin = m[2] < m[1] || m[2] === '24' ? sumaDias(fecha, 1) : fecha
+      lluvia.push({ desde: fecha + 'T' + m[1] + ':00', hasta: fechaFin + 'T' + (m[2] === '24' ? '00' : m[2]) + ':00', probabilidad })
+    }
   }
-  catch (e) { throw new Error('AEMET y Open-Meteo fallaron: ' + (ultimoError && ultimoError.message) + ' / ' + e.message) }
+  return { fuente: 'AEMET', elaborado: publicado, urlMunicipio: urlMunicipioAemet(enlace, ine), horas, lluvia }
+}
+
+export function normalizaHorasOpenMeteo(raw, ine, ahora = Date.now()) {
+  const local = ms => fechaHoraLocal(new Date(ms), zonaTiempo(ine)).replace(' ', 'T')
+  const horas = [], lluvia = []
+  for (const [i, t] of (raw?.hourly?.time || []).entries()) {
+    if (!Number.isSafeInteger(t) || !Number.isFinite(new Date(t * 1000).getTime())) continue
+    const fechaHora = local(t * 1000)
+    const temperatura = num(raw.hourly.temperature_2m?.[i])
+    const viento = num(raw.hourly.wind_speed_10m?.[i])
+    const cielo = WMO[raw.hourly.weather_code?.[i]]
+    if (temperatura !== null || viento !== null || cielo) horas.push({ fechaHora, temperatura, viento, cielo })
+    // Open-Meteo documenta la probabilidad para la hora PRECEDENTE a su marca.
+    const probabilidad = num(raw.hourly.precipitation_probability?.[i])
+    const desde = local(t * 1000 - 3600000)
+    if (probabilidad !== null && probabilidad >= 0 && probabilidad <= 100 && desde < fechaHora)
+      lluvia.push({ desde, hasta: fechaHora, probabilidad })
+  }
+  return { fuente: 'Open-Meteo', elaborado: '', consultado: new Date(ahora).toISOString(), horas, lluvia }
+}
+
+export function horasVigentes(parte, ine, ahora = Date.now()) {
+  if (!parte || !frescuraTiempo(parte.elaborado || parte.consultado, ahora).fiable) return null
+  const zona = zonaTiempo(ine)
+  const actual = fechaHoraLocal(new Date(ahora), zona).replace(' ', 'T')
+  const hora = actual.slice(0, 13) + ':00'
+  const limite = fechaHoraLocal(new Date(ahora + 24 * 3600000), zona).replace(' ', 'T').slice(0,13) + ':00'
+  const horas = (parte.horas || []).filter(h => h.fechaHora >= hora && h.fechaHora < limite)
+    .sort((a,b) => a.fechaHora.localeCompare(b.fechaHora))
+  // Si al atrasarse el reloj una hora aparece dos veces, el XML civil no permite
+  // distinguir los dos instantes. Descartarla evita atribuirle valores ambiguos.
+  const unicas = horas.filter((h, i) => h.fechaHora !== horas[i-1]?.fechaHora && h.fechaHora !== horas[i+1]?.fechaHora)
+  const lluvia = (parte.lluvia || []).filter(p => p.hasta > actual && p.desde < limite)
+    .sort((a,b) => a.desde.localeCompare(b.desde))
+  return unicas.length || lluvia.length ? { ...parte, horas: unicas, lluvia } : null
+}
+
+export async function resuelveHoras(muni, deps = {}) {
+  const ahora = deps.ahora ?? Date.now()
+  try {
+    const parte = await (deps.horasAemet || horariaXml)(muni.ine)
+    const vigente = horasVigentes(parte, muni.ine, ahora)
+    if (vigente) return vigente
+  } catch { /* Se intenta el respaldo solo para las coordenadas de este municipio. */ }
+  const raw = deps.horasOpenMeteo ? await deps.horasOpenMeteo(muni.lat, muni.lng) :
+    await consultaOpenMeteo(muni.lat, muni.lng, {
+      hourly: 'temperature_2m,wind_speed_10m,precipitation_probability,weather_code',
+      timeformat: 'unixtime', timezone: 'GMT', forecast_days: '3',
+    })
+  const vigente = horasVigentes(normalizaHorasOpenMeteo(raw, muni.ine, ahora), muni.ine, ahora)
+  if (!vigente) throw new Error('Falta predicción horaria vigente de las dos fuentes')
+  return vigente
 }
 
 // ---- Maestro de municipios (AEMET) -> lista propia -------------------------

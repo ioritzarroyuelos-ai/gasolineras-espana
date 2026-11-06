@@ -4,7 +4,7 @@
 // sin llamada en frío. El resto de municipios va bajo demanda + caché en el borde.
 //
 // Lo lanza .github/workflows/fetch-tiempo.yml (cron), con AEMET_API_KEY de secreto.
-// Fuente AEMET, con Open-Meteo de suplente (resuelvePrediccion). Freno entre
+// Sólo AEMET en el snapshot. Open-Meteo respalda las consultas de la web. Freno entre
 // municipios para respetar los límites de AEMET.
 //
 // Salida: public/data/tiempo/snapshot/<provinciaSlug>.json
@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bajaAemet, normalizaAemet, frescuraTiempo } from './lib/tiempo.mjs'
+import { bajaAemet, normalizaAemet, prediccionVigente } from './lib/tiempo.mjs'
 
 const KEY = process.env.AEMET_API_KEY
 if (!KEY) { console.error('Falta AEMET_API_KEY'); process.exit(1) }
@@ -40,7 +40,9 @@ if (importantes.length < 50 || importantes.length > 400) {
 async function aemetConReintentos(m) {
   for (let intento = 1; intento <= 3; intento++) {
     try {
-      return normalizaAemet(await bajaAemet(m.ine, KEY), { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre })
+      const pred = normalizaAemet(await bajaAemet(m.ine, KEY), { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre })
+      if (!prediccionVigente(pred)) throw new Error('AEMET no entregó un parte vigente con temperaturas')
+      return pred
     } catch (e) {
       const msg = String(e.message || e)
       if (msg.includes('429') && intento < 3) { await sleep(BACKOFF_429_MS); continue }
@@ -59,7 +61,7 @@ function cargaPrevio(slug, provincia) {
     const prev = JSON.parse(readFileSync(resolve(OUT_DIR, slug + '.json'), 'utf8'))
     for (const ine in (prev.predicciones || {})) {
       const p = prev.predicciones[ine]
-      if (p && p.fuente === 'AEMET' && frescuraTiempo(p.elaborado).fiable) g.predicciones[ine] = p
+      if (p?.fuente === 'AEMET' && prediccionVigente(p)) g.predicciones[ine] = p
     }
   } catch { /* sin snapshot previo */ }
   porProvincia.set(slug, g)

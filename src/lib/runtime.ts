@@ -454,7 +454,7 @@ function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Rec
 }
 
 export {
-  slog, srvCache, snapshotCache, geoCache, buildUserAgent, cachedJson, proxiedFetch,
+  slog, srvCache, snapshotCache, geoCache, buildUserAgent, cfCache, cachedJson, proxiedFetch,
   loadSnapshot, filterStations, incrementIsoDate, maxIsoDate,
   loadStaticHistoryForStation, loadStaticMedianForProvince, loadStaticNational,
   ALLOWED_ORIGINS, resolveHost, resolveScheme, canonicalBase,

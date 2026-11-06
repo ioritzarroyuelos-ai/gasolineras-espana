@@ -94,3 +94,11 @@ export const MASTHEAD_CSS =
   + '.masthead .mh-nav a:hover{background:var(--mh-brand-soft)}'
   + '.masthead .mh-nav a:focus-visible{background:var(--mh-brand-soft);outline:3px solid var(--mh-brand-dark);outline-offset:-3px}'
   + '.masthead .mh-nav a.mh-on{text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:2px}'
+
+export const CABECERA_COMPACTA_CSS = `
+.masthead.masthead--compact{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px;padding:4px max(12px,calc((100% - 1024px)/2));border-bottom:1px solid var(--mh-rule)}
+.masthead--compact .mh-inner,.masthead--compact .mh-nav{margin:0}.masthead--compact .mh-brand{display:flex;align-items:center;gap:7px}
+.masthead--compact .mh-logo{width:23px;height:23px;margin:0}.masthead--compact .mh-title{font-size:22px}
+.masthead--compact .mh-nav{border:0}.masthead--compact .mh-nav a{padding:11px 8px;font-size:12px}
+@media(max-width:650px){.masthead.masthead--compact{justify-content:center;padding:6px 10px 0}
+.masthead--compact .mh-nav{flex-basis:100%;justify-content:space-around}.masthead--compact .mh-nav a{padding:10px 2px;font-size:11px;letter-spacing:.01em}}`

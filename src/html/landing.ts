@@ -22,6 +22,7 @@
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { BRAND } from '../lib/brand'
+import { emojiCielo } from './cielo'
 import { localidadHtml, LOCALIDAD_CSS } from './localidades'
 import type { Localidad, LocalidadIndex } from '../lib/localidades'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
@@ -58,20 +59,6 @@ function precio(n: number): string {
   return n.toFixed(3).replace('.', ',') + '&nbsp;€/L'
 }
 
-// Emoji orientativo del estado del cielo (decorativo). Se decide por palabra
-// clave sobre el texto de AEMET ("Despejado", "Intervalos nubosos con lluvia"…).
-function emojiCielo(cielo: string): string {
-  const s = String(cielo || '').toLowerCase()
-  if (/tormenta/.test(s)) return '⛈️'
-  if (/nieve|nevad/.test(s)) return '🌨️'
-  if (/lluvia|chubasc|precipit|aguacero/.test(s)) return '🌧️'
-  if (/niebla|bruma|calima/.test(s)) return '🌫️'
-  if (/cubierto/.test(s)) return '☁️'
-  if (/muy nuboso/.test(s)) return '🌥️'
-  if (/nubos|nube|intervalos|nuboso/.test(s)) return '⛅'
-  if (/despejado|sol/.test(s)) return '☀️'
-  return '🌡️'
-}
 
 // Una celda de ciudad en la franja del tiempo.
 function celdaTiempo(t: LandingTiempo): string {
@@ -181,7 +168,7 @@ export function buildLandingPage(
   const bloqueTiempo = tiempo.length
     ? '<div class="strip">' + tiempo.map(celdaTiempo).join('') + '</div>'
       + '<a class="more" href="/tiempo/">El tiempo de tu municipio &rarr;</a>'
-    : '<p class="lead-note">Consulta la predicción de tu municipio con datos oficiales de AEMET.</p>'
+    : '<p class="lead-note">Busca tu municipio para consultar la previsión y los avisos de AEMET.</p>'
       + '<a class="more" href="/tiempo/">Buscar el tiempo de tu municipio &rarr;</a>'
 
   // --- Bloque carburantes (media nacional o línea genérica) ---
@@ -383,7 +370,7 @@ export function buildLandingPage(
     <nav class="mas" aria-label="Consulta por municipio">
       <h2>Consulta por municipio</h2>
       <ul>
-        <li><a href="/tiempo/">El tiempo por municipio (predicción de AEMET)</a></li>
+        <li><a href="/tiempo/">Previsión y avisos por municipio</a></li>
         <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
         <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
         <li><a href="/politica/">Elecciones y sondeos (generales, europeas y autonómicas)</a></li>
@@ -442,7 +429,7 @@ export function landingHeaders(nonce: string): Record<string, string> {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // Cache corto: la portada lleva dato del día (tiempo/precios). 5 min en CDN.
-    'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
+    // Los cambios de fecha peninsular y canaria coinciden con una hora UTC en punto.
+    'Cache-Control': 'public, max-age=' + Math.min(300, Math.floor((3600000 - Date.now() % 3600000) / 1000)) + ', must-revalidate',
   }
 }

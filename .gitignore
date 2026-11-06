@@ -59,6 +59,7 @@ tests/e2e/.auth/
 # scratch / dev (HTML/PDF descargados manualmente para investigar parsers)
 .tmp/
 public/data/localidades-index.json
+public/data/tiempo/buscador-v1.json
 public/data/localidades/
 public/static/municipio.js
 

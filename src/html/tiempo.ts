@@ -1,59 +1,44 @@
-// Paginas del vertical "el tiempo": indice nacional, provincia y municipio.
-// Renderizado entero en servidor (como ITV/farmacias), en verde de marca.
-// El dato viene de AEMET (o de Open-Meteo como suplente); el modelo normalizado
-// esta en scripts/lib/tiempo.mjs (Prediccion). Ver
-// docs/superpowers/specs/2026-09-06-tiempo-aemet-design.md.
-
-import type { Prediccion, Frescura, MunicipioLista } from '../../scripts/lib/tiempo.mjs'
-import { APP_VERSION } from '../lib/version'
-import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import type { DiaPrediccion, MunicipioLista, ParteHoras, Prediccion } from '../../scripts/lib/tiempo.mjs'
+import { AEMET_MUNICIPIOS, urlMunicipioAemet, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
+import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
+import type { AvisosTiempo } from '../lib/tiempo-avisos'
+import type { ResultadoTiempo } from '../lib/tiempo-municipios'
+import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
+import { escapeHtml as esc } from './html'
+import { emojiCielo } from './cielo'
+import { buscadorTiempo, resultadosTiempo, CSS_BUSCADOR_TIEMPO } from './tiempo-buscador'
 
-function esc(s: unknown): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
-
-// Verde de marca España Útil (mismo que gasolineras/farmacias/ITV).
-const CSS =
-  ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
-  + '*{box-sizing:border-box}'
-  + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'main{max-width:760px;margin:0 auto;padding:18px}'
-  + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
-  + 'h2{font-size:17px;margin:26px 0 10px}'
-  + '.sub{color:var(--mu);font-size:14px;margin:0 0 18px}'
-  + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
-  + '.aviso--warn{border-left-color:#d97706;color:#92400e;background:#fffbeb}'
-  + '.fuente{font-size:12.5px;color:var(--mu);margin:0 0 14px}'
-  + '.lista ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
-  + '.lista li a{display:inline-block;padding:5px 10px;border:1px solid var(--bd);border-radius:999px;'
-  + 'font-size:13px;color:var(--vd);text-decoration:none;background:#fff}'
-  // Buscador (mismo patron que /farmacias/ e /itv/).
-  + '.buscador{margin:0 0 22px}'
-  + '.buscador label{display:block;font-weight:600;margin:0 0 6px;font-size:15px}'
-  + '.buscador .campo{position:relative}'
-  + '.buscador input{width:100%;padding:13px 15px;font-size:16px;border:2px solid var(--bd);border-radius:10px;background:#fff;color:var(--tx)}'
-  + '.buscador input:focus{outline:none;border-color:var(--v)}'
-  + '.sugs{list-style:none;margin:6px 0 0;padding:6px;position:absolute;left:0;right:0;background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 4px 12px rgba(15,23,42,.08);max-height:300px;overflow-y:auto;z-index:10}'
-  + '.sugs li{margin:0}'
-  + '.sugs a,.sugs .sug-msg{display:block;padding:9px 11px;border-radius:7px;text-decoration:none;color:var(--tx);font-size:15px}'
-  + '.sugs a small{display:block;color:var(--mu);font-size:12px}'
-  + '.sugs a:hover,.sugs a.active{background:#dcfce7}'
-  + '.sug-msg{color:var(--mu);font-size:14px}'
-  + '.hint{font-size:13px;color:var(--mu);margin:8px 0 18px}'
-  // Tarjetas de prediccion por dia.
-  + '.dias{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin:0 0 8px}'
-  + '.dia{border:1px solid var(--bd);border-radius:10px;padding:12px 14px;background:var(--bg)}'
-  + '.dia-fecha{font-size:13px;font-weight:600;text-transform:capitalize}'
-  + '.dia-cielo{font-size:13px;color:var(--mu);margin:2px 0 8px;min-height:34px}'
-  + '.dia-temp{font-size:15px}'
-  + '.dia-temp .max{font-weight:700;color:var(--vd)}'
-  + '.dia-temp .min{color:var(--mu)}'
-  + '.dia-extra{font-size:12.5px;color:var(--mu);margin-top:6px}'
-  + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
-  + 'footer a{color:var(--vd)}'
+const CSS = `
+:root{color-scheme:light;--ink:#202d27;--muted:#4c5e54;--green:#1a543b;--rule:#ced8cf;--paper:#fffdf8}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:1rem/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:57rem;margin:auto;padding:clamp(1rem,3vw,2rem);overflow-wrap:anywhere}
+h1,h2{font-family:Georgia,"Times New Roman",serif;line-height:1.12;margin:0}
+h1{font-size:clamp(1.8rem,5vw,3rem)}h2{font-size:clamp(1.4rem,3vw,1.85rem);margin-bottom:.65rem}
+a{color:var(--green);text-underline-offset:3px} :focus-visible{outline:3px solid #1462a1;outline-offset:3px}
+.sub,.fuente,.aviso-meta{color:var(--muted);font-size:.89rem}.sub{margin:.25rem 0 1rem}.fuente{margin:.8rem 0 0}
+.seccion{margin-top:1.65rem}.panel{background:#eff5ef;border:1px solid #bdcfc0;border-radius:14px;padding:clamp(1rem,3vw,1.6rem)}
+.hoy{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem 1rem;align-items:center}
+.hoy h2{font:600 1rem/1.4 system-ui;margin:0}.hoy .cielo{font:600 clamp(1.45rem,4vw,2.15rem)/1.18 Georgia,serif;margin:.2rem 0 .65rem}
+.temperaturas{display:flex;gap:1.5rem;flex-wrap:wrap}.temperaturas span{display:grid;font-size:.85rem;color:var(--muted)}
+.temperaturas b{color:var(--ink);font-size:clamp(1.75rem,4vw,2.6rem);line-height:1.1;font-variant-numeric:tabular-nums}
+.icono-hoy{font-size:clamp(2.5rem,7vw,4.5rem);line-height:1}
+.condiciones{grid-column:1/-1;margin:.65rem 0 0;color:var(--muted)}
+.aviso-zona{margin:1rem 0;border-left:4px solid #98aa9a;padding:.55rem .85rem;background:#f1f4ef}
+.aviso-zona p,.aviso-activo p{margin:.25rem 0}.aviso-activo{padding:.7rem .9rem;margin:.5rem 0;border-left:5px solid #ac780a;background:#fff7db}
+.aviso-naranja{border-color:#a94a09;background:#fff0df}.aviso-rojo{border-color:#b72e24;background:#fff0ed}
+.aviso-zona a,.aviso-activo a{display:inline-block;padding:.25rem 0}
+.dias{list-style:none;padding:0;margin:0;border-top:1px solid var(--rule)}
+.dia{display:grid;grid-template-columns:minmax(8rem,1fr) minmax(8rem,1.45fr) minmax(12rem,1.3fr);gap:.4rem 1rem;align-items:center;padding:.65rem .1rem;border-bottom:1px solid var(--rule)}
+.dia .medidas{font-size:.9rem;color:var(--muted)}.dia small{display:block}
+.lluvia{display:flex;flex-wrap:wrap;gap:.5rem;list-style:none;padding:0;margin:.7rem 0}.lluvia li{background:#edf3f6;border-radius:8px;padding:.45rem .7rem;font-size:.9rem}
+.horas{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.horas th,.horas td{padding:.45rem .6rem;text-align:right;border-bottom:1px solid var(--rule)}.horas th:first-child,.horas td:first-child{text-align:left}.horas thead{background:#edf3ef}.cielo-hora{display:block;color:var(--muted);font-weight:400}
+details>summary{cursor:pointer;color:var(--green);font-weight:650;padding:.65rem 0;min-height:44px}.cambio{margin-top:1.5rem}.cambio summary{width:fit-content}
+.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0}.lista a{display:inline-flex;align-items:center;min-height:44px;padding:.4rem .75rem;border:1px solid var(--rule);border-radius:7px;background:white;text-decoration:none}
+footer{border-top:1px solid var(--rule);margin-top:2rem;padding:1.15rem;text-align:center;font-size:.88rem}
+@media(max-width:600px){.dia{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.dia .medidas{grid-column:1/-1}.horas th,.horas td{padding:.45rem .25rem}.icono-hoy{align-self:start}.hoy{gap:.25rem .4rem}}
+`
 
 interface Meta { title: string; desc: string; canonical: string; nonce: string; noindex?: boolean; jsonLd?: string }
 
@@ -73,217 +58,172 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + ogSocialTags(originFromCanonical(m.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
-    + mastheadHtml('tiempo') + '<main>'
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + CSS_BUSCADOR_TIEMPO + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + '</style></head><body>'
+    + mastheadHtml('tiempo', { compact: true, hideMunicipioSearch: true }) + '<main>'
     + cuerpo
-    + '</main><footer>Datos de AEMET (Agencia Estatal de Meteorología). '
-    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a> &middot; v' + esc(APP_VERSION) + '</footer>'
+    + '</main><footer><a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer>'
     + '</body></html>'
 }
 
-// Script del buscador (autocompletado contra /api/tiempo/municipios). Misma lógica
-// probada que /farmacias/ e /itv/.
-function scriptBuscador(nonce: string): string {
-  return `<script nonce="${esc(nonce)}">
-  (function () {
-    var input = document.getElementById('q'); var box = document.getElementById('sugs');
-    var muni = [], loaded = false, active = -1, shown = [], provs = null;
-    function norm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,''); }
-    function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-    function cerrar(){ box.hidden=true; box.innerHTML=''; active=-1; shown=[]; input.setAttribute('aria-expanded','false'); }
-    function msg(t){ box.innerHTML='<li><span class="sug-msg">'+esc(t)+'</span></li>'; box.hidden=false; shown=[]; active=-1; input.setAttribute('aria-expanded','true'); }
-    // Nombres cooficiales/alternativos de provincia: se buscan ADEMAS del nombre
-    // canonico (que en el sitio es el castellano/INE), para que 'gipuzkoa',
-    // 'araba', 'gerona'... encuentren su provincia.
-    var PROV_ALIAS = {
-      'guipuzcoa':'gipuzkoa', 'alava':'araba', 'bizkaia':'vizcaya',
-      'girona':'gerona', 'lleida':'lerida', 'ourense':'orense',
-      'a coruna':'la coruna coruna', 'islas baleares':'illes balears baleares',
-      'santa cruz de tenerife':'tenerife', 'navarra':'nafarroa',
-      'alicante':'alacant', 'castellon':'castello'
-    };
-    // Indice de provincias (una por slug), derivado de las URLs de municipio
-    // (/tiempo/<prov>/<mun>). Cada una guarda su cadena de busqueda (nombre + alias).
-    function buildProvs(){
-      if(provs) return provs;
-      provs=[]; var seen={};
-      for(var i=0;i<muni.length;i++){
-        var parts=String(muni[i].u||'').split('/'); var slug=parts[2]||'';
-        if(!slug||seen[slug]) continue; seen[slug]=1;
-        var nombre=muni[i].p||'', np=norm(nombre);
-        provs.push({ n:nombre, u:'/tiempo/'+slug, s:np+' '+(PROV_ALIAS[np]||'') });
-      }
-      return provs;
-    }
-    function render(q){
-      var nq=norm(q); if(nq.length<2){cerrar();return;}
-      if(!loaded){msg('Cargando municipios\\u2026');return;}
-      var res=[];
-      // 1) Provincias que casan por nombre canonico o cooficial -> enlace a la provincia.
-      var pv=buildProvs();
-      for(var k=0;k<pv.length&&res.length<3;k++){ if(pv[k].s.indexOf(nq)>=0) res.push({ n:'Toda la provincia: '+pv[k].n, p:'Ver municipios', u:pv[k].u }); }
-      // 2) Municipios por nombre.
-      for(var i=0;i<muni.length&&res.length<12;i++){ if(norm(muni[i].n).indexOf(nq)>=0) res.push(muni[i]); }
-      shown=res; active=-1;
-      if(res.length===0){msg('No encontramos ese municipio. Prueba con otro o mira por provincia.');return;}
-      var html=''; for(var j=0;j<res.length;j++){ html+='<li role="option"><a href="'+esc(res[j].u)+'">'+esc(res[j].n)+'<small>'+esc(res[j].p)+'</small></a></li>'; }
-      box.innerHTML=html; box.hidden=false; input.setAttribute('aria-expanded','true');
-    }
-    function marcar(idx){ var a=box.querySelectorAll('a'); for(var i=0;i<a.length;i++)a[i].classList.toggle('active',i===idx); if(idx>=0&&a[idx])a[idx].scrollIntoView({block:'nearest'}); }
-    function ir(idx){ if(idx>=0&&shown[idx]){window.location.href=shown[idx].u;return true;} return false; }
-    function cargar(){ if(loaded)return;
-      fetch('/api/tiempo/municipios',{credentials:'same-origin'}).then(function(r){return r.ok?r.json():[];})
-        .then(function(d){ muni=Array.isArray(d)?d:(d&&d.municipios)||[]; loaded=true; if(norm(input.value).length>=2)render(input.value); })
-        .catch(function(){ loaded=true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
-    }
-    input.addEventListener('focus',cargar);
-    input.addEventListener('input',function(){ cargar(); render(input.value); });
-    input.addEventListener('keydown',function(e){
-      if(box.hidden||shown.length===0){ if(e.key==='Enter'){e.preventDefault();} return; }
-      if(e.key==='ArrowDown'){e.preventDefault();active=Math.min(active+1,shown.length-1);marcar(active);}
-      else if(e.key==='ArrowUp'){e.preventDefault();active=Math.max(active-1,0);marcar(active);}
-      else if(e.key==='Enter'){e.preventDefault(); if(!ir(active))ir(0);}
-      else if(e.key==='Escape'){cerrar();}
-    });
-    document.addEventListener('click',function(e){ if(e.target!==input&&!box.contains(e.target))cerrar(); });
-  })();
-  </script>`
+function listaLugares(enlaces: Array<{nombre:string; url:string}>, titulo: string) {
+  return '<section class="seccion"><h2>' + esc(titulo) + '</h2><nav class="lista" aria-label="' + esc(titulo) + '"><ul>'
+    + enlaces.map(l => '<li><a href="' + esc(l.url) + '">' + esc(l.nombre) + '</a></li>').join('') + '</ul></nav></section>'
 }
 
-const CAJA_BUSCADOR =
-  '<div class="buscador">'
-  + '<label for="q">Busca tu municipio</label>'
-  + '<div class="campo">'
-  + '<input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" '
-  + 'placeholder="Escribe tu municipio…" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugs" />'
-  + '<ul id="sugs" class="sugs" role="listbox" aria-label="Municipios" hidden></ul>'
-  + '</div>'
-  + '<p class="hint">Escribe tu municipio y te llevamos a su predicción. O mira la lista por provincia más abajo.</p>'
-  + '</div>'
-
-// ---- Indice nacional: /tiempo/ ----
-export function buildTiempoIndexPage(
-  nonce: string,
-  provincias: Array<{ slug: string; name: string }>,
-  canonical: string,
-): string {
-  const title = 'El tiempo en España por municipios | España Útil'
-  const desc = 'Predicción del tiempo por municipio en España: temperaturas, cielo, '
-    + 'probabilidad de lluvia y viento. Datos oficiales de AEMET.'
-  const lista = provincias.map(p =>
-    '<li><a href="/tiempo/' + esc(p.slug) + '">' + esc(p.name) + '</a></li>'
-  ).join('')
-  const origin = originFromCanonical(canonical)
-  const jsonLd = breadcrumbLd([
-    { name: 'Inicio', url: origin + '/' },
-    { name: 'El tiempo', url: origin + '/tiempo/' },
-  ])
-  return envoltorio({ title, desc, canonical, nonce, jsonLd },
-    '<h1>El tiempo en España</h1>'
-    + '<p class="sub">Predicción por municipio, con datos de AEMET</p>'
-    + CAJA_BUSCADOR
-    + '<h2>Provincias</h2>'
-    + '<nav class="lista"><ul>' + lista + '</ul></nav>'
-    + scriptBuscador(nonce),
-  )
+export function buildTiempoIndexPage(nonce: string, provincias: Array<{slug:string; name:string}>, canonical: string) {
+  return envoltorio({ nonce, canonical, title: 'El tiempo en España por municipios | España Útil', desc: 'Previsión por días y horas y avisos meteorológicos por municipio.' },
+    '<h1>El tiempo en España</h1><p class="sub">Previsión por horas, próximos días y avisos de AEMET.</p>'
+    + buscadorTiempo(nonce) + listaLugares(provincias.map(p => ({nombre:p.name, url:'/tiempo/'+p.slug})), 'Provincias'))
 }
 
-// ---- Provincia: /tiempo/:provincia ----
-export function buildTiempoProvinciaPage(
-  nonce: string,
-  d: { provinciaSlug: string; provinciaName: string; municipios: Array<{ slug: string; nombre: string }>; canonical: string },
-): string {
-  const title = 'El tiempo en ' + d.provinciaName + ' por municipios | España Útil'
-  const desc = 'Predicción del tiempo en los municipios de ' + d.provinciaName
-    + ': temperaturas, cielo, lluvia y viento. Datos de AEMET.'
-  const lista = d.municipios.map(m =>
-    '<li><a href="/tiempo/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.nombre) + '</a></li>'
-  ).join('')
-  const origin = originFromCanonical(d.canonical)
-  const jsonLd = breadcrumbLd([
-    { name: 'Inicio', url: origin + '/' },
-    { name: 'El tiempo', url: origin + '/tiempo/' },
-    { name: d.provinciaName, url: origin + '/tiempo/' + d.provinciaSlug },
-  ])
-  return envoltorio({ title, desc, canonical: d.canonical, nonce, jsonLd },
-    '<h1>El tiempo en ' + esc(d.provinciaName) + '</h1>'
-    + '<p class="sub">' + d.municipios.length + ' municipios</p>'
-    + CAJA_BUSCADOR
-    + '<h2>Municipios</h2>'
-    + '<nav class="lista"><ul>' + lista + '</ul></nav>'
-    + scriptBuscador(nonce),
-  )
+export function buildTiempoProvinciaPage(nonce: string, d: {provinciaSlug:string; provinciaName:string; municipios:Array<{slug:string; nombre:string}>; canonical:string}) {
+  const title = 'El tiempo en ' + d.provinciaName
+  return envoltorio({nonce, canonical:d.canonical, title:title+' por municipios | España Útil', desc:'Previsión y avisos por municipio en '+d.provinciaName},
+    '<h1>'+esc(title)+'</h1><p class="sub">'+d.municipios.length+' municipios</p>' + buscadorTiempo(nonce)
+    + listaLugares(d.municipios.map(m => ({nombre:m.nombre, url:'/tiempo/'+d.provinciaSlug+'/'+m.slug})), 'Municipios'))
 }
 
-const DIAS_SEMANA = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
-const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
-function fechaCorta(iso: string, i: number): string {
-  if (i === 0) return 'Hoy'
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return esc(iso)
-  return DIAS_SEMANA[d.getDay()] + ' ' + d.getDate() + ' ' + MESES[d.getMonth()]
-}
-function horaHHMM(iso: string): string {
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return ''
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+export function buildTiempoBusquedaPage(nonce:string, q:string, resultados:ResultadoTiempo[], canonical:string) {
+  return envoltorio({nonce,canonical,noindex:true,title:'Buscar municipio | El tiempo | España Útil',desc:'Resultados de la búsqueda de municipios.'},
+    '<h1>Buscar municipio</h1>'+buscadorTiempo(nonce,q)+resultadosTiempo(q,resultados))
 }
 
-// ---- Municipio: /tiempo/:provincia/:municipio ----
-export function buildTiempoMunicipioPage(
-  nonce: string,
-  d: { pred: Prediccion; frescura: Frescura; provinciaSlug: string; canonical: string },
-): string {
-  const { pred, frescura } = d
-  const title = 'El tiempo en ' + pred.nombre + ' (' + pred.provincia + ') | España Útil'
-  const hoy = pred.dias[0]
-  const desc = hoy
-    ? 'Predicción del tiempo en ' + pred.nombre + ': hoy ' + (hoy.tmin ?? '?') + '° / ' + (hoy.tmax ?? '?') + '°, '
-      + (hoy.cielo || '').toLowerCase() + '. Próximos días, con datos de AEMET.'
-    : 'Predicción del tiempo en ' + pred.nombre + ', con datos de AEMET.'
+function fechaLarga(fecha: string, corta = false) {
+  return new Intl.DateTimeFormat('es-ES',{timeZone:'UTC', weekday:corta?'short':'long', day:'numeric', month:corta?'short':'long'}).format(new Date(fecha.slice(0,10)+'T12:00:00Z'))
+}
 
-  const cards = pred.dias.map((dia, i) =>
-    '<div class="dia">'
-    + '<div class="dia-fecha">' + esc(fechaCorta(dia.fecha, i)) + '</div>'
-    + '<div class="dia-cielo">' + esc(dia.cielo || '') + '</div>'
-    + '<div class="dia-temp"><span class="max">' + (dia.tmax != null ? dia.tmax + '°' : '--') + '</span> '
-    + '<span class="min">' + (dia.tmin != null ? dia.tmin + '°' : '--') + '</span></div>'
-    + '<div class="dia-extra">'
-    + (dia.probLluvia != null ? '💧 ' + dia.probLluvia + '% ' : '')
-    + (dia.viento != null ? '· 💨 ' + dia.viento + ' km/h' : '')
-    + '</div>'
-    + '</div>'
-  ).join('')
+function fechaYHora(iso:string, zona:string) {
+  const t = instanteLocal(iso,zona)
+  if (!Number.isFinite(t)) return ''
+  return new Intl.DateTimeFormat('es-ES',{timeZone:zona,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}).format(new Date(t))
+}
 
-  // Sello de fuente + frescura (honesto: si es Open-Meteo, se dice).
-  const fuenteTxt = pred.fuente === 'AEMET'
-    ? 'Datos de AEMET · actualizado a las ' + horaHHMM(pred.elaborado)
-    : 'Datos de Open-Meteo · AEMET no disponible temporalmente'
-  const avisoCaducado = !frescura.fiable
-    ? '<p class="aviso aviso--warn">⚠️ Esta predicción puede no estar actualizada '
-      + '(último dato de hace ' + Math.round(frescura.horas) + " h). Compruébala en aemet.es.</p>"
-    : ''
+const formatoNumero = new Intl.NumberFormat('es-ES',{maximumFractionDigits:0})
+function cantidad(n:number|null, unidad:string) {
+  return n != null && Number.isFinite(n) ? formatoNumero.format(n)+unidad : '—'
+}
 
-  const origin = originFromCanonical(d.canonical)
-  const jsonLd = breadcrumbLd([
-    { name: 'Inicio', url: origin + '/' },
-    { name: 'El tiempo', url: origin + '/tiempo/' },
-    { name: pred.provincia, url: origin + '/tiempo/' + d.provinciaSlug },
-    { name: pred.nombre, url: d.canonical },
-  ])
-  return envoltorio({
-    title, desc, canonical: d.canonical, nonce, jsonLd,
-    noindex: !frescura.fiable,  // no indexar predicciones caducadas
-  },
-    '<h1>El tiempo en ' + esc(pred.nombre) + '</h1>'
-    + '<p class="sub">' + esc(pred.provincia) + ' · próximos ' + pred.dias.length + ' días</p>'
-    + '<p class="fuente">' + esc(fuenteTxt) + '</p>'
-    + avisoCaducado
-    + '<div class="dias">' + cards + '</div>'
-    + '<p><a href="/tiempo/' + esc(d.provinciaSlug) + '">← El tiempo en toda la provincia</a></p>'
-    + '<p class="aviso">La predicción meteorológica puede cambiar. Ante fenómenos adversos, '
-    + 'consulta los avisos oficiales en aemet.es o llama al 112.</p>',
-  )
+function fuentes(parte: Prediccion | ParteHoras, m: MunicipioLista, oficial: string) {
+  const zona = zonaTiempo(m.ine)
+  const fecha = fechaYHora(parte.elaborado || parte.consultado || '',zona)
+  const esAemet = parte.fuente === 'AEMET'
+  const link = esAemet ? oficial : 'https://open-meteo.com/en/docs?latitude='+encodeURIComponent(String(m.lat))+'&longitude='+encodeURIComponent(String(m.lng))
+  return '<p class="fuente"><a href="'+esc(link)+'">'+esc(parte.fuente)+'</a>'
+    +(fecha?' · '+(parte.elaborado?'Actualizado':'Consultado')+' el '+esc(fecha)+' (hora local)':'')+'</p>'
+}
+
+function etiquetaLluvia(fuente:Prediccion['fuente']) {
+  return fuente === 'Open-Meteo' ? 'Probabilidad máxima de lluvia por hora' : 'Probabilidad de lluvia'
+}
+
+function resumenHoy(dia:DiaPrediccion, parte:Prediccion, m:MunicipioLista, oficial:string) {
+  const detalles = []
+  if(dia.probLluvia != null) detalles.push(etiquetaLluvia(parte.fuente)+' '+cantidad(dia.probLluvia,' %'))
+  if(dia.viento != null) detalles.push('Viento máx. '+cantidad(dia.viento,' km/h'))
+  return '<section class="panel hoy" aria-labelledby="hoy"><div><h2 id="hoy">Hoy · '+esc(fechaLarga(dia.fecha))+'</h2>'
+    +(dia.cielo?'<p class="cielo">'+esc(dia.cielo)+'</p>':'')
+    +'<div class="temperaturas"><span>Máxima <b>'+cantidad(dia.tmax,'°')+'</b></span><span>Mínima <b>'+cantidad(dia.tmin,'°')+'</b></span></div></div>'
+    +(dia.cielo?'<span class="icono-hoy" aria-hidden="true">'+emojiCielo(dia.cielo)+'</span>':'')
+    +(detalles.length?'<p class="condiciones">'+esc(detalles.join(' · '))+'</p>':'')+'</section>'+fuentes(parte,m,oficial)
+}
+
+function avisosZona(a: AvisosTiempo, zona: string, ahora: Date) {
+  const enlace = '<a href="'+esc(a.url)+'">Ver avisos oficiales de AEMET</a>'
+  const zonaHtml = esc(a.zona || '')
+  if (a.estado !== 'verificado') {
+    return '<aside class="aviso-zona" aria-label="Avisos meteorológicos"><p><strong>Avisos pendientes de actualizar</strong>'
+      +(a.zona ? ' · '+zonaHtml : '')+'</p>'+enlace+'</aside>'
+  }
+  const consulta = '<p class="aviso-meta">Consultado el '+esc(fechaYHora(a.consultado,zona))+' · '+enlace+'</p>'
+  if (!a.avisos.length) {
+    return '<aside class="aviso-zona" aria-label="Avisos meteorológicos"><p>Sin avisos publicados para <strong>'
+      +zonaHtml+'</strong>.</p>'+consulta+'</aside>'
+  }
+
+  const intervalos = new Map<string, { nivel: 'amarillo'|'naranja'|'rojo'; inicio: string; fin: string; fenomenos: Set<string> }>()
+  for (const aviso of a.avisos) {
+    const clave = [aviso.nivel,aviso.inicio,aviso.fin].join('/')
+    const intervalo = intervalos.get(clave) ?? { ...aviso, fenomenos: new Set<string>() }
+    intervalo.fenomenos.add(aviso.fenomeno)
+    intervalos.set(clave, intervalo)
+  }
+  const activo = (inicio: string) => Date.parse(inicio) <= ahora.getTime()
+  const gravedad = { amarillo: 1, naranja: 2, rojo: 3 }
+  const ordenados = [...intervalos.values()].sort((a,b) => {
+    const vigencia = Number(activo(b.inicio)) - Number(activo(a.inicio))
+    const porNivel = gravedad[b.nivel] - gravedad[a.nivel]
+    const porHora = Date.parse(a.inicio) - Date.parse(b.inicio)
+    return vigencia || (activo(a.inicio) ? porNivel || porHora : porHora || porNivel)
+  })
+  const bloques = ordenados.map(v => {
+    const etiqueta = activo(v.inicio) ? 'Aviso '+v.nivel+' en vigor' : 'Próximo aviso '+v.nivel
+    return '<div class="aviso-activo aviso-'+v.nivel+'"><strong>'+etiqueta+' · '+esc([...v.fenomenos].join(' y '))+'</strong>'
+      +'<p>'+zonaHtml+' · Del '+esc(fechaYHora(v.inicio,zona))+' al '+esc(fechaYHora(v.fin,zona))+' (hora local).</p></div>'
+  })
+  return '<aside aria-label="Avisos meteorológicos">'+bloques[0]
+    +(bloques.length > 1 ? '<details><summary>Ver los demás avisos ('+(bloques.length-1)+')</summary>'+bloques.slice(1).join('')+'</details>' : '')
+    +consulta+'</aside>'
+}
+
+function relojTramo(iso:string, hoy:string) {
+  const fecha=iso.slice(0,10)
+  return (fecha===hoy?'':fechaLarga(fecha,true)+' · ')+iso.slice(11,16)
+}
+
+function tablaHoras(parte:ParteHoras,hoy:string) {
+  if(!parte.horas.length) return ''
+  const columnas='<thead><tr><th scope="col">Hora local</th><th scope="col">Temperatura</th><th scope="col">Viento</th></tr></thead>'
+  const tabla=(horas:ParteHoras['horas'])=>'<table class="horas" aria-label="Previsión por horas">'+columnas+'<tbody>'+horas.map(h=>
+    '<tr><th scope="row">'+esc(relojTramo(h.fechaHora,hoy))+(h.cielo?'<small class="cielo-hora">'+esc(h.cielo)+'</small>':'')+'</th><td>'+cantidad(h.temperatura,'°')+'</td><td>'+cantidad(h.viento,' km/h')+'</td></tr>').join('')+'</tbody></table>'
+  const horas=parte.horas.slice(0,24)
+  return tabla(horas.slice(0,6))+(horas.length>6?'<details><summary>Ver '+(horas.length-6)+' horas más</summary>'+tabla(horas.slice(6))+'</details>':'')
+}
+
+function proximasHoras(parte:ParteHoras|null,m:MunicipioLista,hoy:string,oficial:string) {
+  const titulo='<section class="seccion"><h2>Próximas horas</h2>'
+  if(!parte) return titulo+'<p>La previsión por horas está pendiente de actualizar. <a href="'+esc(oficial)+'">Consultar AEMET</a></p></section>'
+  const tramos = parte.lluvia.map(v => {
+    const cruzaMedianoche = v.desde.slice(0,10) !== v.hasta.slice(0,10)
+    const fin = (cruzaMedianoche ? fechaLarga(v.hasta,true)+' · ' : '')+v.hasta.slice(11,16)
+    return '<li>'+esc(relojTramo(v.desde,hoy))+' – '+esc(fin)+' · <strong>'+cantidad(v.probabilidad,' %')+'</strong></li>'
+  })
+  const lista=(filas:string[])=>'<ul class="lluvia">'+filas.join('')+'</ul>'
+  return titulo + '<h3>Probabilidad de lluvia</h3>'
+    +(tramos.length ? lista(tramos.slice(0,4))+(tramos.length>4?'<details><summary>Ver más tramos de lluvia</summary>'+lista(tramos.slice(4))+'</details>':'') : '<p>Sin porcentaje publicado para estas horas.</p>')
+    +tablaHoras(parte,hoy)+fuentes(parte,m,oficial)+'</section>'
+}
+
+function semana(dias:DiaPrediccion[],fuente:Prediccion['fuente']) {
+  if(!dias.length) return ''
+  return '<section class="seccion"><h2>Próximos días</h2><ul class="dias">'+dias.map(d=>'<li class="dia"><strong>'+esc(fechaLarga(d.fecha,true))+'</strong>'
+    +'<span>'+esc(d.cielo)+'</span><div class="medidas">Máx. '+cantidad(d.tmax,'°')+' · Mín. '+cantidad(d.tmin,'°')
+    +(d.probLluvia!=null?'<small>'+etiquetaLluvia(fuente)+' '+cantidad(d.probLluvia,' %')+'</small>':'')
+    +(d.viento!=null?'<small>Viento máx. '+cantidad(d.viento,' km/h')+'</small>':'')+'</div></li>').join('')+'</ul></section>'
+}
+
+export function buildTiempoMunicipioPage(nonce:string, d:{municipio:MunicipioLista;pred:Prediccion|null;horas:ParteHoras|null;avisos:AvisosTiempo;canonical:string;ahora?:Date}) {
+  const {municipio:m,pred,horas,avisos,canonical}=d
+  const zona=zonaTiempo(m.ine)
+  const ahora = d.ahora ?? new Date()
+  const hoy = fechaHoraLocal(ahora,zona).slice(0,10)
+  const dia=pred?.dias.find(v=>v.fecha.slice(0,10)===hoy)
+  const tieneAemet = pred?.fuente === 'AEMET' || horas?.fuente === 'AEMET'
+  const oficial = urlMunicipioAemet(pred?.urlMunicipio,m.ine) ?? urlMunicipioAemet(horas?.urlMunicipio,m.ine)
+    ?? (tieneAemet ? AEMET_MUNICIPIOS+m.slug+'-id'+m.ine : AEMET_MUNICIPIOS)
+  const oficialHoras = oficial === AEMET_MUNICIPIOS ? oficial : oficial.replace(AEMET_MUNICIPIOS,AEMET_MUNICIPIOS+'horas/')
+  const title='El tiempo en '+m.nombre
+  const origin=originFromCanonical(canonical)
+  const jsonLd=breadcrumbLd([{name:'Inicio',url:origin+'/'},{name:'El tiempo',url:origin+'/tiempo/'},{name:m.provinciaNombre,url:origin+'/tiempo/'+m.provinciaSlug},{name:m.nombre,url:canonical}])
+  return envoltorio({nonce,canonical,noindex:!pred&&!horas,title:title+' ('+m.provinciaNombre+') | España Útil',desc:'Previsión y avisos meteorológicos en '+m.nombre+' ('+m.provinciaNombre+').', jsonLd},
+    '<h1>'+esc(title)+'</h1><p class="sub">'+esc(m.provinciaNombre)+' · Hora local '+(zona==='Atlantic/Canary'?'canaria':'peninsular')+'</p>'
+    +(avisos.avisos.length?avisosZona(avisos,zona,ahora):'')
+    +(dia&&pred?resumenHoy(dia,pred,m,oficial):'<section class="panel"><h2>Hoy · '+esc(fechaLarga(hoy))+'</h2><p>Previsión pendiente de actualizar. <a href="'+esc(oficial)+'">Consultar el parte oficial</a></p></section>')
+    +(!avisos.avisos.length?avisosZona(avisos,zona,ahora):'')
+    +proximasHoras(horas,m,hoy,oficialHoras)
+    +(pred ? semana(pred.dias.filter(v=>v.fecha.slice(0,10)>hoy),pred.fuente) : '')
+    +(pred && !dia ? fuentes(pred,m,oficial) : '')
+    +'<details class="cambio"><summary>Cambiar de municipio</summary>'+buscadorTiempo(nonce)+'</details>'
+    +'<a href="/tiempo/'+esc(m.provinciaSlug)+'">Ver municipios de '+esc(m.provinciaNombre)+'</a>')
 }
 
 // Headers de /tiempo/*. CSP estricta: sin mapa ni CDNs; solo la llamada a
@@ -315,10 +255,6 @@ export function tiempoHeaders(nonce: string): Record<string, string> {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // El tiempo cambia durante el día: cache corta en CDN.
-    'Cache-Control': 'public, max-age=1800, s-maxage=1800',
+    'Cache-Control': 'no-cache',
   }
 }
-
-// Tipo re-exportado por comodidad de los handlers.
-export type { MunicipioLista }

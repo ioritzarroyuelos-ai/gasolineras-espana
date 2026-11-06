@@ -10,7 +10,7 @@ const index = {
   schemaVer: 1,
   generado: '2026-09-23T00:00:00Z',
   elecciones: [
-    { id: 'generales', tipo: 'generales', nombre: 'Elecciones generales de España', fecha: { valor: null, confirmada: false }, estado: 'ok', ruta: '/data/politica/generales.json' },
+    { id: 'generales', tipo: 'generales', nombre: 'Elecciones generales de España', fecha: { valor: null, confirmada: false }, estado: 'ok', fechaUltimoSondeo: '2026-11-19', fechaUltimaPublicacion: '2026-11-20', ruta: '/data/politica/generales.json' },
     { id: 'madrid', tipo: 'autonomica', nombre: 'Elecciones a la Asamblea de Madrid', comunidad: 'Comunidad de Madrid', fecha: { valor: '2027-05-23', confirmada: false }, estado: 'ok', ruta: '/data/politica/autonomicas/madrid.json' },
     { id: 'europeas', tipo: 'europeas', nombre: 'Elecciones al Parlamento Europeo (España)', fecha: { valor: null, confirmada: false }, estado: 'sin_sondeos', ruta: '/data/politica/europeas.json' },
   ],
@@ -40,7 +40,8 @@ const generales = {
 const MAPA: Record<string, unknown> = {
   '/data/politica/index.json': index,
   '/data/politica/generales.json': generales,
-  '/data/politica/europeas.json': { ...generales, id: 'europeas', tipo: 'europeas', sondeos: [], referencia: { ...generales.referencia, escanos: [] } },
+  '/data/politica/europeas.json': { ...generales, id: 'europeas', tipo: 'europeas', sondeos: [], referencia: { ...generales.referencia, fecha: '2024-06-09', escanos: [] } },
+  '/data/politica/autonomicas/aragon.json': { ...madrid, id: 'aragon', sondeos: [], referencia: { ...madrid.referencia, escanos: [] } },
   '/data/politica/autonomicas/madrid.json': madrid,
 }
 const ASSETS = {
@@ -63,6 +64,52 @@ describe('rutas de política', () => {
     expect(res.status).toBe(200)
     const j = await res.json()
     expect(j.elecciones.length).toBe(3)
+    expect(j.elecciones.find((e: { id: string }) => e.id === 'generales').fecha).toMatchObject({
+      valor: '2026-11-29', confirmada: true, fuente: expect.stringContaining('BOE-A-2026-20742'),
+    })
+    expect(j.elecciones.find((e: { id: string }) => e.id === 'europeas').fecha).toMatchObject({
+      valor: null, confirmada: false, anioPrevisto: 2029,
+    })
+  })
+
+  it('el enlace descargable deja de servir sondeos a medianoche aunque la copia guardada aún los contenga', async () => {
+    const ruta = '/data/politica/generales.json?v=anterior'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      vi.setSystemTime(new Date('2026-11-23T22:59:59.999Z'))
+      const libre = await app.request(ruta, {}, env)
+      expect(libre.headers.get('cache-control')).toBe('no-store')
+      expect((await libre.json()).sondeos).toEqual(generales.sondeos)
+      expect((await app.request('/politica/generales', {}, env)).headers.get('cache-control')).toBe('no-store')
+      vi.setSystemTime(new Date('2026-11-23T23:00:00.000Z'))
+      const vedada = await app.request(ruta, {}, env)
+      expect(vedada.status).toBe(200)
+      expect(vedada.headers.get('cache-control')).toBe('no-store')
+      expect(await vedada.json()).toMatchObject({ sondeos: [], veda: true, referencia: generales.referencia, fechaUltimoSondeo: null, fechaUltimaPublicacion: null })
+      const indice = await app.request('/api/politica/elecciones', {}, env)
+      expect(indice.headers.get('cache-control')).toBe('no-store')
+      expect((await indice.json()).elecciones[0]).toMatchObject({ fechaUltimoSondeo: null, fechaUltimaPublicacion: null })
+      const portada = await app.request('/politica/', {}, env)
+      expect(portada.headers.get('cache-control')).toBe('no-store')
+      expect(await portada.text()).not.toContain('Fin de las últimas entrevistas recopiladas')
+      expect(await (await app.request('/politica/generales', {}, env)).text()).toContain('Veda electoral')
+      expect(await (await app.request('/politica/autonomicas/madrid', {}, env)).text()).toContain('Data10')
+      vi.setSystemTime(new Date('2026-11-30T00:00:00.000Z'))
+      expect((await (await app.request(ruta, {}, env)).json()).sondeos).toEqual(generales.sondeos)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('el Senado tiene su enlace propio y carece de páginas de histórico de sondeos', async () => {
+    const ruta = '/politica/generales/senado'
+    const res = await app.request(ruta, {}, env)
+    expect(res.status).toBe(200)
+    const doc = parse(await res.text())
+    expect(doc.querySelector('link[rel="canonical"]')?.getAttribute('href')).toMatch(/\/politica\/generales\/senado$/)
+    expect(doc.querySelector('h1')?.text).toContain('Senado')
+    expect(doc.querySelector('details.pm-poll')).toBeNull()
+    expect((await app.request(ruta + '?pagina=2', {}, env)).status).toBe(404)
   })
 
   it('GET /politica -> 301 a /politica/', async () => {
@@ -177,13 +224,22 @@ describe('rutas de política', () => {
   })
 
   it('una elección sin sondeos ni reparto oficial muestra esas dos ausencias', async () => {
-    const res = await app.request('/politica/europeas', {}, env)
+    const res = await app.request('/politica/autonomicas/aragon', {}, env)
     expect(res.status).toBe(200)
     const doc = parse(await res.text())
     expect(doc.querySelector('main')?.text).toContain('Todavía no hay sondeos')
     expect(doc.querySelector('main')?.text).toContain('Todavía no hay un reparto de escaños')
     expect(doc.querySelector('table.s')).toBeNull()
     expect(doc.querySelector('.evsvg')).toBeNull()
+  })
+
+  it('las europeas conservan el año previsto y su resultado oficial aunque la copia antigua no los incluya', async () => {
+    const res = await app.request('/politica/europeas', {}, env)
+    const doc = parse(await res.text())
+    expect(res.status).toBe(200)
+    expect(doc.querySelector('main')?.text).toContain('2029')
+    expect(doc.querySelector('a[href*="BOE-A-2024-13092"]')).not.toBeNull()
+    expect(doc.querySelector('details.pm-poll')).toBeNull()
   })
 
   it('GET /politica/generales -> 200', async () => {

@@ -18,7 +18,11 @@ export const ELECCIONES = [
   {
     id: 'generales', tipo: 'generales', nombre: 'Elecciones generales de España',
     camara: { nombre: 'Congreso de los Diputados', escanos: 350, mayoria: 176 },
-    ultimaFecha: '2023-07-23', proxima: { valor: null, confirmada: false },
+    ultimaFecha: '2023-07-23',
+    proxima: {
+      valor: '2026-11-29', confirmada: true,
+      fuente: 'https://www.boe.es/diario_boe/txt.php?id=BOE-A-2026-20742',
+    },
     // Wikipedia renombró el artículo a "…de 2026" (~oct 2026); el título viejo
     // "…próximas…españolas" se borró sin redirect → el robot fallaba solo en generales.
     wikiSondeos: es('Encuestas de opinión para las elecciones generales de España de 2026'),
@@ -27,7 +31,11 @@ export const ELECCIONES = [
   {
     id: 'europeas', tipo: 'europeas', nombre: 'Elecciones al Parlamento Europeo (España)',
     camara: { nombre: 'Parlamento Europeo (delegación española)', escanos: 61, mayoria: 31 },
-    ultimaFecha: '2024-06-09', proxima: { valor: null, confirmada: false },
+    ultimaFecha: '2024-06-09',
+    proxima: {
+      valor: null, confirmada: false, anioPrevisto: 2029,
+      fuente: 'https://elections.europa.eu/es/how-elections-work',
+    },
     wikiSondeos: null,
     wikiResultados: es('Elecciones al Parlamento Europeo de 2024 (España)'),
   },
@@ -169,6 +177,16 @@ export const ELECCIONES = [
 export function eleccionPorId(id) {
   return ELECCIONES.find((e) => e.id === id)
 }
+
+export function rutasEleccion(e) {
+  const pagina = '/politica/' + (e.tipo === 'autonomica' ? 'autonomicas/' : '') + e.id
+  return { pagina, datos: '/data' + pagina + '.json' }
+}
+
+export const RUTAS_CON_VEDA = ELECCIONES.filter(e => e.proxima.confirmada).map(rutasEleccion)
+export const RUTAS_SONDEOS_SIN_COPIA = RUTAS_CON_VEDA.length
+  ? ['/politica', ...RUTAS_CON_VEDA.flatMap(({ pagina, datos }) => [pagina, datos])]
+  : []
 
 const COLORES = {
   PP: '#1d6fb8', PSOE: '#e30613', PSC: '#e30613', PSDEG: '#e30613', PSPV: '#e30613', PSE: '#e30613', PSOEA: '#e30613',

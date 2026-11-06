@@ -11,14 +11,19 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { parseSondeos } from './lib/politica-parse.mjs'
+import { combinaSeguimiento, esSeguimientoSW, extraeSeguimientoGenerales } from './lib/politica-seguimiento.mjs'
+import { completaResultadosOficiales } from './lib/politica-resultados-oficiales.mjs'
 import { validaEleccion } from './lib/politica-validacion.mjs'
 import { ELECCIONES } from './lib/politica-catalogo.mjs'
+import { enVeda } from './lib/politica-veda.mjs'
 
 const SCHEMA_VER = 1
 const UA = 'CercaYaBot/1.0 (+https://webapp-3ft.pages.dev; vertical política)'
 const DIR = resolve('public/data/politica')
 const LICENCIA = 'CC BY-SA 4.0'
 const HOY = new Date()
+const diaMadrid = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(HOY)
+const seguimiento29N = { lang: 'en', articulo: 'Opinion polling for the 2026 Spanish general election' }
 
 const args = process.argv.slice(2)
 const solo = args.includes('--solo') ? args[args.indexOf('--solo') + 1] : null
@@ -26,14 +31,6 @@ const solo = args.includes('--solo') ? args[args.indexOf('--solo') + 1] : null
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const yearOf = (iso) => parseInt(String(iso).slice(0, 4), 10)
 const rutaFichero = (e) => (e.tipo === 'autonomica' ? `autonomicas/${e.id}.json` : `${e.id}.json`)
-
-function enVedaCat(e) {
-  if (!e.proxima.confirmada || !e.proxima.valor) return false
-  const v = Date.parse(e.proxima.valor.slice(0, 10) + 'T00:00:00Z')
-  if (Number.isNaN(v)) return false
-  const t = HOY.getTime()
-  return t >= v - 5 * 86_400_000 && t < v + 86_400_000
-}
 
 function leeJson(p) {
   try {
@@ -80,9 +77,17 @@ async function fetchArticulo(wiki) {
   throw new Error('sin respuesta')
 }
 
+function procedenciaDe(wiki, art) {
+  const url = 'https://' + wiki.lang + '.wikipedia.org/wiki/' + encodeURIComponent(art.titulo.replace(/ /g, '_'))
+  return { wiki: wiki.lang, articulo: art.titulo, url, pageid: art.pageid, revid: art.revid, licencia: LICENCIA, obtenido: HOY.toISOString() }
+}
+
+function vigente(s) {
+  return (!s.campoFin || s.campoFin <= diaMadrid) && (!s.publicacion || s.publicacion <= diaMadrid)
+}
+
 // Construye el fichero de una elección a partir del parse. Puede lanzar.
-async function construyeEleccion(e) {
-  const veda = enVedaCat(e)
+async function construyeEleccion(e, veda, anterior) {
   if (!e.wikiSondeos) {
     // Sin fuente de sondeos de la próxima: fichero mínimo (sin_sondeos).
     return {
@@ -92,25 +97,48 @@ async function construyeEleccion(e) {
         referencia: { fecha: e.ultimaFecha, escanos: [], fuente: `Wikipedia (${e.wikiResultados.articulo})` },
         sondeos: [], procedencia: { wiki: e.wikiResultados.lang, articulo: e.wikiResultados.articulo, url: '', licencia: LICENCIA, obtenido: HOY.toISOString() },
       },
-      veda, incidencias: ['sin artículo de sondeos de la próxima'], filas: null,
+      incidencias: ['sin artículo de sondeos de la próxima'], filas: null,
     }
   }
   const art = await fetchArticulo(e.wikiSondeos)
-  const url = `https://${e.wikiSondeos.lang}.wikipedia.org/wiki/${encodeURIComponent(e.wikiSondeos.articulo.replace(/ /g, '_'))}`
   const parsed = parseSondeos(art.html, { anioReferencia: yearOf(e.ultimaFecha) })
   const candidaturas = parsed.candidaturas
   const referencia = parsed.referencia && parsed.referencia.escanos.length
     ? { fecha: e.ultimaFecha, escanos: parsed.referencia.escanos, fuente: `Wikipedia (${e.wikiSondeos.articulo})` }
     : { fecha: e.ultimaFecha, escanos: [], fuente: `Wikipedia (${e.wikiResultados.articulo})` }
   // En veda: no se publican sondeos (LOREG 69.7), también en el JSON.
-  const sondeos = veda ? [] : parsed.sondeos
+  const sondeos = veda ? [] : parsed.sondeos.filter(vigente)
   const file = {
     schemaVer: SCHEMA_VER, id: e.id, tipo: e.tipo, ciclo: yearOf(e.ultimaFecha) + '',
     camara: e.camara, candidaturas, referencia, sondeos,
-    procedencia: { wiki: e.wikiSondeos.lang, articulo: art.titulo, url, pageid: art.pageid, revid: art.revid, licencia: LICENCIA, obtenido: HOY.toISOString() },
+    procedencia: procedenciaDe(e.wikiSondeos, art),
+  }
+  let falloParcial
+  if (!veda && e.id === 'generales' && e.proxima.valor === '2026-11-29') {
+    let seguimiento = []
+    try {
+      const articulo = await fetchArticulo(seguimiento29N)
+      const extra = extraeSeguimientoGenerales(articulo.html, candidaturas)
+      seguimiento = extra.sondeos.filter(vigente)
+      if (!seguimiento.length) throw new Error('no se ha podido verificar ninguna proyección vigente')
+      file.procedenciasAdicionales = [{ ...procedenciaDe(seguimiento29N, articulo), camposFin: seguimiento.map(s => s.campoFin) }]
+      parsed.incidencias.push(...extra.incidencias)
+    } catch (err) {
+      falloParcial = 'Seguimiento del Congreso (fuente adicional): ' + String(err.message || err)
+      const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
+      const fuente = mismaEleccion && anterior.procedenciasAdicionales?.find(p => p.wiki === seguimiento29N.lang && p.articulo === seguimiento29N.articulo)
+      if (fuente) {
+        // Las primeras copias carecían de la lista de días: en ellas el
+        // seguimiento se identifica por casa, cliente y publicación original.
+        seguimiento = anterior.sondeos.filter(s => esSeguimientoSW(s) && vigente(s)
+          && (fuente.camposFin ? fuente.camposFin.includes(s.campoFin) : Boolean(s.fuenteUrl)))
+        if (seguimiento.length) file.procedenciasAdicionales = [fuente]
+      }
+    }
+    file.sondeos = combinaSeguimiento(sondeos, seguimiento)
   }
   if (veda) file.veda = true
-  return { file, veda, incidencias: parsed.incidencias, filas: parsed.filas }
+  return { file, incidencias: parsed.incidencias, filas: parsed.filas, falloParcial }
 }
 
 async function main() {
@@ -123,12 +151,17 @@ async function main() {
   for (const e of lista) {
     const ruta = resolve(DIR, rutaFichero(e))
     const anterior = leeJson(ruta)
+    const veda = enVeda(HOY.toISOString(), e.proxima)
     let estado = 'ok'
     let sondeosN = anterior ? (anterior.sondeos || []).length : 0
     let ultimoContenidoModificado = anterior?.ultimoContenidoModificado
     let fechaUltimoSondeo = anterior?.fechaUltimoSondeo ?? null
+    let fechaUltimaPublicacion = anterior?.fechaUltimaPublicacion ?? null
+    let ultimaComprobacionOk = anterior?.ultimaComprobacionOk ?? null
     try {
-      const { file, veda, incidencias, filas } = await construyeEleccion(e)
+      const candidato = await construyeEleccion(e, veda, anterior)
+      const { incidencias } = candidato
+      const file = completaResultadosOficiales(candidato.file)
       const val = validaEleccion(file, anterior, { enVeda: veda })
       if (!val.ok) {
         fallos.push({ id: e.id, motivo: val.motivo, diagnostico: val.diagnostico })
@@ -139,13 +172,23 @@ async function main() {
         sondeosN = file.sondeos.length
         const fins = file.sondeos.map((s) => s.campoFin).filter(Boolean).sort()
         fechaUltimoSondeo = fins.length ? fins[fins.length - 1] : null
-        const cambio = JSON.stringify(file.sondeos) !== JSON.stringify(anterior?.sondeos || [])
+        fechaUltimaPublicacion = file.sondeos.map(s => s.publicacion).filter(Boolean).sort().at(-1) ?? null
+        const cambio = ['sondeos', 'referencia', 'senado'].some(k => JSON.stringify(file[k]) !== JSON.stringify(anterior?.[k]))
         ultimoContenidoModificado = cambio ? HOY.toISOString() : (anterior?.ultimoContenidoModificado || HOY.toISOString())
-        file.ultimaComprobacionOk = HOY.toISOString()
+        file.ultimaComprobacionOk = candidato.falloParcial
+          ? (anterior?.id === file.id && anterior.ciclo === file.ciclo ? ultimaComprobacionOk : null)
+          : HOY.toISOString()
         file.ultimoContenidoModificado = ultimoContenidoModificado
         file.fechaUltimoSondeo = fechaUltimoSondeo
+        file.fechaUltimaPublicacion = fechaUltimaPublicacion
         escribeJson(ruta, file)
-        estado = veda ? 'ok' : sondeosN > 0 ? 'ok' : 'sin_sondeos'
+        ultimaComprobacionOk = file.ultimaComprobacionOk
+        if (candidato.falloParcial) {
+          fallos.push({ id: e.id, parcial: true, motivo: candidato.falloParcial })
+          estado = 'desactualizado'
+        } else {
+          estado = veda ? 'ok' : sondeosN > 0 ? 'ok' : 'sin_sondeos'
+        }
         if (incidencias?.length) revisiones.push({ id: e.id, incidencias })
       }
     } catch (err) {
@@ -153,15 +196,24 @@ async function main() {
       estado = anterior ? 'desactualizado' : 'no_disponible'
     }
 
+    // Si la fuente falla justo al empezar la veda, el último archivo válido
+    // conserva sus resultados electorales y su fecha de comprobación real.
+    if (veda && estado === 'desactualizado' && anterior?.sondeos?.length) {
+      fechaUltimoSondeo = null
+      fechaUltimaPublicacion = null
+      ultimoContenidoModificado = HOY.toISOString()
+      escribeJson(ruta, { ...anterior, sondeos: [], veda: true, fechaUltimoSondeo, fechaUltimaPublicacion, ultimoContenidoModificado })
+    }
+
     indexEntries.push({
       id: e.id, tipo: e.tipo, nombre: e.nombre,
       ...(e.comunidad ? { comunidad: e.comunidad } : {}),
       ...(e.ciudadAutonoma ? { ciudadAutonoma: true } : {}),
-      fecha: { valor: e.proxima.valor, confirmada: e.proxima.confirmada },
+      fecha: e.proxima,
       estado,
-      ...(fechaUltimoSondeo ? { fechaUltimoSondeo } : { fechaUltimoSondeo: null }),
+      fechaUltimoSondeo, fechaUltimaPublicacion,
       ...(ultimoContenidoModificado ? { ultimoContenidoModificado } : {}),
-      ultimaComprobacionOk: fallos.some((f) => f.id === e.id) ? (anterior?.ultimaComprobacionOk || null) : HOY.toISOString(),
+      ultimaComprobacionOk,
       ruta: `/data/politica/${rutaFichero(e)}`,
     })
     if (e.wikiSondeos) await sleep(800) // buen ciudadano con Wikipedia
@@ -180,13 +232,14 @@ async function main() {
   const index = { schemaVer: SCHEMA_VER, generado: HOY.toISOString(), elecciones }
   escribeJson(resolve(DIR, 'index.json'), index)
 
-  const run = { generado: HOY.toISOString(), total: lista.length, escritas: lista.length - fallos.length, fallos, revisiones }
+  const noEscritas = fallos.filter(f => !f.parcial).length
+  const run = { generado: HOY.toISOString(), total: lista.length, escritas: lista.length - noEscritas, fallos, revisiones }
   writeFileSync(resolve('politica-run.json'), JSON.stringify(run, null, 2))
 
-  console.log(`política: ${run.escritas}/${run.total} elecciones OK, ${fallos.length} fallos, ${revisiones.length} avisos`)
+  console.log(`política: ${run.escritas}/${run.total} elecciones escritas, ${fallos.length} fallos, ${revisiones.length} avisos`)
   for (const f of fallos) console.log(`  FALLO ${f.id}: ${f.motivo}`)
   // No fallamos el proceso por fallos parciales (el monitor avisa); sí si todo peta.
-  if (fallos.length === lista.length && lista.length > 1) {
+  if (noEscritas === lista.length && lista.length > 1) {
     console.error('::error::todas las elecciones fallaron')
     process.exit(1)
   }

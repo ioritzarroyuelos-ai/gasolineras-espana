@@ -57,6 +57,7 @@ export const ReferenciaSchema = z.object({
     .array(z.object({ candidaturaId: z.string().min(1).max(40), escanos: z.number().int().min(0).max(1000) }))
     .max(80),
   fuente: z.string().max(200),
+  url: z.url().max(400).optional(),
 })
 
 export const CamaraSchema = z.object({
@@ -85,8 +86,15 @@ export const EleccionFileSchema = z.object({
   camara: CamaraSchema,
   candidaturas: z.array(CandidaturaSchema).max(100),
   referencia: ReferenciaSchema,
+  senado: z.object({
+    electivos: z.number().int().positive().max(1000),
+    referencia: ReferenciaSchema,
+    candidaturas: z.array(CandidaturaSchema).max(100),
+  }).optional(),
   sondeos: z.array(SondeoSchema).max(2000), // vacío es legítimo (aún no hay sondeos)
   procedencia: ProcedenciaSchema,
+  procedenciasAdicionales: z.array(ProcedenciaSchema.extend({ camposFin: z.array(iso).max(2000).optional() })).max(10).optional(),
+  ultimaComprobacionOk: iso.nullable().optional(),
 })
 
 export const EstadoEleccionSchema = z.enum(['ok', 'sin_sondeos', 'desactualizado', 'no_disponible'])
@@ -100,10 +108,12 @@ export const IndexEntrySchema = z.object({
   fecha: z.object({
     valor: iso.nullable(),
     confirmada: z.boolean(),
+    anioPrevisto: z.number().int().min(1900).max(2100).optional(),
     fuente: z.string().max(200).optional(),
   }),
   estado: EstadoEleccionSchema,
-  ultimaComprobacionOk: iso.optional(),
+  ultimaComprobacionOk: iso.nullable().optional(),
+  fechaUltimaPublicacion: iso.nullable().optional(),
   ultimoContenidoModificado: iso.optional(),
   fechaUltimoSondeo: iso.nullable().optional(),
   ruta: z.string().max(120),

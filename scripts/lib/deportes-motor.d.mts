@@ -1,4 +1,5 @@
 import type { EmisionDeportiva, EventoDeportivo, OpcionesDeportes, ResultadoDeportes, TablaDeportiva } from './deportes.mjs'
+import type { EstadoNovanet } from './deportes-novanet-estado.mjs'
 
 export interface RondaFormula {
   id: string
@@ -20,4 +21,4 @@ export function interpretaClasificacionAcademy(html: string, ano: number): Tabla
 export function interpretaCalendarioEspanaMotor(html: string, id: string, ano: number, ahora?: number): EventoDeportivo[]
 export function interpretaCalendarioRfeda(html: string, ano: number, ahora?: number): Array<{ id: string; nombre: string; eventos: EventoDeportivo[] }>
 export function interpretaEmisionMotor(html: string, id: string, ano: number, verificadoEn: string): EmisionDeportiva
-export function obtieneMotor(opciones?: OpcionesDeportes): Promise<ResultadoDeportes>
+export function obtieneMotor(opciones?: OpcionesDeportes & { estadoNovanet?: Record<string, EstadoNovanet>; guardarEstadoNovanet?: (id: string, estado: EstadoNovanet) => void | Promise<void> }): Promise<ResultadoDeportes>

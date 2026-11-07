@@ -72,7 +72,8 @@ export function parseaAgendaMadrid(json, esperada, fuenteUrl) {
 export function parseaClasificacionMadrid(html, esperada) {
   const p = paginaMadrid(html), datos = p.standings; identidad(datos, esperada)
   if (p.season.nombre !== esperada.temporada) throw Error('Madrid devuelve la clasificación de otra temporada')
-  if (!Array.isArray(datos.clasificacion) || !datos.clasificacion.length) throw Error('Madrid no publica una tabla de puntos para este grupo')
+  if (!Array.isArray(datos.clasificacion)) throw Error('Madrid no publica una tabla de puntos para este grupo')
+  if (!datos.clasificacion.length) return []
   const campos = [['puntos','Puntos','puntos'],['jugados','Jugados','jugados'],['ganados','Ganados','ganados'],['empatados','Empatados','empatados'],['perdidos','Perdidos','perdidos'],['favor','Goles a favor','goles_a_favor'],['contra','Goles en contra','goles_en_contra']]
   const filas = datos.clasificacion.map(f => {
     const posicion = numero(f.posicion), nombre = texto(f.nombre), valores = Object.fromEntries(campos.map(([key,,campo]) => [key,numero(f[campo])]))

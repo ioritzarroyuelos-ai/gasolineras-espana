@@ -260,7 +260,7 @@ export function fusionaCompeticionesFutbol(anteriores, nuevas) {
   return [...mapa.values()]
 }
 const vacio = (url, consultado, campo) => ({ estado: 'no_disponible', consultado, fuenteUrl: url, [campo]: [] })
-const bloque = (url, consultado, campo, datos) => ({ estado: 'actualizado', consultado, verificadoEn: consultado, fuenteUrl: url, [campo]: datos })
+const bloque = (url, consultado, campo, datos) => datos.length ? { estado: 'actualizado', consultado, verificadoEn: consultado, fuenteUrl: url, [campo]: datos } : vacio(url, consultado, campo)
 
 function jornadasCercanas(opciones, ahora, seleccionada) {
   const ordenadas = opciones.map(j => ({ ...j, fecha: fechaEspanola(j.nombre.match(/\d{2}-\d{2}-\d{4}/)?.[0] || '') })).filter(j => j.fecha).sort((a, b) => a.fecha.localeCompare(b.fecha))
@@ -271,12 +271,33 @@ function jornadasCercanas(opciones, ahora, seleccionada) {
   return ordenadas.slice(Math.max(0, indice - 1), indice + 1)
 }
 
+/** Reintentar un fallo anterior tras el avance normal, usando sólo grupos conocidos. */
+export function eligeReintentoNovanet(fuenteId, estado, ahora, cubiertos = []) {
+  const candidatos = []
+  for (const [categoria, c] of (estado.catalogo?.categorias || []).entries()) {
+    if (c.gruposPendientes || categoriaDuplicadaNovanet(c, fuenteId)) continue
+    for (const [grupo, g] of (c.grupos || []).entries()) {
+      if (categoria === estado.categoria && grupo === estado.grupo) continue
+      const clave = `${c.codigo}-${g.codigo}`, intento = estado.intentos?.[clave]
+      const anterior = categoria < estado.categoria || categoria === estado.categoria && grupo < estado.grupo
+      const pendiente = intento ? intento.fallo : anterior && !estado.verificados[clave]
+      if (!pendiente || cubiertos.includes(idGrupoNovanet(fuenteId, c, g)) || intento && ahora - Date.parse(intento.fecha) < 3600000) continue
+      candidatos.push({ categoria, grupo, fecha: intento?.fecha || '' })
+    }
+  }
+  candidatos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
+  const elegido = candidatos[0]
+  return elegido ? { categoria: elegido.categoria, grupo: elegido.grupo } : null
+}
+
 async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
   const estado = normalizaEstadoNovanet(opciones.estadoNovanet?.[fuente.id]), ahora = opciones.ahora ?? Date.now(), consultado = new Date(ahora).toISOString()
+  estado.intentos ||= {}
+  if (estado.ventana.desde && Date.now() - Date.parse(estado.ventana.desde) >= 3600000) estado.ventana = { desde: null, peticiones: 0 }
   const temporadaInicial = estado.catalogo?.temporada.nombre, revisados = new Set(opciones.gruposCubiertosFutbol || [])
   const madrid = fuente.id === 'madrid'
   const competiciones = [], incidencias = [], categoriasResueltas = [], urlBase = madrid ? `${fuente.base}resultados-y-jornadas` : `${fuente.base}NFG_CmpJornada?cod_primaria=${fuente.primaria}`
-  let peticionesPasada = 0, pausado = false, intentados = 0, vaciasSeguidas = 0
+  let peticionesPasada = 0, pausado = false, intentados = 0, vaciasSeguidas = 0, reintentados = 0
   const guarda = async () => { await opciones.guardarEstadoNovanet?.(fuente.id, normalizaEstadoNovanet(estado)) }
   const incidencia = (nombre, motivo, id = `novanet-${fuente.id}`) => incidencias.push({ deporte: 'futbol', nombre, fuenteUrl: urlBase, motivo, id })
   const registraDiagnostico = error => {
@@ -320,7 +341,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       } else catalogo = parseaCatalogoNovanet(await lee(urlBase))
       catalogo.categorias = catalogo.categorias.filter(c => !categoriaDuplicadaNovanet(c, fuente.id))
       if (!catalogo.categorias.length) throw Error('No quedan categorías nuevas verificables en este catálogo')
-      if (estado.catalogo?.temporada.nombre !== catalogo.temporada.nombre) { estado.verificados = {}; estado.completos = {} }
+      if (estado.catalogo?.temporada.nombre !== catalogo.temporada.nombre) { estado.verificados = {}; estado.completos = {}; estado.intentos = {} }
       else {
         // A weekly category refresh does not yet confirm which groups disappeared.
         // Retain their identities across runs until this category's selector answers.
@@ -331,19 +352,24 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
         })
       }
       estado.catalogo = { ...catalogo, verificadoEn: consultado }; estado.categoria = 0; estado.grupo = 0
+      estado.intentos = normalizaEstadoNovanet(estado).intentos || {}
       await guarda()
     }
-    const visitados = new Set()
+    const visitados = new Set(), pendienteAnterior = eligeReintentoNovanet(fuente.id, estado, Date.now(), opciones.gruposCubiertosFutbol)
+    let avanceNormal = false
     while (estado.catalogo && disponible()) {
-      const clave = `${estado.categoria}:${estado.grupo}`
+      const esReintento = avanceNormal && !reintentados && pendienteAnterior && !visitados.has(`normal:${pendienteAnterior.categoria}:${pendienteAnterior.grupo}`) && (pendienteAnterior.categoria !== estado.categoria || pendienteAnterior.grupo !== estado.grupo)
+      const cursor = esReintento ? pendienteAnterior : { categoria: estado.categoria, grupo: estado.grupo }
+      const clave = `${esReintento ? 'reintento' : 'normal'}:${cursor.categoria}:${cursor.grupo}`
       if (visitados.has(clave)) break
       visitados.add(clave)
-      const categoria = estado.catalogo.categorias[estado.categoria]
+      const categoria = estado.catalogo.categorias[cursor.categoria]
       if (categoriaDuplicadaNovanet(categoria, fuente.id)) { siguienteCategoria(); await guarda(); continue }
       if (!categoria.grupos || categoria.gruposPendientes) {
         try {
           categoria.grupos = madrid ? gruposMadrid(await lee(`/api/groups?competicion=${categoria.codigo}`)) : parseaSelectorNovanet(await lee(`NFG_CmpJornada_Exec?cod_primaria=${fuente.primaria}&codcompeticion=${categoria.codigo}`), 'grupos')
           delete categoria.gruposPendientes
+          estado.intentos = normalizaEstadoNovanet(estado).intentos || {}
           await guarda()
         } catch (error) {
           incidencia(`${fuente.zona} · ${categoria.nombre}`, error.message, `novanet-${fuente.id}-${categoria.codigo}`)
@@ -354,7 +380,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       if (!categoria.grupos.length) { siguienteCategoria(); await guarda(); continue }
       const reserva = sesion.estadisticas().peticiones ? 5 : 7
       if (maximoPasada - peticionesPasada < reserva || 120 - estado.ventana.peticiones < reserva) break
-      const grupo = categoria.grupos[estado.grupo], temporada = estado.catalogo.temporada
+      const grupo = categoria.grupos[cursor.grupo], temporada = estado.catalogo.temporada
       const params = new URLSearchParams({ cod_primaria: fuente.primaria, CodCompeticion: categoria.codigo, CodGrupo: grupo.codigo, CodTemporada: temporada.codigo })
       const parametrosMadrid = new URLSearchParams({ temporada: temporada.codigo, competicion: categoria.codigo, grupo: grupo.codigo })
       const url = madrid ? `${fuente.base}resultados-y-jornadas?${parametrosMadrid}` : `${fuente.base}NFG_CmpJornada?${params}`, tablaUrl = madrid ? `${fuente.base}clasificaciones?${parametrosMadrid}` : `${fuente.base}NFG_VisClasificacion?cod_primaria=${fuente.primaria}&codcompeticion=${categoria.codigo}&codgrupo=${grupo.codigo}`
@@ -364,13 +390,19 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
         revisados.add(id)
         estado.grupo++
         if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
+        avanceNormal = true
         await guarda(); continue
       }
       const familia = `${categoria.familia} ${categoria.nombre}`
       const genero = /mixt/i.test(familia) ? 'mixto' : /femen|futfem|valenta|reina/i.test(familia) ? 'femenino' : /mascul/i.test(familia) || fuente.id === 'rfef' && /^(Fútbol|Fútbol Juvenil|Juveniles)$/.test(categoria.familia) ? 'masculino' : undefined
       const c = { id, deporte: 'futbol', nombre: categoria.nombre, grupo: grupo.nombre, temporada: temporada.nombre, categoria: /sala|futsal/i.test(familia) ? 'Fútbol sala' : /playa|platja/i.test(familia) ? 'Fútbol playa' : fuente.id === 'rfef' ? 'Fútbol federado' : 'Fútbol territorial y de base', zona: fuente.zona, ...(genero ? { genero } : {}), fuente: { nombre: fuente.nombre, url }, comprobadoEn: consultado, agenda: vacio(url, consultado, 'eventos'), clasificacion: vacio(tablaUrl, consultado, 'tablas') }
       const esperada = { fuenteId: fuente.id, competicion: categoria.codigo, nombre: categoria.nombre, grupo: grupo.codigo, temporada: temporada.nombre }
-      let jornadaTabla
+      const claveGrupo = `${categoria.codigo}-${grupo.codigo}`
+      // Guardar el intento antes de consultar: un reintento detenido no cambia el cursor normal.
+      estado.intentos[claveGrupo] = { fecha: new Date().toISOString(), fallo: true }
+      if (esReintento) reintentados++
+      await guarda()
+      let jornadaTabla, falloAgenda = false, falloTabla = false
       try {
         let opcionesJornadas, seleccionada
         try {
@@ -392,7 +424,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
         }
         c.agenda = bloque(url, consultado, 'eventos', eventos)
         c.agenda.aviso = 'Jornada anterior y jornada más cercana a hoy publicadas por la federación. Otros días, en la fuente oficial. No es un marcador en directo.'
-      } catch (error) { registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre}`, error.message, id) }
+      } catch (error) { falloAgenda = true; registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre}`, error.message, id) }
       let terminoGrupo = false
       if (disponible()) {
         const enlace = jornadaTabla ? `${tablaUrl}&${madrid ? 'jornada' : 'codjornada'}=${jornadaTabla}` : tablaUrl
@@ -400,18 +432,23 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
           const html = await lee(enlace), doc = madrid ? null : parse(html)
           if (doc && !doc.querySelector('table.table-bordered') && doc.querySelectorAll('h3').some(h => /\d{2}-\d{2}-\d{4}.*(?:final|octavos|cuartos|previa)/i.test(h.text)) && doc.querySelectorAll('h4').some(h => normal(h.text) === normal(categoria.nombre))) c.clasificacion.aviso = 'La fuente muestra un cuadro de eliminatorias. Consulta los partidos; no hay una tabla de puntos para este grupo.'
           else c.clasificacion = bloque(enlace, consultado, 'tablas', madrid ? parseaClasificacionMadrid(html, esperada) : parseaClasificacionNovanet(html, esperada, enlace))
+          if (!c.clasificacion.tablas.length && !c.clasificacion.aviso) c.clasificacion.aviso = 'La federación no publica clasificación para este grupo.'
         }
-        catch (error) { registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre} · clasificación`, error.message, id) }
+        catch (error) { falloTabla = true; registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre} · clasificación`, error.message, id) }
         terminoGrupo = true
       }
       if (c.agenda.eventos.length || c.clasificacion.tablas.length) { competiciones.push(c); estado.verificados[`${categoria.codigo}-${grupo.codigo}`] = consultado; estado.ultimoExito = consultado }
-      if (c.agenda.eventos.length && (c.clasificacion.tablas.length || c.clasificacion.aviso?.includes('cuadro de eliminatorias'))) estado.completos[`${categoria.codigo}-${grupo.codigo}`] = consultado
+      estado.intentos[claveGrupo].fallo = falloAgenda || falloTabla || !terminoGrupo
+      if (c.agenda.eventos.length && !estado.intentos[claveGrupo].fallo) estado.completos[claveGrupo] = consultado
       intentados++
       // A pause before the table must not silently erase its previous warning.
       if (terminoGrupo) revisados.add(id)
       if (!terminoGrupo || estado.noConsultarAntes) { await guarda(); break }
-      estado.grupo++
-      if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
+      if (!esReintento) {
+        estado.grupo++
+        if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
+        avanceNormal = true
+      }
       await guarda()
     }
   } catch (error) { incidencia(fuente.nombre, error.message) }
@@ -420,7 +457,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
     const grupos = estado.catalogo.categorias.reduce((n, c) => n + (c.grupos?.length || 0), 0), porDescubrir = estado.catalogo.categorias.filter(c => !c.grupos || c.gruposPendientes).length
     incidencia(`${fuente.zona} · cobertura por grupos`, `Catálogo: ${estado.catalogo.categorias.length} categorías y ${grupos} grupos descubiertos${porDescubrir ? `; quedan categorías por recorrer` : ''}. Hay lecturas válidas de ${Object.keys(estado.verificados).length} grupos. Cada ficha conserva su fecha.${estado.noConsultarAntes ? ` Próximo intento permitido: ${estado.noConsultarAntes}.` : ''}`, `novanet-${fuente.id}-progreso`)
   }
-  opciones.log?.(`Novanet ${fuente.id}: ${JSON.stringify({ ...sesion.estadisticas(), intentados, fichas: competiciones.length })}`)
+  opciones.log?.(`Novanet ${fuente.id}: ${JSON.stringify({ ...sesion.estadisticas(), intentados, reintentados, fichas: competiciones.length })}`)
   // Do not carry a previous season's warning into a new season sharing an ID.
   const conocidos = temporadaInicial && temporadaInicial === estado.catalogo?.temporada.nombre
     ? estado.catalogo.categorias.flatMap(c => (c.grupos || []).map(g => idGrupoNovanet(fuente.id, c, g))) : []

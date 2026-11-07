@@ -1,5 +1,7 @@
 import { parse } from 'node-html-parser'
 import { validaUrlDeportiva } from './deportes.mjs'
+import { createHash } from 'node:crypto'
+import { tablaTcrRevisada } from './deportes-motor-tcr-revisados.mjs'
 
 const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -96,8 +98,14 @@ export function interpretaResultadoTcrTexto(texto, sesion, ano, fuenteUrl, verif
 }
 
 export async function interpretaResultadoTcrPdf(datos, sesion, ano, fuenteUrl, verificadoEn) {
+  // PDF.js transfiere el ArrayBuffer al extractor y puede dejarlo vacío.
+  // La identidad del documento se calcula antes, sobre los bytes descargados.
+  const hash = createHash('sha256').update(datos).digest('hex')
   const { PDFParse } = await import('pdf-parse'), pdf = new PDFParse({ data: datos, isEvalSupported: false })
-  try { return interpretaResultadoTcrTexto((await pdf.getText()).text, sesion, ano, fuenteUrl, verificadoEn) } finally { await pdf.destroy() }
+  try {
+    try { return interpretaResultadoTcrTexto((await pdf.getText()).text, sesion, ano, fuenteUrl, verificadoEn) }
+    catch (error) { const revisado = tablaTcrRevisada(hash, sesion, ano, fuenteUrl, verificadoEn); if (revisado) return revisado; throw error }
+  } finally { await pdf.destroy() }
 }
 
 export function rondasCerx(html, ano) {

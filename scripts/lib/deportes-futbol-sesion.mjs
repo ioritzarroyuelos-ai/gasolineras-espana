@@ -40,7 +40,8 @@ export function creaSesionFederativa(origen, opciones = {}) {
       for (const c of respuesta.headers.getSetCookie?.() || []) guardaCookie(c, url)
       if (respuesta.status === 429) {
         const valor = respuesta.headers.get('Retry-After'), fecha = Number.isFinite(Date.parse(valor)) ? Date.parse(valor) : 0
-        const hasta = /^\d+$/.test(valor || '') ? reloj() + Number(valor) * 1000 : fecha > reloj() ? fecha : reloj() + 3600000
+        const solicitada = /^\d+$/.test(valor || '') ? reloj() + Number(valor) * 1000 : fecha > reloj() ? fecha : reloj() + 3600000
+        const hasta = Number.isFinite(solicitada) && Math.abs(solicitada) <= 8640000000000000 ? solicitada : reloj() + 3600000
         await opciones.alLimite?.(new Date(Math.max(reloj() + 1000, hasta)).toISOString())
         await respuesta.body?.cancel()
         throw Error('La federación ha limitado las consultas; se respeta su descanso antes de continuar')

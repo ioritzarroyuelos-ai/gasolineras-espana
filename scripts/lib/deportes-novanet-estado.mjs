@@ -71,6 +71,10 @@ export function normalizaEstadoNovanet(valor) {
     for (const [id, verificado] of Object.entries(valor.verificados || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.verificados[id] = fecha(verificado)
     for (const [id, verificado] of Object.entries(valor.completos || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.completos[id] = fecha(verificado)
   }
+  if (valor.intentos && estado.catalogo) {
+    const conocidos = new Set(estado.catalogo.categorias.flatMap(c => (c.grupos || []).map(g => `${c.codigo}-${g.codigo}`)))
+    estado.intentos = Object.fromEntries(Object.entries(valor.intentos).filter(([id, i]) => conocidos.has(id) && fecha(i?.fecha) && typeof i.fallo === 'boolean').map(([id, i]) => [id, { fecha: fecha(i.fecha), fallo: i.fallo }]))
+  }
   return estado
 }
 
@@ -83,6 +87,7 @@ export function recuperaEstadoNovanet(candidatos) {
     if (antigua) {
       for (const k of ['catalogo', 'categoria', 'grupo']) estado[k] = antigua[k]
       for (const k of ['verificados', 'completos']) estado[k] = uneVerificados(antigua[k], estado[k])
+      if (antigua.intentos) estado.intentos = { ...antigua.intentos, ...estado.intentos }
       estado.ultimoExito = ultimo([antigua.ultimoExito, estado.ultimoExito])
     }
     if (!estado.descubrimientoGes) {

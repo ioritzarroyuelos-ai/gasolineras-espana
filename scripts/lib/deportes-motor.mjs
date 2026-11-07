@@ -2,9 +2,12 @@ import { parse } from 'node-html-parser'
 import { leerFuenteDeportiva } from './deportes.mjs'
 import { configuracionPublicaFormula, urlResultadoFormula, interpretaResultadoFormula, interpretaResultadoF1Html, interpretaResultadosAcademy, interpretaEquiposFormula, interpretaEquiposAcademy, interpretaRondaEspanaMotor } from './deportes-motor-resultados.mjs'
 import { clasificacionesRfedaHtml, interpretaClasificacionesRfedaHtml, leerPdfMotor, interpretaClasificacionTcrPdf, interpretaResultadoTcrPdf, rondasTcr, rondasCerx } from './deportes-motor-rfeda.mjs'
+import { ampliaEspanaAlkamel } from './deportes-motor-alkamel.mjs'
 import { ampliaGb3 } from './deportes-motor-gb3.mjs'
 import { ampliaFerrari } from './deportes-motor-ferrari.mjs'
 import { obtieneFrec } from './deportes-motor-frec.mjs'
+import { ampliaSupercars } from './deportes-motor-supercars.mjs'
+import { creaFetchMotorConPausas } from './deportes-motor-pausas.mjs'
 
 const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -236,20 +239,15 @@ async function mapaLimitado(elementos, fn) {
 }
 
 export async function obtieneMotor(opciones = {}) {
+  opciones = { ...opciones, fetcher: creaFetchMotorConPausas(opciones) }
   const ahora = opciones.ahora ?? Date.now(), consultado = new Date(ahora).toISOString(), ano = Number(diaMadrid(ahora).slice(0, 4))
   const competiciones = [], incidencias = []
-  const dominiosLimitados = new Set()
   const leer = async (url, headers, pdf = false) => {
-    const dominio = new URL(url).origin
-    if (dominiosLimitados.has(dominio)) throw Error('La fuente ha limitado las consultas (HTTP 429). Hemos detenido su actualización.')
-    const intento = async () => {
-      try { return pdf ? await leerPdfMotor(url, opciones) : await leerFuenteDeportiva(url, headers ? { ...opciones, fetcher: (u, init) => (opciones.fetcher || fetch)(u, { ...init, headers: { ...init?.headers, ...headers } }) } : opciones) }
-      catch (e) { if (/HTTP 429\b/.test(e.message)) dominiosLimitados.add(dominio); throw e }
-    }
+    const intento = () => pdf ? leerPdfMotor(url, opciones) : leerFuenteDeportiva(url, headers ? { ...opciones, fetcher: (u, init) => opciones.fetcher(u, { ...init, headers: { ...init?.headers, ...headers } }) } : opciones)
     try { return await intento() } catch (error) {
-      // Un segundo intento acotado para fallos transitorios. Un límite de la
-      // fuente detiene las nuevas peticiones del dominio durante esta ejecución.
-      if (!dominiosLimitados.has(dominio) && (error instanceof TypeError || /TimeoutError|AbortError/.test(error.name) || /HTTP (?:408|5\d\d)/.test(error.message))) return intento()
+      // Un segundo intento para fallos transitorios. El lector común impide
+      // nuevas consultas si la fuente ha pedido una pausa, incluso entre pasadas.
+      if (error instanceof TypeError || /TimeoutError|AbortError/.test(error.name) || /HTTP (?:408|5\d\d)/.test(error.message)) return intento()
       throw error
     }
   }
@@ -345,6 +343,7 @@ export async function obtieneMotor(opciones = {}) {
       })).flat()
     }, async () => interpretaClasificacionMotor(await leer(config.clasificacion), config.id, ano))
   }
+  await ampliaEspanaAlkamel(competiciones, leer, ano, ahora, consultado, incidencias)
   try {
     const grupos = interpretaCalendarioRfeda(await leer(RFEDA), ano, ahora)
     for (const g of grupos) competiciones.push({ id: g.id, deporte: 'motor', nombre: g.nombre, temporada: String(ano), categoria: 'Calendario RFEDA', zona: 'Pruebas en España', genero: 'mixto', fuente: { nombre: 'Real Federación Española de Automovilismo', url: RFEDA }, comprobadoEn: consultado, agenda: fuenteBloque(RFEDA, { eventos: g.eventos }, 'Próximas pruebas publicadas por la RFEDA. Cobertura de calendario; no incluye resultados ni todas las pruebas de la temporada.'), clasificacion: { estado: 'no_disponible', consultado, fuenteUrl: RFEDA, aviso: 'Esta fuente publica el calendario, sin clasificación.', tablas: [] } })
@@ -378,7 +377,7 @@ export async function obtieneMotor(opciones = {}) {
         }
         return salida
       })).flat()
-      tcr.agenda = fuenteBloque(calendario, { eventos }, 'Calendario de temporada y orden de sesiones publicado por TCR Spain. Los PDF escaneados se enlazan sin inventar una tabla; no se reconstruyen tiempos de columnas ambiguas.'); tcr.categoria = 'Turismos'; tcr.zona = 'España y Francia'
+      tcr.agenda = fuenteBloque(calendario, { eventos }, 'Calendario y orden de sesiones de TCR Spain. Dos actas históricas escaneadas se han revisado visualmente y sólo se muestran mientras el documento oficial no cambie. Otros escaneados pendientes de revisión se enlazan sin tabla. No se reconstruyen tiempos de columnas ambiguas.'); tcr.categoria = 'Turismos'; tcr.zona = 'España y Francia'
     } catch (e) { incidencias.push({ deporte: 'motor', id: tcr.id, nombre: 'TCR Spain: calendario completo', fuenteUrl: calendario, motivo: e.message }) }
     try {
       const doc = parse(await leer(clasificacion)), a = doc.querySelectorAll('a').find(a => limpia(a.text) === `Temporada ${ano}`), url = a?.getAttribute('href') && new URL(a.getAttribute('href'), clasificacion).href
@@ -390,6 +389,8 @@ export async function obtieneMotor(opciones = {}) {
   if (gb3) await ampliaGb3(gb3, leer, ano, ahora, consultado, incidencias)
   const ferrari = competiciones.find(c => c.id === 'rfeda-ferrari-challenge-trofeo-pirelli')
   if (ferrari) await ampliaFerrari(ferrari, leer, ano, ahora, consultado, incidencias)
+  const supercars = competiciones.find(c => c.id === 'rfeda-supercars-espana')
+  if (supercars) await ampliaSupercars(supercars, leer, ano, ahora, consultado, incidencias)
   competiciones.push(await obtieneFrec(leer, ano, consultado, incidencias))
   const cerx = competiciones.find(c => c.id === 'rfeda-cerx'), fuenteCerx = 'https://cerx.rfeda.es/resultados'
   if (cerx) {

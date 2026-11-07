@@ -1,0 +1,477 @@
+{
+  "procedencia": {
+    "comprobado": "2026-11-07T19:01:23.502Z",
+    "origen": "https://www.rffm.es/",
+    "detalle": "Respuestas reales de Copa RFEF autonómica A/B: jornadas, partidos2/3 y clasificación3. Se omitieron campos ajenos al lector y toda sesión."
+  },
+  "grupos": [
+    {
+      "codigo": "26738290",
+      "jornadas": {
+        "estado": "1",
+        "jornadas": [
+          {
+            "codjornada": "1",
+            "nombre": "1",
+            "nombre_antiguo": "1 ",
+            "fecha_jornada": "12-08-2026"
+          },
+          {
+            "codjornada": "2",
+            "nombre": "2",
+            "nombre_antiguo": "2 ",
+            "fecha_jornada": "16-08-2026"
+          },
+          {
+            "codjornada": "3",
+            "nombre": "3",
+            "nombre_antiguo": "3 ",
+            "fecha_jornada": "19-08-2026"
+          }
+        ]
+      },
+      "agendas": {
+        "2": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738290",
+          "jornada": "2",
+          "nombre_jornada": "2",
+          "partidos": [
+            {
+              "codacta": "5569336",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "16/08/2026",
+              "hora": "11:00",
+              "campojuego": "VEREDA GANAPANES 1 (HA)",
+              "codigo_campo": "14610183",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "MARTIN RIVAS, IVAN",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "1592",
+              "Nombre_equipo_local": "A.D. UNION ADARVE 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0012184056_Escudo_Uni__n_Adarve.jpg",
+              "Retirado_local": "0",
+              "Goles_casa": "0",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "366",
+              "Nombre_equipo_visitante": "C.D.A. NAVALCARNERO 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0000055585_ESCUDO_NAVAL.jpg",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "1",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            },
+            {
+              "codacta": "5570802",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "16/08/2026",
+              "hora": "11:00",
+              "campojuego": "BOADILLA - PVO. MUNICIPAL ANGEL NIETO 3 (HA)",
+              "codigo_campo": "12286992",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "CURTO VAZQUEZ, JUAN",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "1532",
+              "Nombre_equipo_local": "CLUB SIELLO NUEVO BOADILLA F.C.",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0012185915_WhatsApp_Image_2026_07_03_at_20.26.50.png",
+              "Retirado_local": "0",
+              "Goles_casa": "0",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "2363",
+              "Nombre_equipo_visitante": "A.D. TORREJON C.F. 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011601593_ESCUDO_AD_TORREJON.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "1",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            }
+          ]
+        },
+        "3": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738290",
+          "jornada": "3",
+          "nombre_jornada": "3",
+          "partidos": [
+            {
+              "codacta": "5570803",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "19/08/2026",
+              "hora": "20:30",
+              "campojuego": "BOADILLA - PVO. MUNICIPAL ANGEL NIETO 3 (HA)",
+              "codigo_campo": "12286992",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "GARCIA TORO, JORGE",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "1532",
+              "Nombre_equipo_local": "CLUB SIELLO NUEVO BOADILLA F.C.",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0012185915_WhatsApp_Image_2026_07_03_at_20.26.50.png",
+              "Retirado_local": "0",
+              "Goles_casa": "0",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "1592",
+              "Nombre_equipo_visitante": "A.D. UNION ADARVE 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0012184056_Escudo_Uni__n_Adarve.jpg",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "0",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            },
+            {
+              "codacta": "5569338",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "19/08/2026",
+              "hora": "20:00",
+              "campojuego": "NAVALCARNERO - ESTADIO MARIANO GONZALEZ (HA)",
+              "codigo_campo": "1311",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "CONDE CLEMENTE, KILIAN",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "366",
+              "Nombre_equipo_local": "C.D.A. NAVALCARNERO 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0000055585_ESCUDO_NAVAL.jpg",
+              "Retirado_local": "0",
+              "Goles_casa": "1",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "2363",
+              "Nombre_equipo_visitante": "A.D. TORREJON C.F. 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011601593_ESCUDO_AD_TORREJON.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "0",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            }
+          ]
+        }
+      },
+      "tabla": {
+        "season": {
+          "cod_temporada": "22",
+          "nombre": "2026-2027",
+          "fecha_inicio": "2026-07-01",
+          "fecha_fin": "2027-09-01"
+        },
+        "standings": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738290",
+          "jornada": "3",
+          "clasificacion": [
+            {
+              "posicion": "1",
+              "nombre": "C.D.A. NAVALCARNERO 'A'",
+              "puntos": "9",
+              "jugados": "3",
+              "ganados": "3",
+              "empatados": "0",
+              "perdidos": "0",
+              "goles_a_favor": "7",
+              "goles_en_contra": "0"
+            },
+            {
+              "posicion": "2",
+              "nombre": "A.D. TORREJON C.F. 'A'",
+              "puntos": "4",
+              "jugados": "3",
+              "ganados": "1",
+              "empatados": "1",
+              "perdidos": "1",
+              "goles_a_favor": "2",
+              "goles_en_contra": "2"
+            },
+            {
+              "posicion": "3",
+              "nombre": "A.D. UNION ADARVE 'A'",
+              "puntos": "2",
+              "jugados": "3",
+              "ganados": "0",
+              "empatados": "2",
+              "perdidos": "1",
+              "goles_a_favor": "1",
+              "goles_en_contra": "2"
+            },
+            {
+              "posicion": "4",
+              "nombre": "CLUB SIELLO NUEVO BOADILLA F.C.",
+              "puntos": "1",
+              "jugados": "3",
+              "ganados": "0",
+              "empatados": "1",
+              "perdidos": "2",
+              "goles_a_favor": "0",
+              "goles_en_contra": "6"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "codigo": "26738291",
+      "jornadas": {
+        "estado": "1",
+        "jornadas": [
+          {
+            "codjornada": "1",
+            "nombre": "1",
+            "nombre_antiguo": "1 ",
+            "fecha_jornada": "12-08-2026"
+          },
+          {
+            "codjornada": "2",
+            "nombre": "2",
+            "nombre_antiguo": "2 ",
+            "fecha_jornada": "16-08-2026"
+          },
+          {
+            "codjornada": "3",
+            "nombre": "3",
+            "nombre_antiguo": "3 ",
+            "fecha_jornada": "19-08-2026"
+          }
+        ]
+      },
+      "agendas": {
+        "2": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738291",
+          "jornada": "2",
+          "nombre_jornada": "2",
+          "partidos": [
+            {
+              "codacta": "5569352",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "15/08/2026",
+              "hora": "10:05",
+              "campojuego": "MORALEJA DE ENMEDIO - LA DEHESA (HA)",
+              "codigo_campo": "1420",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "GOMEZ CUEVAS, VICTOR",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "2172",
+              "Nombre_equipo_local": "C.F. FUENLABRADA S.A.D. 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0011051013_Escudo_Club_de_F_tbol_Fuenlabrada_S.A.D..jpg",
+              "Retirado_local": "0",
+              "Goles_casa": "0",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "2002",
+              "Nombre_equipo_visitante": "MEXICO F.C. S.A.D. 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011715402_logo_M__xico_FC_rN.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "0",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            },
+            {
+              "codacta": "5569353",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "15/08/2026",
+              "hora": "11:00",
+              "campojuego": "LAS ROZAS - PVO. DEHESA DE NAVALCARBON 1 (HA)",
+              "codigo_campo": "1231",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "TALLON FERNANDEZ, ADRIAN",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "293",
+              "Nombre_equipo_local": "LAS ROZAS C.F. 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0011108020_Escudo_nuevos_Las_Rozas.png",
+              "Retirado_local": "0",
+              "Goles_casa": "1",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "85",
+              "Nombre_equipo_visitante": "C.D. COLONIA MOSCARDO 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011589039_MOSCARDO.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "0",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            }
+          ]
+        },
+        "3": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738291",
+          "jornada": "3",
+          "nombre_jornada": "3",
+          "partidos": [
+            {
+              "codacta": "5569350",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "19/08/2026",
+              "hora": "20:00",
+              "campojuego": "MORALEJA DE ENMEDIO - LA DEHESA (HA)",
+              "codigo_campo": "1420",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "VALERO BARRALES, JUAN CARLOS",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "2172",
+              "Nombre_equipo_local": "C.F. FUENLABRADA S.A.D. 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0011051013_Escudo_Club_de_F_tbol_Fuenlabrada_S.A.D..jpg",
+              "Retirado_local": "0",
+              "Goles_casa": "0",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "293",
+              "Nombre_equipo_visitante": "LAS ROZAS C.F. 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011108020_Escudo_nuevos_Las_Rozas.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "0",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            },
+            {
+              "codacta": "5569351",
+              "hay_actas": "1",
+              "acta_cerrada": "1",
+              "situacion_juego": "1",
+              "observaciones": "",
+              "fecha": "19/08/2026",
+              "hora": "20:00",
+              "campojuego": "ROMAN VALERO (HA)",
+              "codigo_campo": "411",
+              "estado": "1",
+              "motivo_estado": "",
+              "partido_en_juego": "0",
+              "ResultadoProvisional": "0",
+              "arbitro": "DIAZ RODRIGUEZ, LUIS MIGUEL",
+              "penaltis": "",
+              "ganado_et": "",
+              "equipo_ganador_et": "",
+              "CodEquipo_local": "85",
+              "Nombre_equipo_local": "C.D. COLONIA MOSCARDO 'A'",
+              "url_img_local": "/pnfg/pimg/Clubes/00100_0011589039_MOSCARDO.png",
+              "Retirado_local": "0",
+              "Goles_casa": "3",
+              "penaltis_casa": "",
+              "CodEquipo_visitante": "2002",
+              "Nombre_equipo_visitante": "MEXICO F.C. S.A.D. 'A'",
+              "url_img_visitante": "/pnfg/pimg/Clubes/00100_0011715402_logo_M__xico_FC_rN.png",
+              "Retirado_visitante": "0",
+              "Goles_visitante": "1",
+              "penaltis_visitante": "",
+              "codacta_origen": ""
+            }
+          ]
+        }
+      },
+      "tabla": {
+        "season": {
+          "cod_temporada": "22",
+          "nombre": "2026-2027",
+          "fecha_inicio": "2026-07-01",
+          "fecha_fin": "2027-09-01"
+        },
+        "standings": {
+          "estado": "1",
+          "codigo_competicion": "26738289",
+          "codigo_grupo": "26738291",
+          "jornada": "3",
+          "clasificacion": [
+            {
+              "posicion": "1",
+              "nombre": "LAS ROZAS C.F. 'A'",
+              "puntos": "5",
+              "jugados": "3",
+              "ganados": "1",
+              "empatados": "2",
+              "perdidos": "0",
+              "goles_a_favor": "2",
+              "goles_en_contra": "1"
+            },
+            {
+              "posicion": "2",
+              "nombre": "C.F. FUENLABRADA S.A.D. 'A'",
+              "puntos": "5",
+              "jugados": "3",
+              "ganados": "1",
+              "empatados": "2",
+              "perdidos": "0",
+              "goles_a_favor": "2",
+              "goles_en_contra": "1"
+            },
+            {
+              "posicion": "3",
+              "nombre": "C.D. COLONIA MOSCARDO 'A'",
+              "puntos": "3",
+              "jugados": "3",
+              "ganados": "1",
+              "empatados": "0",
+              "perdidos": "2",
+              "goles_a_favor": "4",
+              "goles_en_contra": "4"
+            },
+            {
+              "posicion": "4",
+              "nombre": "MEXICO F.C. S.A.D. 'A'",
+              "puntos": "2",
+              "jugados": "3",
+              "ganados": "0",
+              "empatados": "2",
+              "perdidos": "1",
+              "goles_a_favor": "2",
+              "goles_en_contra": "4"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

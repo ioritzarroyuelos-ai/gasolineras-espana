@@ -82,7 +82,11 @@ function maxVelocidad(arr) {
 /** Predicción diaria de AEMET (respuesta del segundo paso) -> normalizada. */
 export function normalizaAemet(raw, meta) {
   const root = Array.isArray(raw) ? raw[0] : raw
-  if (root?.id != null && String(root.id).padStart(5, '0') !== meta.ine) throw new Error('AEMET respondió para otro municipio')
+  if (root?.id != null && String(root.id).padStart(5, '0') !== meta.ine) {
+    const codigo = /^-?\d{1,6}$/.test(String(root.id)) ? root.id : 'inválido'
+    const enlaceCoincide = Boolean(urlMunicipioAemet(root.origen?.enlace, meta.ine))
+    throw new Error('INE recibido '+codigo+', solicitado '+meta.ine+', enlace oficial coincide: '+(enlaceCoincide ? 'sí' : 'no'))
+  }
   const dias = (root?.prediccion?.dia || []).map(d => ({
     fecha: d.fecha,
     tmax: num(d.temperatura?.maxima),
@@ -217,6 +221,25 @@ async function diariaXml(muni) {
     }
   })
   return normalizaAemet({ id: muni.ine, origen: { enlace }, elaborado: publicado, prediccion: { dia } }, muni)
+}
+
+// El robot sólo guarda partes oficiales con identidad, fecha y temperaturas verificadas.
+export async function parteParaSnapshot(muni, leerOpenData, ahora = Date.now()) {
+  let motivoRespaldo
+  try {
+    const raw = await leerOpenData(muni.ine)
+    const root = Array.isArray(raw) ? raw[0] : raw
+    if (root?.id == null) throw new Error('OpenData no identifica el municipio')
+    const pred = prediccionVigente(normalizaAemet(raw, muni), ahora)
+    if (!pred) throw new Error('OpenData no entregó un parte vigente con temperaturas')
+    if (root.origen?.enlace && !pred.urlMunicipio) throw new Error('OpenData no enlaza el municipio solicitado')
+    return { pred }
+  } catch (e) {
+    motivoRespaldo = e instanceof Error ? e.message : 'Fallo en OpenData'
+  }
+  const pred = prediccionVigente(await diariaXml(muni), ahora)
+  if (!pred) throw new Error('XML sin parte vigente con temperaturas')
+  return { pred, motivoRespaldo }
 }
 
 export async function resuelvePrediccion(muni, deps = {}) {

@@ -41,6 +41,7 @@ export function normalizaOpenMeteo(raw: unknown, meta: MetaMunicipio, ahora?: nu
 export function bajaAemet(ine: string, key: string): Promise<unknown>
 export function bajaOpenMeteo(lat: number, lng: number, zona?: string): Promise<unknown>
 export function prediccionVigente(pred: Prediccion | null | undefined, ahora?: number): Prediccion | null
+export function parteParaSnapshot(muni: MetaMunicipio, leerOpenData: (ine: string) => Promise<unknown>, ahora?: number): Promise<{ pred: Prediccion; motivoRespaldo?: string }>
 
 export interface ResuelveDeps {
   bajaAemet?: (ine: string) => Promise<unknown>

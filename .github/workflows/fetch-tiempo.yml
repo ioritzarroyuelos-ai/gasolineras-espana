@@ -4,7 +4,7 @@ name: Fetch snapshot del tiempo
 # ~145) desde AEMET, para servir sus páginas al instante. El resto va bajo demanda
 # + caché en el borde. 4 veces al día (el tiempo cambia durante el día).
 #
-# Fuente AEMET (secreto AEMET_API_KEY), con Open-Meteo de suplente. Ver
+# Fuentes de AEMET: OpenData (secreto AEMET_API_KEY) y XML municipal. Ver
 # scripts/fetch-tiempo.mjs. El push dispara CI -> deploy (como fetch-itv).
 
 on:
@@ -29,6 +29,9 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
+
+      - name: Instalar el lector de partes XML
+        run: npm ci --omit=dev --ignore-scripts
 
       - name: Precachear el tiempo de los municipios importantes
         env:

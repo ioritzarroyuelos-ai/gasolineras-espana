@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 // Lib .mjs con tipos en scripts/lib/tiempo.d.mts (mismo patron que historico-estatico).
 import {
   frescuraTiempo, TIEMPO_STALE_HORAS, normalizaAemet, normalizaOpenMeteo, resuelvePrediccion,
-  maestroAMunicipios, construyeIndiceMunicipios, prediccionVigente, normalizaHorasOpenMeteo, resuelveHoras,
+  maestroAMunicipios, construyeIndiceMunicipios, prediccionVigente, normalizaHorasOpenMeteo, resuelveHoras, parteParaSnapshot,
 } from '../scripts/lib/tiempo.mjs'
 import { PROVINCIAS_INE } from '../scripts/lib/provincias-ine.mjs'
 import rawAemet from './fixtures/tiempo/aemet-diaria-28079.json'
@@ -54,6 +54,41 @@ describe('normalizaAemet (fixture real de Madrid)', () => {
   })
   it('conserva el elaborado', () => {
     expect(p.elaborado).toMatch(/^2026-09-06T13:37/)
+  })
+})
+
+describe('partes oficiales para la actualización automática', () => {
+  const arrecife = { ine: '35004', nombre: 'Arrecife', provincia: 'Las Palmas' }
+  const enlace = 'https://www.aemet.es/es/eltiempo/prediccion/municipios/arrecife-id35004'
+  const equivocado = async () => [{ ...rawAemet[0], id: 35016, origen: { enlace } }]
+  function xml(ine:string, modificado = 'Sun, 06 Sep 2026 11:00:00 GMT') {
+    return new Response('<root id="'+ine+'"><origen><enlace>'+enlace+'</enlace></origen><prediccion><dia fecha="2026-09-06">'
+      +'<temperatura><maxima>26</maxima><minima>19</minima></temperatura></dia></prediccion></root>',
+      { headers: { 'Last-Modified': modificado } })
+  }
+  it('ante otro código en OpenData, obtiene la temperatura del XML del municipio correcto', async () => {
+    const pedir = vi.fn(async () => xml(arrecife.ine))
+    vi.stubGlobal('fetch', pedir)
+    const {pred, motivoRespaldo} = await parteParaSnapshot(arrecife, equivocado, fechaFixture)
+    expect(motivoRespaldo).toContain('INE recibido 35016, solicitado 35004, enlace oficial coincide: sí')
+    expect(pred).toMatchObject({ ine:'35004', fuente:'AEMET', urlMunicipio:enlace, dias:[{ tmax:26, tmin:19 }] })
+    expect(pedir).toHaveBeenCalledOnce()
+    expect(pedir).toHaveBeenCalledWith('https://www.aemet.es/xml/municipios/localidad_35004.xml', expect.anything())
+  })
+  it('si el parte XML también es de otro municipio o está caducado, se descarta sin pedir Open-Meteo', async () => {
+    const pedir = vi.fn().mockResolvedValueOnce(xml('35016')).mockResolvedValueOnce(xml('35004','Sat, 05 Sep 2026 11:00:00 GMT'))
+    vi.stubGlobal('fetch', pedir)
+    await expect(parteParaSnapshot(arrecife, equivocado, fechaFixture)).rejects.toThrow('municipio solicitado')
+    await expect(parteParaSnapshot(arrecife, equivocado, fechaFixture)).rejects.toThrow('vigente')
+    expect(pedir.mock.calls.map(c => c[0])).toEqual(Array(2).fill('https://www.aemet.es/xml/municipios/localidad_35004.xml'))
+  })
+  it('un parte vigente del municipio correcto en OpenData no necesita una segunda descarga', async () => {
+    const pedir = vi.fn()
+    vi.stubGlobal('fetch', pedir)
+    const {pred, motivoRespaldo} = await parteParaSnapshot(meta, async () => rawAemet, fechaFixture)
+    expect(pred.dias[0].tmax).toBe(36)
+    expect(motivoRespaldo).toBeUndefined()
+    expect(pedir).not.toHaveBeenCalled()
   })
 })
 

@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bajaAemet, normalizaAemet, prediccionVigente } from './lib/tiempo.mjs'
+import { bajaAemet, parteParaSnapshot, prediccionVigente } from './lib/tiempo.mjs'
 
 const KEY = process.env.AEMET_API_KEY
 if (!KEY) { console.error('Falta AEMET_API_KEY'); process.exit(1) }
@@ -33,16 +33,12 @@ if (importantes.length < 50 || importantes.length > 400) {
   throw new Error(`Numero raro de importantes (${importantes.length}); esperado ~145. Abortamos.`)
 }
 
-// El snapshot es SOLO de AEMET (su razon de ser es pre-cachear el dato oficial).
-// AEMET limita el ritmo: ante 429 esperamos y reintentamos. Si aun asi falla, el
-// municipio se SALTA (no se mete Open-Meteo) — ese se sirve bajo demanda, que ya
-// da AEMET de uno en uno sin tocar el limite. Asi el snapshot nunca degrada.
-async function aemetConReintentos(m) {
+// Respetamos el límite de OpenData. Si falla, parteParaSnapshot consulta el XML
+// del mismo municipio antes de recurrir a una copia oficial anterior.
+async function openDataConReintentos(ine) {
   for (let intento = 1; intento <= 3; intento++) {
     try {
-      const pred = normalizaAemet(await bajaAemet(m.ine, KEY), { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre })
-      if (!prediccionVigente(pred)) throw new Error('AEMET no entregó un parte vigente con temperaturas')
-      return pred
+      return await bajaAemet(ine, KEY)
     } catch (e) {
       const msg = String(e.message || e)
       if (msg.includes('429') && intento < 3) { await sleep(BACKOFF_429_MS); continue }
@@ -61,19 +57,26 @@ function cargaPrevio(slug, provincia) {
     const prev = JSON.parse(readFileSync(resolve(OUT_DIR, slug + '.json'), 'utf8'))
     for (const ine in (prev.predicciones || {})) {
       const p = prev.predicciones[ine]
-      if (p?.fuente === 'AEMET' && prediccionVigente(p)) g.predicciones[ine] = p
+      if (p?.ine !== ine || p.fuente !== 'AEMET' || p.versionPeriodos !== 2) continue
+      const vigente = prediccionVigente(p)
+      if (vigente) g.predicciones[ine] = vigente
     }
   } catch { /* sin snapshot previo */ }
   porProvincia.set(slug, g)
   return g
 }
 
-let ok = 0, saltados = 0
+let ok = 0, porXml = 0, saltados = 0
 for (let i = 0; i < importantes.length; i++) {
   const m = importantes[i]
   const g = cargaPrevio(m.provinciaSlug, m.provinciaNombre)
   try {
-    g.predicciones[m.ine] = await aemetConReintentos(m)
+    const { pred, motivoRespaldo } = await parteParaSnapshot({ ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre }, openDataConReintentos)
+    g.predicciones[m.ine] = pred
+    if (motivoRespaldo) {
+      porXml++
+      console.log(`  XML de AEMET verificado para ${m.nombre} (${m.ine}). OpenData: ${motivoRespaldo.slice(0, 100)}`)
+    }
     ok++
   } catch (e) {
     saltados++  // se queda como estaba (previo fresco) o para bajo-demanda
@@ -82,7 +85,7 @@ for (let i = 0; i < importantes.length; i++) {
   if (i < importantes.length - 1) await sleep(PAUSA_MS)
 }
 
-console.log(`  ${ok} con AEMET esta pasada, ${saltados} saltados (van bajo demanda)`)
+console.log(`  ${ok} con AEMET esta pasada (${ok - porXml} OpenData, ${porXml} XML), ${saltados} saltados (copia vigente o bajo demanda)`)
 // Contamos el total en el snapshot (nuevos + previos re-mezclados).
 let totalSnap = 0
 for (const [, g] of porProvincia) totalSnap += Object.keys(g.predicciones).length

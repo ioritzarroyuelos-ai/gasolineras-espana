@@ -5,8 +5,10 @@ export const fuenteAlkamelEspana = 'https://f4spain-e3.alkamelsystems.com/'
 const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const circuito = v => { const n = slug(v); return /ricardo-tormo|valencia/.test(n) ? 'valencia' : /portimao|algarve/.test(n) ? 'portimao' : /^(?:montmelo|barcelona)$/.test(n) ? 'barcelona' : n }
-const sesionClave = v => slug(v).replace(/^(?:sprint-race|carrera-sprint)$/, 'sprint').replace(/^qualification-/, 'qualifying-').replace(/^clasificacion-/, 'qualifying-').replace(/^carrera-/, 'race-').replace(/^entrenamientos-libres-/, 'free-practice-')
-const nombreSesion = v => limpia(v).replace(/^Sprint Race$/i, 'Carrera sprint').replace(/^Qualifying\s/i, 'Clasificación ').replace(/^Race\s/i, 'Carrera ').replace(/^Free Practice\s/i, 'Entrenamientos libres ')
+const sesionClave = v => slug(v).replace(/^official-previous-test(?=-|$)/, 'official-test').replace(/^(?:sprint-race|carrera-sprint)$/, 'sprint').replace(/^qualification-/, 'qualifying-').replace(/^clasificacion-/, 'qualifying-').replace(/^carrera-/, 'race-').replace(/^entrenamientos-libres-/, 'free-practice-')
+const nombreSesion = v => limpia(v).replace(/^Official (?:Previous )?Test\b/i, 'Pruebas oficiales').replace(/^Sprint Race$/i, 'Carrera sprint').replace(/^Qualifying\s/i, 'Clasificación ').replace(/^Race\s/i, 'Carrera ').replace(/^Free Practice\s/i, 'Entrenamientos libres ')
+const horaPublicada = e => e.detalle?.match(/Hora publicada:\s*(\d\d:\d\d)/)?.[1]
+const pruebaOficial = e => /-official-test(?:-\d+)?$/.test(e.id)
 
 export function interpretaIndiceAlkamelEspana(html, ano) {
   const doc = parse(html), temporada = doc.querySelector('select[name="season"]'), elegido = temporada?.querySelector('option[selected]')
@@ -68,7 +70,7 @@ export async function ampliaEspanaAlkamel(competiciones, leer, ano, ahora, consu
     }
     rondas.push(...grupos.values())
   }
-  const tareas = []
+  const tareas = [], destinosUsados = new Set()
   for (const evento of indice.eventos) {
     if (/SWC|OCT/.test(evento.nombre)) continue // Winter Series y test fuera de la temporada ordinaria.
     const candidatas = rondas.filter(r => circuito(r.lugar) === circuito(evento.nombre) && r.fecha <= hoy)
@@ -86,17 +88,33 @@ export async function ampliaEspanaAlkamel(competiciones, leer, ano, ahora, consu
             // Algunos títulos del campeonato omiten el número de entrenamiento,
             // pero su ID conserva free-practice-1/2. Se reutiliza esa identidad
             // dentro de la ronda verificada, sin añadir una segunda tarjeta.
-            const clave = sesionClave(s.sesion)
-            const anteriores = r.eventos.filter(e => sesionClave(e.nombre.split(' · ').at(-1)) === clave || e.id.endsWith('-' + clave) ||
-              /^free-practice-\d+$/.test(clave) && e.id.endsWith('-free-practice') && e.fecha === s.fecha && e.detalle?.match(/Hora publicada:\s*(\d\d:\d\d)/)?.[1] === s.hora)
+            const clave = sesionClave(s.sesion), oficial = /^official-test(?:-\d+)?$/.test(clave)
+            // Los números de Official Test en el calendario proceden de su
+            // orden de aparición. Nunca se emparejan con Test1/2 por ese orden:
+            // la familia, el día y la hora publicada deben coincidir exactamente.
+            const anteriores = r.eventos.filter(e => oficial ? pruebaOficial(e) && e.fecha === s.fecha && horaPublicada(e) === s.hora :
+              sesionClave(e.nombre.split(' · ').at(-1)) === clave || e.id.endsWith('-' + clave) ||
+              /^free-practice-\d+$/.test(clave) && e.id.endsWith('-free-practice') && e.fecha === s.fecha && horaPublicada(e) === s.hora)
             if (anteriores.length > 1) throw Error('Sesión del campeonato ambigua: no se sustituye')
             const anterior = anteriores[0], id = anterior?.id || `${r.c.id}-alkamel-${slug(`${r.lugar}-${s.fecha}-${s.hora}-${s.sesion}`)}`
-            const mismaFecha = anterior?.fecha === s.fecha, horaAnterior = anterior?.detalle?.match(/Hora publicada:\s*(\d\d:\d\d)/)?.[1]
+            const destino = `${r.c.id}:${id}`, posicionAnterior = anterior ? r.c.agenda.eventos.indexOf(anterior) : -1
+            if (destinosUsados.has(destino) || anterior && posicionAnterior < 0) throw Error('Dos documentos intentan sustituir la misma sesión: se conserva la agenda anterior')
+            // Relación 1:1. No hay ningún await entre reservar y sustituir: otra
+            // tarea no puede reutilizar la referencia anterior ni hacer splice(-1).
+            destinosUsados.add(destino)
+            const mismaFecha = anterior?.fecha === s.fecha, horaAnterior = anterior && horaPublicada(anterior)
             const inicio = mismaFecha && anterior.inicio && horaAnterior === s.hora ? anterior.inicio : null
             const conflicto = Boolean(anterior?.inicio && !inicio)
-            const detalle = inicio ? 'Horario confirmado por el campeonato y coincidente con su cronometrador. Resultados publicados en la tabla oficial de esta sesión.' : `Hora publicada: ${s.hora}. ${conflicto ? 'No coincide con el horario confirmado anteriormente; consulta la fuente antes de tomarlo como definitivo.' : 'El cronometrador no indica la zona horaria; se muestra sin convertir.'} Resultados publicados en la tabla oficial de esta sesión.`
+            let detalle = inicio ? 'Horario confirmado por el campeonato y coincidente con su cronometrador. Resultados publicados en la tabla oficial de esta sesión.' : `Hora publicada: ${s.hora}. ${conflicto ? 'No coincide con el horario confirmado anteriormente; consulta la fuente antes de tomarlo como definitivo.' : 'El cronometrador no indica la zona horaria; se muestra sin convertir.'} Resultados publicados en la tabla oficial de esta sesión.`
+            if (oficial && !anterior && r.eventos.some(pruebaOficial)) {
+              const oficiales = r.eventos.filter(pruebaOficial)
+              const horasDistintas = oficiales.every(e => e.fecha === s.fecha && horaPublicada(e) && horaPublicada(e) !== s.hora)
+              const aviso = horasDistintas ? 'El calendario y el cronometraje publican horas distintas para las pruebas oficiales de esta ronda; no se ha podido confirmar qué entradas corresponden entre sí.' : 'No se ha podido confirmar qué prueba oficial del calendario corresponde a este documento. Las fechas o las horas publicadas no permiten asociarlos con seguridad.'
+              detalle += ' ' + aviso
+              for (const e of r.eventos.filter(pruebaOficial)) if (!e.detalle?.includes(aviso)) e.detalle = `${e.detalle || ''} ${aviso}`.trim()
+            }
             const e = { id, nombre: `${r.lugar} · ${nombreSesion(s.sesion)}`, fecha: s.fecha, inicio, estado: mismaFecha && !conflicto && anterior.estado === 'finalizado' ? 'finalizado' : 'por_confirmar', lugar: r.lugar, ...(r.jornada ? { jornada: r.jornada } : {}), fuenteUrl: s.fuenteUrl, detalle, resultados: [resultado] }
-            if (anterior) r.c.agenda.eventos.splice(r.c.agenda.eventos.indexOf(anterior), 1, e)
+            if (anterior) r.c.agenda.eventos.splice(posicionAnterior, 1, e)
             else r.c.agenda.eventos.push(e)
           } catch (e) { falla(r.c, s.fuenteUrl, e) }
         })

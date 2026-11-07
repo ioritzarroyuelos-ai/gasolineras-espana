@@ -36,6 +36,64 @@ async function expectUncovered(locator: Locator) {
   })).toBe(true)
 }
 
+for (const width of [1280, 390, 320]) {
+  test('media nacional a ' + width + 'px: no tapa navegación, lista ni ficha', async ({ page }, info) => {
+    test.skip(info.config.metadata.live === true, 'Datos nacionales controlados; producción conserva sus respuestas reales.')
+    await page.setViewportSize({ width, height: 844 })
+    await smallSnapshot(page)
+    const hoy = new Date().toISOString().slice(0, 10)
+    const datos = { days: 30, fuels: {
+      '95': { today: 1.678, delta_pct: -4.03, days_available: 31, last_date: hoy },
+      diesel: { today: 1.872, delta_pct: -0.93, days_available: 31, last_date: hoy },
+    } }
+    // La API local puede carecer de serie: forzamos un widget real, no un caso
+    // que pasa simplemente porque nunca se llegó a pintar la media nacional.
+    await page.route('**/api/stats/national?days=30', route => route.fulfill({ json: datos }))
+    await page.goto('/gasolineras/mapa?prov=28')
+    const widget = page.locator('#stats-nacional'), detail = page.locator('#station-detail')
+    const card = cardFor(page, '900001')
+    await expect(widget).toBeVisible({ timeout: 10000 })
+    await expect(widget).toContainText('1.678')
+    const controls = [page.locator('#btn-map-location'), page.locator('#map-navigation .leaflet-control-zoom-in'), page.locator('#map-navigation .leaflet-control-zoom-out'), page.locator('#btn-electrolineras')]
+    for (const control of controls) await expectUncovered(control)
+    if (width < 1024) {
+      await page.locator('#btn-sheet-toggle').click()
+      await expect(page.locator('#sidebar')).toHaveClass(/\bopen\b/)
+      await expect(widget).toBeHidden()
+      await expectUncovered(page.locator('#btn-toggle-filters'))
+    }
+    await expect(card).toBeVisible({ timeout: 20000 })
+    await card.click()
+    await expect(detail).toBeVisible()
+    await expect(widget).toBeHidden()
+    await expectUncovered(detail.locator('.popup-header-title'))
+    await expectUncovered(page.locator('#btn-station-detail-close'))
+    for (const control of controls.slice(0, 3)) await expectUncovered(control)
+    await page.locator('#btn-station-detail-close').click()
+    await expect(widget).toBeVisible()
+    for (const control of controls) await expectUncovered(control)
+
+    if (width === 390) {
+      // También debe ocultarse cuando la consulta termina con la ficha abierta.
+      const pendiente = Promise.withResolvers<Route>()
+      await page.route('**/api/stats/national?days=30', route => pendiente.resolve(route))
+      await page.reload()
+      await expect(card).toBeAttached({ timeout: 20000 })
+      await page.locator('#btn-sheet-toggle').click()
+      await card.click()
+      await expect(detail).toBeVisible()
+      await (await pendiente.promise).fulfill({ json: datos })
+      await expect(widget).toBeAttached()
+      await expect(widget).toBeHidden()
+      await expectUncovered(page.locator('#btn-station-detail-close'))
+      for (const control of controls.slice(0, 3)) await expectUncovered(control)
+      await page.locator('#btn-station-detail-close').click()
+      await expect(widget).toBeVisible()
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  })
+}
+
 test('los grupos muestran cantidad y precio mínimo exactos; un precio ausente no se convierte en cero', async ({ page }, info) => {
   test.skip(info.config.metadata.live === true, 'Caso límite controlado; producción conserva sus datos oficiales.')
   await smallSnapshot(page)

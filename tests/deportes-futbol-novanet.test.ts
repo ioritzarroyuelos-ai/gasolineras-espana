@@ -307,6 +307,7 @@ describe('checkpoint de categorías y grupos territoriales', () => {
     try {
       const categoria = { codigo: '33836091', nombre: 'Campeonato Nacional de Liga de Segunda Federación', familia: 'Fútbol', grupos: [{ codigo: '33836092', nombre: 'Grupo1' }] }
       let guardado = normalizaEstadoNovanet({ version: 1, catalogo: { temporada: { codigo: '21', nombre: '2025-2026' }, verificadoEn: '2026-10-01T16:00:00Z', categorias: [categoria] } })
+      guardado.intentos = { '33836091-33836092': { fecha: '2026-10-01T16:00:00.000Z', fallo: true } }
       const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(String(url).includes('_Exec') ? fixture('grupos.html') : '<select name="temporada"><option value="22">2026-2027</option></select><select name="competicion"><optgroup label="Fútbol"><option value="33836091">Campeonato Nacional de Liga de Segunda Federación</option></optgroup></select>'))
       const pendiente = obtieneNovanet({ fuentesNovanet: ['rfef'], maxPeticionesNovanet: 2, estadoNovanet: { rfef: guardado }, fetcher, guardarEstadoNovanet: (_id, estado) => { guardado = estado } })
       await vi.runAllTimersAsync()
@@ -315,6 +316,7 @@ describe('checkpoint de categorías y grupos territoriales', () => {
       expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(5)
       expect(idGrupoNovanet('rfef', guardado.catalogo!.categorias[0], guardado.catalogo!.categorias[0].grupos![0])).toBe('rfef-segunda-masculina-1')
       expect(salida.seguimientoGrupos).toEqual({ conocidos: [], revisados: [] })
+      expect(guardado.intentos).toEqual({})
       expect(fetcher).toHaveBeenCalledTimes(2)
     } finally { vi.useRealTimers() }
   })

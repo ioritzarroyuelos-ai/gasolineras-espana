@@ -10,6 +10,8 @@ import { obtieneBaloncestoAlava } from './deportes-baloncesto-alava.mjs'
 import { obtieneBaloncestoGesdeportiva } from './deportes-baloncesto-gesdeportiva.mjs'
 import { obtieneBaloncestoAragon } from './deportes-baloncesto-aragon.mjs'
 import { obtieneBaloncestoGalicia } from './deportes-baloncesto-galicia.mjs'
+import { obtieneBaloncestoConsejos } from './deportes-baloncesto-playoff.mjs'
+import { obtieneBaloncestoCeuta } from './deportes-baloncesto-ceuta.mjs'
 
 const FEB = 'https://beta.competiciones.feb.es'
 const ACB = 'https://acb.com'
@@ -474,16 +476,15 @@ async function obtieneFeb(opciones) {
   return { competiciones, incidencias }
 }
 export async function obtieneBaloncesto(opciones = {}) {
-  const resultados = await Promise.allSettled([obtieneAcb(opciones), obtieneFeb(opciones), obtieneNba(opciones), obtieneBaseFeb(opciones), obtieneCopasAcb(opciones), obtieneBaloncestoTerritorial(opciones), obtieneBaloncestoEuropa(opciones), obtieneWnba(opciones), obtieneBaloncestoBizkaia(opciones), obtieneBaloncestoFbcyl(opciones), obtieneBaloncestoFbcv(opciones), obtieneBaloncestoOtrasOW(opciones), obtieneBaloncestoAlava(opciones), obtieneBaloncestoGesdeportiva(opciones), obtieneBaloncestoAragon(opciones), obtieneBaloncestoGalicia(opciones)])
+  const resultados = await Promise.allSettled([obtieneAcb(opciones), obtieneFeb(opciones), obtieneNba(opciones), obtieneBaseFeb(opciones), obtieneCopasAcb(opciones), obtieneBaloncestoTerritorial(opciones), obtieneBaloncestoEuropa(opciones), obtieneWnba(opciones), obtieneBaloncestoBizkaia(opciones), obtieneBaloncestoFbcyl(opciones), obtieneBaloncestoFbcv(opciones), obtieneBaloncestoOtrasOW(opciones), obtieneBaloncestoAlava(opciones), obtieneBaloncestoGesdeportiva(opciones), obtieneBaloncestoAragon(opciones), obtieneBaloncestoGalicia(opciones), obtieneBaloncestoConsejos(opciones), obtieneBaloncestoCeuta(opciones)])
   const competiciones = [], incidencias = []
   for (const r of resultados) {
     if (r.status === 'fulfilled') { competiciones.push(...r.value.competiciones); incidencias.push(...r.value.incidencias) }
     else incidencias.push(incidencia('Baloncesto', FEB, r.reason.message))
   }
   incidencias.push(
-    incidencia('Baloncesto · Cataluña', 'https://www.basquetcatala.cat/competicions', 'Aún sin lectura automática verificada. En la revisión del 7 de noviembre de 2026, el portal solicitó una verificación manual de seguridad.'),
+    incidencia('Baloncesto federado · Cataluña', 'https://www.basquetcatala.cat/competicions', 'El portal de la Federación Catalana solicitó una verificación manual de seguridad en la revisión del 7 de noviembre de 2026. Sus ligas siguen pendientes; la cobertura escolar y popular de Sabadell y Terrassa procede de los consejos deportivos y se comprueba por separado.'),
     incidencia('Baloncesto · Andalucía', 'https://www.andaluzabaloncesto.org/', 'Aún sin lectura automática verificada. En la revisión del 7 de noviembre de 2026, la página oficial respondió con una protección de acceso (HTTP 403).'),
-    incidencia('Baloncesto · Ceuta', 'https://fbceuta.es/calendario/', 'Aún sin lectura automática verificada. El calendario revisado el 7 de noviembre de 2026 contenía un evento de plantilla, sin encuentros oficiales identificables.'),
   )
   return { competiciones, incidencias }
 }

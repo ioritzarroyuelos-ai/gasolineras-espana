@@ -28,7 +28,8 @@ export function interpretaCatalogoFerrari(datos, ano) {
     if (!m) return [] // Otras series (UK, Club Challenge) tienen su propio alcance.
     const fecha = `${m[4]}-${m[5]}-${m[6]}`
     if (Number(m[1]) !== ano || Number(m[4]) !== ano || !validaFecha(fecha) || Number(m[7]) > 23 || Number(m[8]) > 59 || m[9] !== m[10]) throw Error('Sesión Ferrari con fecha o identidad contradictoria')
-    return [{ id: `ferrari-${slug(`${m[2]}-${m[3]}-${m[4]}${m[5]}${m[6]}-${m[9]}`)}`, nombre: `${m[2]} · ${m[3]} · ${nombreSesion(m[9])}`, fecha, inicio: null, estado: 'por_confirmar', lugar: m[2], fuenteUrl: d.url, detalle: `Hora publicada: ${m[7]}:${m[8]}. El catálogo no indica zona horaria; consulta los documentos de la prueba.`, sesion: m[9] }]
+    const porClase = documentos.find(a => decodeURIComponent(a.url) === decodeURIComponent(d.url).replace('/03_Classification_', '/05_ClassificationByClass_'))?.url
+    return [{ id: `ferrari-${slug(`${m[2]}-${m[3]}-${m[4]}${m[5]}${m[6]}-${m[9]}`)}`, nombre: `${m[2]} · ${m[3]} · ${nombreSesion(m[9])}`, fecha, inicio: null, estado: 'por_confirmar', lugar: m[2], fuenteUrl: d.url, detalle: `Hora publicada: ${m[7]}:${m[8]}. El catálogo no indica zona horaria; consulta los documentos de la prueba.`, sesion: m[9], ...(porClase ? { porClase } : {}) }]
   })
   const clasificaciones = documentos.filter(d => /CHAMPIONSHIP%20STANDINGS\//i.test(d.url) && /\.pdf$/i.test(d.url)).map(d => ({ ...d, ronda: Number(decodeURIComponent(d.url).match(/\/\d+_\d{4}\/(\d+)_/)?.[1]) })).filter(d => Number.isInteger(d.ronda))
   if (!sesiones.length || new Set(sesiones.map(s => s.id)).size !== sesiones.length) throw Error('Sesiones Ferrari vacías o duplicadas')
@@ -36,7 +37,7 @@ export function interpretaCatalogoFerrari(datos, ano) {
   return { sesiones, clasificacion: clasificaciones[0]?.url || null }
 }
 
-function csvFilas(texto) {
+export function csvFilas(texto) {
   const filas = [], textoLimpio = texto.replace(/^\uFEFF/, ''); let fila = [], valor = '', comillas = false
   for (let i = 0; i < textoLimpio.length; i++) {
     const c = textoLimpio[i]
@@ -47,6 +48,21 @@ function csvFilas(texto) {
   if (comillas) throw Error('CSV Ferrari truncado')
   fila.push(valor); if (fila.some(v => v.trim())) filas.push(fila)
   return filas
+}
+
+// Este CSV alternativo conserva POS (puesto general) y PIC (puesto de clase).
+// Se usa POS; ordenar por PIC mezclaría ganadores de categorías distintas.
+export function interpretaResultadoFerrariPorClase(texto, fuenteUrl, verificadoEn) {
+  const [cabecera, ...datos] = csvFilas(texto), nombres = cabecera?.map(limpia) || []
+  for (const c of ['CLASS_TYPE', 'POS', 'PIC', 'NUMBER', 'TEAM', 'DRIVER', 'TOTAL_LAPS', 'TIME']) if (!nombres.includes(c)) throw Error('CSV Ferrari por clase sin columnas verificables')
+  const filas = datos.map(f => {
+    if (f.length !== cabecera.length) throw Error('Fila Ferrari por clase incompleta')
+    const r = Object.fromEntries(nombres.map((n, i) => [n, limpia(f[i])])), posicion = numero(r.POS), vueltas = numero(r.TOTAL_LAPS), dorsal = numero(r.NUMBER)
+    if (!r.DRIVER || !posicion || dorsal === null || vueltas === null || !r.CLASS_TYPE || !numero(r.PIC)) throw Error('Resultado Ferrari por clase sin identidad')
+    return { posicion, nombre: r.DRIVER, valores: { numero: dorsal, equipo: r.TEAM || '—', clase: r.CLASS_TYPE, vueltas, tiempo: r.TIME || '—', diferencia: r.GAP_FIRST || '—', estado: 'Orden general publicado' } }
+  }).sort((a, b) => a.posicion - b.posicion)
+  if (!filas.length || filas.length > 500 || filas.some((f, i) => f.posicion !== i + 1) || new Set(filas.map(f => f.valores.numero)).size !== filas.length) throw Error('Resultado Ferrari por clase incompleto o duplicado')
+  return { id: 'resultado', nombre: 'Resultado publicado por Ferrari Challenge · orden general', fuenteUrl, verificadoEn, columnas: [{ clave: 'numero', nombre: 'Dorsal' }, { clave: 'equipo', nombre: 'Equipo' }, { clave: 'clase', nombre: 'Categoría' }, { clave: 'vueltas', nombre: 'Vueltas' }, { clave: 'tiempo', nombre: 'Mejor vuelta' }, { clave: 'diferencia', nombre: 'Diferencia de su categoría' }, { clave: 'estado', nombre: 'Estado oficial' }], filas }
 }
 export function interpretaResultadoFerrari(texto, sesion, fuenteUrl, verificadoEn) {
   const [cabecera, ...datos] = csvFilas(texto), nombres = cabecera?.map(limpia) || []
@@ -94,8 +110,18 @@ export async function ampliaFerrari(c, leer, ano, ahora, consultado, incidencias
     catalogo = interpretaCatalogoFerrari(JSON.parse(await leer(new URL(temporada.manifestUrl, base).href)), ano)
     const hoy = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(ahora), pendientes = catalogo.sesiones.filter(s => s.fecha <= hoy)
     let siguiente = 0
-    await Promise.all(Array.from({ length: Math.min(3, pendientes.length) }, async () => { while (siguiente < pendientes.length) { const e = pendientes[siguiente++]; try { e.resultados = [interpretaResultadoFerrari(await leer(e.fuenteUrl), e.sesion, e.fuenteUrl, consultado)] } catch (error) { falla(e.fuenteUrl, error) } } }))
-    const eventos = catalogo.sesiones.map(({ sesion, ...e }) => e), fechas = new Set(eventos.map(e => e.fecha))
+    await Promise.all(Array.from({ length: Math.min(3, pendientes.length) }, async () => { while (siguiente < pendientes.length) {
+      const e = pendientes[siguiente++]
+      try {
+        const texto = await leer(e.fuenteUrl)
+        try { e.resultados = [interpretaResultadoFerrari(texto, e.sesion, e.fuenteUrl, consultado)] }
+        catch (error) {
+          if (!e.porClase || /^Race\b/.test(e.sesion)) throw error
+          e.resultados = [interpretaResultadoFerrariPorClase(await leer(e.porClase), e.porClase, consultado)]
+        }
+      } catch (error) { falla(e.fuenteUrl, error) }
+    } }))
+    const eventos = catalogo.sesiones.map(({ sesion, porClase, ...e }) => e), fechas = new Set(eventos.map(e => e.fecha))
     // El catálogo enumera documentos publicados; la RFEDA aporta las próximas
     // rondas que aún no tienen documentos, con sus fechas originales.
     eventos.push(...c.agenda.eventos.filter(e => e.fecha >= hoy && !fechas.has(e.fecha)))

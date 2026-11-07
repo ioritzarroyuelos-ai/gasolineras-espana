@@ -8,6 +8,7 @@ export interface EstadoNovanet {
   ventana: { desde: string | null; peticiones: number }
   verificados: Record<string, string>
   completos: Record<string, string>
+  intentos?: Record<string, { fecha: string; fallo: boolean }>
   descubrimientoGes?: {
     fuenteUrl: string
     iniciadoEn: string

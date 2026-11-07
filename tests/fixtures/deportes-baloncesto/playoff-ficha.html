@@ -1,0 +1,53 @@
+<div class="dropdown season-dropdown">
+        <a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=13" class="hidden-xs">CURS 2026-27</a>
+    <button class="btn btn-link dropdown-toggle" type="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+      <span class="caret"></span>
+    </button>
+    <ul class="dropdown-menu">
+      <li><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=13" class="visible-xs">CURS 2026-27</a></li>
+                                                  <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=1">Curs  2014-15</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=2">CURS 2015-16</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=3">CURS 2016-17</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=4">CURS 2017-18</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=5">CURS 2018-19</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=6">CURS 2019-20</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=7">CURS 2020-21</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=8">CURS 2021-22</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=9">CURS 2022-23</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=10">CURS 2023-24</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=11">CURS 2024-25</a></li>
+                                                                      <li class=""><a href="CompeticioEntradaWeb.php?accio=accio_competicio_publica_entrada&idTemporada=12">CURS 2025-26</a></li>
+                              </ul>
+  </div><script>
+  function peticioResultatsClassificacionsJornada(idJornada) {
+    $.ajax({
+      type: 'POST',
+      url: 'peticioAjaxCompeticioPublica.php',
+      data: 'peticioKey=peticio_competicio_publica_resultats_classificacions&idJornada='+idJornada,
+      success: function(data){
+        $("#secResultats").html(data);
+      }
+    });
+  }
+  function peticioResultatsJornada(idJornada) {
+    $.ajax({
+      type: 'POST',
+      url: 'peticioAjaxCompeticioPublica.php',
+      data: 'peticioKey=peticio_competicio_publica_resultats&idJornada='+idJornada,
+      success: function(data){
+        $("#lastJornada").html(data);
+        $("#lastJornada caption").html("<span class='label label-warning pull-left'>Última Jornada</span>");
+      }
+    });
+  }
+  $(document).ready(function(){
+    var callback = function(idJornada){
+      peticioResultatsClassificacionsJornada(idJornada);
+      peticioResultatsJornada(idJornada);
+      var link = $("#printClassificacio").prop('href');
+      var temp = link.substr(0,link.lastIndexOf('=')+1);
+      $("#printClassificacio").prop('href',temp+idJornada);
+    }
+    peticioJornades('1187','9566',callback);
+  });
+  </script>

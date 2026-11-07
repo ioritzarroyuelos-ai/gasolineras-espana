@@ -1,0 +1,1030 @@
+{
+  "fuenteCatalogo": "https://www.nba.com/teams",
+  "consultaDesde": "2026-11-07T17:01:47.649Z",
+  "consultaHasta": "2026-11-07T17:01:55.404Z",
+  "paginaCatalogo": "/teams",
+  "enlaces": [
+    "/team/1610612738/celtics",
+    "/team/1610612751/nets",
+    "/team/1610612752/knicks",
+    "/team/1610612755/sixers",
+    "/team/1610612761/raptors",
+    "/team/1610612741/bulls",
+    "/team/1610612739/cavaliers",
+    "/team/1610612765/pistons",
+    "/team/1610612754/pacers",
+    "/team/1610612749/bucks",
+    "/team/1610612737/hawks",
+    "/team/1610612766/hornets",
+    "/team/1610612748/heat",
+    "/team/1610612753/magic",
+    "/team/1610612764/wizards",
+    "/team/1610612743/nuggets",
+    "/team/1610612750/timberwolves",
+    "/team/1610612760/thunder",
+    "/team/1610612757/blazers",
+    "/team/1610612762/jazz",
+    "/team/1610612744/warriors",
+    "/team/1610612746/clippers",
+    "/team/1610612747/lakers",
+    "/team/1610612756/suns",
+    "/team/1610612758/kings",
+    "/team/1610612742/mavericks",
+    "/team/1610612745/rockets",
+    "/team/1610612763/grizzlies",
+    "/team/1610612740/pelicans",
+    "/team/1610612759/spurs"
+  ],
+  "equipos": [
+    {
+      "url": "https://www.nba.com/team/1610612737/hawks",
+      "consultado": "2026-11-07T17:01:50.609Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612737",
+              "slug": "hawks",
+              "info": {
+                "TEAM_ID": 1610612737,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Atlanta",
+                "TEAM_NAME": "Hawks",
+                "TEAM_SLUG": "hawks",
+                "TEAM_CONFERENCE": "East",
+                "W": 6,
+                "L": 4,
+                "PCT": 0.6,
+                "CONF_RANK": 4
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612737
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612738/celtics",
+      "consultado": "2026-11-07T17:01:47.669Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612738",
+              "slug": "celtics",
+              "info": {
+                "TEAM_ID": 1610612738,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Boston",
+                "TEAM_NAME": "Celtics",
+                "TEAM_SLUG": "celtics",
+                "TEAM_CONFERENCE": "East",
+                "W": 7,
+                "L": 2,
+                "PCT": 0.778,
+                "CONF_RANK": 2
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612738
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612739/cavaliers",
+      "consultado": "2026-11-07T17:01:50.277Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612739",
+              "slug": "cavaliers",
+              "info": {
+                "TEAM_ID": 1610612739,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Cleveland",
+                "TEAM_NAME": "Cavaliers",
+                "TEAM_SLUG": "cavaliers",
+                "TEAM_CONFERENCE": "East",
+                "W": 5,
+                "L": 4,
+                "PCT": 0.556,
+                "CONF_RANK": 6
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612739
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612740/pelicans",
+      "consultado": "2026-11-07T17:01:55.404Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612740",
+              "slug": "pelicans",
+              "info": {
+                "TEAM_ID": 1610612740,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "New Orleans",
+                "TEAM_NAME": "Pelicans",
+                "TEAM_SLUG": "pelicans",
+                "TEAM_CONFERENCE": "West",
+                "W": 4,
+                "L": 5,
+                "PCT": 0.444,
+                "CONF_RANK": 11
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612740
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612741/bulls",
+      "consultado": "2026-11-07T17:01:49.353Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612741",
+              "slug": "bulls",
+              "info": {
+                "TEAM_ID": 1610612741,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Chicago",
+                "TEAM_NAME": "Bulls",
+                "TEAM_SLUG": "bulls",
+                "TEAM_CONFERENCE": "East",
+                "W": 1,
+                "L": 7,
+                "PCT": 0.125,
+                "CONF_RANK": 14
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612741
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612742/mavericks",
+      "consultado": "2026-11-07T17:01:54.260Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612742",
+              "slug": "mavericks",
+              "info": {
+                "TEAM_ID": 1610612742,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Dallas",
+                "TEAM_NAME": "Mavericks",
+                "TEAM_SLUG": "mavericks",
+                "TEAM_CONFERENCE": "West",
+                "W": 5,
+                "L": 4,
+                "PCT": 0.556,
+                "CONF_RANK": 10
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612742
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612743/nuggets",
+      "consultado": "2026-11-07T17:01:51.695Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612743",
+              "slug": "nuggets",
+              "info": {
+                "TEAM_ID": 1610612743,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Denver",
+                "TEAM_NAME": "Nuggets",
+                "TEAM_SLUG": "nuggets",
+                "TEAM_CONFERENCE": "West",
+                "W": 4,
+                "L": 3,
+                "PCT": 0.571,
+                "CONF_RANK": 9
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612743
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612744/warriors",
+      "consultado": "2026-11-07T17:01:53.073Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612744",
+              "slug": "warriors",
+              "info": {
+                "TEAM_ID": 1610612744,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Golden State",
+                "TEAM_NAME": "Warriors",
+                "TEAM_SLUG": "warriors",
+                "TEAM_CONFERENCE": "West",
+                "W": 6,
+                "L": 3,
+                "PCT": 0.667,
+                "CONF_RANK": 8
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612744
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612745/rockets",
+      "consultado": "2026-11-07T17:01:54.815Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612745",
+              "slug": "rockets",
+              "info": {
+                "TEAM_ID": 1610612745,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Houston",
+                "TEAM_NAME": "Rockets",
+                "TEAM_SLUG": "rockets",
+                "TEAM_CONFERENCE": "West",
+                "W": 7,
+                "L": 2,
+                "PCT": 0.778,
+                "CONF_RANK": 2
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612745
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612746/clippers",
+      "consultado": "2026-11-07T17:01:53.279Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612746",
+              "slug": "clippers",
+              "info": {
+                "TEAM_ID": 1610612746,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "LA",
+                "TEAM_NAME": "Clippers",
+                "TEAM_SLUG": "clippers",
+                "TEAM_CONFERENCE": "West",
+                "W": 1,
+                "L": 7,
+                "PCT": 0.125,
+                "CONF_RANK": 13
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612746
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612747/lakers",
+      "consultado": "2026-11-07T17:01:53.292Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612747",
+              "slug": "lakers",
+              "info": {
+                "TEAM_ID": 1610612747,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Los Angeles",
+                "TEAM_NAME": "Lakers",
+                "TEAM_SLUG": "lakers",
+                "TEAM_CONFERENCE": "West",
+                "W": 8,
+                "L": 2,
+                "PCT": 0.8,
+                "CONF_RANK": 1
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612747
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612748/heat",
+      "consultado": "2026-11-07T17:01:51.206Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612748",
+              "slug": "heat",
+              "info": {
+                "TEAM_ID": 1610612748,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Miami",
+                "TEAM_NAME": "Heat",
+                "TEAM_SLUG": "heat",
+                "TEAM_CONFERENCE": "East",
+                "W": 3,
+                "L": 6,
+                "PCT": 0.333,
+                "CONF_RANK": 9
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612748
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612749/bucks",
+      "consultado": "2026-11-07T17:01:50.877Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612749",
+              "slug": "bucks",
+              "info": {
+                "TEAM_ID": 1610612749,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Milwaukee",
+                "TEAM_NAME": "Bucks",
+                "TEAM_SLUG": "bucks",
+                "TEAM_CONFERENCE": "East",
+                "W": 1,
+                "L": 8,
+                "PCT": 0.111,
+                "CONF_RANK": 15
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612749
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612750/timberwolves",
+      "consultado": "2026-11-07T17:01:51.741Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612750",
+              "slug": "timberwolves",
+              "info": {
+                "TEAM_ID": 1610612750,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Minnesota",
+                "TEAM_NAME": "Timberwolves",
+                "TEAM_SLUG": "timberwolves",
+                "TEAM_CONFERENCE": "West",
+                "W": 7,
+                "L": 3,
+                "PCT": 0.7,
+                "CONF_RANK": 6
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612750
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612751/nets",
+      "consultado": "2026-11-07T17:01:47.649Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612751",
+              "slug": "nets",
+              "info": {
+                "TEAM_ID": 1610612751,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Brooklyn",
+                "TEAM_NAME": "Nets",
+                "TEAM_SLUG": "nets",
+                "TEAM_CONFERENCE": "East",
+                "W": 2,
+                "L": 6,
+                "PCT": 0.25,
+                "CONF_RANK": 13
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612751
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612752/knicks",
+      "consultado": "2026-11-07T17:01:48.722Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612752",
+              "slug": "knicks",
+              "info": {
+                "TEAM_ID": 1610612752,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "New York",
+                "TEAM_NAME": "Knicks",
+                "TEAM_SLUG": "knicks",
+                "TEAM_CONFERENCE": "East",
+                "W": 4,
+                "L": 4,
+                "PCT": 0.5,
+                "CONF_RANK": 7
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612752
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612753/magic",
+      "consultado": "2026-11-07T17:01:51.346Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612753",
+              "slug": "magic",
+              "info": {
+                "TEAM_ID": 1610612753,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Orlando",
+                "TEAM_NAME": "Magic",
+                "TEAM_SLUG": "magic",
+                "TEAM_CONFERENCE": "East",
+                "W": 2,
+                "L": 6,
+                "PCT": 0.25,
+                "CONF_RANK": 12
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612753
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612754/pacers",
+      "consultado": "2026-11-07T17:01:50.232Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612754",
+              "slug": "pacers",
+              "info": {
+                "TEAM_ID": 1610612754,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Indiana",
+                "TEAM_NAME": "Pacers",
+                "TEAM_SLUG": "pacers",
+                "TEAM_CONFERENCE": "East",
+                "W": 3,
+                "L": 6,
+                "PCT": 0.333,
+                "CONF_RANK": 10
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612754
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612755/sixers",
+      "consultado": "2026-11-07T17:01:48.212Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612755",
+              "slug": "sixers",
+              "info": {
+                "TEAM_ID": 1610612755,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Philadelphia",
+                "TEAM_NAME": "76ers",
+                "TEAM_SLUG": "sixers",
+                "TEAM_CONFERENCE": "East",
+                "W": 8,
+                "L": 2,
+                "PCT": 0.8,
+                "CONF_RANK": 1
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612755
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612756/suns",
+      "consultado": "2026-11-07T17:01:53.660Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612756",
+              "slug": "suns",
+              "info": {
+                "TEAM_ID": 1610612756,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Phoenix",
+                "TEAM_NAME": "Suns",
+                "TEAM_SLUG": "suns",
+                "TEAM_CONFERENCE": "West",
+                "W": 2,
+                "L": 5,
+                "PCT": 0.286,
+                "CONF_RANK": 12
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612756
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612757/blazers",
+      "consultado": "2026-11-07T17:01:52.357Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612757",
+              "slug": "blazers",
+              "info": {
+                "TEAM_ID": 1610612757,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Portland",
+                "TEAM_NAME": "Trail Blazers",
+                "TEAM_SLUG": "blazers",
+                "TEAM_CONFERENCE": "West",
+                "W": 6,
+                "L": 2,
+                "PCT": 0.75,
+                "CONF_RANK": 5
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612757
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612758/kings",
+      "consultado": "2026-11-07T17:01:54.002Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612758",
+              "slug": "kings",
+              "info": {
+                "TEAM_ID": 1610612758,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Sacramento",
+                "TEAM_NAME": "Kings",
+                "TEAM_SLUG": "kings",
+                "TEAM_CONFERENCE": "West",
+                "W": 1,
+                "L": 8,
+                "PCT": 0.111,
+                "CONF_RANK": 14
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612758
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612759/spurs",
+      "consultado": "2026-11-07T17:01:55.062Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612759",
+              "slug": "spurs",
+              "info": {
+                "TEAM_ID": 1610612759,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "San Antonio",
+                "TEAM_NAME": "Spurs",
+                "TEAM_SLUG": "spurs",
+                "TEAM_CONFERENCE": "West",
+                "W": 7,
+                "L": 2,
+                "PCT": 0.778,
+                "CONF_RANK": 4
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612759
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612760/thunder",
+      "consultado": "2026-11-07T17:01:51.996Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612760",
+              "slug": "thunder",
+              "info": {
+                "TEAM_ID": 1610612760,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Oklahoma City",
+                "TEAM_NAME": "Thunder",
+                "TEAM_SLUG": "thunder",
+                "TEAM_CONFERENCE": "West",
+                "W": 7,
+                "L": 2,
+                "PCT": 0.778,
+                "CONF_RANK": 3
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612760
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612761/raptors",
+      "consultado": "2026-11-07T17:01:48.688Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612761",
+              "slug": "raptors",
+              "info": {
+                "TEAM_ID": 1610612761,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Toronto",
+                "TEAM_NAME": "Raptors",
+                "TEAM_SLUG": "raptors",
+                "TEAM_CONFERENCE": "East",
+                "W": 5,
+                "L": 4,
+                "PCT": 0.556,
+                "CONF_RANK": 5
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612761
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612762/jazz",
+      "consultado": "2026-11-07T17:01:52.830Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612762",
+              "slug": "jazz",
+              "info": {
+                "TEAM_ID": 1610612762,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Utah",
+                "TEAM_NAME": "Jazz",
+                "TEAM_SLUG": "jazz",
+                "TEAM_CONFERENCE": "West",
+                "W": 1,
+                "L": 8,
+                "PCT": 0.111,
+                "CONF_RANK": 15
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612762
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612763/grizzlies",
+      "consultado": "2026-11-07T17:01:54.837Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612763",
+              "slug": "grizzlies",
+              "info": {
+                "TEAM_ID": 1610612763,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Memphis",
+                "TEAM_NAME": "Grizzlies",
+                "TEAM_SLUG": "grizzlies",
+                "TEAM_CONFERENCE": "West",
+                "W": 6,
+                "L": 3,
+                "PCT": 0.667,
+                "CONF_RANK": 7
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612763
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612764/wizards",
+      "consultado": "2026-11-07T17:01:51.531Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612764",
+              "slug": "wizards",
+              "info": {
+                "TEAM_ID": 1610612764,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Washington",
+                "TEAM_NAME": "Wizards",
+                "TEAM_SLUG": "wizards",
+                "TEAM_CONFERENCE": "East",
+                "W": 4,
+                "L": 5,
+                "PCT": 0.444,
+                "CONF_RANK": 8
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612764
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612765/pistons",
+      "consultado": "2026-11-07T17:01:49.719Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612765",
+              "slug": "pistons",
+              "info": {
+                "TEAM_ID": 1610612765,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Detroit",
+                "TEAM_NAME": "Pistons",
+                "TEAM_SLUG": "pistons",
+                "TEAM_CONFERENCE": "East",
+                "W": 6,
+                "L": 2,
+                "PCT": 0.75,
+                "CONF_RANK": 3
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612765
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    },
+    {
+      "url": "https://www.nba.com/team/1610612766/hornets",
+      "consultado": "2026-11-07T17:01:51.057Z",
+      "datos": {
+        "page": "/team/[...props]",
+        "props": {
+          "pageProps": {
+            "team": {
+              "id": "1610612766",
+              "slug": "hornets",
+              "info": {
+                "TEAM_ID": 1610612766,
+                "SEASON_YEAR": "2026-27",
+                "TEAM_CITY": "Charlotte",
+                "TEAM_NAME": "Hornets",
+                "TEAM_SLUG": "hornets",
+                "TEAM_CONFERENCE": "East",
+                "W": 3,
+                "L": 7,
+                "PCT": 0.3,
+                "CONF_RANK": 11
+              },
+              "ranks": {
+                "LEAGUE_ID": "00",
+                "SEASON_ID": "22026",
+                "TEAM_ID": 1610612766
+              },
+              "scheduleSeason": "2026-27"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

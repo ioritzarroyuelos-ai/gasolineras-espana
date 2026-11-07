@@ -2,6 +2,7 @@ const fecha = v => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? new
 const codigo = v => /^\d+$/.test(String(v)) ? String(v) : null
 const texto = v => typeof v === 'string' ? v.trim().slice(0, 500) : ''
 const ultimo = valores => valores.filter(Boolean).sort().at(-1) || null
+const uneVerificados = (anterior, actual) => Object.fromEntries([...new Set([...Object.keys(anterior), ...Object.keys(actual)])].map(id => [id, ultimo([anterior[id], actual[id]])]))
 const rutaGes = v => typeof v === 'string' && v.length <= 1000 && /^\/(?!\/)/.test(v) && !/[\\\u0000-\u001f]/.test(v)
 
 /** Manual input carries only portal IDs and pauses, never catalogue or session data. */
@@ -28,12 +29,17 @@ function descubrimientoGes(valor) {
   const pendientes = valor.pendientes.filter(p => p && ['raiz', 'competicion'].includes(p.tipo) && rutaGes(p.ruta) &&
     (!p.delegacion || codigo(p.delegacion)) && (!p.competicion || codigo(p.competicion))).map(p => ({ tipo: p.tipo, ruta: p.ruta,
     ...(p.delegacion ? { delegacion: String(p.delegacion) } : {}), ...(p.competicion ? { competicion: String(p.competicion) } : {}) }))
-  const categorias = valor.categorias.filter(c => c && codigo(c.codigo) && texto(c.nombre) && texto(c.familia)).map(c => ({ codigo: String(c.codigo), nombre: texto(c.nombre), familia: texto(c.familia), grupos: null }))
+  const categorias = valor.categorias.filter(c => c && codigo(c.codigo) && texto(c.nombre) && texto(c.familia)).map(c => ({ codigo: String(c.codigo), nombre: texto(c.nombre), familia: texto(c.familia),
+    grupos: Array.isArray(c.grupos) ? c.grupos.filter(g => g && codigo(g.codigo) && texto(g.nombre)).map(g => ({ codigo: String(g.codigo), nombre: texto(g.nombre) })) : null }))
   if (pendientes.length !== valor.pendientes.length || categorias.length !== valor.categorias.length ||
-    new Set(pendientes.map(p => JSON.stringify(p))).size !== pendientes.length || new Set(categorias.map(c => c.codigo)).size !== categorias.length) return null
+    new Set(pendientes.map(p => JSON.stringify(p))).size !== pendientes.length || new Set(categorias.map(c => c.codigo)).size !== categorias.length ||
+    categorias.some((c, i) => c.grupos && (c.grupos.length !== valor.categorias[i].grupos.length || new Set(c.grupos.map(g => g.codigo)).size !== c.grupos.length))) return null
   const t = valor.temporada, temporada = t && codigo(t.codigo) && /^20\d{2}-20\d{2}$/.test(t.nombre) ? { codigo: String(t.codigo), nombre: t.nombre } : null
   if (t && !temporada) return null
-  return { fuenteUrl: valor.fuenteUrl, iniciadoEn: fecha(valor.iniciadoEn), temporada, pendientes, categorias }
+  const categoria = Number.isSafeInteger(valor.categoria) && valor.categoria >= 0 && valor.categoria < categorias.length ? valor.categoria : 0
+  const grupos = categorias[categoria]?.grupos
+  const grupo = Number.isSafeInteger(valor.grupo) && valor.grupo >= 0 && grupos && valor.grupo < grupos.length ? valor.grupo : 0
+  return { fuenteUrl: valor.fuenteUrl, iniciadoEn: fecha(valor.iniciadoEn), temporada, pendientes, categorias, categoria, grupo }
 }
 
 /** Only catalogue/progress metadata crosses runs; anonymous cookies remain in memory. */
@@ -58,9 +64,11 @@ export function normalizaEstadoNovanet(valor) {
       estado.grupo = 0
       const grupos = categorias[estado.categoria].grupos
       if (Number.isSafeInteger(valor.grupo) && valor.grupo >= 0 && grupos && valor.grupo < grupos.length) estado.grupo = valor.grupo
-      for (const [id, verificado] of Object.entries(valor.verificados || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.verificados[id] = fecha(verificado)
-      for (const [id, verificado] of Object.entries(valor.completos || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.completos[id] = fecha(verificado)
     }
+  }
+  if (estado.catalogo || estado.descubrimientoGes) {
+    for (const [id, verificado] of Object.entries(valor.verificados || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.verificados[id] = fecha(verificado)
+    for (const [id, verificado] of Object.entries(valor.completos || {})) if (/^\d+-\d+$/.test(id) && fecha(verificado)) estado.completos[id] = fecha(verificado)
   }
   return estado
 }
@@ -71,11 +79,19 @@ export function recuperaEstadoNovanet(candidatos) {
   if (!estado.catalogo) {
     const ultimoCatalogo = [...copias].reverse().find(c => c.estado.catalogo || c.estado.descubrimientoGes)?.estado
     const antigua = [...copias].reverse().find(c => c.estado.catalogo)?.estado
-    if (antigua) for (const k of ['catalogo', 'categoria', 'grupo', 'verificados', 'completos', 'ultimoExito']) estado[k] = antigua[k]
+    if (antigua) {
+      for (const k of ['catalogo', 'categoria', 'grupo']) estado[k] = antigua[k]
+      for (const k of ['verificados', 'completos']) estado[k] = uneVerificados(antigua[k], estado[k])
+      estado.ultimoExito = ultimo([antigua.ultimoExito, estado.ultimoExito])
+    }
     if (!estado.descubrimientoGes) {
       // No recuperar un recorrido antiguo que una copia más reciente ya terminó.
       const parcial = ultimoCatalogo?.descubrimientoGes
-      if (parcial) estado.descubrimientoGes = parcial
+      if (parcial) {
+        estado.descubrimientoGes = parcial
+        for (const k of ['verificados', 'completos']) estado[k] = uneVerificados(ultimoCatalogo[k], estado[k])
+        estado.ultimoExito = ultimo([ultimoCatalogo.ultimoExito, estado.ultimoExito])
+      }
     }
   }
   estado.noConsultarAntes = ultimo(copias.map(c => c.estado.noConsultarAntes))

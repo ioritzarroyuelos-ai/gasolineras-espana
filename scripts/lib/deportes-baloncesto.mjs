@@ -293,6 +293,55 @@ export function normalizaClasificacionNba(datos, temporada) {
     return { id: 'nba-' + codigo.toLowerCase(), nombre: 'Conferencia ' + nombre, columnas, filas: grupo }
   })
 }
+export function enlacesEquiposNba(html) {
+  const d = parse(html), datos = JSON.parse(d.querySelector('#__NEXT_DATA__')?.rawText || 'null')
+  if (datos?.page !== '/teams' || datos?.props?.pageProps?.hasError) throw Error('La NBA no ha entregado su directorio de equipos')
+  const urls = [...new Set(d.querySelectorAll('a[href]').map(a => {
+    try {
+      const u = new URL(a.getAttribute('href'), NBA)
+      return u.origin === NBA && !u.search && !u.hash && /^\/team\/\d{10}\/[a-z0-9-]+$/.test(u.pathname) ? u.href : null
+    } catch { return null }
+  }).filter(Boolean))]
+  if (urls.length !== 30 || new Set(urls.map(u => new URL(u).pathname.split('/')[2])).size !== 30) throw Error('El directorio NBA no contiene 30 equipos distintos')
+  return urls
+}
+export function normalizaClasificacionEquiposNba(paginas, temporada) {
+  if (!/^20\d{2}-\d{2}$/.test(temporada) || !Array.isArray(paginas) || paginas.length !== 30) throw Error('Clasificación de fichas NBA incompleta o sin temporada')
+  const equipos = paginas.map(p => {
+    if (!validaUrlDeportiva(p.url) || new URL(p.url).origin !== NBA) throw Error('Ficha fuera de la web oficial NBA')
+    const ruta = new URL(p.url), m = ruta.pathname.match(/^\/team\/(\d{10})\/([a-z0-9-]+)$/)
+    const datos = JSON.parse(parse(p.html).querySelector('#__NEXT_DATA__')?.rawText || 'null'), t = datos?.props?.pageProps?.team, r = t?.info, liga = t?.ranks
+    if (!m || ruta.search || ruta.hash || datos?.page !== '/team/[...props]' || datos?.props?.pageProps?.hasError ||
+      t?.id !== m[1] || t?.slug !== m[2] || r?.TEAM_ID !== Number(m[1]) || r?.TEAM_SLUG !== m[2] || liga?.TEAM_ID !== Number(m[1])) throw Error('La ficha NBA pertenece a otro equipo')
+    if (r.SEASON_YEAR !== temporada || t.scheduleSeason !== temporada || liga.LEAGUE_ID !== '00' || liga.SEASON_ID !== '2' + temporada.slice(0, 4)) throw Error('La ficha NBA pertenece a otra temporada o competición')
+    if (!limpio(r.TEAM_CITY) || !limpio(r.TEAM_NAME) || !['East', 'West'].includes(r.TEAM_CONFERENCE) ||
+      !Number.isInteger(r.CONF_RANK) || r.CONF_RANK < 1 || r.CONF_RANK > 15 || !esEntero(r.W) || !esEntero(r.L) || r.W + r.L > 100 ||
+      !Number.isFinite(r.PCT) || r.PCT < 0 || r.PCT > 1 || Math.abs(r.PCT - (r.W + r.L ? r.W / (r.W + r.L) : 0)) > 0.001) throw Error('Posición o balance NBA incoherente')
+    return { id: r.TEAM_ID, conferencia: r.TEAM_CONFERENCE, fila: { posicion: r.CONF_RANK, nombre: limpio(r.TEAM_CITY + ' ' + r.TEAM_NAME), nombreBusqueda: limpio(r.TEAM_NAME), valores: { pj: r.W + r.L, pg: r.W, pp: r.L } } }
+  })
+  if (new Set(equipos.map(e => e.id)).size !== 30) throw Error('La clasificación NBA repite equipos')
+  if (equipos.reduce((n, e) => n + e.fila.valores.pg, 0) !== equipos.reduce((n, e) => n + e.fila.valores.pp, 0)) throw Error('Los balances NBA de las 30 fichas no coinciden entre sí')
+  return [['East', 'Este'], ['West', 'Oeste']].map(([codigo, nombre]) => {
+    const filas = equipos.filter(e => e.conferencia === codigo).map(e => e.fila).sort((a, b) => a.posicion - b.posicion)
+    if (filas.length !== 15 || new Set(filas.map(f => f.posicion)).size !== 15) throw Error('Conferencia NBA incompleta o con posiciones repetidas')
+    return { id: 'nba-' + codigo.toLowerCase(), nombre: 'Conferencia ' + nombre, columnas: columnas.slice(0, 3), filas }
+  })
+}
+export async function obtieneClasificacionEquiposNba(temporada, opciones = {}) {
+  const urls = enlacesEquiposNba(await leerFuenteDeportiva(NBA + '/teams', opciones)), paginas = []
+  let cursor = 0, fallo
+  // Las fichas son una fuente pública distinta. Ante cualquier fallo se detienen
+  // las nuevas lecturas y se descarta el conjunto parcial, también ante HTTP429.
+  await Promise.all(Array.from({ length: 2 }, async () => {
+    while (!fallo && cursor < urls.length) {
+      const url = urls[cursor++]
+      try { paginas.push({ url, html: await leerFuenteDeportiva(url, opciones) }) }
+      catch (e) { fallo ||= e }
+    }
+  }))
+  if (fallo) throw fallo
+  return normalizaClasificacionEquiposNba(paginas, temporada)
+}
 export function compruebaLeaguePassEspana(html) {
   const parrafos = parse(html).querySelectorAll('section p').map(p => limpio(p.text))
   // El distribuidor enumera España y afirma expresamente que incluye todos
@@ -328,14 +377,24 @@ async function obtieneNba(opciones) {
   if (!coleccion.length || temporadas.size !== 1) return { competiciones: [], incidencias }
   let eventos = [...new Map(coleccion.flatMap(c => c.eventos).map(e => [e.id, e])).values()]
   const url = NBA + '/games', temporada = [...temporadas][0], agendaIncompleta = incidencias.length > 0
-  let tablas
+  let tablas, fuenteTabla = NBA + '/standings', fichasOficiales = false
   const urlTabla = 'https://stats.nba.com/stats/leaguestandingsv3?LeagueID=00&Season=' + encodeURIComponent(temporada) + '&SeasonType=Regular+Season'
   try {
     // El servicio público de estadísticas exige la procedencia de su página;
     // no usa una cuenta, una clave ni una sesión privada.
     const conProcedencia = { ...opciones, fetcher: (destino, init) => (opciones.fetcher || fetch)(destino, { ...init, headers: { ...init.headers, Referer: NBA + '/' } }) }
     tablas = normalizaClasificacionNba(JSON.parse(await leerFuenteDeportiva(urlTabla, conProcedencia)), temporada)
-  } catch (e) { incidencias.push(incidencia('NBA · Clasificación', urlTabla, e.message, 'nba')) }
+  } catch (e) {
+    // No se busca otra vía ante una restricción de acceso o un límite explícito.
+    if (/HTTP (?:401|403|429)\b/.test(e.message)) incidencias.push(incidencia('NBA · Clasificación', urlTabla, e.message, 'nba'))
+    else try {
+      tablas = await obtieneClasificacionEquiposNba(temporada, opciones)
+      fuenteTabla = NBA + '/teams'; fichasOficiales = true
+      opciones.log?.('NBA: clasificación comprobada en las 30 fichas oficiales de equipos.')
+    } catch (respaldo) {
+      incidencias.push(incidencia('NBA · Clasificación', urlTabla, e.message, 'nba'), incidencia('NBA · Fichas de equipos', NBA + '/teams', respaldo.message, 'nba'))
+    }
+  }
   let emisionConfirmada = false
   try {
     emisionConfirmada = compruebaLeaguePassEspana(await leerFuenteDeportiva(NBA_LEAGUE_PASS_ESPANA, opciones))
@@ -346,7 +405,7 @@ async function obtieneNba(opciones) {
     // Una lectura parcial no debe sustituir la última agenda completa ni darle
     // una fecha nueva a los partidos del día que no se pudo consultar.
     agenda: bloque(url, fecha, agendaIncompleta ? null : eventos, 'eventos', agendaIncompleta ? 'No hemos podido comprobar todos los días de la agenda NBA; consulta la fuente oficial.' : emisionConfirmada ? 'NBA League Pass requiere una suscripción adicional. Incluye los partidos en directo y sus repeticiones; no forma parte de la suscripción básica de Prime Video.' : 'Horarios y resultados consultados. Las retransmisiones en España no están confirmadas.'),
-    clasificacion: bloque(NBA + '/standings', fecha, tablas, 'tablas', tablas ? 'Clasificación de la temporada regular, separada por conferencias.' : 'No hemos podido comprobar la clasificación de la NBA.') }], incidencias }
+    clasificacion: bloque(fuenteTabla, fecha, tablas, 'tablas', tablas ? fichasOficiales ? 'Posiciones, victorias y derrotas de la temporada regular publicadas en las 30 fichas oficiales de equipos NBA. Esta fuente no ofrece los puntos totales anotados y recibidos.' : 'Clasificación de la temporada regular, separada por conferencias.' : 'No hemos podido comprobar la clasificación de la NBA.') }], incidencias }
 }
 function rangosFeb(ahora) {
   const dia = new Date(ahora).toISOString().slice(0, 10)

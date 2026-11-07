@@ -10,6 +10,9 @@ export function normalizaCalendarioAcb(html: string, fuenteUrl: string, verifica
 export function normalizaClasificacionAcb(html: string): { tablas: TablaDeportiva[]; temporada: string }
 export function normalizaNba(html: string, fechaEsperada?: string): { eventos: EventoDeportivo[]; temporada?: string }
 export function normalizaClasificacionNba(datos: unknown, temporada: string): TablaDeportiva[]
+export function enlacesEquiposNba(html: string): string[]
+export function normalizaClasificacionEquiposNba(paginas: Array<{ url: string; html: string }>, temporada: string): TablaDeportiva[]
+export function obtieneClasificacionEquiposNba(temporada: string, opciones?: OpcionesDeportes): Promise<TablaDeportiva[]>
 export function compruebaLeaguePassEspana(html: string): boolean
 export function obtieneBaloncesto(opciones?: OpcionesDeportes): Promise<ResultadoDeportes>
 export function normalizaFinalBaseFeb(html: string, categoria: number, fuenteUrl: string, ahora?: number): CompeticionDeportiva

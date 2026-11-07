@@ -174,7 +174,7 @@ export async function obtieneBaloncestoGesdeportiva(opcionesLectura = {}) {
           raices = [...new Map(parse(page).querySelectorAll('a[href]').filter(a => /^\/competicion-\d+\//.test(a.getAttribute('href')) && !/COMPETICIONES FEB|LIGA ENDESA|INTERNACIONAL/i.test(a.text)).map(a => { const url = new URL(a.getAttribute('href'), portal.url).href; return [url, { url }] })).values()]
         } else if (portal.delegaciones) raices = opciones(seleccion(parse(page), 'DDLDelegacion')).map(d => ({ url: portal.url, delegacion: d.codigo }))
         if (!raices.length) throw Error('El portal no ha entregado su catálogo público de competiciones')
-        estado.descubrimientoGes = { fuenteUrl: portal.url, iniciadoEn: new Date(reloj()).toISOString(), temporada: null, categorias: [],
+        estado.descubrimientoGes = { fuenteUrl: portal.url, iniciadoEn: new Date(reloj()).toISOString(), temporada: null, categorias: [], categoria: 0, grupo: 0,
           pendientes: raices.map(r => { const u = new URL(r.url); return { tipo: 'raiz', ruta: u.pathname + u.search, ...(r.delegacion ? { delegacion: r.delegacion } : {}) } }) }
         await guardar()
       }
@@ -201,6 +201,9 @@ export async function obtieneBaloncestoGesdeportiva(opcionesLectura = {}) {
               try { muestra = grupoGesdeportiva(page, { portal, url: pageUrl, grupo: valor(d, 'DDLGrupos') }, reloj()) } catch { /* Otra categoría puede confirmar la temporada. */ }
               if (muestra) {
                 if (parcial.temporada && parcial.temporada.nombre !== muestra.temporada) throw Error('El catálogo mezcla temporadas; se mantiene pendiente de comprobar')
+                if (!parcial.temporada && estado.catalogo && estado.catalogo.temporada.nombre !== muestra.temporada) {
+                  estado.verificados = {}; estado.completos = {}
+                }
                 parcial.temporada = { codigo: muestra.temporada.slice(0, 4), nombre: muestra.temporada }
               }
             }
@@ -211,8 +214,11 @@ export async function obtieneBaloncestoGesdeportiva(opcionesLectura = {}) {
             }
             const anteriores = new Map(parcial.categorias.map(c => [c.codigo, c]))
             for (const c of categorias) {
-              if (anteriores.has(c.codigo) && JSON.stringify(anteriores.get(c.codigo)) !== JSON.stringify(c)) throw Error('El catálogo repite una categoría con otra identidad')
-              anteriores.set(c.codigo, c)
+              const anterior = anteriores.get(c.codigo)
+              if (anterior && (anterior.nombre !== c.nombre || anterior.familia !== c.familia)) throw Error('El catálogo repite una categoría con otra identidad')
+              // Una raíz recuperada no borra los grupos que ya recorrimos mientras
+              // otras partes del catálogo seguían pendientes.
+              anteriores.set(c.codigo, anterior || c)
             }
             parcial.categorias = [...anteriores.values()]
             parcial.pendientes.shift()
@@ -227,39 +233,69 @@ export async function obtieneBaloncestoGesdeportiva(opcionesLectura = {}) {
           }
         }
         if (parcial.pendientes.length) {
-          incidencia(`El catálogo tiene ${parcial.pendientes.length} partes pendientes. La próxima tanda continuará por ellas; se mantiene el catálogo anterior con su fecha.`)
+          incidencia(`El catálogo tiene ${parcial.pendientes.length} partes pendientes. Se revisan las categorías ya comprobadas; el catálogo completo anterior conserva su fecha.`)
         } else if (parcial.temporada && parcial.categorias.length) {
+          const anterior = estado.catalogo
+          const catPrevia = parcial.categorias[parcial.categoria || 0]
+          const grupoPrevio = catPrevia?.grupos?.[parcial.grupo || 0]?.codigo
           estado.catalogo = { temporada: parcial.temporada, categorias: parcial.categorias, verificadoEn: new Date(reloj()).toISOString() }
-          estado.categoria = 0; estado.grupo = 0; estado.verificados = {}; delete estado.descubrimientoGes; await guardar()
+          estado.categoria = Math.max(0, estado.catalogo.categorias.findIndex(c => c.codigo === catPrevia?.codigo))
+          estado.grupo = Math.max(0, (estado.catalogo.categorias[estado.categoria].grupos || []).findIndex(g => g.codigo === grupoPrevio))
+          if (anterior && anterior.temporada.nombre !== parcial.temporada.nombre) {
+            // Conserva los grupos de la nueva temporada leídos durante las tandas
+            // parciales; las marcas anteriores a ese descubrimiento ya no sirven.
+            for (const campo of ['verificados', 'completos']) estado[campo] = Object.fromEntries(Object.entries(estado[campo]).filter(([, fecha]) => Date.parse(fecha) >= Date.parse(parcial.iniciadoEn)))
+          }
+          delete estado.descubrimientoGes; await guardar()
         } else {
           delete estado.descubrimientoGes; await guardar()
           throw Error('No se ha podido confirmar el catálogo de la temporada')
         }
       }
-      if (!estado.catalogo) continue
-      const cats = estado.catalogo.categorias, recorridos = new Set()
+      const parcial = estado.descubrimientoGes
+      // La lista parcial y su cursor son independientes: publicar un grupo leído
+      // correctamente no acredita que el catálogo entero esté completo.
+      const usarParcial = parcial?.temporada && parcial.categorias.length
+      const catalogo = usarParcial ? parcial : estado.catalogo
+      if (!catalogo) continue
+      const cursor = usarParcial ? parcial : estado, cats = catalogo.categorias, recorridos = new Set(), categoriasFallidas = new Set()
+      if (!Number.isInteger(cursor.categoria) || cursor.categoria < 0 || cursor.categoria >= cats.length) { cursor.categoria = 0; cursor.grupo = 0 }
+      const avanzaCategoria = async () => { cursor.categoria = (cursor.categoria + 1) % cats.length; cursor.grupo = 0; await guardar() }
       while (permitido() && disponibles() >= 5) {
-        const c = cats[estado.categoria], f = await abre(c)
-        if (!c.grupos) {
-          const grupos = [], fases = opciones(seleccion(parse(page), 'DDLFases'))
-          for (const fase of fases) { await cambia('DDLFases', fase.codigo); for (const g of opciones(seleccion(parse(page), 'DDLGrupos'))) grupos.push({ codigo: g.codigo, nombre: fase.codigo + '|' + g.nombre }) }
-          if (new Set(grupos.map(g => g.codigo)).size !== grupos.length) throw Error('El catálogo repite un grupo en varias fases')
-          c.grupos = grupos; await guardar()
+        const c = cats[cursor.categoria]
+        if (categoriasFallidas.has(c.codigo)) break
+        let f
+        try {
+          f = await abre(c)
+          if (!c.grupos) {
+            const grupos = [], fases = opciones(seleccion(parse(page), 'DDLFases'))
+            for (const fase of fases) { await cambia('DDLFases', fase.codigo); for (const g of opciones(seleccion(parse(page), 'DDLGrupos'))) grupos.push({ codigo: g.codigo, nombre: fase.codigo + '|' + g.nombre }) }
+            if (new Set(grupos.map(g => g.codigo)).size !== grupos.length) throw Error('El catálogo repite un grupo en varias fases')
+            c.grupos = grupos; await guardar()
+          }
+        } catch (e) {
+          incidencia(`No se pudo comprobar la categoría ${c.nombre}: ${e.message}`)
+          // Una pausa conserva el mismo punto. Un filtro averiado se reintentará
+          // en la próxima vuelta, sin bloquear las demás categorías de esta tanda.
+          if (!permitido()) break
+          categoriasFallidas.add(c.codigo); page = ''; pageUrl = ''
+          await avanzaCategoria(); continue
         }
-        if (!c.grupos.length) { if (recorridos.has(c.codigo)) break; recorridos.add(c.codigo); estado.categoria = (estado.categoria + 1) % cats.length; estado.grupo = 0; await guardar(); continue }
-        const g = c.grupos[estado.grupo], clave = c.codigo + '-' + g.codigo
+        if (!c.grupos.length) { if (recorridos.has(c.codigo)) break; recorridos.add(c.codigo); await avanzaCategoria(); continue }
+        if (!Number.isInteger(cursor.grupo) || cursor.grupo < 0 || cursor.grupo >= c.grupos.length) cursor.grupo = 0
+        const g = c.grupos[cursor.grupo], clave = c.codigo + '-' + g.codigo
         if (recorridos.has(clave)) break
         recorridos.add(clave)
         const id = 'basket-' + portal.id + '-' + (f.delegacion ? f.delegacion + '-' : '') + g.codigo
         try {
           await cambia('DDLFases', g.nombre.split('|')[0]); await cambia('DDLGrupos', g.codigo)
-          const competicion = grupoGesdeportiva(page, { portal, url: pageUrl, grupo: g.codigo, categoria: f.categoria, delegacion: f.delegacion, temporada: estado.catalogo.temporada }, reloj())
+          const competicion = grupoGesdeportiva(page, { portal, url: pageUrl, grupo: g.codigo, categoria: f.categoria, delegacion: f.delegacion, temporada: catalogo.temporada }, reloj())
           competiciones.push(competicion); estado.verificados[clave] = competicion.comprobadoEn; estado.ultimoExito = competicion.comprobadoEn
         } catch (e) { incidencia(e.message, id); if (!permitido()) break }
-        estado.grupo++; if (estado.grupo >= c.grupos.length) { estado.grupo = 0; estado.categoria = (estado.categoria + 1) % cats.length }
+        cursor.grupo++; if (cursor.grupo >= c.grupos.length) { cursor.grupo = 0; cursor.categoria = (cursor.categoria + 1) % cats.length }
         await guardar()
       }
-      incidencia(`Catálogo de ${estado.catalogo.categorias.length} categorías. Se amplía y revisa por tandas; los grupos sin datos comprobados todavía no se publican.`)
+      incidencia(`${usarParcial ? 'Catálogo parcial' : 'Catálogo'} de ${cats.length} categorías. Se amplía y revisa por tandas; los grupos sin datos comprobados todavía no se publican.`)
     } catch (e) { incidencia(e.message) }
   }
   return { competiciones, incidencias }

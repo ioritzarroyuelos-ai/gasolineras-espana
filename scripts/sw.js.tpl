@@ -264,13 +264,10 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // B2: app.js (bundle de cliente) llega con ?v=<APP_VERSION> para invalidar el
-  // cache del navegador en cada release. Al matchear en la cache del SW usamos
-  // ignoreSearch:true asi un shell cacheado con ?v=1.8.0 sigue sirviendose
-  // mientras el nuevo ?v=1.8.1 se descarga en background (network-first
-  // efectivo porque el put cachea la URL completa y la siguiente request
-  // con la misma ?v hace hit directo).
-  if (url.pathname === '/static/app.js') {
+  // Los clientes propios consultan primero la red, aunque APP_VERSION no haya
+  // cambiado. Sin conexión puede recuperarse otra versión del MISMO script;
+  // nunca se entrega app.js en lugar del cliente municipal o de Mi día.
+  if (url.origin === self.location.origin && ['/static/app.js', '/static/municipio.js', '/static/mi-dia.js'].includes(url.pathname)) {
     event.respondWith(
       fetch(request).then(res => {
         if (res.ok && request.method === 'GET') {
@@ -282,7 +279,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match('/static/app.js')))
+      }).catch(() => caches.match(request, { ignoreSearch: true }).then(c => c || caches.match(url.pathname)))
     );
     return;
   }

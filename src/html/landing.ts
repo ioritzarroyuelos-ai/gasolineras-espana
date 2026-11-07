@@ -148,7 +148,7 @@ export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.
     <p class="sr-only" id="mi-dia-estado" role="status" aria-live="polite"></p>
     <section class="eu-support"><div><h2>${day ? 'Tus favoritos vienen contigo.' : 'Menos buscar. Más hacer.'}</h2><p>${day ? 'Las estrellas del mapa y de Deportes aparecen también aquí. Elige tu municipio para tener a mano sus servicios.' : 'Entra en Mi día, elige lo que te interesa y ordénalo como prefieras. La próxima vez, lo encontrarás a tu gusto.'}</p></div><a class="eu-button secondary" href="${day ? '/gasolineras/mapa?action=favs' : '/mi-dia' + query}">${day ? 'Ver favoritas en el mapa' : 'Descubrir Mi día →'}</a></section>
     <nav class="eu-direct" aria-label="Más información"><a href="/precios-carburantes">Resumen de precios de carburantes</a><a href="/farmacias/guardia">Guardias por provincia</a><a href="/acerca">Fuentes de los datos</a></nav>
-  </main><footer class="eu-footer"><p><strong>España Útil.</strong> Cerca de lo que importa.</p><nav aria-label="Información de la web"><a href="/acerca">Acerca y fuentes</a><a href="/privacidad">Privacidad</a><a href="/status">Estado de los datos</a></nav></footer><script src="/static/mi-dia.js" defer></script></body></html>`
+  </main><footer class="eu-footer"><p><strong>España Útil.</strong> Cerca de lo que importa.</p><nav aria-label="Información de la web"><a href="/acerca">Acerca y fuentes</a><a href="/privacidad">Privacidad</a><a href="/status">Estado de los datos</a></nav></footer><script src="/static/mi-dia.js?v=${APP_VERSION}" defer></script></body></html>`
 }
 
 export function landingHeaders(nonce: string): Record<string, string> {

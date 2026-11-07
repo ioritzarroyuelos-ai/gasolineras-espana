@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildLandingPage, landingHeaders, type LandingData } from '../src/html/landing'
 import type { Localidad } from '../src/lib/localidades'
 import type { CompeticionDeportiva, EventoDeportivo } from '../src/lib/deportes'
+import { APP_VERSION } from '../src/lib/version'
+import clienteMunicipal from '../src/client/municipio.js?raw'
 
 const AHORA = '2026-11-07T23:30:00Z' // Ya es domingo en la Península; aún sábado en Canarias.
 const PUBLICADO = '2026-11-07T21:45:00Z'
@@ -121,7 +123,7 @@ describe('salida segura y navegación de la portada', () => {
     expect(doc.querySelector('[data-dia-module="tiempo"]')?.text).toContain(malicioso)
     expect(doc.querySelectorAll('[style]')).toHaveLength(0)
     const scripts = doc.querySelectorAll('script[src]').map(script => script.getAttribute('src'))
-    expect(scripts).toEqual(['/static/municipio.js', '/static/mi-dia.js'])
+    expect(scripts).toEqual(['/static/municipio.js?v=' + APP_VERSION, '/static/mi-dia.js?v=' + APP_VERSION])
     expect(doc.querySelector('style')?.getAttribute('nonce')).toBe('prueba-nonce')
     expect(landingHeaders('prueba-nonce')['Content-Security-Policy']).not.toContain('unsafe-inline')
     expect(landingHeaders('prueba-nonce')['Cache-Control']).toBe('no-store')
@@ -136,5 +138,54 @@ describe('salida segura y navegación de la portada', () => {
     expect(doc.querySelector('.localidad ul a')?.getAttribute('href')).toBe('/mi-dia?municipio=48027')
     expect(doc.querySelector('#mi-dia-personalizar')?.hasAttribute('hidden')).toBe(true)
     expect(doc.querySelector('link[rel="canonical"]')?.getAttribute('href')).toBe('https://prueba.example/mi-dia')
+  })
+})
+
+describe('actualización de un mapa instalado al abrir Cerca de ti o Mi día', () => {
+  function ejecutar(ruta: string, opciones: { controller?: boolean; registrado?: boolean; falla?: boolean; cargado?: boolean } = {}) {
+    const listeners = new Map<string, () => void>()
+    const update = vi.fn(async () => { if (opciones.falla) throw Error('sin conexión') })
+    const register = vi.fn()
+    const getRegistration = vi.fn(async () => opciones.registrado === false ? undefined : { update })
+    const location = { href: 'https://prueba.example' + ruta, origin: 'https://prueba.example', replace: vi.fn(), assign: vi.fn(), reload: vi.fn() }
+    new Function('document', 'location', 'localStorage', 'navigator', 'window', clienteMunicipal)(
+      { getElementById: () => null, querySelector: () => null, readyState: opciones.cargado ? 'complete' : 'interactive' },
+      location, { getItem: () => null },
+      { serviceWorker: { controller: opciones.controller === false ? null : {}, getRegistration, register } },
+      { addEventListener: (tipo: string, listener: () => void) => listeners.set(tipo, listener) },
+    )
+    return { listeners, update, getRegistration, register, location }
+  }
+
+  it.each(['/', '/mi-dia', '/mi-dia/?municipio=28079'])('%s comprueba el registro existente después de cargar, sin recargar ni registrar otro', async ruta => {
+    const app = ejecutar(ruta)
+    expect(app.getRegistration).not.toHaveBeenCalled()
+    app.listeners.get('load')!()
+    await Promise.resolve()
+    expect(app.getRegistration).toHaveBeenCalledOnce()
+    expect(app.update).toHaveBeenCalledOnce()
+    expect(app.register).not.toHaveBeenCalled()
+    expect(app.location.reload).not.toHaveBeenCalled()
+    expect(app.location.replace).not.toHaveBeenCalled()
+  })
+
+  it('no crea registros si el visitante no tiene controlador ni repite el trabajo en otras secciones', async () => {
+    const nuevo = ejecutar('/', { controller: false })
+    nuevo.listeners.get('load')!()
+    const seccion = ejecutar('/deportes/')
+    expect(seccion.listeners.has('load')).toBe(false)
+    const sinRegistro = ejecutar('/mi-dia', { registrado: false, cargado: true })
+    await Promise.resolve()
+    expect(nuevo.getRegistration).not.toHaveBeenCalled()
+    expect(seccion.getRegistration).not.toHaveBeenCalled()
+    for (const app of [nuevo, seccion, sinRegistro]) { expect(app.register).not.toHaveBeenCalled(); expect(app.update).not.toHaveBeenCalled() }
+  })
+
+  it('tolera un fallo de actualización sin interrumpir la página', async () => {
+    const app = ejecutar('/mi-dia', { falla: true, cargado: true })
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve()
+    expect(app.update).toHaveBeenCalledOnce()
+    expect(app.register).not.toHaveBeenCalled()
+    expect(app.location.reload).not.toHaveBeenCalled()
   })
 })

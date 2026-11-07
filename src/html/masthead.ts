@@ -1,6 +1,7 @@
 // Una sola cabecera para Cerca de ti, Mi día y las seis secciones.
 // El buscador conserva su formulario GET para funcionar sin JavaScript.
 import { PORTAL_TOKENS } from './ui-theme'
+import { APP_VERSION } from '../lib/version'
 
 export type SeccionActiva = 'inicio' | 'mi-dia' | 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
 
@@ -22,7 +23,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { hideMunicipio
       + (opts.compact ? '<summary>Cambiar municipio</summary>' : '')
       + '<form id="municipio-form" action="' + (active === 'mi-dia' ? '/mi-dia' : '/') + '" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
       + '<ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></' + municipioTag + '>')
-    + '<script src="/static/municipio.js" defer></script></header>'
+    + '<script src="/static/municipio.js?v=' + APP_VERSION + '" defer></script></header>'
 }
 
 // Selectores acotados: no cambian el mapa, tablas o botones de cada sección.

@@ -10,6 +10,18 @@
   const personal = /^\/mi-dia\/?$/.test(here.pathname);
   const home = here.pathname === '/';
   const destination = personal ? '/mi-dia' : '/';
+  // Los visitantes que ya tienen el mapa instalado pueden conservar un SW
+  // antiguo. Comprobar su actualización sin registrar otro ni recargar la página.
+  if ((home || personal) && 'serviceWorker' in navigator) {
+    const updateWorker = () => {
+      try {
+        if (!navigator.serviceWorker.controller) return;
+        navigator.serviceWorker.getRegistration().then(registration => registration?.update()).catch(() => {});
+      } catch { /* Una actualización fallida no impide usar el portal. */ }
+    };
+    if (document.readyState === 'complete') updateWorker();
+    else window.addEventListener('load', updateWorker, { once: true });
+  }
   if (form) form.action = destination;
   let saved = '', timer, request;
   try { saved = localStorage.getItem(key) || ''; } catch { /* almacenamiento desactivado */ }

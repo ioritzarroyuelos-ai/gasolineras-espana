@@ -98,3 +98,60 @@ describe('copias sin conexión y veda de sondeos', () => {
       expect(await (await pedir(indice, 'text/html')).text()).toBe('copia anterior')
   })
 })
+
+describe('actualización de los clientes propios en navegadores con caché', () => {
+  function navegadorParaScripts() {
+    const origen = 'https://prueba.example'
+    const copias = new Map<string, Response>()
+    let online = true
+    let alPedir: (event: { request: Request; respondWith: (respuesta: Promise<Response>) => void }) => void
+    const self = { location: new URL(origen), addEventListener(tipo: string, listener: typeof alPedir) { if (tipo === 'fetch') alPedir = listener } }
+    const url = (peticion: Request | string) => new URL(typeof peticion === 'string' ? peticion : peticion.url, origen)
+    const almacen = {
+      match: vi.fn(async (peticion: Request | string, opciones?: { ignoreSearch: boolean }) => {
+        const pedida = url(peticion)
+        const key = [...copias.keys()].find(key => opciones?.ignoreSearch ? new URL(key).pathname === pedida.pathname : key === pedida.href)
+        return key ? copias.get(key)!.clone() : undefined
+      }),
+      open: async () => ({ put: async (peticion: Request | string, respuesta: Response) => { copias.set(url(peticion).href, respuesta) } }),
+    }
+    const fetch = vi.fn(async (peticion: Request) => {
+      if (!online) throw Error('sin conexión')
+      return new Response('actual ' + new URL(peticion.url).pathname, { headers: { 'Content-Type': 'application/javascript' } })
+    })
+    new Function('self', 'caches', 'fetch', plantilla.replace('__RUTAS_SONDEOS_CON_VEDA__', JSON.stringify(RUTAS_SONDEOS_SIN_COPIA)))(self, almacen, fetch)
+    function pedir(ruta: string) {
+      let respuesta: Promise<Response> | undefined
+      alPedir({ request: new Request(new URL(ruta, origen)), respondWith: p => { respuesta = p } })
+      if (!respuesta) throw Error('No se atendió el script')
+      return respuesta
+    }
+    function guardar(ruta: string, texto: string) { copias.set(new URL(ruta, origen).href, new Response(texto)) }
+    return { pedir, guardar, almacen, fetch, desconectar: () => { online = false }, copias }
+  }
+
+  it.each(['app', 'municipio', 'mi-dia'])('%s.js sustituye la copia antigua consultando primero la red', async nombre => {
+    const n = navegadorParaScripts(), ruta = '/static/' + nombre + '.js?v=1.8.0'
+    n.guardar(ruta, 'copia antigua')
+    const respuesta = await n.pedir(ruta)
+    expect(await respuesta.text()).toBe('actual /static/' + nombre + '.js')
+    expect(n.fetch).toHaveBeenCalledOnce()
+    expect(n.almacen.match).not.toHaveBeenCalled()
+    expect(await n.copias.get('https://prueba.example' + ruta)!.clone().text()).toBe('actual /static/' + nombre + '.js')
+  })
+
+  it.each(['app', 'municipio', 'mi-dia'])('%s.js recupera exclusivamente su propia copia cuando no hay conexión', async nombre => {
+    const n = navegadorParaScripts()
+    for (const script of ['app', 'municipio', 'mi-dia']) n.guardar('/static/' + script + '.js?v=anterior', 'copia de ' + script)
+    n.desconectar()
+    expect(await (await n.pedir('/static/' + nombre + '.js?v=nueva')).text()).toBe('copia de ' + nombre)
+    expect(n.fetch).toHaveBeenCalledOnce()
+  })
+
+  it.each(['municipio', 'mi-dia'])('%s.js no recibe app.js como sustituto si su copia falta', async nombre => {
+    const n = navegadorParaScripts()
+    n.guardar('/static/app.js', 'no es el cliente solicitado'); n.desconectar()
+    expect(await n.pedir('/static/' + nombre + '.js?v=nueva')).toBeUndefined()
+    expect(n.almacen.match.mock.calls[1][0]).toBe('/static/' + nombre + '.js')
+  })
+})

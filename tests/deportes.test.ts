@@ -56,6 +56,15 @@ describe('datos deportivos verificables', () => {
     expect(filtraCompeticiones(indice.competiciones, { q: 'aguilas' })).toHaveLength(1)
     expect(filtraCompeticiones(indice.competiciones, { q: 'aguilas', zona: 'Portugal' })).toHaveLength(0)
   })
+  it('un grupo enumerado pero sin datos comprobados no cuenta como competición disponible', () => {
+    const c = competicion()
+    c.agenda = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, eventos: [] }
+    c.clasificacion = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, tablas: [] }
+    const { indice } = construyeIndiceDeportes([c], [], ahora)
+    expect(filtraCompeticiones(indice.competiciones, {})).toEqual([])
+    indice.competiciones[0].agenda = { ...indice.competiciones[0].agenda, estado: 'conservado', verificadoEn: sello }
+    expect(filtraCompeticiones(indice.competiciones, {})).toHaveLength(1)
+  })
   it('no muestra un 0-0 pendiente como marcador ni un partido consultado como directo actual', () => {
     const c = competicion(), e = c.agenda.eventos[0]
     e.resultado = { local: 0, visitante: 0 }

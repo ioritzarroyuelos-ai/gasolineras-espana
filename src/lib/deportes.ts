@@ -13,7 +13,7 @@ export { diaDeporte }
 export const normalizaDeporte = (s: string): string => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
 export function filtraCompeticiones(competiciones: ResumenCompeticion[], filtros: { deporte?: Deporte; q?: string; zona?: string; categoria?: string; genero?: string }) {
   const q = normalizaDeporte(filtros.q || '')
-  return competiciones.filter(c => (!filtros.deporte || c.deporte === filtros.deporte) &&
+  return competiciones.filter(c => (c.agenda.verificadoEn || c.clasificacion.verificadoEn) && (!filtros.deporte || c.deporte === filtros.deporte) &&
     (!filtros.zona || c.zona === filtros.zona) && (!filtros.categoria || c.categoria === filtros.categoria) && (!filtros.genero || c.genero === filtros.genero) &&
     (!q || normalizaDeporte([c.nombre, c.grupo, c.temporada, ...c.participantes].join(' ')).includes(q)))
 }

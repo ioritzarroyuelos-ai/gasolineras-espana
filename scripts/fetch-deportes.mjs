@@ -70,7 +70,8 @@ for (const [id, c] of anteriores) if (!competiciones.has(id)) {
   }
   competiciones.set(id, copia)
 }
-const lista = [...competiciones.values()]
+// Un nombre descubierto en un catálogo no acredita partidos ni clasificación.
+const lista = [...competiciones.values()].filter(c => c.agenda.verificadoEn || c.clasificacion.verificadoEn)
 if (!lista.length || !bloquesActualizados) throw Error('Ninguna fuente deportiva actualizada; no se publica una copia vacía')
 const construidos = construyeIndiceDeportes(lista, incidencias, Date.now())
 const indice = validarIndiceDeportes(construidos.indice)

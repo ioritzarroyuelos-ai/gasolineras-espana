@@ -8,6 +8,7 @@ import { validarCompeticionDeportiva, conservaCompeticionDeportiva, validarIndic
 import { construyeIndiceDeportes } from './lib/deportes-indice.mjs'
 import { checkpointFFCV, recuperaEstadoFFCV, seleccionaFuentesDeportes } from './lib/deportes-checkpoint.mjs'
 import { recuperaEstadoNovanet, checkpointNovanet, parseaPausasPortales } from './lib/deportes-novanet-estado.mjs'
+import { conservaIncidenciasGrupos } from './lib/deportes-incidencias.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = resolve(process.env.DEPORTES_OUTPUT_DIR || join(root, 'public/data/deportes'))
@@ -76,7 +77,7 @@ for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obti
   if (!fuentes.has(deporte)) continue
   try {
     const salida = await obtiene({ ahora, log: console.log, estadoNovanet, guardarEstadoNovanet, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV } : {}) })
-    incidencias.push(...salida.incidencias)
+    incidencias.push(...conservaIncidenciasGrupos((indiceAnterior?.incidencias || []).filter(i => i.deporte === deporte), salida.incidencias, salida.seguimientoGrupos))
     for (const c of salida.competiciones) {
       try {
         const validada = validarCompeticionDeportiva(c, Date.now())

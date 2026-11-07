@@ -50,6 +50,8 @@ El índice no contiene todas las jornadas: cada competición tiene su ficha y la
 
 Las páginas deportivas requieren conexión para no recuperar un marcador antiguo del almacenamiento sin conexión. `/status` comprueba por separado los bloques integrados y avisa si superan 24 horas sin verificación. Los apartados que no ofrecen datos desde el principio se explican en la ficha, sin confundirlos con una avería.
 
+Los avisos de grupos Novanet de fútbol conocidos se conservan si una tanda todavía no los ha revisado. Un nuevo intento sustituye su aviso anterior; una recuperación comprobada por el lector principal también lo retira. La renovación semanal mantiene los grupos anteriores como pendientes hasta que responde su selector, sin anunciar completa esa categoría. Los avisos generales y de progreso se renuevan con la tanda actual, y los de una temporada anterior no se trasladan a la siguiente.
+
 ## Comprobaciones
 
 Los tests de cada lector incluyen respuestas reales recortadas y casos adversos. Las pruebas comunes cubren fechas imposibles, temporadas, conservación de copias, zonas horarias, enlaces, búsqueda y fallo de agenda. Las del checkpoint comprueban la continuación tras un fallo, el presupuesto horario, las pausas y la selección de deportes, sin consumir consultas de las federaciones. Playwright verifica lectura en móvil, accesibilidad, favoritos y navegación sin JavaScript. El recorrido real adicional utiliza los datos publicados; los casos con fixtures se excluyen al probar producción.

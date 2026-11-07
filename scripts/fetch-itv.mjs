@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { FUENTES_ITV, actualizaFuenteItv, combinaFuentesItv, migraCopiaDgt } from './lib/itv-fuentes.mjs'
+import { FUENTES_ITV, actualizaFuenteItv, combinaFuentesItv, conservaDatosPreviosItv, migraCopiaDgt } from './lib/itv-fuentes.mjs'
 import { actualizaOperadoresItv } from './lib/itv-operadores.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -33,16 +33,20 @@ async function main() {
   for (const f of fuentes)
     console.log(f.nombre+': '+f.estaciones.length+' estaciones, '+f.estado+(f.error ? ' ('+f.error+')' : '')+(f.publicado ? ', publicación '+f.publicado : ''))
   if (!fuentes.some(f => f.estado === 'actualizada')) throw Error('Ninguna fuente oficial respondió correctamente. Se conserva el directorio anterior.')
-  const combinado = combinaFuentesItv(fuentes)
+  const incidencias = []
+  const combinado = combinaFuentesItv(fuentes,incidencias)
+  for (const [motivo,filas] of Object.entries(Object.groupBy(incidencias,i=>i.motivo)))
+    console.log('Conciliación: '+filas.length+' filas — '+motivo)
   const operadoresPrevios = leer(resolve(FUENTES_DIR,'operadores.json'))
     || leer(resolve(ROOT,'public/data/itv-fuentes/operadores.json')) || {}
-  const { estaciones, perfiles } = await actualizaOperadoresItv(combinado,operadoresPrevios)
+  const { estaciones: enriquecidas, perfiles } = await actualizaOperadoresItv(combinado,operadoresPrevios)
+  const estaciones = conservaDatosPreviosItv(enriquecidas,previo.estaciones)
   for (const p of Object.values(perfiles))
     console.log(p.nombre+': citas '+p.estado+(p.error ? ' ('+p.error+')' : ''))
   if (estaciones.length < 300) throw Error('La combinación no tiene cobertura nacional suficiente')
   const fuentesEstado = fuentes.map(({ estaciones, excluidas, ...estado }) => ({ ...estado, total:estaciones.length }))
   const payload = { v:2, generatedAt:new Date().toISOString(), fuentes:fuentes.map(f=>f.nombre),
-    fuentesEstado, total:estaciones.length, estaciones }
+    fuentesEstado, incidencias, total:estaciones.length, estaciones }
   mkdirSync(FUENTES_DIR,{recursive:true})
   for (const f of fuentes) escribir(resolve(FUENTES_DIR,f.id+'.json'),f)
   escribir(resolve(FUENTES_DIR,'operadores.json'),perfiles)

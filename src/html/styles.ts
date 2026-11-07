@@ -565,6 +565,9 @@ export function getStyles(nonce: string = ''): string {
       }
       #sidebar.open ~ #stats-nacional { visibility: hidden; }
     }
+    @media (min-width: 600px) and (max-width: 1023px) {
+      #stats-nacional { top: 12px; left: 50%; right: auto; transform: translateX(-50%); }
+    }
     .stats-nacional-title {
       font-size: 10px;
       text-transform: uppercase;
@@ -1089,6 +1092,14 @@ export function getStyles(nonce: string = ''): string {
       #legend { bottom: 160px; left: 12px; max-width: calc(100% - 80px); }
       .map-navigation { z-index: 930; }
       .station-detail-open .map-floating-btn--satellite, .station-detail-open #legend { visibility: hidden; }
+    }
+    /* En horizontal queda poca altura bajo las barras. Los paneles laterales
+       conservan su scroll y el asa cerrada deja libre toda la columna del zoom. */
+    @media (min-width: 600px) and (max-width: 1023px) and (max-height: 500px) {
+      .leaflet-control-scale { margin-bottom: 12px !important; }
+      #sidebar { left: 12px; bottom: 12px; width: min(320px, calc(50% - 114px)) !important; border-bottom: 1px solid #cbd5e1; border-radius: 16px; }
+      #sidebar.open { top: 12px; height: auto; width: min(320px, calc(100% - 92px)) !important; }
+      .station-detail { top: 12px; left: auto; right: 68px; bottom: 12px; width: min(350px, calc(100% - 92px)); max-height: none; border-radius: 16px; }
     }
     @media (prefers-reduced-motion: reduce) {
       #sidebar { transition: none !important; }

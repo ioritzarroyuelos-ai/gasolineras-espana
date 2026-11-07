@@ -27,19 +27,24 @@ async function smallSnapshot(page: Page) {
 function cardFor(page: Page, id: string) {
   return page.locator('.station-card').filter({ has: page.locator('[data-fav-id="' + id + '"]') })
 }
-async function expectUncovered(locator: Locator) {
+async function expectUncovered(locator: Locator, completo = false) {
   await expect(locator).toBeVisible()
-  await expect.poll(() => locator.evaluate(element => {
+  await expect.poll(() => locator.evaluate((element, bordes) => {
     const rect = element.getBoundingClientRect()
-    const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
-    return !!hit && (hit === element || element.contains(hit))
-  })).toBe(true)
+    const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2
+    const puntos = bordes ? [[x, y], [x, rect.top + 3], [x, rect.bottom - 3], [rect.left + 3, y], [rect.right - 3, y]] : [[x, y]]
+    return puntos.flatMap(([px, py]) => {
+      const hit = document.elementFromPoint(px, py)
+      if (hit && (hit === element || element.contains(hit))) return []
+      return [{ punto: { x: px, y: py }, intercepta: hit?.outerHTML.slice(0, 400) ?? 'Fuera de la ventana' }]
+    })
+  }, completo), { message: 'Debe poder pulsarse sin obstáculos: ' + locator.toString() }).toEqual([])
 }
 
-for (const width of [1280, 390, 320]) {
-  test('media nacional a ' + width + 'px: no tapa navegación, lista ni ficha', async ({ page }, info) => {
+for (const { width, height } of [{ width: 1280, height: 844 }, { width: 390, height: 844 }, { width: 320, height: 844 }, { width: 844, height: 390 }]) {
+  test('media nacional a ' + width + '×' + height + 'px: no tapa navegación, lista ni ficha', async ({ page }, info) => {
     test.skip(info.config.metadata.live === true, 'Datos nacionales controlados; producción conserva sus respuestas reales.')
-    await page.setViewportSize({ width, height: 844 })
+    await page.setViewportSize({ width, height })
     await smallSnapshot(page)
     const hoy = new Date().toISOString().slice(0, 10)
     const datos = { days: 30, fuels: {
@@ -54,8 +59,9 @@ for (const width of [1280, 390, 320]) {
     const card = cardFor(page, '900001')
     await expect(widget).toBeVisible({ timeout: 10000 })
     await expect(widget).toContainText('1.678')
+    await expect(widget).toBeInViewport({ ratio: 1 })
     const controls = [page.locator('#btn-map-location'), page.locator('#map-navigation .leaflet-control-zoom-in'), page.locator('#map-navigation .leaflet-control-zoom-out'), page.locator('#btn-electrolineras')]
-    for (const control of controls) await expectUncovered(control)
+    for (const control of controls) await expectUncovered(control, true)
     if (width < 1024) {
       await page.locator('#btn-sheet-toggle').click()
       await expect(page.locator('#sidebar')).toHaveClass(/\bopen\b/)
@@ -68,12 +74,19 @@ for (const width of [1280, 390, 320]) {
     await expect(widget).toBeHidden()
     await expectUncovered(detail.locator('.popup-header-title'))
     await expectUncovered(page.locator('#btn-station-detail-close'))
-    for (const control of controls.slice(0, 3)) await expectUncovered(control)
+    if (height === 390) {
+      expect(await page.locator('#station-detail-content').evaluate(el => el.clientHeight)).toBeGreaterThan(100)
+      const destino = detail.locator('.popup-nav-google')
+      await destino.scrollIntoViewIfNeeded()
+      await expectUncovered(destino, true)
+    }
+    for (const control of controls.slice(0, 3)) await expectUncovered(control, true)
     await page.locator('#btn-station-detail-close').click()
     await expect(widget).toBeVisible()
-    for (const control of controls) await expectUncovered(control)
+    await expect(widget).toBeInViewport({ ratio: 1 })
+    for (const control of controls) await expectUncovered(control, true)
 
-    if (width === 390) {
+    if (width === 390 || height === 390) {
       // También debe ocultarse cuando la consulta termina con la ficha abierta.
       const pendiente = Promise.withResolvers<Route>()
       await page.route('**/api/stats/national?days=30', route => pendiente.resolve(route))
@@ -86,9 +99,10 @@ for (const width of [1280, 390, 320]) {
       await expect(widget).toBeAttached()
       await expect(widget).toBeHidden()
       await expectUncovered(page.locator('#btn-station-detail-close'))
-      for (const control of controls.slice(0, 3)) await expectUncovered(control)
+      for (const control of controls.slice(0, 3)) await expectUncovered(control, true)
       await page.locator('#btn-station-detail-close').click()
       await expect(widget).toBeVisible()
+      await expect(widget).toBeInViewport({ ratio: 1 })
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   })

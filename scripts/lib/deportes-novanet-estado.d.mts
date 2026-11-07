@@ -1,6 +1,6 @@
 export interface EstadoNovanet {
   version: 1
-  catalogo: { temporada: { codigo: string; nombre: string }; verificadoEn: string; categorias: Array<{ codigo: string; nombre: string; familia: string; grupos: Array<{ codigo: string; nombre: string }> | null }> } | null
+  catalogo: { temporada: { codigo: string; nombre: string }; verificadoEn: string; categorias: Array<{ codigo: string; nombre: string; familia: string; grupos: Array<{ codigo: string; nombre: string }> | null; gruposPendientes?: boolean }> } | null
   categoria: number
   grupo: number
   ultimoExito: string | null

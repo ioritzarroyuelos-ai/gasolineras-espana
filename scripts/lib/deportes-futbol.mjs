@@ -497,6 +497,7 @@ export async function obtieneFutbol(opciones = {}) {
   resultados.push(...await Promise.allSettled([obtieneNovanet({ ...opciones, gruposCubiertosFutbol })]));
   const competiciones = [], incidencias = [];
   const rfefResueltas = new Set(resultados[7].status === 'fulfilled' ? resultados[7].value.rfefResueltas : []);
+  const seguimientoGrupos = resultados[7].status === 'fulfilled' ? resultados[7].value.seguimientoGrupos : undefined;
   for (const [i, resultado] of resultados.entries()) {
     if (resultado.status === 'fulfilled') { competiciones.push(...resultado.value.competiciones); incidencias.push(...resultado.value.incidencias); }
     else incidencias.push(incidencia(['Primera División', 'Segunda División', 'Liga F', 'Fútbol sala', 'Primera Federación', 'Fútbol RFEF femenino y juvenil', 'Comunidad Valenciana', 'Federaciones nacionales y territoriales'][i], [LALIGA, LALIGA, LALIGA, FUTSAL, `${LALIGA}/otras-competiciones/primera-federacion`, RFEF, FFCV, 'https://marcadores.rfef.es/pnfg/NPcd/NFG_CmpJornada?cod_primaria=1000120'][i], resultado.reason.message));
@@ -511,5 +512,5 @@ export async function obtieneFutbol(opciones = {}) {
     incidencia('Fútbol territorial de Cataluña', 'https://www.fcf.cat/ca/competicio', 'El selector es público, pero sus consultas de temporadas, categorías y resultados rechazan nuestra descarga (HTTP 403). Todavía no están integradas aquí.', 'territorial-cataluna'),
     incidencia('Cataluña · calendario inicial de Lliga Elit 2026-2027', 'https://d3l7f0n0i8l1n6.cloudfront.net/5cfa4babcaeb7736958c7d520997216a.pdf', 'Calendario inicial enlazado por la federación, revisado el 7 de noviembre de 2026: 30 jornadas y 240 emparejamientos. Publica fechas generales de jornada, sin horarios concretos ni resultados. No se actualiza automáticamente; consulta el buscador oficial para cambios posteriores.', 'territorial-cataluna-calendario-elit'),
   );
-  return { competiciones: fusionaCompeticionesFutbol([], competiciones), incidencias };
+  return { competiciones: fusionaCompeticionesFutbol([], competiciones), incidencias, seguimientoGrupos };
 }

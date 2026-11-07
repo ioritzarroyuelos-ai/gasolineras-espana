@@ -161,6 +161,7 @@ describe('consulta pública de Madrid', () => {
       expect(salida.incidencias.filter(i => i.motivo === 'Madrid devuelve otra competición o grupo')).toHaveLength(2)
       expect(JSON.stringify(salida)).not.toMatch(/diagnosticoMadrid|grupoRecibido|competicionEsperada|NO_PUBLICAR/)
       expect(salida.competiciones).toHaveLength(0)
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: ['rfef-tercera-masculina-7'] })
       expect(fetcher).toHaveBeenCalledTimes(3)
     } finally { vi.useRealTimers() }
   })
@@ -169,6 +170,25 @@ describe('consulta pública de Madrid', () => {
     expect(eventos[0]).toMatchObject({ local: 'CLUB SIELLO NUEVO BOADILLA F.C.', resultado: { local: 1, visitante: 4 }, inicio: '2026-11-01T10:30:00.000Z', estado: 'finalizado' })
     const tabla = parseaClasificacionMadrid(fixture('madrid-tabla.html'), esperadaMadrid)[0]
     expect(tabla.filas[0]).toMatchObject({ nombre: "C.D. MOSTOLES U.R.J.C. 'A'", valores: { puntos: 20, jugados: 9, favor: 21, contra: 6 } })
+  })
+  it.each(['agenda', 'tabla'])('un 429 en %s distingue un intento terminado de una pausa antes de la tabla', async bloque => {
+    vi.useFakeTimers()
+    try {
+      const ahora = Date.parse('2026-11-07T16:00:00Z'); vi.setSystemTime(ahora)
+      const estado = normalizaEstadoNovanet({ version: 1, catalogo: { temporada: { codigo: '22', nombre: '2026-2027' }, verificadoEn: new Date(ahora).toISOString(),
+        categorias: [{ codigo: esperadaMadrid.competicion, nombre: 'TERCERA FEDERACIÓN RFEF', familia: 'Fútbol', grupos: [{ codigo: esperadaMadrid.grupo, nombre: 'GRUPO VII' }] }] } })
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        if (String(url).includes('/api/group-rounds')) return new Response(JSON.stringify({ estado: '1', jornadas: [{ codjornada: '9', nombre: '9', fecha_jornada: '01-11-2026' }] }))
+        if (String(url).includes('/api/results') && bloque === 'tabla') return new Response(fixture('madrid-agenda.json'))
+        return new Response('Límite', { status: 429, headers: { 'Retry-After': '3600' } })
+      })
+      const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
+      await vi.runAllTimersAsync()
+      const salida = await pendiente
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: bloque === 'tabla' ? ['rfef-tercera-masculina-7'] : [] })
+      expect(salida.incidencias.some(i => i.id === 'rfef-tercera-masculina-7' && i.motivo.includes('limitado'))).toBe(true)
+      expect(fetcher).toHaveBeenCalledTimes(bloque === 'tabla' ? 3 : 2)
+    } finally { vi.useRealTimers() }
   })
   it('un cero inicial sin acta cerrada no es un resultado final', () => {
     const json = JSON.parse(fixture('madrid-agenda.json'))
@@ -279,6 +299,46 @@ describe('checkpoint de categorías y grupos territoriales', () => {
       expect(r.competiciones[0].clasificacion.tablas).toHaveLength(1)
       expect(guardado.completos).toEqual({})
       expect(r.rfefResueltas).toEqual([])
+      expect(r.seguimientoGrupos?.revisados).toEqual(['rfef-segunda-masculina-1'])
+    } finally { vi.useRealTimers() }
+  })
+  it('no arrastra avisos al cambiar la temporada aunque el grupo tenga el mismo ID canónico', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-07T17:00:00Z'))
+    try {
+      const categoria = { codigo: '33836091', nombre: 'Campeonato Nacional de Liga de Segunda Federación', familia: 'Fútbol', grupos: [{ codigo: '33836092', nombre: 'Grupo1' }] }
+      let guardado = normalizaEstadoNovanet({ version: 1, catalogo: { temporada: { codigo: '21', nombre: '2025-2026' }, verificadoEn: '2026-10-01T16:00:00Z', categorias: [categoria] } })
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(String(url).includes('_Exec') ? fixture('grupos.html') : '<select name="temporada"><option value="22">2026-2027</option></select><select name="competicion"><optgroup label="Fútbol"><option value="33836091">Campeonato Nacional de Liga de Segunda Federación</option></optgroup></select>'))
+      const pendiente = obtieneNovanet({ fuentesNovanet: ['rfef'], maxPeticionesNovanet: 2, estadoNovanet: { rfef: guardado }, fetcher, guardarEstadoNovanet: (_id, estado) => { guardado = estado } })
+      await vi.runAllTimersAsync()
+      const salida = await pendiente
+      expect(guardado.catalogo?.temporada.nombre).toBe('2026-2027')
+      expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(5)
+      expect(idGrupoNovanet('rfef', guardado.catalogo!.categorias[0], guardado.catalogo!.categorias[0].grupos![0])).toBe('rfef-segunda-masculina-1')
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: [], revisados: [] })
+      expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+  it('conserva grupos al refrescar la misma temporada y retira los desaparecidos sólo al confirmar su selector', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-07T17:00:00Z'))
+    try {
+      let guardado = normalizaEstadoNovanet({ version: 1, catalogo: { temporada: { codigo: '22', nombre: '2026-2027' }, verificadoEn: '2026-10-01T16:00:00Z', categorias: [
+        { codigo: '33836091', nombre: 'Campeonato Nacional de Liga de Segunda Federación', familia: 'Fútbol', grupos: [{ codigo: '33836092', nombre: 'Grupo1' }, { codigo: '999', nombre: 'Grupo2' }] },
+        { codigo: '777', nombre: 'Copa regional retirada', familia: 'Fútbol', grupos: [{ codigo: '778', nombre: 'Final' }] },
+      ] } })
+      const fetcher = vi.fn(async (url: RequestInfo | URL) => new Response(String(url).includes('_Exec')
+        ? '<script>var grupos=new Array("33836092","FASE REGULAR - GRUPO 1");</script>'
+        : '<select name="temporada"><option value="22">2026-2027</option></select><select name="competicion"><optgroup label="Fútbol"><option value="33836091">Campeonato Nacional de Liga de Segunda Federación</option></optgroup></select>'))
+      const consulta = () => obtieneNovanet({ fuentesNovanet: ['rfef'], maxPeticionesNovanet: 1, estadoNovanet: { rfef: guardado }, fetcher, guardarEstadoNovanet: (_id, estado) => { guardado = normalizaEstadoNovanet(checkpointNovanet(estado)) } })
+      const primera = consulta(); await vi.runAllTimersAsync()
+      expect((await primera).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1', 'rfef-segunda-masculina-2'], revisados: [] })
+      expect(guardado.catalogo?.categorias).toHaveLength(1)
+      expect(guardado.catalogo?.categorias[0].gruposPendientes).toBe(true)
+      expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(2)
+      const segunda = consulta(); await vi.runAllTimersAsync()
+      expect((await segunda).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1'], revisados: [] })
+      expect(guardado.catalogo?.categorias[0].gruposPendientes).toBeUndefined()
+      expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(1)
+      expect(fetcher).toHaveBeenCalledTimes(2)
     } finally { vi.useRealTimers() }
   })
 })

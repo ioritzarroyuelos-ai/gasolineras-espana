@@ -1,0 +1,185 @@
+{
+  "procedencia": "Extracto sin modificaciones de los avisos de Madrid y de las tres primeras categorías de los estados publicados en PR207 y PR209. Sólo datos guardados; no se hizo una nueva consulta.",
+  "pr207": {
+    "generado": "2026-11-07T17:23:54.633Z",
+    "estado": {
+      "version": 1,
+      "catalogo": {
+        "temporada": {
+          "codigo": "22",
+          "nombre": "2026-2027"
+        },
+        "verificadoEn": "2026-11-07T16:35:07.317Z",
+        "categorias": [
+          {
+            "codigo": "26738289",
+            "nombre": "COPA RFEF FASE AUTONÓMICA",
+            "familia": "Futbol-11 CATEGORIA NACIONAL",
+            "grupos": [
+              {
+                "codigo": "26738290",
+                "nombre": "GRUPO A"
+              },
+              {
+                "codigo": "26738291",
+                "nombre": "GRUPO B"
+              },
+              {
+                "codigo": "27326802",
+                "nombre": "FINAL"
+              }
+            ]
+          },
+          {
+            "codigo": "26738226",
+            "nombre": "TERCERA FEDERACIÓN RFEF",
+            "familia": "Futbol-11 CATEGORIA NACIONAL",
+            "grupos": null
+          },
+          {
+            "codigo": "28733581",
+            "nombre": "COPA DE AFICIONADOS RFFM 2026/2027",
+            "familia": "Futbol-11 AFICIONADOS",
+            "grupos": null
+          }
+        ]
+      },
+      "categoria": 0,
+      "grupo": 2,
+      "ultimoExito": null,
+      "noConsultarAntes": null,
+      "ventana": {
+        "desde": "2026-11-07T16:37:50.197Z",
+        "peticiones": 12
+      },
+      "verificados": {},
+      "completos": {},
+      "guardadoEn": "2026-11-07T17:19:01.741Z"
+    },
+    "incidencias": [
+      {
+        "deporte": "futbol",
+        "nombre": "COPA RFEF FASE AUTONÓMICA · GRUPO A",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Madrid devuelve otra competición o grupo",
+        "id": "novanet-madrid-26738290"
+      },
+      {
+        "deporte": "futbol",
+        "nombre": "COPA RFEF FASE AUTONÓMICA · GRUPO A · clasificación",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Madrid devuelve otra competición o grupo",
+        "id": "novanet-madrid-26738290"
+      },
+      {
+        "deporte": "futbol",
+        "nombre": "COPA RFEF FASE AUTONÓMICA · GRUPO B",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Madrid devuelve otra competición o grupo",
+        "id": "novanet-madrid-26738291"
+      },
+      {
+        "deporte": "futbol",
+        "nombre": "COPA RFEF FASE AUTONÓMICA · GRUPO B · clasificación",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Madrid devuelve otra competición o grupo",
+        "id": "novanet-madrid-26738291"
+      },
+      {
+        "deporte": "futbol",
+        "nombre": "Madrid · cobertura por grupos",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Catálogo: 118 categorías y 3 grupos descubiertos; quedan categorías por recorrer. Hay lecturas válidas de 0 grupos. Cada ficha conserva su fecha.",
+        "id": "novanet-madrid-progreso"
+      }
+    ]
+  },
+  "pr209": {
+    "generado": "2026-11-07T17:46:04.698Z",
+    "estado": {
+      "version": 1,
+      "catalogo": {
+        "temporada": {
+          "codigo": "22",
+          "nombre": "2026-2027"
+        },
+        "verificadoEn": "2026-11-07T16:35:07.317Z",
+        "categorias": [
+          {
+            "codigo": "26738289",
+            "nombre": "COPA RFEF FASE AUTONÓMICA",
+            "familia": "Futbol-11 CATEGORIA NACIONAL",
+            "grupos": [
+              {
+                "codigo": "26738290",
+                "nombre": "GRUPO A"
+              },
+              {
+                "codigo": "26738291",
+                "nombre": "GRUPO B"
+              },
+              {
+                "codigo": "27326802",
+                "nombre": "FINAL"
+              }
+            ]
+          },
+          {
+            "codigo": "26738226",
+            "nombre": "TERCERA FEDERACIÓN RFEF",
+            "familia": "Futbol-11 CATEGORIA NACIONAL",
+            "grupos": [
+              {
+                "codigo": "26738227",
+                "nombre": "GRUPO 7"
+              }
+            ]
+          },
+          {
+            "codigo": "28733581",
+            "nombre": "COPA DE AFICIONADOS RFFM 2026/2027",
+            "familia": "Futbol-11 AFICIONADOS",
+            "grupos": [
+              {
+                "codigo": "28741735",
+                "nombre": "PRIMERA RONDA"
+              }
+            ]
+          }
+        ]
+      },
+      "categoria": 2,
+      "grupo": 0,
+      "ultimoExito": "2026-11-07T17:43:12.013Z",
+      "noConsultarAntes": null,
+      "ventana": {
+        "desde": "2026-11-07T17:45:41.416Z",
+        "peticiones": 9
+      },
+      "verificados": {
+        "26738289-27326802": "2026-11-07T17:43:12.013Z",
+        "26738226-26738227": "2026-11-07T17:43:12.013Z"
+      },
+      "completos": {
+        "26738226-26738227": "2026-11-07T17:43:12.013Z"
+      },
+      "guardadoEn": "2026-11-07T17:45:51.051Z"
+    },
+    "incidencias": [
+      {
+        "deporte": "futbol",
+        "nombre": "COPA RFEF FASE AUTONÓMICA · FINAL · clasificación",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Madrid no publica una tabla de puntos para este grupo",
+        "id": "novanet-madrid-27326802"
+      },
+      {
+        "deporte": "futbol",
+        "nombre": "Madrid · cobertura por grupos",
+        "fuenteUrl": "https://www.rffm.es/competicion/resultados-y-jornadas",
+        "motivo": "Catálogo: 118 categorías y 5 grupos descubiertos; quedan categorías por recorrer. Hay lecturas válidas de 2 grupos. Cada ficha conserva su fecha.",
+        "id": "novanet-madrid-progreso"
+      }
+    ]
+  }
+}

@@ -58,7 +58,8 @@ export interface CompeticionDeportiva {
   clasificacion: BloqueDeportivo & { tablas: TablaDeportiva[]; tablasPendientes?: string[] }
 }
 export interface IncidenciaDeportes { deporte: Deporte; nombre: string; fuenteUrl: string; motivo: string; id?: string }
-export interface ResultadoDeportes { competiciones: CompeticionDeportiva[]; incidencias: IncidenciaDeportes[] }
+export interface SeguimientoGruposDeportes { conocidos: string[]; revisados: string[] }
+export interface ResultadoDeportes { competiciones: CompeticionDeportiva[]; incidencias: IncidenciaDeportes[]; seguimientoGrupos?: SeguimientoGruposDeportes }
 export interface OpcionesDeportes { fetcher?: typeof fetch; ahora?: number; log?: (mensaje: string) => void }
 export function validarCompeticionDeportiva(valor: unknown, ahora?: number): CompeticionDeportiva
 export function conservaCompeticionDeportiva(actual: CompeticionDeportiva, anterior?: CompeticionDeportiva): CompeticionDeportiva

@@ -56,7 +56,8 @@ export function normalizaEstadoNovanet(valor) {
   for (const [id, verificado] of Object.entries(valor.verificados || {})) if (/^\d+$/.test(id) && fecha(verificado)) estado.verificados[id] = fecha(verificado)
   const c = valor.catalogo
   if (codigo(c?.temporada?.codigo) && /^20\d{2}-20\d{2}$/.test(c.temporada.nombre) && fecha(c.verificadoEn) && Array.isArray(c.categorias) && c.categorias.length) {
-    const categorias = c.categorias.filter(x => x && codigo(x.codigo) && texto(x.nombre)).map(x => ({ codigo: String(x.codigo), nombre: texto(x.nombre), familia: texto(x.familia), grupos: Array.isArray(x.grupos) ? x.grupos.filter(g => g && codigo(g.codigo) && texto(g.nombre)).map(g => ({ codigo: String(g.codigo), nombre: texto(g.nombre) })) : null }))
+    const categorias = c.categorias.filter(x => x && codigo(x.codigo) && texto(x.nombre)).map(x => ({ codigo: String(x.codigo), nombre: texto(x.nombre), familia: texto(x.familia), grupos: Array.isArray(x.grupos) ? x.grupos.filter(g => g && codigo(g.codigo) && texto(g.nombre)).map(g => ({ codigo: String(g.codigo), nombre: texto(g.nombre) })) : null,
+      ...(x.gruposPendientes === true && Array.isArray(x.grupos) ? { gruposPendientes: true } : {}) }))
     const validos = categorias.length === c.categorias.length && new Set(categorias.map(x => x.codigo)).size === categorias.length && categorias.every((x, i) => !x.grupos || x.grupos.length === c.categorias[i].grupos.length && new Set(x.grupos.map(g => g.codigo)).size === x.grupos.length)
     if (validos) {
       estado.catalogo = { temporada: { codigo: String(c.temporada.codigo), nombre: c.temporada.nombre }, verificadoEn: fecha(c.verificadoEn), categorias }

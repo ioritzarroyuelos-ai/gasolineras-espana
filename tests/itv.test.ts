@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseItv, provinciaPorSlug, provinciasConItv, municipiosConItv,
   estacionesDeProvincia, estacionesDeMunicipio,
-  normalizaNombreMunicipio, telHref, mapsHref,
+  normalizaNombreMunicipio, telefonosItv, mapsHref,
   type EstacionITV,
 } from '../src/lib/itv'
 
@@ -111,8 +111,8 @@ describe('provinciaPorSlug', () => {
 
 describe('enlaces', () => {
   it('limpia el telefono para el href tel:', () => {
-    expect(telHref('945 29 27 72')).toBe('tel:945292772')
-    expect(telHref('')).toBe('')
+    expect(telefonosItv('945 29 27 72')).toEqual([{ texto: '945 292 772', href: 'tel:945292772' }])
+    expect(telefonosItv('')).toEqual([])
   })
 
   it('usa coordenadas cuando las hay', () => {

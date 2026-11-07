@@ -1,17 +1,11 @@
 name: Fetch estaciones de ITV
 
-# Mensual, no diario: al contrario que los precios o las guardias, la red de
-# estaciones de ITV es practicamente estatica — abren o cierran unas pocas al
-# año. Rastrear esto a diario solo gastaria cuota sin aportar nada.
-#
-# Fuentes (ver scripts/fetch-itv.mjs):
-#   - FeatureServer publico de la DGT, sin API key.
-#   - Portal de datos abiertos de la GVA, solo para las 3 fijas de Castellon,
-#     que la DGT no incluye.
+# Revisa semanalmente DGT, registro nacional de Industria y datos abiertos GVA.
+# Cada fuente conserva su copia anterior y su fecha si falla.
 
 on:
   schedule:
-    - cron: '0 4 1 * *'   # dia 1 de cada mes, 04:00 UTC
+    - cron: '0 4 * * 1'   # lunes, 04:00 UTC
   workflow_dispatch:
 
 concurrency:
@@ -32,6 +26,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Instalar lectores de datos oficiales
+        run: npm ci --omit=dev --ignore-scripts
+
       - name: Descargar estaciones de ITV
         run: node scripts/fetch-itv.mjs
 
@@ -47,5 +44,5 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.data-token.outputs.token }}
         run: |
-          git add public/data/itv.json
+          git add public/data/itv.json public/data/itv-fuentes
           node scripts/publish-data.mjs itv

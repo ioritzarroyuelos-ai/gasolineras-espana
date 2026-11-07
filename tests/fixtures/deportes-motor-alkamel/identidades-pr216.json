@@ -1,0 +1,1247 @@
+{
+  "procedencia": {
+    "pr": "https://github.com/ioritzarroyuelos-ai/gasolineras-espana/pull/216",
+    "sha": "2533ec0cca78aeea39e35c571f6392a504baa4dd",
+    "primarias": "9ee646cf",
+    "descripcion": "Identidades de todos los24eventos añadidos por Alkamel; no contiene tablas reconstruidas."
+  },
+  "casos": [
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-ricardo-tormo-2026-04-10-09-30-official-previous-test",
+      "nombre": "Ricardo Tormo · Official Previous Test",
+      "lugar": "Ricardo Tormo",
+      "jornada": "Ronda 1",
+      "fecha": "2026-04-10",
+      "hora": "09:30",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/06_VALENCIA/651_F4Spain/202604100930_Official%20Previous%20Test%20/03_Classification_Official%20Previous%20Test%20.CSV",
+      "esperado": null,
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-1",
+          "nombre": "Ricardo Tormo · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-2",
+          "nombre": "Ricardo Tormo · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-1",
+          "nombre": "Ricardo Tormo · Carrera 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-2",
+          "nombre": "Ricardo Tormo · Carrera 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-3",
+          "nombre": "Ricardo Tormo · Carrera 3",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-ricardo-tormo-2026-04-10-13-15-free-practice-1",
+      "nombre": "Ricardo Tormo · Entrenamientos libres 1",
+      "lugar": "Ricardo Tormo",
+      "jornada": "Ronda 1",
+      "fecha": "2026-04-10",
+      "hora": "13:15",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/06_VALENCIA/651_F4Spain/202604101315_Free%20Practice%201/03_Classification_Free%20Practice%201.CSV",
+      "esperado": null,
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-1",
+          "nombre": "Ricardo Tormo · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-2",
+          "nombre": "Ricardo Tormo · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-1",
+          "nombre": "Ricardo Tormo · Carrera 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-2",
+          "nombre": "Ricardo Tormo · Carrera 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-3",
+          "nombre": "Ricardo Tormo · Carrera 3",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-ricardo-tormo-2026-04-10-16-20-free-practice-2",
+      "nombre": "Ricardo Tormo · Entrenamientos libres 2",
+      "lugar": "Ricardo Tormo",
+      "jornada": "Ronda 1",
+      "fecha": "2026-04-10",
+      "hora": "16:20",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/06_VALENCIA/651_F4Spain/202604101620_Free%20Practice%202/03_Classification_Free%20Practice%202.CSV",
+      "esperado": null,
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-1",
+          "nombre": "Ricardo Tormo · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-qualification-2",
+          "nombre": "Ricardo Tormo · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-1",
+          "nombre": "Ricardo Tormo · Carrera 1",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-2",
+          "nombre": "Ricardo Tormo · Carrera 2",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4-ricardo-tormo-2026-race-3",
+          "nombre": "Ricardo Tormo · Carrera 3",
+          "inicio": null,
+          "fecha": "2026-04-10",
+          "finFecha": "2026-04-12",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Ricardo Tormo",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4-ricardo-tormo-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-portimao-2026-06-05-10-10-official-previous-test",
+      "nombre": "Portimao · Official Previous Test",
+      "lugar": "Portimao",
+      "jornada": "Ronda 2",
+      "fecha": "2026-06-05",
+      "hora": "10:10",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/10_PORTIMAO/667_F4Spain/202606051010_Official%20Previous%20Test/03_Classification_Official%20Previous%20Test.CSV",
+      "esperado": "formula-4-espana-f4s-portimao-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-portimao-2026-official-test",
+          "nombre": "Portimao · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 10:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-portimao-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-portimao-2026-free-practice",
+          "nombre": "Portimao · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 12:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-portimao-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-portimao-2026-free-practice-2",
+          "nombre": "Portimao · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 14:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-portimao-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-portimao-2026-practice-1",
+          "nombre": "Portimao · Entrenamientos 1",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "finFecha": "2026-06-07",
+          "estado": "finalizado",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-portimao-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-motorland-2026-06-19-09-30-official-previous-test",
+      "nombre": "Motorland · Official Previous Test",
+      "lugar": "Motorland",
+      "jornada": "Ronda 3",
+      "fecha": "2026-06-19",
+      "hora": "09:30",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/12_MOTORLAND/672_F4Spain/202606190930_Official%20Previous%20Test/03_Classification_Official%20Previous%20Test.CSV",
+      "esperado": "formula-4-espana-f4s-motorland-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-motorland-2026-official-test",
+          "nombre": "Motorland · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-19",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Motorland",
+          "detalle": "Hora publicada: 09:30. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-motorland-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-motorland-2026-free-practice",
+          "nombre": "Motorland · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-06-19",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Motorland",
+          "detalle": "Hora publicada: 13:15. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-motorland-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-motorland-2026-free-practice-2",
+          "nombre": "Motorland · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-06-19",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Motorland",
+          "detalle": "Hora publicada: 17:05. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-motorland-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-jarama-2026-08-22-10-00-official-previous-test",
+      "nombre": "Jarama · Official Previous Test",
+      "lugar": "Jarama",
+      "jornada": "Ronda 4",
+      "fecha": "2026-08-22",
+      "hora": "10:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/16_JARAMA/693_F4Spain/202608221000_Official%20Previous%20Test/03_Classification_Official%20Previous%20Test.CSV",
+      "esperado": "formula-4-espana-f4s-round-4-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-round-4-2026-official-test",
+          "nombre": "Jarama · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-08-22",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Jarama",
+          "detalle": "Hora publicada: 10:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-round-4-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-round-4-2026-free-practice",
+          "nombre": "Jarama · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-08-22",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Jarama",
+          "detalle": "Hora publicada: 11:30. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-round-4-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-round-4-2026-free-practice-2",
+          "nombre": "Jarama · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-08-22",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Jarama",
+          "detalle": "Hora publicada: 12:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-round-4-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-round-4-2026-qualification-1",
+          "nombre": "Jarama · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-08-22",
+          "estado": "finalizado",
+          "jornada": "Ronda 4",
+          "lugar": "Jarama",
+          "detalle": "Hora publicada: 14:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-round-4-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-round-4-2026-race-1",
+          "nombre": "Jarama · Carrera 1",
+          "inicio": null,
+          "fecha": "2026-08-22",
+          "estado": "finalizado",
+          "jornada": "Ronda 4",
+          "lugar": "Jarama",
+          "detalle": "Hora publicada: 17:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-round-4-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-jerez-2026-09-25-09-00-official-previous-test",
+      "nombre": "Jerez · Official Previous Test",
+      "lugar": "Jerez",
+      "jornada": "Ronda 5",
+      "fecha": "2026-09-25",
+      "hora": "09:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/19_JEREZ/697_F4Spain/202609250900_Official%20Previous%20Test%20/03_Classification_Official%20Previous%20Test%20.CSV",
+      "esperado": "formula-4-espana-f4s-jerez-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-jerez-2026-official-test",
+          "nombre": "Jerez · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 5",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-jerez-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-jerez-2026-free-practice",
+          "nombre": "Jerez · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 5",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 12:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-jerez-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-jerez-2026-free-practice-2",
+          "nombre": "Jerez · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 5",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 14:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-jerez-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-navarra-2026-10-09-09-00-official-previous-test",
+      "nombre": "Navarra · Official Previous Test",
+      "lugar": "Navarra",
+      "jornada": "Ronda 6",
+      "fecha": "2026-10-09",
+      "hora": "09:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/21_NAVARRA/702_F4Spain/202610090900_Official%20Previous%20Test%20/03_Classification_Official%20Previous%20Test%20.CSV",
+      "esperado": "formula-4-espana-f4s-navarra-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-navarra-2026-official-test",
+          "nombre": "Navarra · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-10-09",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Navarra",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-navarra-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-navarra-2026-free-practice",
+          "nombre": "Navarra · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-10-09",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Navarra",
+          "detalle": "Hora publicada: 12:30. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-navarra-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-navarra-2026-free-practice-2",
+          "nombre": "Navarra · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-10-09",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Navarra",
+          "detalle": "Hora publicada: 16:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-navarra-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-navarra-2026-race-3",
+          "nombre": "Navarra · Carrera 3",
+          "inicio": null,
+          "fecha": "2026-10-09",
+          "finFecha": "2026-10-11",
+          "estado": "finalizado",
+          "jornada": "Ronda 6",
+          "lugar": "Navarra",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-navarra-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "formula-4-espana",
+      "id": "formula-4-espana-alkamel-montmelo-2026-11-06-09-00-official-previous-test",
+      "nombre": "Montmelo · Official Previous Test",
+      "lugar": "Montmelo",
+      "jornada": "Ronda 7",
+      "fecha": "2026-11-06",
+      "hora": "09:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/24_BARCELONA/710_F4Spain/202611060900_Official%20Previous%20Test%20/03_Classification_Official%20Previous%20Test%20.CSV",
+      "esperado": "formula-4-espana-f4s-barcelona-2026-official-test",
+      "primarias": [
+        {
+          "id": "formula-4-espana-f4s-barcelona-2026-official-test",
+          "nombre": "Montmelo · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Montmelo",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-barcelona-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-barcelona-2026-free-practice",
+          "nombre": "Montmelo · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Montmelo",
+          "detalle": "Hora publicada: 12:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-barcelona-2026/"
+        },
+        {
+          "id": "formula-4-espana-f4s-barcelona-2026-free-practice-2",
+          "nombre": "Montmelo · Entrenamientos",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Montmelo",
+          "detalle": "Hora publicada: 15:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://f4spain.org/es/round/f4s-barcelona-2026/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-paul-ricard-2026-05-01-11-00-official-previous-test-1",
+      "nombre": "Paul Ricard · Official Previous Test 1",
+      "lugar": "Paul Ricard",
+      "jornada": "Ronda 1",
+      "fecha": "2026-05-01",
+      "hora": "11:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/08_PAUL%20RICARD/664_Eurocup3/202605011100_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-circuit-paul-ricard-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-circuit-paul-ricard-official-test",
+          "nombre": "Paul Ricard · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 11:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-official-test-2",
+          "nombre": "Paul Ricard · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 14:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-qualification-1",
+          "nombre": "Paul Ricard · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 17:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-qualification-2",
+          "nombre": "Paul Ricard · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 17:25. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-sprint",
+          "nombre": "Paul Ricard · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "finFecha": "2026-05-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-paul-ricard-2026-05-01-14-50-official-previous-test-2",
+      "nombre": "Paul Ricard · Official Previous Test 2",
+      "lugar": "Paul Ricard",
+      "jornada": "Ronda 1",
+      "fecha": "2026-05-01",
+      "hora": "14:50",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/08_PAUL%20RICARD/664_Eurocup3/202605011450_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-circuit-paul-ricard-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-circuit-paul-ricard-official-test",
+          "nombre": "Paul Ricard · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 11:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-official-test-2",
+          "nombre": "Paul Ricard · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 14:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-qualification-1",
+          "nombre": "Paul Ricard · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 17:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-qualification-2",
+          "nombre": "Paul Ricard · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Hora publicada: 17:25. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        },
+        {
+          "id": "eurocup-3-circuit-paul-ricard-sprint",
+          "nombre": "Paul Ricard · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-05-01",
+          "finFecha": "2026-05-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 1",
+          "lugar": "Paul Ricard",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/circuit-paul-ricard/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-portimao-2026-06-05-09-00-official-previous-test-1",
+      "nombre": "Portimao · Official Previous Test 1",
+      "lugar": "Portimao",
+      "jornada": "Ronda 2",
+      "fecha": "2026-06-05",
+      "hora": "09:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/10_PORTIMAO/669_Eurocup3/202606050900_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-algarve-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-algarve-official-test",
+          "nombre": "Portimao · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_algarve/"
+        },
+        {
+          "id": "eurocup-3-2026-algarve-official-test-2",
+          "nombre": "Portimao · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 11:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_algarve/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-portimao-2026-06-05-11-40-official-previous-test-2",
+      "nombre": "Portimao · Official Previous Test 2",
+      "lugar": "Portimao",
+      "jornada": "Ronda 2",
+      "fecha": "2026-06-05",
+      "hora": "11:40",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/10_PORTIMAO/669_Eurocup3/202606051140_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-2026-algarve-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-algarve-official-test",
+          "nombre": "Portimao · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_algarve/"
+        },
+        {
+          "id": "eurocup-3-2026-algarve-official-test-2",
+          "nombre": "Portimao · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-06-05",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 2",
+          "lugar": "Portimao",
+          "detalle": "Hora publicada: 11:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_algarve/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-imola-2026-07-03-09-00-official-previous-test-1",
+      "nombre": "Imola · Official Previous Test 1",
+      "lugar": "Imola",
+      "jornada": "Ronda 3",
+      "fecha": "2026-07-03",
+      "hora": "09:00",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/13_IMOLA/676_Eurocup3/202607030900_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-imola-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-imola-official-test",
+          "nombre": "Imola · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-official-test-2",
+          "nombre": "Imola · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 12:35. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-qualification-1",
+          "nombre": "Imola · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 15:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-qualification-2",
+          "nombre": "Imola · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 16:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-sprint",
+          "nombre": "Imola · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "finFecha": "2026-07-05",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-imola-2026-07-03-12-35-official-previous-test-2",
+      "nombre": "Imola · Official Previous Test 2",
+      "lugar": "Imola",
+      "jornada": "Ronda 3",
+      "fecha": "2026-07-03",
+      "hora": "12:35",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/13_IMOLA/676_Eurocup3/202607031235_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-2026-imola-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-imola-official-test",
+          "nombre": "Imola · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-official-test-2",
+          "nombre": "Imola · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 12:35. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-qualification-1",
+          "nombre": "Imola · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 15:40. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-qualification-2",
+          "nombre": "Imola · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Hora publicada: 16:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        },
+        {
+          "id": "eurocup-3-2026-imola-sprint",
+          "nombre": "Imola · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-07-03",
+          "finFecha": "2026-07-05",
+          "estado": "finalizado",
+          "jornada": "Ronda 3",
+          "lugar": "Imola",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_imola/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-monza-2026-07-31-09-15-official-previous-test-1",
+      "nombre": "Monza · Official Previous Test 1",
+      "lugar": "Monza",
+      "jornada": "Ronda 4",
+      "fecha": "2026-07-31",
+      "hora": "09:15",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/15_MONZA/686_Eurocup3/202607310915_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": null,
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-monza-official-test",
+          "nombre": "Monza · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-31",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Monza",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_monza/"
+        },
+        {
+          "id": "eurocup-3-2026-monza-official-test-2",
+          "nombre": "Monza · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-31",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Monza",
+          "detalle": "Hora publicada: 13:35. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_monza/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-monza-2026-07-31-13-25-official-previous-test-2",
+      "nombre": "Monza · Official Previous Test 2",
+      "lugar": "Monza",
+      "jornada": "Ronda 4",
+      "fecha": "2026-07-31",
+      "hora": "13:25",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/15_MONZA/686_Eurocup3/202607311325_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": null,
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-monza-official-test",
+          "nombre": "Monza · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-31",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Monza",
+          "detalle": "Hora publicada: 09:00. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_monza/"
+        },
+        {
+          "id": "eurocup-3-2026-monza-official-test-2",
+          "nombre": "Monza · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-07-31",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 4",
+          "lugar": "Monza",
+          "detalle": "Hora publicada: 13:35. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_monza/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-silverstone-2026-09-11-08-45-official-previous-test-1",
+      "nombre": "Silverstone · Official Previous Test 1",
+      "lugar": "Silverstone",
+      "jornada": "Ronda 5",
+      "fecha": "2026-09-11",
+      "hora": "08:45",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/17_SILVERSTONE/694_Eurocup3/202609110845_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-silverstone-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-silverstone-official-test",
+          "nombre": "Silverstone · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-11",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 5",
+          "lugar": "Silverstone",
+          "detalle": "Hora publicada: 08:45. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_silverstone/"
+        },
+        {
+          "id": "eurocup-3-2026-silverstone-qualification-1",
+          "nombre": "Silverstone · Clasificación 1",
+          "inicio": null,
+          "fecha": "2026-09-11",
+          "estado": "finalizado",
+          "jornada": "Ronda 5",
+          "lugar": "Silverstone",
+          "detalle": "Hora publicada: 14:45. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_silverstone/"
+        },
+        {
+          "id": "eurocup-3-2026-silverstone-qualification-2",
+          "nombre": "Silverstone · Clasificación 2",
+          "inicio": null,
+          "fecha": "2026-09-11",
+          "estado": "finalizado",
+          "jornada": "Ronda 5",
+          "lugar": "Silverstone",
+          "detalle": "Hora publicada: 15:08. La fuente no indica la zona horaria; comprueba el horario en el campeonato. La fuente solo identifica al primer piloto; no publica aquí el resto de participantes.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_silverstone/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-jerez-2026-09-25-10-10-official-previous-test-1",
+      "nombre": "Jerez · Official Previous Test 1",
+      "lugar": "Jerez",
+      "jornada": "Ronda 6",
+      "fecha": "2026-09-25",
+      "hora": "10:10",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/19_JEREZ/698_Eurocup3/202609251010_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-jerez-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-jerez-official-test",
+          "nombre": "Jerez · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 10:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        },
+        {
+          "id": "eurocup-3-2026-jerez-official-test-2",
+          "nombre": "Jerez · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 12:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        },
+        {
+          "id": "eurocup-3-2026-jerez-sprint",
+          "nombre": "Jerez · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "finFecha": "2026-09-27",
+          "estado": "finalizado",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-jerez-2026-09-25-12-50-official-previous-test-2",
+      "nombre": "Jerez · Official Previous Test 2",
+      "lugar": "Jerez",
+      "jornada": "Ronda 6",
+      "fecha": "2026-09-25",
+      "hora": "12:50",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/19_JEREZ/698_Eurocup3/202609251250_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-2026-jerez-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-jerez-official-test",
+          "nombre": "Jerez · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 10:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        },
+        {
+          "id": "eurocup-3-2026-jerez-official-test-2",
+          "nombre": "Jerez · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Hora publicada: 12:50. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        },
+        {
+          "id": "eurocup-3-2026-jerez-sprint",
+          "nombre": "Jerez · Carrera sprint",
+          "inicio": null,
+          "fecha": "2026-09-25",
+          "finFecha": "2026-09-27",
+          "estado": "finalizado",
+          "jornada": "Ronda 6",
+          "lugar": "Jerez",
+          "detalle": "Resultado de este fin de semana. La fuente no publica un día y una hora verificables para esta sesión.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_jerez/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-hungaroring-2026-10-23-10-28-official-previous-test-1",
+      "nombre": "Hungaroring · Official Previous Test 1",
+      "lugar": "Hungaroring",
+      "jornada": "Ronda 7",
+      "fecha": "2026-10-23",
+      "hora": "10:28",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/22_HUNGARORING/707_Eurocup3/202610231028_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-hungaroring-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-hungaroring-official-test",
+          "nombre": "Hungaroring · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-10-23",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Hungaroring",
+          "detalle": "Hora publicada: 10:28. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_hungaroring/"
+        },
+        {
+          "id": "eurocup-3-2026-hungaroring-official-test-2",
+          "nombre": "Hungaroring · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-10-23",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Hungaroring",
+          "detalle": "Hora publicada: 14:09. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_hungaroring/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-hungaroring-2026-10-23-14-09-official-previous-test-2",
+      "nombre": "Hungaroring · Official Previous Test 2",
+      "lugar": "Hungaroring",
+      "jornada": "Ronda 7",
+      "fecha": "2026-10-23",
+      "hora": "14:09",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/22_HUNGARORING/707_Eurocup3/202610231409_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-2026-hungaroring-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-hungaroring-official-test",
+          "nombre": "Hungaroring · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-10-23",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Hungaroring",
+          "detalle": "Hora publicada: 10:28. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_hungaroring/"
+        },
+        {
+          "id": "eurocup-3-2026-hungaroring-official-test-2",
+          "nombre": "Hungaroring · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-10-23",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 7",
+          "lugar": "Hungaroring",
+          "detalle": "Hora publicada: 14:09. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_hungaroring/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-montmelo-2026-11-06-10-10-official-previous-test-1",
+      "nombre": "Montmeló · Official Previous Test 1",
+      "lugar": "Montmeló",
+      "jornada": "Ronda 8",
+      "fecha": "2026-11-06",
+      "hora": "10:10",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/24_BARCELONA/711_Eurocup3/202611061010_Official%20Previous%20Test%201/03_Classification_Official%20Previous%20Test%201.CSV",
+      "esperado": "eurocup-3-2026-barcelona-official-test",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-barcelona-official-test",
+          "nombre": "Montmeló · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 8",
+          "lugar": "Montmeló",
+          "detalle": "Hora publicada: 10:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_barcelona/"
+        },
+        {
+          "id": "eurocup-3-2026-barcelona-official-test-2",
+          "nombre": "Montmeló · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 8",
+          "lugar": "Montmeló",
+          "detalle": "Hora publicada: 13:30. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_barcelona/"
+        }
+      ]
+    },
+    {
+      "competicionId": "eurocup-3",
+      "id": "eurocup-3-alkamel-montmelo-2026-11-06-13-30-official-previous-test-2",
+      "nombre": "Montmeló · Official Previous Test 2",
+      "lugar": "Montmeló",
+      "jornada": "Ronda 8",
+      "fecha": "2026-11-06",
+      "hora": "13:30",
+      "fuenteUrl": "https://f4spain-e3.alkamelsystems.com/Results/03_2026/24_BARCELONA/711_Eurocup3/202611061330_Official%20Previous%20Test%202/03_Classification_Official%20Previous%20Test%202.CSV",
+      "esperado": "eurocup-3-2026-barcelona-official-test-2",
+      "primarias": [
+        {
+          "id": "eurocup-3-2026-barcelona-official-test",
+          "nombre": "Montmeló · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 8",
+          "lugar": "Montmeló",
+          "detalle": "Hora publicada: 10:10. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_barcelona/"
+        },
+        {
+          "id": "eurocup-3-2026-barcelona-official-test-2",
+          "nombre": "Montmeló · Pruebas oficiales",
+          "inicio": null,
+          "fecha": "2026-11-06",
+          "estado": "por_confirmar",
+          "jornada": "Ronda 8",
+          "lugar": "Montmeló",
+          "detalle": "Hora publicada: 13:30. La fuente no indica la zona horaria; comprueba el horario en el campeonato.",
+          "fuenteUrl": "https://eurocup3.org/es/round/2026_barcelona/"
+        }
+      ]
+    }
+  ]
+}

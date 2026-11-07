@@ -2,6 +2,12 @@
 
 La sección publica calendarios, resultados, clasificaciones y emisiones confirmadas para España. No es un marcador en directo. No requiere cuentas, servicios de pago ni nuevas bases de datos.
 
+## Navegación
+
+La portada ofrece accesos destacados a las competiciones y una búsqueda siempre visible. Los alias habituales encuentran la ficha real: «ACB» corresponde a Liga Endesa y «F1» a Fórmula 1. La vista «Clasificación» tiene acceso directo desde las tarjetas y un índice con los nombres de sus tablas, para llegar a pilotos, equipos, grupos o categorías sin recorrer antes toda la agenda. Los destacados se retiran al aplicar filtros para no mezclarlos con los resultados de búsqueda.
+
+Los accesos y sus indicadores corresponden a datos comprobados. Una columna «Equipo» dentro de la tabla de pilotos no equivale a una clasificación de equipos. Cuando falta un bloque se explica qué se puede consultar; una copa o eliminatoria puede no tener tabla de puntos. «Por eliminatorias» sólo aparece cuando la fuente lo explica; no se deduce de que el nombre contenga «Copa». Calendario y resultados mantienen también la clasificación al final para conservar los enlaces antiguos a ese apartado.
+
 ## Fuentes y cobertura
 
 Los lectores están separados por deporte en `scripts/lib/deportes-*.mjs`. Descubren las temporadas, competiciones y grupos en las fuentes públicas. La cobertura real se recoge en `public/data/deportes/index.json`; las fuentes no integradas o que fallan figuran en `incidencias`. No se debe anunciar cobertura completa de todas las federaciones.
@@ -45,6 +51,31 @@ Supercars España descubre en el organizador sus cuatro rondas y el documento es
 Si falla un índice necesario para reconstruir la agenda completa de FREC o Supercars, o una descarga del complemento Alkamel, la agenda queda pendiente de actualizar y conserva su última copia válida. La clasificación anual puede actualizarse de forma independiente. Se evita así reemplazar sesiones completas antiguas por un calendario reducido o por un resumen que sólo contiene al ganador.
 
 En los lectores de motor, omitir `evento.resultados` permite conservar la copia anterior del mismo evento y temporada; `resultados: []` se reserva para una retirada confirmada por la fuente. No se conserva una tabla cuando la prueba cambia de día, vuelve a estar programada, se aplaza o se cancela. En clasificación, `tablasPendientes` enumera únicamente los identificadores que no se pudieron consultar; no se recuperan fases antiguas que la nueva lectura haya dejado atrás. Una sesión con resultados publicados aparece en la pestaña «Resultados» aunque la fuente aún no haya marcado su cierre definitivo.
+
+## Pendientes funcionales comprobados el 7 de noviembre de 2026
+
+La copia local revisada contiene los siguientes datos. Una ficha puede ser un grupo, fase o edición; estos recuentos no representan campeonatos completos ni se mantienen fijos entre actualizaciones.
+
+| Deporte | Fichas | Con alguna tabla de clasificación |
+| --- | ---: | ---: |
+| Fútbol | 271 | 228 |
+| Baloncesto | 1683 | 1390 |
+| Motor | 15 | 14 |
+
+Una ficha sin tabla no es automáticamente un fallo: puede corresponder a una copa, una fase sin clasificación o datos todavía no publicados. Tampoco son fallos los resultados aún inexistentes de encuentros o sesiones futuras.
+
+**Fuentes con acceso bloqueado:** siguen pendientes el fútbol de la FCF, las ligas de la Federación Catalana de Baloncesto y el baloncesto federativo andaluz. Los consejos deportivos catalanes integrados no sustituyen esa cobertura. Parte de los resultados de CERX exige acceso; no se eluden esas restricciones ni se contratan fuentes de pago.
+
+**Datos sin integrar o cobertura parcial:**
+
+- Fútbol: Primera Federación Femenina y Segunda Federación Femenina, grupo 1, no tienen clasificación integrada. Faltan las fichas de Segunda Federación Femenina, grupos 2 y 3, y División de Honor Juvenil, grupos 1 y 4. Los grupos 3, 5, 6 y 7 de División de Honor Juvenil carecen de tabla integrada. La Copa Federación nacional sólo aporta un partido y la ficha general de Copa del Rey una jornada; no representan sus recorridos completos.
+- Baloncesto: las grandes competiciones ya tienen clasificación. Quedan como ampliaciones las estadísticas de NBA que no aporta el respaldo de posiciones, partidos jugados, victorias y derrotas; los cuadros de eliminatorias; y una presentación que agrupe mejor las fases de una misma categoría. Estas mejoras son distintas de los bloqueos federativos anteriores.
+- Motor: F4 España y Eurocup-3 no tienen una clasificación independiente de equipos. FREC ofrece 50 documentos de 45 sesiones, pero todavía no tablas de esos resultados dentro de la web. Supercars tiene clasificaciones de pilotos y equipos, aunque sus resultados de sesiones integrados se limitan a Jerez. En TCR Spain faltan integrar las tablas de sesiones de Jarama, Navarra y Barcelona. GB3 conserva tres entradas pasadas sin resultado integrado: carrera 3 de Spa y los resultados combinados del jueves y viernes de Red Bull Ring; no se afirma por ello que esas sesiones se celebrasen.
+- Motor, límites adicionales: las agendas de CERA, CEM y CopaEM sólo recogen próximas pruebas, no un calendario histórico completo; sus clasificaciones sí están integradas. CEM muestra una prueba aplazada sin nueva fecha. CERX tiene calendario, pero no resultados ni clasificación integrados. Se mantiene el resultado de nueve pilotos de Portimao sin atribuirle una sesión exacta no verificada, y las dos pruebas de Monza cuyos horarios discrepan siguen diferenciadas con aviso. Las actas escaneadas nuevas de TCR necesitan revisión antes de incorporar sus cifras; las dos actas ya revisadas no son un pendiente.
+
+La ampliación funcional incluye hacer visibles las clasificaciones existentes, distinguir pilotos y equipos donde proceda, y facilitar la consulta por fase o categoría. Esa navegación no amplía por sí sola la cobertura de las fuentes ni convierte una copia conservada en una lectura reciente.
+
+Para completar la consulta, quedan como mejoras comunes un selector de temporada, jornada y fase; agrupar las fichas de una misma competición; y fichas propias de equipos y pilotos con sus próximos encuentros y resultados. El calendario de muchas fuentes sólo cubre jornadas cercanas, no toda la temporada. Los cuadros de eliminatorias deben mostrar las rondas y los cruces confirmados, sin inventar una clasificación de puntos. También falta ampliar las estadísticas individuales y las emisiones confirmadas para España donde exista una fuente gratuita verificable. La actualización periódica actual no equivale a resultados en directo.
 
 ## Actualización y publicación
 

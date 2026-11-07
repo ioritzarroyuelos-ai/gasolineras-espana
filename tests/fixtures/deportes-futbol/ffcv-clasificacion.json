@@ -1,0 +1,134 @@
+{
+  "estado": "1",
+  "sesion_ok": "1",
+  "competicion": "Tercera Federación",
+  "codigo_competicion": "905431604",
+  "grupo": "GRUP - VI",
+  "codigo_grupo": "905431605",
+  "tipo_competicion": "2",
+  "jornada": "9",
+  "fecha_jornada": "01-11-2026",
+  "clasificacion": [
+    {
+      "color": "#1DFF46",
+      "posicion": "1",
+      "url_img": "/pnfg/pimg/Clubes/00100_0074501398_Villarreal_CF.png?nova=1",
+      "codequipo": "11364",
+      "nombre": "Villarreal C.F. 'C'",
+      "jugados": "9",
+      "ganados": "8",
+      "perdidos": "1",
+      "empatados": "0",
+      "penaltis": "0",
+      "goles_a_favor": "15",
+      "goles_en_contra": "6",
+      "jugados_casa": "5",
+      "ganados_casa": "4",
+      "empatados_casa": "0",
+      "ganados_penalti_casa": "",
+      "perdidos_casa": "1",
+      "jugados_fuera": "4",
+      "ganados_fuera": "4",
+      "empatados_fuera": "0",
+      "ganados_penalti_fuera": "",
+      "perdidos_fuera": "0",
+      "puntos": "24",
+      "puntos_sancion": "0",
+      "puntos_local": "12",
+      "puntos_visitante": "12",
+      "mostrar_coeficiente": "1",
+      "coeficiente": "2.67",
+      "racha_partidos": [
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        }
+      ]
+    },
+    {
+      "color": "#FF9E44",
+      "posicion": "2",
+      "url_img": "/pnfg/pimg/Clubes/00100_0074540210_Levante_UD.png?nova=1",
+      "codequipo": "10393",
+      "nombre": "Levante U.D. 'B'",
+      "jugados": "9",
+      "ganados": "5",
+      "perdidos": "1",
+      "empatados": "3",
+      "penaltis": "0",
+      "goles_a_favor": "15",
+      "goles_en_contra": "4",
+      "jugados_casa": "5",
+      "ganados_casa": "2",
+      "empatados_casa": "3",
+      "ganados_penalti_casa": "",
+      "perdidos_casa": "0",
+      "jugados_fuera": "4",
+      "ganados_fuera": "3",
+      "empatados_fuera": "0",
+      "ganados_penalti_fuera": "",
+      "perdidos_fuera": "1",
+      "puntos": "18",
+      "puntos_sancion": "0",
+      "puntos_local": "9",
+      "puntos_visitante": "9",
+      "mostrar_coeficiente": "1",
+      "coeficiente": "2.00",
+      "racha_partidos": [
+        {
+          "tipo": "E",
+          "color": "#D7DF01"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "G",
+          "color": "#04B431"
+        },
+        {
+          "tipo": "E",
+          "color": "#D7DF01"
+        }
+      ]
+    }
+  ],
+  "promociones": [
+    {
+      "orden": "1",
+      "nombre_promocion": "Ascenso",
+      "color_promocion": "#1DFF46"
+    },
+    {
+      "orden": "2",
+      "nombre_promocion": "Fase de Ascenso",
+      "color_promocion": "#FF9E44"
+    },
+    {
+      "orden": "16",
+      "nombre_promocion": "Descenso",
+      "color_promocion": "#FF1622"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ name: error-monitor — chequea errores del cliente y notifica Telegram
 # Elegidos para cubrir madrugada (detectar errores nocturnos), manana y tarde
 # sin saturar el chat de Telegram con cada deploy.
 #
-# Comprueba los cinco servicios y errores nuevos/recurrentes (máximo un aviso diario por firma).
+# Comprueba todos los servicios y errores nuevos/recurrentes (máximo un aviso diario por firma).
 # Conserva las tres confirmaciones diarias configuradas.
 #
 # Secrets requeridos (repo Settings -> Secrets and variables -> Actions):

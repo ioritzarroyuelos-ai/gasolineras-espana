@@ -1,0 +1,42 @@
+{
+  "grupo": "",
+  "jornada": "10",
+  "partidos": [
+    {
+      "fecha": "08/11/2026",
+      "hora": "17:00",
+      "local": "C.D. Utiel",
+      "visitante": "C.D. Buñol 'A'",
+      "cod_equipo_local": "15022",
+      "cod_equipo_visitante": "14487",
+      "resultado": "0",
+      "resultado_provisional": "0",
+      "campo": "Estadio Mpal. La Celadilla F-11 Utiel ",
+      "escudo_local": "/pnfg/pimg/Clubes/00100_0074811932_Escudo_CDUTIEL_Vector_page_0001.jpg",
+      "escudo_visitante": "/pnfg/pimg/Clubes/00100_0074520544_CD_Bu_ol.png",
+      "retirado_local": "0",
+      "retirado_visitante": "0",
+      "codacta": "26470736",
+      "estado": "0",
+      "motivo_estado": ""
+    },
+    {
+      "fecha": "08/11/2026",
+      "hora": "11:30",
+      "local": "S.C. Torrevieja C.F. 'A'",
+      "visitante": "Crevillente Deportivo",
+      "cod_equipo_local": "27170",
+      "cod_equipo_visitante": "9856",
+      "resultado": "0",
+      "resultado_provisional": "0",
+      "campo": "Estadio Mpal. Nelson Mandela F-11 Torrevieja",
+      "escudo_local": "/pnfg/pimg/Clubes/00100_0074582072_ESCUDO.jpg",
+      "escudo_visitante": "/pnfg/pimg/Clubes/00100_0074502475_Crevillente_Deportivo.png",
+      "retirado_local": "0",
+      "retirado_visitante": "0",
+      "codacta": "26470737",
+      "estado": "0",
+      "motivo_estado": ""
+    }
+  ]
+}

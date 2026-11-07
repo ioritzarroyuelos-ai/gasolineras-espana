@@ -15,7 +15,7 @@
 //   páginas ya tienen su propio <h1> de contenido).
 // - MASTHEAD_CSS: los estilos, para inyectar en el <style> de cada página.
 
-export type SeccionActiva = 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | null
+export type SeccionActiva = 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
 
 function esc(s: unknown): string {
   return String(s == null ? '' : s)
@@ -52,7 +52,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + '<img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" decoding="async" />'
     + titulo
     + '</a>'
-    + (opts.compact ? '' : '<p class="mh-tag">Datos oficiales de España al instante · sin registro y gratis</p>')
+    + (opts.compact ? '' : '<p class="mh-tag">Información útil, con fuentes y fechas · sin registro y gratis</p>')
     + '</div>'
     + '<nav class="mh-nav" aria-label="Secciones">'
     + item('/tiempo/', 'tiempo', 'El tiempo')
@@ -60,6 +60,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: b
     + item('/farmacias/', 'farmacias', 'Farmacias')
     + item('/itv/', 'itv', 'ITV')
     + item('/politica/', 'politica', 'Política')
+    + item('/deportes/', 'deportes', 'Deportes')
     + '</nav>'
     + (opts.hideMunicipioSearch ? '' : '<' + municipioTag + ' class="mh-local">'
     + (opts.compact ? '<summary>Tu municipio</summary>' : '')

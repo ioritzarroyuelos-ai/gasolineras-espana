@@ -27,6 +27,15 @@ function navegadorSinConexion() {
 }
 
 describe('copias sin conexión y veda de sondeos', () => {
+  it('deportes no recupera horarios ni marcadores de una copia sin conexión', async () => {
+    const { pedir, almacen } = navegadorSinConexion()
+    for (const ruta of ['/deportes/', '/deportes/futbol', '/deportes/competicion/formula-1', '/data/deportes/index.json']) {
+      const respuesta = await pedir(ruta, ruta.endsWith('.json') ? 'application/json' : 'text/html')
+      expect(respuesta.status).toBe(503)
+      expect(await respuesta.text()).toContain('horarios, resultados y clasificaciones')
+    }
+    expect(almacen.match).not.toHaveBeenCalled()
+  })
   it('el histórico y la descarga de las generales descartan las copias que se guardaron antes de la veda', async () => {
     const { pedir, almacen } = navegadorSinConexion()
     for (const [url, accept] of [

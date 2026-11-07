@@ -442,8 +442,8 @@ export function getStyles(nonce: string = ''): string {
       .masthead.masthead--compact { flex-direction: column; gap: 0; padding: 5px 8px 0; }
       .masthead.masthead--compact .mh-title { font-size: 17px; }
       .masthead.masthead--compact .mh-logo { width: 18px; height: 18px; }
-      .masthead.masthead--compact .mh-nav { margin: 0; width: 100%; justify-content: space-between; flex-wrap: nowrap; }
-      .masthead.masthead--compact .mh-nav a { padding: 10px 3px; font-size: 10px; letter-spacing: .01em; }
+      .masthead.masthead--compact .mh-nav { margin: 0; width: 100%; min-width: 0; justify-content: center; flex-wrap: wrap; }
+      .masthead.masthead--compact .mh-nav a { padding: 10px 3px; font-size: 10px; letter-spacing: .01em; white-space: nowrap; }
       .header-logo-img { display: none; }
       #app-header .user-chip { max-width: 90px; }
       #app-header .user-name { max-width: 48px; }

@@ -14,6 +14,15 @@ export interface MetaItv extends FuenteItv {
 }
 export interface EstacionFuente extends EstacionITV {
   codigo: string
+  idFuente?: string
+}
+export interface IncidenciaItv {
+  id: string
+  idFuente?: string
+  codigo: string
+  prov: string
+  motivo: string
+  fuenteUrl: string
 }
 export interface DatosFuente {
   estaciones: EstacionFuente[]
@@ -29,6 +38,7 @@ export function leeCsvItv(texto: string): Array<Record<string,string>>
 export function estacionesDgt(geojson: unknown, meta: MetaItv): DatosFuente
 export function estacionesGva(csv: string, meta: MetaItv): DatosFuente
 export function estacionesIndustria(filas: unknown[][], meta: MetaItv, ahora?: number): DatosFuente
-export function combinaFuentesItv(fuentes: Array<DatosFuente & {id:string}>): EstacionFuente[]
+export function combinaFuentesItv(fuentes: Array<DatosFuente & {id:string}>, incidencias?: IncidenciaItv[]): EstacionFuente[]
+export function conservaDatosPreviosItv<T extends EstacionFuente>(estaciones: T[], anteriores?: EstacionFuente[], ahora?: number): T[]
 export function migraCopiaDgt(snapshot: {generatedAt?:string;estaciones?:EstacionITV[]}): ParteFuenteItv
 export function actualizaFuenteItv(fuente: FuenteItv, anterior: ParteFuenteItv|null, opciones?: {ahora?:number;fetcher?:typeof fetch}): Promise<ParteFuenteItv>

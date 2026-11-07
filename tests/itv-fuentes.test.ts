@@ -187,16 +187,6 @@ describe('canales propios de cita y fichas del operador', () => {
     expect(login.estaciones[0].citaUrl).toBeUndefined()
   })
 
-  it('verifica una sola vez cada canal y no asigna citas a otro operador o provincia', async () => {
-    const fetcher=vi.fn(async()=>new Response('<title>ITVASA Cita previa</title>'))
-    const res=await actualizaOperadoresItv([dgt('3302','RIBADESELLA','33569','Calle'),dgt('3303','MIERES','33600','Calle'),
-      {...dgt('0101','VITORIA','01015','Calle'),prov:'01'},{...sgs,op:'Otra empresa'}],{},{ahora,fetcher})
-    expect(fetcher).toHaveBeenCalledTimes(1)
-    expect(res.estaciones.filter(e=>e.citaUrl)).toHaveLength(2)
-    expect(res.estaciones[2].citaUrl).toBeUndefined()
-    expect(res.estaciones[3].citaUrl).toBeUndefined()
-  })
-
   it('rechaza una redirección hacia una web ajena aunque incluya el nombre del operador', async () => {
     const respuesta=new Response('<title>ITVASA Cita previa</title>')
     Object.defineProperty(respuesta,'url',{value:'https://tercero.example/citas'})

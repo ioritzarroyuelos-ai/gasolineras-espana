@@ -63,6 +63,78 @@ function fichaSgs(doc, canal, estacion, consulta) {
     contactoFuente:'SGS ITV', contactoFuenteUrl:canal.url, contactoVerificadoEn:consulta }
 }
 
+function formularioItvasa(doc, url) {
+  // Formulario observado en el enlace de primera inspección de www.itvasa.es.
+  // El título y los textos del menú también existen en páginas sin reserva.
+  doc.querySelectorAll('script,style,noscript,template').forEach(n=>n.remove())
+  const cuerpo=doc.querySelector('body'), formulario=cuerpo?.querySelector('form#Datos')
+  if (!formulario || !/ITVASA/i.test(limpia(cuerpo.text))
+      || !/CITA\s*PREVIA/i.test(limpia(cuerpo.text))
+      || formulario.getAttribute('method')?.toLowerCase()!=='post') return false
+  let destino
+  try { destino=new URL(formulario.getAttribute('action') || '',url) } catch { return false }
+  if (destino.origin!==new URL(url).origin || destino.username || destino.password
+      || !/^\/citas\/(?:Default\.aspx)?$/i.test(destino.pathname)) return false
+  if (!['nombre','cif','telefono','matricula'].every(nombre=>{
+    const campo=formulario.querySelector('input[name="'+nombre+'"]')
+    return campo && !campo.hasAttribute('disabled') && !campo.hasAttribute('readonly')
+      && !['hidden','password'].includes(campo.getAttribute('type')?.toLowerCase())
+  })) return false
+  const selector=formulario.querySelector('select[name="selEstacion"]')
+  const estaciones=selector?.querySelectorAll('option').filter(o=>
+    o.getAttribute('value') && o.getAttribute('value')!=='0' && !o.hasAttribute('disabled')
+      && /^ITV\s+D(?:E|EL)\s+/i.test(limpia(o.text))) || []
+  const continuar=formulario.querySelector('input[name="btn_continuar"][type="submit"]')
+  return !selector?.hasAttribute('disabled') && new Set(estaciones.map(o=>clave(o.text))).size>=2
+    && !!continuar && !continuar.hasAttribute('disabled')
+}
+
+function errorOperador(error) {
+  // Node agrupa los fallos de red bajo "fetch failed". Guardamos la causa
+  // concreta sin incluir certificados, cabeceras ni contenido de la respuesta.
+  const codigos=new Set()
+  const visita=(e,nivel=0)=>{
+    if (!e || nivel>4) return
+    if (/^[A-Z0-9_]{3,60}$/.test(e.code || '')) codigos.add(e.code)
+    visita(e.cause,nivel+1)
+    if (Array.isArray(e.errors)) e.errors.forEach(causa=>visita(causa,nivel+1))
+  }
+  visita(error)
+  return limpia((codigos.size ? '['+[...codigos].join(', ')+'] ' : '')+(error?.message || error)).slice(0,160)
+}
+
+function falloTemporal(error,nivel=0) {
+  if (!error || nivel>4) return false
+  if (error.temporal===true || error.name==='TimeoutError') return true
+  if (['UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT',
+    'UND_ERR_SOCKET','ECONNRESET','ETIMEDOUT','EAI_AGAIN'].includes(error.code)) return true
+  if (Array.isArray(error.errors) && error.errors.length)
+    return error.errors.every(e=>falloTemporal(e,nivel+1))
+  return falloTemporal(error.cause,nivel+1)
+}
+
+async function leerCanal(canal,fetcher) {
+  const intentos=canal.id==='itvasa' ? 2 : 1
+  const limite=canal.id==='itvasa' ? 20000 : 12000
+  for (let intento=1;intento<=intentos;intento++) {
+    try {
+      // Sólo lecturas GET: nunca se envían datos personales ni formularios.
+      const res=await fetcher(canal.url,{method:'GET',signal:AbortSignal.timeout(limite)})
+      if (!res.ok) {
+        const temporal=[408,500,502,503,504].includes(res.status) && !res.headers.has('Retry-After')
+        await res.body?.cancel().catch(()=>{})
+        throw Object.assign(Error('HTTP '+res.status),{temporal})
+      }
+      if (res.url && new URL(res.url).origin!==new URL(canal.url).origin) throw Error('Redirección fuera del operador')
+      return parse(await res.text())
+    } catch(error) {
+      if (intento===intentos || !falloTemporal(error)) throw error
+      // Dos intentos como máximo: unos 40,5 s de límite total en ITVASA.
+      await new Promise(resolve=>setTimeout(resolve,500))
+    }
+  }
+}
+
 export async function actualizaOperadoresItv(estaciones, anteriores={}, opciones={}) {
   const consulta=new Date(opciones.ahora ?? Date.now()).toISOString(), fetcher=opciones.fetcher || fetch
   const perfiles={}
@@ -70,23 +142,22 @@ export async function actualizaOperadoresItv(estaciones, anteriores={}, opciones
   await Promise.all(activos.map(async canal=>{
     const previa=anteriores[canal.id]
     try {
-      const res=await fetcher(canal.url,{signal:AbortSignal.timeout(12000)})
-      if (!res.ok) throw Error('HTTP '+res.status)
-      if (res.url && new URL(res.url).origin!==new URL(canal.url).origin) throw Error('Redirección fuera del operador')
-      const doc=parse(await res.text())
+      const doc=await leerCanal(canal,fetcher)
       // Se comprueban identidad y reserva en el contenido, no sólo HTTP 200.
       const titulo=limpia(doc.querySelector('title')?.text)
       const texto=limpia(doc.text)
       if (!canal.operador.test(texto) || !canal.reserva.test(texto)
           || /Just a moment|Access denied|Login -/i.test(titulo))
         throw Error('No se reconoce el canal oficial de citas')
+      if (canal.id==='itvasa' && !formularioItvasa(doc,canal.url))
+        throw Error('No se encuentra el formulario de citas de ITVASA')
       const estacion=estaciones.find(e=>canal.admite(e))
       const detalles=canal.ficha ? fichaSgs(doc,canal,estacion,consulta) : undefined
       const registro=canal.ficha ? clave([estacion.prov,estacion.codigo,estacion.cp,estacion.dir,estacion.op]) : undefined
       perfiles[canal.id]={url:canal.url,nombre:canal.nombre,consultado:consulta,ultimoExito:consulta,estado:'actualizada',detalles,registro}
     } catch(e) {
       perfiles[canal.id]={...(previa?.url===canal.url ? previa : {}),url:canal.url,nombre:canal.nombre,
-        consultado:consulta,estado:'conservada',error:limpia(e.message).slice(0,160)}
+        consultado:consulta,estado:'conservada',error:errorOperador(e)}
     }
   }))
   const resultado=estaciones.map(e=>{

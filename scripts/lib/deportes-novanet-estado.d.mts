@@ -13,7 +13,9 @@ export interface EstadoNovanet {
     iniciadoEn: string
     temporada: { codigo: string; nombre: string } | null
     pendientes: Array<{ tipo: 'raiz' | 'competicion'; ruta: string; delegacion?: string; competicion?: string }>
-    categorias: Array<{ codigo: string; nombre: string; familia: string; grupos: null }>
+    categorias: Array<{ codigo: string; nombre: string; familia: string; grupos: Array<{ codigo: string; nombre: string }> | null }>
+    categoria: number
+    grupo: number
   }
 }
 export function normalizaEstadoNovanet(valor: unknown): EstadoNovanet

@@ -3,6 +3,7 @@ import {
   datosPaginaAcb, normalizaCalendarioAcb, normalizaClasificacionAcb, normalizaNba,
   leerLiteralFeb, codigoFuncion, decodificaRespuestaFeb, normalizaPartidosFeb, normalizaTablaFeb,
   obtieneBaloncesto, normalizaFinalBaseFeb, normalizaClasificacionNba, compruebaLeaguePassEspana,
+  enlacesEquiposNba, normalizaClasificacionEquiposNba, obtieneClasificacionEquiposNba,
 } from '../scripts/lib/deportes-baloncesto.mjs'
 import { validarCompeticionDeportiva } from '../scripts/lib/deportes.mjs'
 import { buildCompeticionDeportesPage, tarjetaEvento } from '../src/html/deportes'
@@ -128,6 +129,95 @@ describe('baloncesto oficial', () => {
     expect(nba?.agenda.estado).toBe('no_disponible')
     expect(nba?.clasificacion.estado).toBe('actualizado')
     expect(nba?.clasificacion.tablas.flatMap(t => t.filas)).toHaveLength(30)
+  })
+
+  const muestraEquipos = () => JSON.parse(fixture('nba-equipos-clasificacion.json'))
+  const htmlDatosNba = (datos: unknown) => '<script id="__NEXT_DATA__" type="application/json">' + JSON.stringify(datos) + '</script>'
+  const catalogoEquipos = (m = muestraEquipos()) => htmlDatosNba({ page: m.paginaCatalogo, props: { pageProps: {} } }) + m.enlaces.map((url: string) => '<a href="' + url + '">Equipo</a>').join('')
+  const paginasEquipos = (m = muestraEquipos()) => m.equipos.map((e: { url: string; datos: unknown }) => ({ url: e.url, html: htmlDatosNba(e.datos) }))
+
+  it('lee 30 fichas NBA oficiales de la misma temporada, con posiciones y balances completos', () => {
+    const m = muestraEquipos(), urls = enlacesEquiposNba(catalogoEquipos(m))
+    expect(urls).toHaveLength(30)
+    expect(urls.every(u => m.equipos.some((e: { url: string }) => e.url === u))).toBe(true)
+    const tablas = normalizaClasificacionEquiposNba(paginasEquipos(m), '2026-27')
+    expect(tablas.map(t => [t.nombre, t.filas.length])).toEqual([['Conferencia Este', 15], ['Conferencia Oeste', 15]])
+    expect(tablas.every(t => t.columnas.map(c => c.clave).join(',') === 'pj,pg,pp')).toBe(true)
+    expect(tablas[0].filas[0]).toMatchObject({ posicion: 1, nombre: 'Philadelphia 76ers', nombreBusqueda: '76ers', valores: { pj: 10, pg: 8, pp: 2 } })
+    expect(tablas.flatMap(t => t.filas).reduce((n, f) => n + Number(f.valores.pg), 0)).toBe(132)
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(m), '2025-26')).toThrow('otra temporada')
+    expect(() => enlacesEquiposNba(catalogoEquipos({ ...m, enlaces: m.enlaces.slice(1) }))).toThrow('30 equipos')
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(m).slice(1), '2026-27')).toThrow('incompleta')
+  })
+
+  it('rechaza fichas NBA de otro equipo, temporada, liga y tablas con posiciones repetidas o balances incompatibles', () => {
+    const otro = muestraEquipos(); otro.equipos[0].datos.props.pageProps.team.info.TEAM_ID++
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(otro), '2026-27')).toThrow('otro equipo')
+    const anterior = muestraEquipos(); anterior.equipos[0].datos.props.pageProps.team.scheduleSeason = '2025-26'
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(anterior), '2026-27')).toThrow('otra temporada')
+    const pretemporada = muestraEquipos(); pretemporada.equipos[0].datos.props.pageProps.team.ranks.SEASON_ID = '12026'
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(pretemporada), '2026-27')).toThrow('otra temporada')
+    const rango = muestraEquipos(), este = rango.equipos.filter((e: any) => e.datos.props.pageProps.team.info.TEAM_CONFERENCE === 'East')
+    este[0].datos.props.pageProps.team.info.CONF_RANK = este[1].datos.props.pageProps.team.info.CONF_RANK
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(rango), '2026-27')).toThrow('posiciones repetidas')
+    const balance = muestraEquipos(), info = balance.equipos[0].datos.props.pageProps.team.info
+    info.W++; info.PCT = Math.round(info.W / (info.W + info.L) * 1000) / 1000
+    expect(() => normalizaClasificacionEquiposNba(paginasEquipos(balance), '2026-27')).toThrow('no coinciden')
+    const duplicado = paginasEquipos(); duplicado[1] = duplicado[0]
+    expect(() => normalizaClasificacionEquiposNba(duplicado, '2026-27')).toThrow('repite equipos')
+  })
+
+  function respuestasEquipos(m = muestraEquipos()) {
+    const respuestas = new Map<string, string>([['https://www.nba.com/teams', catalogoEquipos(m)], ...paginasEquipos(m).map((e: { url: string; html: string }) => [e.url, e.html] as [string, string])])
+    return async (url: RequestInfo | URL) => new Response(respuestas.get(String(url)) || 'Error', { status: respuestas.has(String(url)) ? 200 : 503 })
+  }
+  it('usa las fichas oficiales cuando Stats agota el tiempo, sin perder la agenda ni los alias de favoritos', async () => {
+    const desdeFichas = respuestasEquipos()
+    const resultado = await obtieneBaloncesto({ ahora: Date.parse(fecha), fetcher: async (url, init) => {
+      if (String(url).startsWith('https://stats.nba.com/')) throw new DOMException('Tiempo agotado', 'TimeoutError')
+      if (String(url).startsWith('https://www.nba.com/games?date=')) {
+        const dia = new URL(String(url)).searchParams.get('date')!
+        return new Response(fixture('nba-dia.html').replaceAll('2026-11-07', dia))
+      }
+      return desdeFichas(url)
+    } })
+    const nba = resultado.competiciones.find(c => c.id === 'nba')!
+    expect(nba.agenda.estado).toBe('actualizado')
+    expect(nba.clasificacion.estado).toBe('actualizado')
+    expect(nba.clasificacion.fuenteUrl).toBe('https://www.nba.com/teams')
+    expect(nba.clasificacion.aviso).toContain('30 fichas oficiales')
+    expect(nba.clasificacion.tablas.flatMap(t => t.filas)).toHaveLength(30)
+    expect(resultado.incidencias.some(i => i.nombre === 'NBA · Clasificación')).toBe(false)
+    expect(() => validarCompeticionDeportiva(nba, Date.parse(fecha))).not.toThrow()
+    const e = nba.agenda.eventos[0], fila = nba.clasificacion.tablas.flatMap(t => t.filas).find(f => f.nombreBusqueda === e.local)!
+    const html = buildCompeticionDeportesPage(nba, 'prueba', 'https://web.example/deportes/competicion/nba', new URL('https://web.example/deportes/competicion/nba'), 'madrid')
+    expect(html).toContain('data-fav="baloncesto:' + e.local!.toLowerCase() + '" data-name="' + fila.nombre + '"')
+  })
+
+  it.each([503, 429])('no publica una tabla parcial ni sigue descargando equipos después de HTTP%s', async status => {
+    const desdeFichas = respuestasEquipos(), llamadas: string[] = []
+    await expect(obtieneClasificacionEquiposNba('2026-27', { fetcher: async url => {
+      llamadas.push(String(url))
+      if (String(url).includes('/team/')) return new Response('', { status })
+      return desdeFichas(url)
+    } })).rejects.toThrow('HTTP ' + status)
+    expect(llamadas.filter(u => u.includes('/team/')).length).toBeLessThanOrEqual(2)
+  })
+
+  it('un fallo de una ficha no renueva la clasificación y un429 de Stats no abre otra vía', async () => {
+    const desdeFichas = respuestasEquipos(), urls: string[] = [], fallo = muestraEquipos().equipos[7].url
+    const carga = async (stats429: boolean) => obtieneBaloncesto({ ahora: Date.parse(fecha), fetcher: async url => {
+      urls.push(String(url))
+      if (String(url).startsWith('https://stats.nba.com/')) return new Response('', { status: stats429 ? 429 : 503 })
+      if (String(url) === 'https://www.nba.com/games?date=2026-11-07') return new Response(fixture('nba-dia.html'))
+      if (String(url) === fallo) return new Response('', { status: 503 })
+      return desdeFichas(url)
+    } })
+    const parcial = (await carga(false)).competiciones.find(c => c.id === 'nba')!
+    expect(parcial.clasificacion.estado).toBe('no_disponible'); expect(parcial.clasificacion.tablas).toEqual([]); expect(parcial.clasificacion.verificadoEn).toBeUndefined()
+    urls.length = 0
+    expect((await carga(true)).competiciones.find(c => c.id === 'nba')!.clasificacion.estado).toBe('no_disponible')
+    expect(urls).not.toContain('https://www.nba.com/teams')
   })
 
   it('League Pass exige todos los partidos, cobertura en vivo y España explícitamente', () => {

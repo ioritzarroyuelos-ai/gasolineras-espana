@@ -34,6 +34,7 @@ describe('Supercars: fuentes españolas actuales y tablas generales reales', () 
     expect(sesiones.some(s => s.tipo === 'ra' && s.numero === 2)).toBe(false)
     expect(() => interpretaSesionesCronoJerez(datos.indiceJerez.replace('Festival - Jerez 2026', 'Festival - Jerez 2025'), indice.rondas[3], 2026)).toThrow('temporada')
     expect(() => interpretaSesionesCronoJerez(datos.indiceJerez.replace('Friday, November 6th', 'Friday, October 6th'), indice.rondas[3], 2026)).toThrow('fuera')
+    expect(() => interpretaSesionesCronoJerez(datos.indiceJerez.replaceAll('./2026/JIRF/', 'x/2026/JIRF/'), indice.rondas[3], 2026)).toThrow('No hay sesiones')
   })
   it('comprueba todas las actas capturadas, sin sumar tablas repetidas de otras páginas', () => {
     const cantidades = [15, 16, 18, 21, 20, 20, 26, 27, 27, 27, 27, 26]

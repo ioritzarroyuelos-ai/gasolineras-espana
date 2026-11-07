@@ -59,7 +59,7 @@ export function interpretaSesionesCronoJerez(html, ronda, ano) {
   if (!d.querySelectorAll('h3').some(h => limpia(h.text) === `Iberian Racing Festival - Jerez ${ano}`)) throw Error('Crono-Jerez muestra otro evento o temporada')
   const sesiones = []
   for (const a of d.querySelectorAll('a.resultado')) {
-    const href = (a.getAttribute('href') || '').replace(/[\r\n]/g, ''), m = href.match(new RegExp(`^\./${ano}/JIRF/(tc|gt4)(li|q|ra)([1-3])\\.pdf$`))
+    const href = (a.getAttribute('href') || '').replace(/[\r\n]/g, ''), m = href.match(new RegExp(`^[.]/${ano}/JIRF/(tc|gt4)(li|q|ra)([1-3])\\.pdf$`))
     if (!m) continue
     const dia = limpia(a.parentNode.querySelector('h4')?.text).match(/^[A-Za-z]+, ([A-Za-z]+) (\d+)(?:st|nd|rd|th)$/)
     if (!dia) throw Error('Sesión Crono-Jerez sin día verificable')

@@ -4,7 +4,7 @@ export type { Deporte, CompeticionDeportiva, EventoDeportivo, BloqueDeportivo }
 export type ResumenCompeticion = Omit<CompeticionDeportiva, 'agenda' | 'clasificacion'> & {
   agenda: BloqueDeportivo & { total: number }; clasificacion: BloqueDeportivo & { total: number }; participantes: string[]
 }
-export type EventoAgenda = EventoDeportivo & { competicionId: string; competicion: string; deporte: Deporte; temporada: string; grupo?: string; verificadoEn?: string; conservado: boolean }
+export type EventoAgenda = EventoDeportivo & { competicionId: string; competicion: string; deporte: Deporte; temporada: string; grupo?: string; verificadoEn?: string; conservado: boolean; resultadosDisponibles?: number }
 export interface IndiceDeportes { version: 1; generado: string; dias: string[]; competiciones: ResumenCompeticion[]; incidencias: IncidenciaDeportes[] }
 export const NOMBRES_DEPORTES: Record<Deporte, string> = { futbol: 'Fútbol', baloncesto: 'Baloncesto', motor: 'Motor' }
 export const esDeporte = (s: string): s is Deporte => Object.hasOwn(NOMBRES_DEPORTES, s)

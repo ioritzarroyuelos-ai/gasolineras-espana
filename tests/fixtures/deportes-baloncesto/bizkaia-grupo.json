@@ -1,0 +1,84 @@
+{
+  "group": {
+    "idGroup": "2830",
+    "season": "2026",
+    "idCategory": "650",
+    "idTerritorial": "2",
+    "competitionName": "SENIOR ESPECIAL FEM.",
+    "nameGroup": "GRUPO ÚNICO",
+    "visibility": "1",
+    "resultsVisibles": "1"
+  },
+  "rounds": {
+    "1": {
+      "matches": [
+        {
+          "idMatch": "99992",
+          "idGroup": "2830",
+          "season": "2026",
+          "idCategorySigned": "650",
+          "nameLocalTeam": "ZORNOTZA ST ESP",
+          "nameVisitorTeam": "C.B. ÁGUILAS SALESIANOS DEUSTO ESP",
+          "matchDay": "2026-09-26 20:00:00",
+          "state": "1",
+          "idMatchResult": "83660",
+          "resultsVisibles": true,
+          "localScore": "43",
+          "visitorScore": "59",
+          "numMatchDay": "1",
+          "nameField": "POLIDEPORTIVO IXERBEKOA",
+          "nameTown": "Amorebieta-Echano"
+        },
+        {
+          "idMatch": "100034",
+          "idGroup": "2830",
+          "season": "2026",
+          "idCategorySigned": "650",
+          "nameLocalTeam": "ZORNOTZA ST ESP",
+          "nameVisitorTeam": "ALKIZABAL ZALDUA ST ESP",
+          "matchDay": "2026-11-07 18:00:00",
+          "state": "0",
+          "idMatchResult": null,
+          "resultsVisibles": true,
+          "localScore": null,
+          "visitorScore": null,
+          "numMatchDay": "7",
+          "nameField": "POLIDEPORTIVO IXERBEKOA",
+          "nameTown": "Amorebieta-Echano"
+        }
+      ]
+    }
+  },
+  "standing": [
+    {
+      "idGroup": "2830",
+      "season": "2026",
+      "categoriesRegistred": "650",
+      "teamName": "ERANDIO ALTZAGA MONTAJES MECCANO ESP",
+      "matchPlayed": "7",
+      "matchWin": "5",
+      "matchLost": "2",
+      "matchTie": 0,
+      "matchNotPresent": "0",
+      "position": "1",
+      "standingScore": "12",
+      "matchScoreFavour": "420",
+      "matchScoreAgainst": "329"
+    },
+    {
+      "idGroup": "2830",
+      "season": "2026",
+      "categoriesRegistred": "650",
+      "teamName": "GETXO SBT ESP",
+      "matchPlayed": "6",
+      "matchWin": "5",
+      "matchLost": "1",
+      "matchTie": 0,
+      "matchNotPresent": "0",
+      "position": "2",
+      "standingScore": "11",
+      "matchScoreFavour": "400",
+      "matchScoreAgainst": "314"
+    }
+  ]
+}

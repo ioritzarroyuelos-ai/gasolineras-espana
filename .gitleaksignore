@@ -23,3 +23,21 @@
 # de commits (Sigstore, gitsign), evaluar si conviene filter-repo antes del
 # primer release firmado para limpiar la historia de una vez.
 f64fc9455c8be23c1411d104b0e2e300796f1173:scripts/verify-prod.ps1:generic-api-key:9
+
+# Falsos positivos historicos comprobados el 2026-11-07: ocho imagenes de
+# escudos en una muestra HTML repetian el identificador publico del visor
+# FEGABA/Gesdeportiva. El mismo identificador se publica sin cuenta en
+# https://fegaba.com/resultados-e-clasificacions/ (iframe) y en la tabla
+# publica del grupo 9590; no procede de una cuenta o sesion privada.
+# Evidencia: descargas HTTP 200 del 7 de noviembre de 2026, 14:56:07 UTC
+# (pagina publica) y 15:34:35 UTC (tabla). El lector solo usa texto de celdas.
+# Las ocho imagenes se han retirado de la muestra; se excluyen unicamente
+# estos hallazgos del commit original, nunca la regla ni el archivo completo.
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:26
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:42
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:58
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:74
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:90
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:106
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:122
+f8f0cf90402c747738b7faab1548592019a347bf:tests/fixtures/deportes-baloncesto/galicia-tabla.html:generic-api-key:138

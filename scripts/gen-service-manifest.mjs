@@ -36,7 +36,7 @@ const services = [
   { id: 'politica', name: 'Política', maxAgeHours: 30, items: [item('Índice de elecciones', politica?.generado, politica?.elecciones?.length), ...elecciones] },
   { id: 'deportes', name: 'Deportes', maxAgeHours: 24, items: (deportes?.competiciones || []).flatMap(c =>
     ['agenda', 'clasificacion'].filter(k => c[k]?.verificadoEn).map(k => item(c.nombre + (c.grupo ? ' · ' + c.grupo : '') + ' · ' + (k === 'agenda' ? 'calendario' : 'clasificación'), c[k].verificadoEn, Math.max(1, c[k].total),
-      c[k].estado === 'conservado' ? 'Fuente no disponible. Se conserva su copia anterior.' : undefined))) },
+      c[k].estado === 'conservado' ? 'Copia anterior pendiente de volver a comprobar.' : undefined))) },
 ]
 writeFileSync(resolve(root, 'service-manifest.json'), JSON.stringify({ schema: 1, services }))
 console.log(`Estado: ${services.length} servicios; ${services.reduce((n, s) => n + s.items.length, 0)} fuentes/copias comprobables`)

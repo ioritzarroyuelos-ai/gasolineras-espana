@@ -16,12 +16,25 @@ export interface EventoDeportivo {
   detalle?: string
   fuenteUrl?: string
   emisiones?: EmisionDeportiva[]
+  resultados?: ResultadoSesionDeportiva[]
+}
+export interface ResultadoSesionDeportiva {
+  id: string
+  nombre: string
+  fuenteUrl: string
+  verificadoEn: string
+  conservado?: boolean
+  columnas: Array<{ clave: string; nombre: string }>
+  filas: Array<{ posicion: number | null; nombre: string; nombreBusqueda?: string; valores: Record<string, string | number> }>
 }
 export interface TablaDeportiva {
   id: string
   nombre: string
+  fuenteUrl?: string
+  verificadoEn?: string
+  conservado?: boolean
   columnas: Array<{ clave: string; nombre: string }>
-  filas: Array<{ posicion: number; nombre: string; valores: Record<string, string | number> }>
+  filas: Array<{ posicion: number | null; nombre: string; nombreBusqueda?: string; valores: Record<string, string | number> }>
 }
 export interface BloqueDeportivo {
   estado: 'actualizado' | 'conservado' | 'no_disponible'
@@ -42,7 +55,7 @@ export interface CompeticionDeportiva {
   fuente: FuenteDeportiva
   comprobadoEn: string
   agenda: BloqueDeportivo & { eventos: EventoDeportivo[] }
-  clasificacion: BloqueDeportivo & { tablas: TablaDeportiva[] }
+  clasificacion: BloqueDeportivo & { tablas: TablaDeportiva[]; tablasPendientes?: string[] }
 }
 export interface IncidenciaDeportes { deporte: Deporte; nombre: string; fuenteUrl: string; motivo: string; id?: string }
 export interface ResultadoDeportes { competiciones: CompeticionDeportiva[]; incidencias: IncidenciaDeportes[] }

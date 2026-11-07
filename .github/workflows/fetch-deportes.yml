@@ -19,6 +19,10 @@ on:
         description: Ampliar la pausa de FFCV hasta una fecha ISO con zona; dejar vacío normalmente
         type: string
         required: false
+      portales_no_antes:
+        description: 'Ampliar pausas de portales: objeto JSON {"portal-id":"fecha ISO con zona"}; dejar vacío normalmente'
+        type: string
+        required: false
 
 concurrency:
   group: fetch-deportes
@@ -44,6 +48,12 @@ jobs:
           path: .tmp/deportes-ffcv-checkpoint.json
           key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: deportes-ffcv-v1-
+      - name: Recuperar el progreso de los demás portales federativos
+        uses: actions/cache/restore@v5
+        with:
+          path: .tmp/deportes-novanet
+          key: deportes-novanet-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: deportes-novanet-v1-
       - name: Instalar lectores de fuentes
         run: npm ci --omit=dev --ignore-scripts
       - name: Comprobar calendarios, resultados y clasificaciones
@@ -53,6 +63,7 @@ jobs:
           DEPORTES_FUENTES: ${{ inputs.fuentes }}
           DEPORTES_PROGRAMACION: ${{ github.event.schedule }}
           DEPORTES_FFCV_NO_ANTES: ${{ inputs.ffcv_no_antes }}
+          DEPORTES_PORTALES_NO_ANTES: ${{ inputs.portales_no_antes }}
         run: node scripts/fetch-deportes.mjs
       - name: Conservar progreso y descansos aunque falle la actualización
         if: always() && hashFiles('.tmp/deportes-ffcv-checkpoint.json') != ''
@@ -60,6 +71,12 @@ jobs:
         with:
           path: .tmp/deportes-ffcv-checkpoint.json
           key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Conservar el progreso de los demás portales aunque falle la actualización
+        if: always() && hashFiles('.tmp/deportes-novanet/*.json') != ''
+        uses: actions/cache/save@v5
+        with:
+          path: .tmp/deportes-novanet
+          key: deportes-novanet-v1-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Crear identidad temporal del robot
         if: always() && (steps.fetch.outcome == 'success' || steps.fetch.outcome == 'failure')
         id: data-token
@@ -75,8 +92,8 @@ jobs:
         run: |
           if [ "$FETCH_OUTCOME" = success ]; then
             git add public/data/deportes
-          elif [ -f public/data/deportes/fuentes/ffcv.json ]; then
-            git add public/data/deportes/fuentes/ffcv.json
+          elif [ -d public/data/deportes/fuentes ]; then
+            git add public/data/deportes/fuentes
           fi
           node scripts/publish-data.mjs deportes
       - name: Señalar un fallo de lectura después de conservar los datos y el estado

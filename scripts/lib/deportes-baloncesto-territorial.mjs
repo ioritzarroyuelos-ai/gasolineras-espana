@@ -110,12 +110,17 @@ export function calendarioGipuzkoa(html, grupo, temporada, ahora = Date.now()) {
       if (marcador && (Number(a) > 1000 || Number(b) > 1000)) throw Error('Marcador de Gipuzkoa fuera de rango')
       if (marcador && !aplazamiento && ((inicio && Date.parse(inicio) > ahora) || (fecha && fecha > hoy))) throw Error('Gipuzkoa publica un resultado con fecha futura')
       const nota = texto([aplazamiento, fila.querySelector('.observaciones')?.textContent].filter(Boolean).join(' '))
-      let estado = marcador ? 'finalizado' : /cancelad/i.test(nota) ? 'cancelado' : /aplazad|suspendid/i.test(nota) ? 'aplazado' : inicio && Date.parse(inicio) > ahora ? 'programado' : 'por_confirmar'
+      const cambio = aplazamiento.match(/jornada\s+(\d{2})\/(\d{2})\/(\d{4})/i)
+      const fechaReferencia = aplazamiento ? cambio && `${cambio[3]}-${cambio[2]}-${cambio[1]}` : fecha
+      // El HTML no publica un estado de fin de partido. Un tanteo del mismo día
+      // puede estar en curso aunque la hora de comienzo ya haya pasado.
+      const final = marcador && fechaDeportiva(fechaReferencia) && fechaReferencia < hoy
+      let estado = final ? 'finalizado' : /cancelad/i.test(nota) ? 'cancelado' : /aplazad|suspendid/i.test(nota) ? 'aplazado' : marcador ? 'por_confirmar' : inicio && Date.parse(inicio) > ahora ? 'programado' : 'por_confirmar'
       // La fecha de la jornada de destino no es la nueva fecha real del partido.
       // Tampoco se conserva como hora real la fecha original de un aplazamiento.
       const fechaEvento = aplazamiento ? null : fecha
       if (aplazamiento) inicio = null
-      const evento = { id: `gip-${id}`, nombre: `${local} – ${visitante}`, local, visitante, inicio, fecha: inicio ? null : fechaEvento, estado, jornada, ...(lugar ? { lugar } : {}), ...(nota ? { detalle: nota } : {}), fuenteUrl: urlGrupo(grupo, CALENDARIO), ...(marcador ? { resultado: { local: Number(a), visitante: Number(b) } } : {}) }
+      const evento = { id: `gip-${id}`, nombre: `${local} – ${visitante}`, local, visitante, inicio, fecha: inicio ? null : fechaEvento, estado, jornada, ...(lugar ? { lugar } : {}), ...(nota ? { detalle: nota } : {}), fuenteUrl: urlGrupo(grupo, CALENDARIO), ...(final ? { resultado: { local: Number(a), visitante: Number(b) } } : {}) }
       const anterior = eventos.get(evento.id)
       if (anterior && (anterior.local !== local || anterior.visitante !== visitante || JSON.stringify(anterior.resultado) !== JSON.stringify(evento.resultado))) throw Error('Partido repetido con datos contradictorios')
       // El mismo encuentro puede figurar en la jornada original y la de recuperación.

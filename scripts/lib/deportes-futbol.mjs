@@ -1,6 +1,9 @@
+import { fechaMadrid, fechaEspanola } from './deportes-futbol-fechas.mjs';
+export { fechaMadrid } from './deportes-futbol-fechas.mjs';
 import { parse } from 'node-html-parser';
 import { leerFuenteDeportiva, validaUrlDeportiva } from './deportes.mjs';
 import { creaConsultaFFCV, creaEstadoFFCV, generoFFCV } from './deportes-ffcv-estado.mjs';
+import { obtieneNovanet, fusionaCompeticionesFutbol } from './deportes-futbol-novanet.mjs';
 export { creaEstadoFFCV, normalizaEstadoFFCV, generoFFCV } from './deportes-ffcv-estado.mjs';
 
 const LALIGA = 'https://www.laliga.com';
@@ -71,19 +74,6 @@ export function parseaClasificacionLaLiga(html, esperada) {
   return { temporada: `${datos.season}-${Number(datos.season) + 1}`, tablas: [{ id: 'general', nombre: 'Clasificación general', columnas, filas }] };
 }
 
-/** Horas peninsulares de las competiciones nacionales publicadas por RFEF. */
-export function fechaMadrid(fecha, hora) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(hora)) return null;
-  const base = Date.parse(`${fecha}T${hora}:00Z`);
-  if (!Number.isFinite(base) || new Date(base).toISOString().slice(0, 10) !== fecha) return null;
-  const formatea = valor => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(valor));
-  // Check both offsets instead of assuming that summer and winter have the same clock.
-  for (const horas of [1, 2]) {
-    const candidato = base - horas * 3600000;
-    if (formatea(candidato) === `${fecha} ${hora}`) return new Date(candidato).toISOString();
-  }
-  return null;
-}
 
 export function descubreFutsal(html) {
   const enlaces = new Map();
@@ -265,12 +255,6 @@ async function obtienePrimeraFederacion(opciones) {
   return { competiciones, incidencias };
 }
 
-function fechaEspanola(valor) {
-  const m = texto(valor).match(/^(\d{2})[/-](\d{2})[/-](\d{4})$/);
-  if (!m) return null;
-  const fecha = `${m[3]}-${m[2]}-${m[1]}`;
-  return fechaMadrid(fecha, '12:00') ? fecha : null;
-}
 
 export function eligeJornadasFFCV(jornadas, ahora = Date.now()) {
   const ordenadas = jornadas.map(j => ({ ...j, fechaISO: fechaEspanola(j.fecha_jornada) })).filter(j => j.fechaISO && numero(j.codjornada)).sort((a, b) => a.fechaISO.localeCompare(b.fechaISO));
@@ -508,38 +492,24 @@ export async function obtieneFutbol(opciones = {}) {
     obtieneRFEFFemeninoYJuvenil(opciones),
     obtieneFFCV(opciones),
   ]);
+  const primarias = resultados.filter(r => r.status === 'fulfilled').flatMap(r => r.value.competiciones);
+  const gruposCubiertosFutbol = primarias.filter(c => c.agenda.estado === 'actualizado' && (c.clasificacion.estado === 'actualizado' || c.clasificacion.aviso?.includes('eliminatorias'))).map(c => c.id);
+  resultados.push(...await Promise.allSettled([obtieneNovanet({ ...opciones, gruposCubiertosFutbol })]));
   const competiciones = [], incidencias = [];
+  const rfefResueltas = new Set(resultados[7].status === 'fulfilled' ? resultados[7].value.rfefResueltas : []);
   for (const [i, resultado] of resultados.entries()) {
     if (resultado.status === 'fulfilled') { competiciones.push(...resultado.value.competiciones); incidencias.push(...resultado.value.incidencias); }
-    else incidencias.push(incidencia(['Primera División', 'Segunda División', 'Liga F', 'Fútbol sala', 'Primera Federación', 'Fútbol RFEF femenino y juvenil', 'Comunidad Valenciana'][i], [LALIGA, LALIGA, LALIGA, FUTSAL, `${LALIGA}/otras-competiciones/primera-federacion`, RFEF, FFCV][i], resultado.reason.message));
+    else incidencias.push(incidencia(['Primera División', 'Segunda División', 'Liga F', 'Fútbol sala', 'Primera Federación', 'Fútbol RFEF femenino y juvenil', 'Comunidad Valenciana', 'Federaciones nacionales y territoriales'][i], [LALIGA, LALIGA, LALIGA, FUTSAL, `${LALIGA}/otras-competiciones/primera-federacion`, RFEF, FFCV, 'https://marcadores.rfef.es/pnfg/NPcd/NFG_CmpJornada?cod_primaria=1000120'][i], resultado.reason.message));
   }
   // Keep the federation's actual catalogue visible without claiming its failed selector delivers results.
   try {
     const catalogo = descubreCatalogoRFEF(await leerFuenteDeportiva(RFEF, opciones));
     const pendientes = catalogo.filter(c => !/^(Campeonato Nacional de Liga de (Primera|Segunda) División|Campeonato Nacional de Liga de Primera Federación|Primera División de Fútbol Femenino|Liga Prime Futsal|Primera División Fútbol Sala Femenino|Segunda División Fútbol Sala Masculino|Segunda División Fútbol Sala Femenino)$/.test(c.nombre));
-    for (const competicion of pendientes) incidencias.push(incidencia(competicion.nombre, RFEF, `La federación enumera esta competición (${competicion.temporada}), pero todavía no podemos verificar automáticamente todos sus grupos, resultados y horarios. Consulta el selector oficial.`, `rfef-catalogo-${competicion.id}`));
+    for (const competicion of pendientes.filter(c => !rfefResueltas.has(c.id))) incidencias.push(incidencia(competicion.nombre, RFEF, `La federación enumera esta competición (${competicion.temporada}). Su lectura por grupos está pendiente o es parcial; consulta las fichas verificadas y el selector oficial para el resto.`, `rfef-catalogo-${competicion.id}`));
   } catch (error) { incidencias.push(incidencia('Resto de categorías RFEF', RFEF, error.message)); }
   incidencias.push(
     incidencia('Fútbol territorial de Cataluña', 'https://www.fcf.cat/ca/competicio', 'El selector es público, pero sus consultas de temporadas, categorías y resultados rechazan nuestra descarga (HTTP 403). Todavía no están integradas aquí.', 'territorial-cataluna'),
-    incidencia('Fútbol territorial de Euskadi', 'https://www.euskadifutbol.eus/', 'La descarga pública comprobada redirige a una pantalla de acceso. Todavía no podemos verificar automáticamente sus partidos.', 'territorial-euskadi'),
-    incidencia('Fútbol territorial de Madrid', 'https://www.rffm.es/competicion/resultados-y-clasificaciones', 'La federación publica su consulta de resultados, pero todavía no hay una conexión verificada con sus grupos y jornadas.', 'territorial-madrid'),
-    incidencia('Fútbol territorial de Andalucía', 'https://www.rfaf.es/', 'La consulta pública comprobada redirige a una pantalla de acceso; todavía no podemos verificar automáticamente sus resultados.', 'territorial-andalucia'),
-    incidencia('Fútbol territorial de Galicia', 'https://www.futgal.es/', 'La consulta pública comprobada redirige a una pantalla de acceso; todavía no podemos verificar automáticamente sus resultados.', 'territorial-galicia'),
-    incidencia('Fútbol territorial de Castilla y León', 'https://www.rfcylf.es/', 'La consulta pública comprobada redirige a una pantalla de acceso; todavía no podemos verificar automáticamente sus resultados.', 'territorial-castilla-leon'),
-    incidencia('Fútbol territorial de Navarra', 'https://www.futnavarra.es/', 'La consulta pública comprobada redirige a una pantalla de acceso; todavía no podemos verificar automáticamente sus resultados.', 'territorial-navarra'),
-    ...[
-      ['Asturias', 'asturias', 'https://www.asturfutbol.es/'],
-      ['Aragón', 'aragon', 'https://www.futbolaragon.com/'],
-      ['Baleares', 'baleares', 'https://ffib.es/Fed/NPcd/NFG_CmpJornada?cod_primaria=1000110'],
-      ['Región de Murcia', 'murcia', 'https://webffrm.novanet.es/pnfg/NPcd/NFG_CmpJornada?cod_primaria=1000120'],
-      ['Extremadura', 'extremadura', 'https://www.fexfutbol.com/'],
-      ['Canarias', 'canarias', 'https://www.federacioncanariafutbol.es/pnfg/NPortada'],
-      ['Cantabria', 'cantabria', 'https://www.rfcf.es/'],
-      ['La Rioja', 'rioja', 'https://www.frfutbol.com/'],
-      ['Castilla-La Mancha', 'castilla-la-mancha', 'https://www.ffcm.es/'],
-      ['Ceuta', 'ceuta', 'https://www.rffce.es/'],
-      ['Melilla', 'melilla', 'https://www.rfmf.es/'],
-    ].map(([nombre, id, url]) => incidencia(`Fútbol territorial de ${nombre}`, url, 'La consulta automática comprobada redirige a una pantalla de acceso; todavía no hemos podido verificar sus grupos ni partidos.', `territorial-${id}`)),
+    incidencia('Cataluña · calendario inicial de Lliga Elit 2026-2027', 'https://d3l7f0n0i8l1n6.cloudfront.net/5cfa4babcaeb7736958c7d520997216a.pdf', 'Calendario inicial enlazado por la federación, revisado el 7 de noviembre de 2026: 30 jornadas y 240 emparejamientos. Publica fechas generales de jornada, sin horarios concretos ni resultados. No se actualiza automáticamente; consulta el buscador oficial para cambios posteriores.', 'territorial-cataluna-calendario-elit'),
   );
-  return { competiciones, incidencias };
+  return { competiciones: fusionaCompeticionesFutbol([], competiciones), incidencias };
 }

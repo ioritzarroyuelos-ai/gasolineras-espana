@@ -1,443 +1,164 @@
-// Landing del portal España Útil — home pública en `/`.
-//
-// Diseño "periódico web" (Ship 28): en vez de una rejilla de tiles/cuadrados,
-// una portada tipo diario — cabecera con fecha + cabecera de marca, un menú de
-// secciones, y bloques con DATO REAL Y FRESCO (el tiempo de hoy de las ciudades
-// grandes y la media nacional de carburantes), más el acceso a cada sección.
-//
-// Sigue siendo HTML estático SIN JavaScript:
-//   - Render instantáneo, ideal para SEO y LCP.
-//   - Sin bundle, sin fetch, sin service worker. CSP estricta (nonce en <style>
-//     y en el JSON-LD; no hay <script> ejecutable).
-//   - Los datos (fecha, carburantes, tiempo) los calcula el servidor en el
-//     handler de `/` (src/index.tsx) y se inyectan aquí ya listos. Si un dato no
-//     está disponible, su bloque degrada con elegancia (no se rompe la página).
-//
-// Compatibilidad:
-//   - `/?action=...` (shortcuts PWA viejos) se maneja en index.tsx ANTES de
-//     llegar aquí (redirect a /gasolineras/mapa).
-//   - Se conserva el meta google-site-verification (Google lo lee SOLO en `/`),
-//     el canonical, OG y el JSON-LD (WebSite + ItemList de servicios).
-
+// Cerca de ti y Mi día: HTML útil sin JavaScript; personalización local progresiva.
 import { APP_VERSION } from '../lib/version'
-import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { BRAND } from '../lib/brand'
-import { emojiCielo } from './cielo'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
+import { CERCA_CSS } from './cerca-styles'
 import { localidadHtml, LOCALIDAD_CSS } from './localidades'
-import type { Localidad, LocalidadIndex } from '../lib/localidades'
-import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
+import { serviciosLocalidad, type Localidad, type LocalidadIndex } from '../lib/localidades'
+import { escapeHtml as esc, jsonLdScript } from './html'
+import { emojiCielo } from './cielo'
+import { ogSocialTags } from './seo'
+import { prediccionVigente, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
+import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
+import { bloqueAtrasado, fechaConsultaDeporte, etiquetaEstadoDeporte, type CompeticionDeportiva } from '../lib/deportes'
 
-/** Una ciudad de la franja "El tiempo hoy" (ya resuelta en el servidor). */
 export interface LandingTiempo {
-  nombre: string
-  provincia: string
-  url: string          // /tiempo/<prov>/<mun>
-  tmax: number | null
-  tmin: number | null
-  cielo: string
+  nombre: string; url: string; tmax: number | null; tmin: number | null; cielo: string
+  elaborado?: string; fuente?: string
 }
-
-/** Datos frescos que el handler de `/` inyecta en la portada. Todo opcional:
- *  si falta algo, ese bloque degrada sin romper la página. */
 export interface LandingData {
   localidad?: Localidad
   encontrados?: LocalidadIndex[]
   query?: string
-  gasolina?: { g95?: number; diesel?: number } // media nacional €/L
-  tiempo?: LandingTiempo[]                      // ciudades grandes con dato fresco
+  gasolina?: { g95?: number; diesel?: number; fecha?: string }
+  tiempo?: LandingTiempo[]
+  deporte?: CompeticionDeportiva
+  vista?: 'inicio' | 'mi-dia'
 }
+const MODULOS = [
+  { id: 'tiempo', nombre: 'El tiempo', url: '/tiempo/' },
+  { id: 'gasolineras', nombre: 'Gasolineras', url: '/gasolineras/' },
+  { id: 'deportes', nombre: 'Deportes', url: '/deportes/' },
+  { id: 'farmacias', nombre: 'Farmacias de guardia', url: '/farmacias/' },
+  { id: 'itv', nombre: 'ITV', url: '/itv/' },
+  { id: 'politica', nombre: 'Política', url: '/politica/' },
+] as const
+type Modulo = typeof MODULOS[number]['id']
+const PREDETERMINADOS: Modulo[] = ['tiempo', 'gasolineras', 'deportes']
 
-// Escape HTML para cualquier string dinámico (nombres de municipio, cielo…).
-function esc(s: unknown): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
-
-// Precio €/L con coma decimal (1.529 -> "1,529").
-function precio(n: number): string {
-  return n.toFixed(3).replace('.', ',') + '&nbsp;€/L'
-}
-
-
-// Una celda de ciudad en la franja del tiempo.
-function celdaTiempo(t: LandingTiempo): string {
-  const mx = t.tmax != null ? t.tmax + '°' : '--'
-  const mn = t.tmin != null ? t.tmin + '°' : '--'
-  return '<a class="wx" href="' + esc(t.url) + '">'
-    + '<span class="wx-city">' + esc(t.nombre) + '</span>'
-    + '<span class="wx-emoji" aria-hidden="true">' + emojiCielo(t.cielo) + '</span>'
-    + '<span class="wx-temp"><span class="mx">' + esc(mx) + '</span> <span class="mn">' + esc(mn) + '</span></span>'
-    + (t.cielo ? '<span class="wx-sky">' + esc(t.cielo) + '</span>' : '')
-    + '</a>'
-}
-
-export function buildLandingPage(
-  nonce: string = '',
-  reqUrl: string = 'https://webapp-3ft.pages.dev/',
-  data: LandingData = {},
-): string {
-  let origin = 'https://webapp-3ft.pages.dev'
-  try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
-
-  const canonical = origin + '/'
-  const title = 'España Útil · Información útil, con fuentes y fechas'
-  const desc = 'El tiempo, gasolineras, farmacias de guardia, ITV, elecciones y deportes. Información con fuentes y fechas de consulta, sin registro y gratis.'
-  const logoUrl = origin + '/static/logo.svg'
-
-  // JSON-LD: WebSite + ItemList de servicios (Google lo usa para sitelinks).
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@graph': [
-      {
-        '@type': 'WebSite',
-        '@id': origin + '/#website',
-        name: BRAND,
-        alternateName: BRAND + ' — Datos oficiales de España',
-        url: origin,
-        description: desc,
-        inLanguage: 'es-ES',
-        publisher: { '@id': origin + '/#organization' },
-      },
-      {
-        '@type': 'Organization',
-        '@id': origin + '/#organization',
-        name: BRAND,
-        url: origin,
-        logo: logoUrl,
-      },
-      {
-        '@type': 'ItemList',
-        name: 'Servicios de ' + BRAND,
-        itemListElement: [
-          {
-            '@type': 'ListItem',
-            position: 1,
-            item: {
-              '@type': 'Service',
-              name: 'El tiempo por municipio',
-              description: 'Predicción del tiempo por municipio en España con datos oficiales de AEMET.',
-              url: origin + '/tiempo/',
-              serviceType: 'Predicción meteorológica',
-              areaServed: { '@type': 'Country', name: 'España' },
-            },
-          },
-          {
-            '@type': 'ListItem',
-            position: 2,
-            item: {
-              '@type': 'Service',
-              name: 'Gasolineras',
-              description: 'Precios oficiales de carburantes en tiempo real en toda España.',
-              url: origin + '/gasolineras/',
-              serviceType: 'Consulta de precios de combustible',
-              areaServed: { '@type': 'Country', name: 'España' },
-            },
-          },
-          {
-            '@type': 'ListItem',
-            position: 3,
-            item: {
-              '@type': 'Service',
-              name: 'Farmacias España',
-              description: 'Farmacias cercanas con horarios y farmacias de guardia por semana.',
-              url: origin + '/farmacias/',
-              serviceType: 'Localización de farmacias y guardias',
-              areaServed: { '@type': 'Country', name: 'España' },
-            },
-          },
-          {
-            '@type': 'ListItem',
-            position: 4,
-            item: {
-              '@type': 'Service',
-              name: 'Estaciones de ITV',
-              description: 'Estaciones de ITV cercanas con dirección, teléfono y precios.',
-              url: origin + '/itv/',
-              serviceType: 'Localización de estaciones de ITV',
-              areaServed: { '@type': 'Country', name: 'España' },
-            },
-          },
-          { '@type': 'ListItem', position: 5, item: { '@type': 'Service', name: 'Elecciones y sondeos', url: origin + '/politica/', serviceType: 'Información electoral' } },
-          { '@type': 'ListItem', position: 6, item: { '@type': 'Service', name: 'Deportes', url: origin + '/deportes/', serviceType: 'Calendarios, resultados y clasificaciones deportivas' } },
-        ],
-      },
-    ],
+function icono(id: string): string {
+  const paths: Record<string, string> = {
+    tiempo: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+    gasolineras: '<path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16M2 21h14M4 11h10M14 12h2a2 2 0 0 1 2 2v3a2 2 0 0 0 4 0V8l-4-4M19 5v4h3"/>',
+    farmacias: '<path d="M8 3h8v5h5v8h-5v5H8v-5H3V8h5z"/>',
+    deportes: '<circle cx="12" cy="12" r="9"/><path d="m12 7 5 4-2 6H9l-2-6zM12 3v4m9 4h-4M17 20l-2-3M7 20l2-3M3 11h4"/>',
+    itv: '<path d="m4 10 2-6h12l2 6M3 10h18v9H3zM6 19v2m12-2v2M6 14h2m8 0h2"/>',
+    politica: '<path d="m3 9 9-6 9 6H3m1 12h16M6 12v5m6-5v5m6-5v5"/>',
+    guardar: '<path d="M6 3h12v19l-6-4-6 4z"/>',
+    mapa: '<path d="m2 6 6-3 8 3 6-3v15l-6 3-8-3-6 3zM8 3v15m8-12v15"/>',
+    ajustes: '<path d="M4 6h16M4 12h16M4 18h16M8 3v6m8 0v6m-6 0v6"/>',
   }
-
-  // --- Bloque "El tiempo hoy" (franja de ciudades o gancho si no hay dato) ---
-  const tiempo = Array.isArray(data.tiempo) ? data.tiempo : []
-  const bloqueTiempo = tiempo.length
-    ? '<div class="strip">' + tiempo.map(celdaTiempo).join('') + '</div>'
-      + '<a class="more" href="/tiempo/">El tiempo de tu municipio &rarr;</a>'
-    : '<p class="lead-note">Busca tu municipio para consultar la previsión y los avisos de AEMET.</p>'
-      + '<a class="more" href="/tiempo/">Buscar el tiempo de tu municipio &rarr;</a>'
-
-  // --- Bloque carburantes (media nacional o línea genérica) ---
-  const g = data.gasolina || {}
-  const bloqueGas = (g.g95 != null || g.diesel != null)
-    ? (g.g95 != null ? '<p class="dato"><span class="d-label">Gasolina 95</span> <span class="price">' + precio(g.g95) + '</span></p>' : '')
-      + (g.diesel != null ? '<p class="dato"><span class="d-label">Gasóleo A</span> <span class="price">' + precio(g.diesel) + '</span></p>' : '')
-      + '<p class="d-note">media nacional de hoy · precios oficiales del Ministerio</p>'
-    : '<p>Precios oficiales de carburantes en tiempo real, mapa y comparador por combustible.</p>'
-
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="color-scheme" content="light" />
-  <meta name="theme-color" content="#16a34a" />
-
-  <title>${esc(title)}</title>
-  <meta name="description" content="${esc(desc)}" />
-  <link rel="canonical" href="${esc(canonical)}" />
-
-  <!-- Verificacion de propiedad en Google Search Console. Google la lee SOLO en
-       la portada, asi que tiene que seguir aqui: si se quita, Search Console
-       desverifica la propiedad y se pierde el acceso a los informes. -->
-  <meta name="google-site-verification" content="qzv_20xQiNesXM4hX5ZqYozonYMqZhY-Wop2Tndu81w" />
-
-  <!-- Favicons + logos (comparten con la app de gasolineras) -->
-  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png" />
-  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-
-  <!-- Open Graph / Twitter para compartir -->
-  <meta property="og:type" content="website" />
-  <meta property="og:locale" content="es_ES" />
-  <meta property="og:site_name" content="España Útil" />
-  <meta property="og:title" content="${esc(title)}" />
-  <meta property="og:description" content="${esc(desc)}" />
-  <meta property="og:url" content="${esc(canonical)}" />
-  <meta property="og:image" content="${esc(origin)}/static/og.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="España Útil · información con fuentes y fechas" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="${esc(title)}" />
-  <meta name="twitter:description" content="${esc(desc)}" />
-  <meta name="twitter:image" content="${esc(origin)}/static/og.png" />
-
-  <meta name="robots" content="index,follow,max-image-preview:large" />
-  <meta name="generator" content="España Útil v${APP_VERSION}" />
-
-  ${jsonLdScript(jsonLd, nonce)}
-
-  <style nonce="${nonce}">
-    :root {
-      color-scheme: light;
-      --paper: #faf8f4;
-      --surface: #ffffff;
-      --ink: #1a1a1a;
-      --muted: #5b6470;
-      --brand: #16a34a;
-      --brand-dark: #166534;
-      --brand-soft: #dcfce7;
-      --rule: #d9d4c9;
-    }
-    *, *::before, *::after { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
-    body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
-      background: var(--paper);
-      color: var(--ink);
-      line-height: 1.55;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-    }
-    ${MASTHEAD_CSS}
-    /* ---- Cuerpo ---- */
-    main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 26px 20px 12px; }
-    .kicker {
-      font-size: 12px; font-weight: 700; text-transform: uppercase;
-      letter-spacing: 0.08em; color: var(--brand-dark); margin: 0 0 2px;
-    }
-    h2 {
-      font-family: Georgia, 'Times New Roman', serif; color: var(--ink);
-      margin: 0;
-    }
-    /* Lead: El tiempo hoy */
-    .lead h2 {
-      font-size: clamp(22px, 4vw, 30px); margin: 0 0 12px;
-      border-bottom: 2px solid var(--ink); padding-bottom: 8px;
-    }
-    .lead-note { color: var(--muted); margin: 0 0 8px; }
-    .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 10px; }
-    .wx {
-      display: flex; flex-direction: column; gap: 2px; padding: 12px;
-      border: 1px solid var(--rule); border-radius: 10px; background: var(--surface);
-      text-decoration: none; color: var(--ink);
-      transition: border-color 0.15s ease, transform 0.15s ease;
-    }
-    .wx:hover { border-color: var(--brand); transform: translateY(-2px); }
-    .wx:focus-visible { border-color: var(--brand); outline: 2px solid var(--brand-dark); outline-offset: 2px; }
-    .wx-city { font-weight: 700; font-size: 14px; }
-    .wx-emoji { font-size: 24px; line-height: 1; }
-    .wx-temp .mx { font-weight: 800; color: var(--brand-dark); font-size: 18px; }
-    .wx-temp .mn { color: var(--muted); font-size: 14px; }
-    .wx-sky { font-size: 12px; color: var(--muted); }
-    .more {
-      display: inline-block; margin-top: 12px; font-weight: 700;
-      color: var(--brand-dark); text-decoration: none;
-    }
-    .more:hover { text-decoration: underline; }
-    /* Columnas de secciones (periódico) */
-    .cols {
-      display: grid; grid-template-columns: 1fr; gap: 0;
-      margin: 24px 0 4px; border-top: 1px solid var(--rule);
-    }
-    .col { padding: 18px 0; border-top: 1px solid var(--rule); }
-    .col:first-child { border-top: none; }
-    .col h2 { font-size: 20px; margin: 0 0 8px; }
-    .col p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
-    .dato { margin: 0 0 4px; font-size: 15px; color: var(--ink); display: flex; justify-content: space-between; gap: 12px; max-width: 320px; }
-    .d-label { color: var(--ink); }
-    .price { font-weight: 800; color: var(--brand-dark); white-space: nowrap; }
-    .d-note { color: var(--muted); font-size: 13px; margin: 6px 0 10px; }
-    .sub-link { display: block; font-size: 14px; color: var(--brand-dark); text-decoration: underline; margin-top: 4px; }
-    .sub-link:hover { text-decoration: none; }
-    @media (min-width: 720px) {
-      .cols { grid-template-columns: repeat(3, 1fr); }
-      .col { padding: 18px 22px; border-top: none; border-left: 1px solid var(--rule); }
-      .col:first-child { padding-left: 0; border-left: none; }
-    }
-    /* Más: consulta por municipio (enlazado interno para SEO) */
-    .mas { margin: 22px 0 4px; border-top: 3px double var(--ink); padding-top: 14px; }
-    .mas h2 { font-size: 16px; margin: 0 0 10px; }
-    .mas ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; grid-template-columns: 1fr; }
-    .mas li a {
-      display: block; padding: 11px 14px; border: 1px solid var(--rule);
-      border-radius: 8px; background: var(--surface); color: var(--ink);
-      text-decoration: none; font-size: 14px;
-    }
-    .mas li a:hover { border-color: var(--brand); }
-    @media (min-width: 720px) { .mas ul { grid-template-columns: 1fr 1fr; } }
-    /* ---- Footer ---- */
-    footer {
-      padding: 26px 20px; text-align: center; font-size: 13px;
-      color: var(--muted); border-top: 1px solid var(--rule); margin-top: 18px;
-    }
-    footer a { color: var(--brand-dark); text-decoration: underline; }
-    footer a:hover { text-decoration: none; }
-    footer .foot-links { margin-bottom: 8px; }
-    footer .foot-links a { margin: 0 8px; }
-    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
-    ${LOCALIDAD_CSS}
-  </style>
-</head>
-<body>
-  ${mastheadHtml(null, { brandAsH1: false })}
-  <h1 class="sr-only">El tiempo, gasolineras, farmacias, ITV, elecciones y deportes con fuentes verificables</h1>
-
-  <main>
-    ${localidadHtml(data.localidad, data.encontrados, data.query)}
-    <section class="lead" aria-labelledby="t-tiempo">
-      <p class="kicker">Hoy en España</p>
-      <h2 id="t-tiempo">El tiempo hoy</h2>
-      ${bloqueTiempo}
-    </section>
-
-    <div class="cols">
-      <section class="col" aria-labelledby="t-gas">
-        <h2 id="t-gas">Gasolineras</h2>
-        ${bloqueGas}
-        <a class="more" href="/gasolineras/">Precios y mapa cerca de ti &rarr;</a>
-      </section>
-
-      <section class="col" aria-labelledby="t-farm">
-        <h2 id="t-farm">Farmacias de guardia</h2>
-        <p>Qué farmacia está de guardia hoy, provincia por provincia, y farmacias por municipio.</p>
-        <a class="more" href="/farmacias/guardia">Ver farmacias de guardia &rarr;</a>
-        <a class="sub-link" href="/farmacias/">Buscar farmacia por municipio</a>
-      </section>
-
-      <section class="col" aria-labelledby="t-itv">
-        <h2 id="t-itv">ITV</h2>
-        <p>Estaciones de ITV de toda España con dirección, teléfono, precios y cómo llegar.</p>
-        <a class="more" href="/itv/">Buscar estación de ITV &rarr;</a>
-      </section>
-
-      <section class="col" aria-labelledby="t-pol">
-        <h2 id="t-pol">Política</h2>
-        <p>Fechas de las elecciones y todos los sondeos, con los escaños estimados frente al último resultado.</p>
-        <a class="more" href="/politica/">Elecciones y sondeos &rarr;</a>
-      </section>
-      <section class="col" aria-labelledby="t-deportes">
-        <h2 id="t-deportes">Deportes</h2>
-        <p>Calendarios, resultados y clasificaciones de fútbol, baloncesto y motor, con sus fuentes y fechas de consulta.</p>
-        <a class="more" href="/deportes/">Consultar deportes &rarr;</a>
-      </section>
-    </div>
-
-    <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
-         una isla. Verificado en Search Console: Googlebot entra por aqui y
-         recorre enlaces; si no hay camino, tarda mucho mas en descubrirlas. -->
-    <nav class="mas" aria-label="Consulta por municipio">
-      <h2>Consulta por municipio</h2>
-      <ul>
-        <li><a href="/tiempo/">Previsión y avisos por municipio</a></li>
-        <li><a href="/farmacias/guardia">Farmacias de guardia hoy, provincia por provincia</a></li>
-        <li><a href="/itv/">Estaciones de ITV por provincia y municipio</a></li>
-        <li><a href="/politica/">Elecciones y sondeos (generales, europeas y autonómicas)</a></li>
-        <li><a href="/precios-carburantes">Observatorio de precios de los carburantes</a></li>
-      </ul>
-    </nav>
-  </main>
-
-  <footer>
-    <div class="foot-links">
-      <a href="/tiempo/">El tiempo</a>·
-      <a href="/gasolineras/">Gasolineras</a>·
-      <a href="/farmacias/">Farmacias</a>·
-      <a href="/farmacias/guardia">Farmacias de guardia</a>·
-      <a href="/itv/">ITV</a>·
-      <a href="/politica/">Política</a>·
-      <a href="/deportes/">Deportes</a>·
-      <a href="/precios-carburantes">Precios</a>·
-      <a href="/acerca">Acerca y fuentes</a>·
-      <a href="/privacidad">Privacidad</a>·
-      <a href="/status">Estado del servicio</a>
-    </div>
-    <div>España Útil v${APP_VERSION} · Datos oficiales de fuentes públicas</div>
-  </footer>
-</body>
-</html>`
+  return `<svg class="eu-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[id] || paths.guardar}</svg>`
+}
+function fecha(ts?: string | null, zona = 'Europe/Madrid'): string {
+  if (!ts || !Number.isFinite(Date.parse(ts))) return ''
+  return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: zona }).format(new Date(ts))
+}
+function guardar(id: Modulo): string {
+  const nombre = MODULOS.find(m => m.id === id)!.nombre
+  return `<button hidden class="eu-bookmark" type="button" data-dia-toggle="${id}" aria-pressed="false" aria-label="Guardar ${esc(nombre)} en Mi día">${icono('guardar')}<span class="sr-only" data-dia-toggle-label>Guardar</span></button>`
+}
+function abreTarjeta(id: Modulo, day: boolean, clase = ''): string {
+  const nombre = MODULOS.find(m => m.id === id)!.nombre
+  return `<article class="eu-card ${clase}" data-dia-module="${id}"${day && !PREDETERMINADOS.includes(id) ? ' hidden' : ''}><div class="eu-card-top"><span class="eu-tag">${icono(id)}${esc(nombre)}</span>${day ? '' : guardar(id)}</div>`
+}
+function tiempoLocal(data: LandingData): LandingTiempo | undefined {
+  const m = data.localidad
+  if (!m) return data.tiempo?.[0]
+  const p = prediccionVigente(m.tiempo.pred)
+  const hoy = fechaHoraLocal(new Date(), zonaTiempo(m.ine)).slice(0, 10)
+  const d = p?.dias.find(d => d.fecha.slice(0, 10) === hoy)
+  return d && p ? { nombre: m.nombre, url: m.tiempo.url, ...d, elaborado: p.elaborado, fuente: p.fuente } : undefined
+}
+function tarjetaTiempo(data: LandingData, day: boolean): string {
+  const t = tiempoLocal(data), m = data.localidad
+  const url = m?.tiempo.url || t?.url || '/tiempo/'
+  return abreTarjeta('tiempo', day, 'eu-weather')
+    + `<h2>${esc(m?.nombre || t?.nombre || 'El tiempo cerca de ti')}</h2>`
+    + (t ? `<div class="eu-weather-main"><div><div class="eu-weather-number">${esc(t.tmax ?? '—')}°</div><span class="eu-weather-range">Máxima del día · mínima ${esc(t.tmin ?? '—')}°</span></div><span class="eu-weather-symbol" aria-hidden="true">${emojiCielo(t.cielo)}</span></div><p class="eu-weather-summary">${esc(t.cielo || 'Consulta la previsión por horas')}</p><p class="eu-source">Previsión de hoy · ${esc(t.fuente || 'AEMET')}${t.elaborado ? ' · elaborado ' + esc(fecha(t.elaborado, m ? zonaTiempo(m.ine) : 'Europe/Madrid')) : ''}</p>`
+      : `<div class="eu-weather-main"><p class="eu-weather-empty">${m ? 'Consulta la previsión de tu municipio.' : '¿Paraguas o gafas de sol?'}</p><span class="eu-weather-symbol" aria-hidden="true">?</span></div><p class="eu-muted">${m ? 'No tenemos un resumen vigente para hoy. Comprueba la última predicción y los avisos.' : 'Elige tu municipio para ver la previsión y los avisos de tu zona.'}</p>`)
+    + `<div class="eu-card-foot"><a href="${esc(url)}">${t ? 'Previsión por horas y avisos' : 'Consultar el tiempo'} →</a></div>`
+    + (!m && !day && (data.tiempo?.length || 0) > 1 ? `<div class="eu-weather-strip">${data.tiempo!.slice(1, 4).map(x => `<a href="${esc(x.url)}">${esc(x.nombre)} · ${esc(x.tmax ?? '—')}° máx.</a>`).join('')}</div>` : '') + '</article>'
+}
+function tarjetaGas(data: LandingData, day: boolean): string {
+  const m = data.localidad, g = data.gasolina
+  const age = Date.now() - Date.parse(m?.gas.ts || '')
+  const localPrice = m && age >= -300000 && age <= 86400000 ? m.gas.min95 : undefined
+  const price = m ? localPrice : g?.g95
+  return abreTarjeta('gasolineras', day, 'eu-gas')
+    + `<h2>${m ? 'Reposta en ' + esc(m.nombre) : 'Tu próxima parada, al mejor precio.'}</h2>`
+    + (price ? `<p class="eu-price-label">${m ? 'Gasolina 95 desde' : 'Gasolina 95 · media nacional'}</p><p class="eu-price">${price.toFixed(3).replace('.', ',')} <small>€/L</small></p>` : '')
+    + (!m && g?.diesel ? `<p class="eu-price-label">Gasóleo A · media nacional <strong>${g.diesel.toFixed(3).replace('.', ',')} €/L</strong></p>` : '')
+    + `<p class="eu-muted">${m ? esc(price ? m.gas.count + (m.gas.count === 1 ? ' estación con precios publicados.' : ' estaciones con precios publicados.') : serviciosLocalidad(m)[0].detalle) : 'Compara los precios, filtra por combustible y encuentra tu gasolinera en el mapa.'}</p>`
+    + (m ? `<p class="eu-source">${m.gas.ts ? 'Datos del Ministerio · ' + esc(fecha(m.gas.ts)) : 'Consulta la fecha de los precios en el mapa.'}</p>` : g?.fecha ? `<p class="eu-source">Datos del Ministerio: ${esc(g.fecha)}</p>` : '')
+    + (day ? '<h3>Tus gasolineras guardadas</h3><div class="eu-favorites" data-dia-gas-favs><p>Abre el mapa y pulsa la estrella de una gasolinera para guardarla.</p></div>' : '')
+    + `<div class="eu-card-foot"><a class="eu-button" href="/gasolineras/mapa">${icono('mapa')} Abrir mapa de gasolineras</a><a href="${esc(m?.gas.url || '/gasolineras/')}">${m ? 'Ver precios en tu zona' : 'Buscar por municipio'} →</a></div></article>`
+}
+function tarjetaDeportes(data: LandingData, day: boolean): string {
+  const c = data.deporte, now = Date.now()
+  // Selección sobre la agenda validada. Nunca inferimos que está en directo por la hora.
+  const events = c?.agenda.eventos || []
+  const event = [...events].filter(e => e.estado === 'finalizado' && e.resultado && e.inicio && Date.parse(e.inicio) <= now).sort((a,b) => Date.parse(b.inicio!) - Date.parse(a.inicio!))[0]
+    || [...events].filter(e => e.estado === 'programado' && e.inicio && Date.parse(e.inicio) > now).sort((a,b) => Date.parse(a.inicio!) - Date.parse(b.inicio!))[0]
+  return abreTarjeta('deportes', day)
+    + '<h2>El deporte que te mueve.</h2>'
+    + (event && c ? `<p class="eu-muted">LaLiga · ${esc(etiquetaEstadoDeporte(event))} · ${esc(fecha(event.inicio))}</p><div class="eu-score"><span>${esc(event.local || event.nombre)}</span><b>${event.estado === 'finalizado' ? esc(event.resultado?.local) : '—'}</b><span>${esc(event.visitante || '')}</span><b>${event.estado === 'finalizado' ? esc(event.resultado?.visitante) : '—'}</b></div><p class="eu-source">${bloqueAtrasado(c.agenda) ? 'Datos pendientes de actualizar. ' : ''}Consulta: ${esc(fechaConsultaDeporte(c.agenda.verificadoEn))}. No es un marcador en directo. <a href="/deportes/competicion/${esc(c.id)}?vista=${event.estado === 'finalizado' ? 'resultados' : 'calendario'}">${event.estado === 'finalizado' ? 'Resultados' : 'Calendario'} y fuente</a></p>` : '<p class="eu-muted">Resultados, próximos partidos, clasificaciones y dónde verlo, con sus fuentes.</p>')
+    + (day ? '<h3>Lo que sigues</h3><div class="eu-favorites" data-dia-sport-favs><p>Pulsa ☆ en Deportes para seguir equipos, pilotos y competiciones.</p></div>' : '')
+    + '<div class="eu-direct"><a href="/deportes/futbol">Fútbol</a><a href="/deportes/baloncesto">Baloncesto</a><a href="/deportes/motor">Motor</a></div><div class="eu-card-foot"><a href="/deportes/">Ver deportes y clasificaciones →</a></div></article>'
+}
+function tarjeta(id: Modulo, data: LandingData, day: boolean): string {
+  if (id === 'tiempo') return tarjetaTiempo(data, day)
+  if (id === 'gasolineras') return tarjetaGas(data, day)
+  if (id === 'deportes') return tarjetaDeportes(data, day)
+  const m = data.localidad
+  if (id === 'farmacias') return abreTarjeta(id, day, 'eu-pharmacy')
+    + '<div class="eu-pharmacy-symbol" aria-hidden="true">+</div>'
+    + `<h2>${m ? 'Farmacias en ' + esc(m.nombre) : 'Una farmacia cuando la necesitas.'}</h2><p class="eu-muted">Consulta qué farmacia está de guardia, su horario y cómo llegar. Llama antes de desplazarte.</p>`
+    + `<div class="eu-card-foot"><a href="${esc(m?.farmacias.url || '/farmacias/guardia')}">Consultar turnos y horarios →</a></div></article>`
+  if (id === 'itv') return abreTarjeta(id, day)
+    + '<h2>Tu ITV, más a mano.</h2>'
+    + `<p class="eu-muted">${m ? esc(serviciosLocalidad(m)[3].detalle) + '. ' : ''}Consulta estaciones, compara las tarifas disponibles y abre la cita oficial.</p><p class="eu-source">Las plazas y los horarios se confirman en la web de cada estación.</p><div class="eu-card-foot"><a href="${esc(m?.itv.url || '/itv/')}">Buscar estación de ITV →</a></div></article>`
+  return abreTarjeta(id, day)
+    + '<h2>La política, más clara.</h2><p class="eu-muted">Fechas electorales, resultados y sondeos. Cada cifra con su fuente y su fecha.</p><div class="eu-direct"><a href="/politica/generales">Congreso</a><a href="/politica/generales/senado">Senado</a><a href="/politica/europeas">Europeas</a></div><div class="eu-card-foot"><a href="/politica/">Ver elecciones y sondeos →</a></div></article>'
+}
+function ajustes(): string {
+  return `<section class="eu-adjust" id="mi-dia-ajustes" aria-labelledby="mi-dia-ajustes-titulo" hidden><h2 id="mi-dia-ajustes-titulo">Pon Mi día a tu gusto</h2><p>Elige tus bloques y usa las flechas para decidir qué aparece primero.</p><ul class="eu-settings">${MODULOS.map(m => `<li class="eu-setting" data-dia-setting="${m.id}"><label><input type="checkbox" data-dia-visible="${m.id}"${PREDETERMINADOS.includes(m.id) ? ' checked' : ''}>${m.nombre}</label><span class="eu-setting-arrows"><button type="button" data-dia-up="${m.id}" aria-label="Subir ${m.nombre}">↑</button><button type="button" data-dia-down="${m.id}" aria-label="Bajar ${m.nombre}">↓</button></span></li>`).join('')}</ul><p>Tu municipio se elige en la cabecera. Tus gasolineras, equipos y competiciones se guardan con la estrella de su sección.</p><button class="eu-button" id="mi-dia-listo" type="button">Listo</button></section>`
 }
 
-// Headers HTTP para la landing. CSP estricta con nonce para el JSON-LD y el
-// <style> inline; no hay <script> ejecutable, ni CDNs, ni fetch (connect-src
-// 'self' basta). Sin cambios respecto al diseño anterior (sigue sin JS).
-export function landingHeaders(nonce: string): Record<string, string> {
-  const csp = [
-    "default-src 'self'",
-    "script-src 'self' 'nonce-" + nonce + "'",
-    "style-src 'self' 'nonce-" + nonce + "'",
-    "img-src 'self' data:",
-    "font-src 'self'",
-    "connect-src 'self'",
-    "frame-ancestors 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "object-src 'none'",
-    "upgrade-insecure-requests",
-    "report-uri /api/csp-report",
-    "report-to csp-endpoint",
-  ].join('; ')
+export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.dev/', data: LandingData = {}): string {
+  let origin = 'https://webapp-3ft.pages.dev'
+  try { origin = new URL(reqUrl).origin } catch { /* Origen de respaldo. */ }
+  const day = data.vista === 'mi-dia', canonical = origin + (day ? '/mi-dia' : '/')
+  const title = day ? 'Mi día · Tu información a mano | España Útil' : 'España Útil · El tiempo, gasolineras y mucho más cerca de ti'
+  const desc = 'El tiempo, gasolineras, farmacias de guardia, ITV, elecciones y deportes. Información con fuentes y fechas, sin registro y gratis. Organiza tu propio Mi día.'
+  const query = data.localidad ? '?municipio=' + data.localidad.ine : ''
+  const schema = { '@context': 'https://schema.org', '@graph': [
+    { '@type': 'WebSite', '@id': origin + '/#website', name: BRAND, url: origin, description: desc, inLanguage: 'es-ES', publisher: { '@id': origin + '/#organization' } },
+    { '@type': 'Organization', '@id': origin + '/#organization', name: BRAND, url: origin, logo: origin + '/static/logo.svg' },
+    { '@type': 'ItemList', name: 'Servicios de ' + BRAND, itemListElement: MODULOS.map((m, i) => ({ '@type': 'ListItem', position: i + 1, item: { '@type': 'Service', name: m.nombre, url: origin + m.url } })) },
+  ] }
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light"><meta name="theme-color" content="#137954"><title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><link rel="canonical" href="${esc(canonical)}"><meta name="robots" content="${day ? 'noindex,follow' : 'index,follow,max-image-preview:large'}"><meta name="google-site-verification" content="qzv_20xQiNesXM4hX5ZqYozonYMqZhY-Wop2Tndu81w"><link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(canonical)}">${ogSocialTags(origin)}<meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="generator" content="España Útil v${APP_VERSION}">${jsonLdScript(schema, nonce)}<style nonce="${esc(nonce)}">${PORTAL_BASE_CSS}${MASTHEAD_CSS}${CERCA_CSS}${LOCALIDAD_CSS}</style></head><body>${mastheadHtml(day ? 'mi-dia' : 'inicio')}
+  <main class="eu-main"${day ? ' data-mi-dia' : ''}>
+    ${day ? `<a class="eu-link" href="/${query}">← Volver a Cerca de ti</a><div class="eu-day-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h1>Tu día. <span>A tu manera.</span></h1><p>Lo que te interesa, en el orden que tú eliges. Se recuerda en este navegador, sin crear una cuenta.</p></div><button hidden id="mi-dia-personalizar" class="eu-button secondary" type="button" aria-expanded="false" aria-controls="mi-dia-ajustes">${icono('ajustes')} Personalizar Mi día</button></div>${ajustes()}`
+      : `<section class="eu-hero" aria-labelledby="portada-titulo"><div class="eu-intro"><p class="eu-eyebrow">Tu zona. Tus planes. Tu día.</p><h1 id="portada-titulo">Hoy lo tienes <span>más cerca.</span></h1><p>El tiempo, gasolineras, farmacias, ITV, política y deportes. Todo a mano para que sigas con tu día.</p><div class="eu-actions"><a class="eu-button" href="/mi-dia${query}">Organizar Mi día →</a><a class="eu-link" href="#cerca-servicios">Explorar los servicios ↓</a></div></div>${tarjetaTiempo(data, false)}</section>`}
+    ${localidadHtml(data.localidad, data.encontrados, data.query, day ? '/mi-dia' : '/')}
+    ${day ? '<noscript><p class="eu-muted">Puedes consultar estos servicios sin JavaScript. Para personalizar los bloques y recordar tus preferencias, activa JavaScript en tu navegador.</p></noscript><section id="mi-dia-vacio" class="eu-empty" hidden><h2>Tu día empieza aquí</h2><p>Añade los bloques que quieras ver, o vuelve a la selección inicial.</p><button type="button" class="eu-button" data-dia-reset>Restaurar mis bloques</button></section>' : '<div class="eu-section-head" id="cerca-servicios"><h2>Lo que necesitas, a un toque.</h2><p>Guarda tus bloques favoritos en Mi día.</p></div>'}
+    <div class="eu-grid${day ? '' : ' eu-home-grid'}"${day ? ' id="mi-dia-modulos"' : ''}>${(day ? MODULOS.map(m => m.id) : ['gasolineras', 'farmacias', 'deportes', 'itv', 'politica'] as Modulo[]).map(id => tarjeta(id, data, day)).join('')}</div>
+    <p class="sr-only" id="mi-dia-estado" role="status" aria-live="polite"></p>
+    <section class="eu-support"><div><h2>${day ? 'Tus favoritos vienen contigo.' : 'Menos buscar. Más hacer.'}</h2><p>${day ? 'Las estrellas del mapa y de Deportes aparecen también aquí. Elige tu municipio para tener a mano sus servicios.' : 'Entra en Mi día, elige lo que te interesa y ordénalo como prefieras. La próxima vez, lo encontrarás a tu gusto.'}</p></div><a class="eu-button secondary" href="${day ? '/gasolineras/mapa?action=favs' : '/mi-dia' + query}">${day ? 'Ver favoritas en el mapa' : 'Descubrir Mi día →'}</a></section>
+    <nav class="eu-direct" aria-label="Más información"><a href="/precios-carburantes">Resumen de precios de carburantes</a><a href="/farmacias/guardia">Guardias por provincia</a><a href="/acerca">Fuentes de los datos</a></nav>
+  </main><footer class="eu-footer"><p><strong>España Útil.</strong> Cerca de lo que importa.</p><nav aria-label="Información de la web"><a href="/acerca">Acerca y fuentes</a><a href="/privacidad">Privacidad</a><a href="/status">Estado de los datos</a></nav></footer><script src="/static/mi-dia.js?v=${APP_VERSION}" defer></script></body></html>`
+}
 
+export function landingHeaders(nonce: string): Record<string, string> {
   return {
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': csp,
-    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
-    'Cross-Origin-Resource-Policy': 'same-origin',
-    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
-    'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // Los cambios de fecha peninsular y canaria coinciden con una hora UTC en punto.
-    'Cache-Control': 'public, max-age=' + Math.min(300, Math.floor((3600000 - Date.now() % 3600000) / 1000)) + ', must-revalidate',
+    'Content-Security-Policy': ["default-src 'self'", "script-src 'self' 'nonce-" + nonce + "'", "style-src 'self' 'nonce-" + nonce + "'", "img-src 'self' data:", "font-src 'self'", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'", 'upgrade-insecure-requests', 'report-uri /api/csp-report', 'report-to csp-endpoint'].join('; '),
+    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Resource-Policy': 'same-origin',
+    'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()', 'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
+    // No recuperar una previsión o un resultado personal antiguo al volver atrás/offline.
+    'Cache-Control': 'no-store',
   }
 }

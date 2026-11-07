@@ -13,7 +13,8 @@
 // de guardias en el cliente: solo un indice pequeno de municipios.
 
 import { APP_VERSION } from '../lib/version'
-import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 export function buildFarmaciasPage(
@@ -48,7 +49,7 @@ export function buildFarmaciasPage(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#16a34a" />
+  <meta name="theme-color" content="#137954" />
 
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(desc)}" />
@@ -78,22 +79,19 @@ export function buildFarmaciasPage(
   ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
+    ${PORTAL_BASE_CSS}
     :root {
       color-scheme: light;
-      --c-bg: #f8fafc; --c-surface: #ffffff; --c-text: #0f172a; --c-muted: #475569;
-      --c-brand-dark: #14532d; --c-brand: #16a34a; --c-brand-soft: #dcfce7;
-      --c-border: #e2e8f0; --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
+      --c-surface: #ffffff; --c-text: var(--eu-ink); --c-muted: var(--eu-muted);
+      --c-brand-dark: var(--eu-accent); --c-brand: var(--eu-accent); --c-brand-soft: var(--eu-soft);
+      --c-border: var(--eu-line); --c-shadow: 0 4px 12px rgba(15,23,42,0.06);
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; font-family: system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-      color: var(--c-text); background: var(--c-bg); line-height: 1.5; }
     ${MASTHEAD_CSS}
-    ${CABECERA_COMPACTA_CSS}
-    main { max-width: 640px; margin: 0 auto; padding: 24px 18px 40px; }
-    h1 { font-size: 26px; line-height: 1.2; margin: 8px 0 6px; }
-    .lead { color: var(--c-muted); margin: 0 0 22px; font-size: 15px; }
-    .search { position: relative; }
-    .search label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 15px; }
+    main { max-width: 840px; margin: 0 auto; padding: 24px 18px 40px; }
+    h1 { font-size: clamp(30px,4.5vw,48px); line-height: 1.12; margin: 8px 0 6px; }
+    .lead { color: var(--c-muted); margin: 0 0 22px; font-size:17px; }
+    .search { position:relative; background:var(--eu-surface); border:1px solid var(--eu-line); border-radius:22px; padding:22px; }
+    .search label { display: block; font-weight: 600; margin-bottom: 6px; font-size:17px; }
     .search-row { display: flex; gap: 6px; }
     .search button,.retry { font: inherit; padding: 8px 14px; border: 1px solid #166534; border-radius: 10px;
       font-weight: 600; background: #166534; color: white; cursor: pointer; }

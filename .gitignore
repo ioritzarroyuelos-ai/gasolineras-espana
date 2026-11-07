@@ -62,6 +62,7 @@ public/data/localidades-index.json
 public/data/tiempo/buscador-v1.json
 public/data/localidades/
 public/static/municipio.js
+public/static/mi-dia.js
 
 # parte de ejecución del robot de política (efímero, lo lee politica-monitor.mjs
 # en el mismo job de CI para avisar; no se commitea). Los datos SÍ: public/data/politica/*.json

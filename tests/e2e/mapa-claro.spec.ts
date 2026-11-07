@@ -181,6 +181,20 @@ for (const width of [390, 320]) {
     // Con resultados ya cargados el asa prioriza la lista; antes de recibirlos
     // abre los filtros. Esperar la tarjeta en el DOM fija el caso que probamos.
     await expect(card).toBeAttached({ timeout: 20000 })
+    // La cabecera nueva puede ocupar dos filas, pero debe dejar el mapa útil
+    // dentro de la pantalla y sus accesos siguen disponibles en 320 y 390 px.
+    await expect(page.locator('.mh-day')).toBeVisible()
+    await expect.poll(() => page.locator('#app-body').evaluate(el => Math.abs(el.getBoundingClientRect().bottom + window.scrollY - window.innerHeight))).toBeLessThanOrEqual(1)
+    const encuadre = await page.evaluate(() => ({
+      cabecera: document.querySelector('.masthead')!.getBoundingClientRect().height,
+      mapa: document.querySelector('#map-container')!.getBoundingClientRect().height,
+      pantalla: window.innerHeight,
+    }))
+    expect(encuadre.cabecera).toBeLessThan(160)
+    expect(encuadre.mapa).toBeGreaterThan(420)
+    await info.attach('alturas-mapa-' + width, { body: JSON.stringify(encuadre), contentType: 'application/json' })
+    await expect.poll(() => page.evaluate(() => Boolean((window as any).mapLayers.light.getMaplibreMap?.().areTilesLoaded())), { timeout: 15000, message: 'El mapa vectorial termina de cargar antes de revisar su captura' }).toBe(true)
+    await page.screenshot({ path: info.outputPath('mapa-cerca-mi-dia-' + width + '.png') })
     await tocarVisible(page.locator('#btn-sheet-toggle'))
     await expect(page.locator('#sidebar')).toHaveClass(/\bopen\b/)
     // Antes de tocar los filtros, deja que el panel llegue a su altura final.

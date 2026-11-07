@@ -2,25 +2,25 @@ import type { ResultadoTiempo } from '../lib/tiempo-municipios'
 import { escapeHtml as esc } from './html'
 
 export const CSS_BUSCADOR_MUNICIPIOS = `
-.met-buscador{margin:0;max-width:40rem}
+.met-buscador{margin:0;max-width:44rem;padding:22px;border:1px solid var(--eu-line);border-radius:22px;background:var(--eu-surface)}
 .met-buscador label{display:block;font-weight:650;margin-bottom:.4rem}
 .met-campo{position:relative;display:flex;gap:.4rem}
-.met-campo input{flex:1;min-width:0;font:inherit;font-size:1rem;border:1px solid #839788;border-radius:.45rem;padding:.65rem .8rem;color:#172d21;background:#fff}
-.met-campo button{border:0;border-radius:.45rem;background:#225535;color:#fff;font:inherit;font-weight:650;padding:.55rem 1rem;cursor:pointer}
+.met-campo input{flex:1;min-width:0;font:inherit;font-size:1rem;border:1px solid #839788;border-radius:12px;padding:.65rem .8rem;color:#172d21;background:#fff}
+.met-campo button{border:0;border-radius:12px;background:var(--eu-accent);color:#fff;font:inherit;font-weight:650;padding:.55rem 1rem;cursor:pointer}
 .met-campo :focus-visible,.met-resultados a:focus-visible{outline:3px solid #22683e;outline-offset:2px}
 .met-sugs,.met-resultados{list-style:none;margin:0;padding:0}
-.met-sugs{position:absolute;z-index:5;left:0;right:0;top:calc(100% + .3rem);background:white;border:1px solid #a9bab0;border-radius:.45rem;box-shadow:0 .3rem 1rem #12332319;overflow-y:auto;max-height:17rem}
+.met-sugs{position:absolute;z-index:5;left:0;right:0;top:calc(100% + .3rem);background:white;border:1px solid #a9bab0;border-radius:12px;box-shadow:0 .3rem 1rem #12332319;overflow-y:auto;max-height:17rem}
 .met-sugs [role=option],.met-resultados a{display:flex;align-items:baseline;justify-content:space-between;gap:.65rem;min-height:44px;padding:.65rem .85rem;box-sizing:border-box}
 .met-sugs [role=option]{cursor:pointer}
-.met-sugs [aria-selected=true],.met-sugs [role=option]:hover,.met-resultados a:hover{background:#edf4ea}
+.met-sugs [aria-selected=true],.met-sugs [role=option]:hover,.met-resultados a:hover{background:var(--eu-soft)}
 .met-sugs strong,.met-resultados strong{min-width:0;overflow-wrap:anywhere}
 .met-sugs small,.met-resultados small{color:#49594c;max-width:45%;flex-shrink:0;text-align:right;overflow-wrap:anywhere}
-.met-resultados{border:1px solid #ccdad0;border-radius:.45rem;max-width:40rem}
+.met-resultados{border:1px solid #ccdad0;border-radius:12px;max-width:40rem}
 .met-resultados li+li{border-top:1px solid #dfe6dc}
-.met-resultados a{color:#214e30;text-decoration:none}
+.met-resultados a{color:var(--eu-accent);text-decoration:none}
 .met-solo-lector{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .met-error{margin:.6rem 0;color:#7c291b;font-size:.95rem}
-.met-error p{margin:0 0 .4rem}.met-error button{font:inherit;padding:.5rem .8rem;border:1px solid #839788;border-radius:.4rem;background:white;color:#214e30;cursor:pointer}
+.met-error p{margin:0 0 .4rem}.met-error button{font:inherit;padding:.5rem .8rem;border:1px solid #839788;border-radius:.4rem;background:white;color:var(--eu-accent);cursor:pointer}
 `
 
 export function resultadosMunicipios(consulta: string, resultados: ResultadoTiempo[], ambito: '/tiempo' | '/itv'): string {

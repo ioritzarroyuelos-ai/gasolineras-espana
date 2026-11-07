@@ -4,7 +4,8 @@ import { telefonosItv, mapsHref, enlaceOficialItv, normalizaNombreMunicipio } fr
 import { TARIFAS, LIBERALIZADAS, SIN_DATO, NOMBRE_IMPUESTO, TASA_DGT_FUENTE, TARIFAS_REVISADAS, tarifaVigente, desglosa, type Tarifa } from '../lib/itv-tarifas'
 import type { ResultadoTiempo } from '../lib/tiempo-municipios'
 import { DISTANCIA_MAX_ITV_KM } from '../lib/itv-busqueda'
-import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
 import { buscadorItv, resultadosItv, CSS_BUSCADOR_ITV } from './itv-buscador'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 import { escapeHtml as esc } from './html'
@@ -56,16 +57,15 @@ export function avisoDirectorio(updatedAt?: string, now = Date.now(), fuentes?: 
 }
 
 
-const CSS = ' :root{color-scheme:light;--vd:#225535;--tx:#243129;--mu:#53635a;--bd:#d3ddd5;--bg:#f5f7f3}'
-  + '*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.55}'
-  + 'main{max-width:1000px;margin:0 auto;padding:24px 20px 32px}h1{font-family:Georgia,serif;font-size:clamp(27px,4vw,40px);line-height:1.2;margin:0 0 10px}h2{font-size:21px;margin:28px 0 14px}h3{font-size:19px;line-height:1.3;margin:0 0 8px}'
+const CSS = PORTAL_BASE_CSS + ' :root{color-scheme:light;--vd:var(--eu-accent);--tx:var(--eu-ink);--mu:var(--eu-muted);--bd:var(--eu-line);--bg:var(--eu-soft)}'
+  + 'main{max-width:1120px;margin:0 auto;padding:24px 20px 32px}h1{font-family:var(--eu-font);font-size:clamp(30px,4vw,48px);line-height:1.2;margin:0 0 10px}h2{font-size:21px;margin:28px 0 14px}h3{font-size:19px;line-height:1.3;margin:0 0 8px}'
   + 'a{color:var(--vd)}.sub,.meta{color:var(--mu)}.sub{margin:0 0 22px}.meta{font-size:13px;margin:8px 0}.hint{font-size:14px;color:var(--mu);margin:10px 0 22px}'
-  + '.card,.precio-box{border:1px solid var(--bd);border-radius:14px;padding:20px;background:#fff;min-width:0;overflow-wrap:anywhere}.card p{margin:8px 0}.cards,.precios{display:grid;gap:16px}.precios{grid-template-columns:repeat(2,minmax(0,1fr))}.precio-box{background:var(--bg)}'
-  + '.card .horario{margin:14px 0;font-size:14px}.acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #9db1a2;border-radius:8px;background:#fff;color:var(--vd);text-decoration:none;font:inherit;font-size:14px;font-weight:650;text-align:center}.btn--principal{color:#fff;background:var(--vd);border-color:var(--vd)}'
+  + '.card,.precio-box{border:1px solid var(--bd);border-radius:22px;padding:24px;background:#fff;min-width:0;overflow-wrap:anywhere}.card p{margin:8px 0}.cards,.precios{display:grid;gap:16px}.precios{grid-template-columns:repeat(2,minmax(0,1fr))}.precio-box{background:var(--eu-surface)}'
+  + '.card .horario{margin:14px 0;font-size:14px}.acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #9db1a2;border-radius:12px;background:#fff;color:var(--vd);text-decoration:none;font:inherit;font-size:14px;font-weight:650;text-align:center}.btn--principal{color:#fff;background:var(--vd);border-color:var(--vd)}'
   + ':focus-visible{outline:3px solid #22683e;outline-offset:3px}.aviso{padding:12px 15px;margin:22px 0;background:var(--bg);border-left:3px solid #5c825e;font-size:14px}.aviso p:last-child{margin-bottom:0}summary{cursor:pointer;font-weight:650;min-height:24px}.aviso ul{padding-left:22px}.aviso li{margin:10px 0}'
-  + '.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0}.lista a{display:block;padding:9px 12px;border:1px solid var(--bd);border-radius:9px;text-decoration:none;min-height:44px}.lista b{color:var(--mu);margin-left:5px;font-weight:400}.lista a:hover,.btn:hover{background:#eaf0e8}.btn--principal:hover{background:#163e26}'
+  + '.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0}.lista a{display:block;padding:9px 12px;border:1px solid var(--bd);border-radius:12px;text-decoration:none;min-height:44px}.lista b{color:var(--mu);margin-left:5px;font-weight:400}.lista a:hover,.btn:hover{background:#eaf0e8}.btn--principal:hover{background:#163e26}'
   + '.precio-linea{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:10px 0}.precio-linea b{font-size:26px;color:var(--vd);white-space:nowrap}.precio-nota{font-size:14px;margin:12px 0}.precio-fuente,.precio-desg{font-size:13px;color:var(--mu);margin:10px 0 0}.precio-box .etiqueta{font-size:13px;color:var(--mu);margin:0}.precio-box .pendiente{font-weight:650}'
-  + '.filtro{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:22px 0}.filtro label{display:block;font-weight:650;margin:0 0 5px}.filtro select{font:inherit;min-height:44px;padding:8px 35px 8px 12px;border:1px solid #839788;border-radius:8px;background:#fff;color:var(--tx)}'
+  + '.filtro{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:22px 0}.filtro label{display:block;font-weight:650;margin:0 0 5px}.filtro select{font:inherit;min-height:44px;padding:8px 35px 8px 12px;border:1px solid #839788;border-radius:12px;background:#fff;color:var(--tx)}'
   + '.motivos{padding-left:22px}.motivos li{margin:12px 0}.legal{margin-top:24px;padding-top:16px;border-top:1px solid var(--bd);color:var(--mu);font-size:14px}.volver{margin:0 0 18px;font-size:14px}.distancia{font-weight:650;color:var(--vd)}footer{border-top:1px solid var(--bd);padding:22px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + '@media(max-width:600px){main{padding:22px 16px}.precios{grid-template-columns:1fr}.card,.precio-box{padding:17px}.acciones .btn{flex:1 1 140px}.precio-linea b{font-size:24px}}'
 
@@ -80,7 +80,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<meta name="robots" content="' + (m.noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large') + '">'
     + ogSocialTags(originFromCanonical(m.canonical)) + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32">'
     + [m.jsonLd, m.breadcrumb].filter(Boolean).map(j => '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + j + '</script>').join('')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + CSS_BUSCADOR_ITV + '</style></head><body>'
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + CSS_BUSCADOR_ITV + '</style></head><body>'
     + mastheadHtml('itv', { compact: true, hideMunicipioSearch: true }) + '<main>' + cuerpo
     + '</main><footer>Directorio elaborado con fuentes oficiales. <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer></body></html>'
 }

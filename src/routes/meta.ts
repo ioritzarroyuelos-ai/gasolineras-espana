@@ -10,6 +10,7 @@ import { evaluateServices, type ServiceManifest } from '../lib/service-status'
 import { serviceStatusHtml } from '../html/service-status'
 import { BRAND } from '../lib/brand'
 import { mastheadHtml, MASTHEAD_CSS } from '../html/masthead'
+import { PORTAL_BASE_CSS } from '../html/ui-theme'
 import { canonicalSite } from '../lib/pure'
 import { PROVINCIAS, provinciaBySlug } from '../lib/provincias'
 import { topMunicipiosInProvincia } from '../lib/municipios'
@@ -294,20 +295,20 @@ ${canonical ? `<link rel="canonical" href="${canonical}"/>` : ''}
 <link rel="icon" type="image/svg+xml" href="/static/favicon.svg"/>
 <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png"/>
 <style nonce="${nonce}">
-  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0;color:#1f2937;line-height:1.6;color-scheme:light}
+  ${PORTAL_BASE_CSS}
   .legal-main{max-width:720px;margin:0 auto;padding:32px 20px}
-  h1{color:#14532d;border-bottom:2px solid #16a34a;padding-bottom:8px}
-  h2{color:#15803d;margin-top:28px}
-  a{color:#15803d}
-  code{background:#f3f4f6;padding:2px 6px;border-radius:4px;font-size:13px}
-  .back{display:inline-block;margin-bottom:16px;color:#64748b;text-decoration:none}
-  footer{margin-top:40px;padding-top:20px;border-top:1px solid #e5e7eb;font-size:13px;color:#64748b}
+  h1{border-bottom:1px solid var(--eu-line);padding-bottom:18px;font-size:clamp(28px,5vw,42px)}
+  h2{margin-top:32px;font-size:24px}
+  a{color:var(--eu-accent);text-underline-offset:3px}
+  code{background:var(--eu-soft);padding:2px 6px;border-radius:6px;font-size:13px;overflow-wrap:anywhere}
+  .back{display:inline-block;margin-bottom:16px;color:var(--eu-muted);text-decoration:none}
+  footer{margin-top:40px;padding-top:20px;border-top:1px solid var(--eu-line);font-size:13px;color:var(--eu-muted)}
   ${MASTHEAD_CSS}
 </style>
 </head><body>
 ${mastheadHtml()}
 <main class="legal-main">
-<a class="back" href="/gasolineras/">← Volver</a>
+<a class="back" href="/">← Volver a Cerca de ti</a>
 ${bodyHtml}
 <footer>
 <p><a href="/">Inicio</a> · <a href="/acerca">Acerca y fuentes</a> · <a href="/privacidad">Privacidad</a></p>
@@ -412,6 +413,7 @@ Telegram).</p>
 almacenamiento local (<code>localStorage</code>) de tu navegador. <strong>No se
 envían a ningún servidor</strong> y no salen de tu dispositivo. Si borras los
 datos del navegador, desaparecen.</p>
+<p>El municipio elegido y los bloques y el orden de «Mi día» se recuerdan solo en este navegador, incluso si inicias sesión. Puedes usar «Olvidar municipio» o restaurar la selección de bloques desde «Mi día».</p>
 <p>Los favoritos de deportes se guardan también solo en este navegador y no se sincronizan con tu cuenta. Puedes quitarlos pulsando la estrella de cada favorito.</p>
 
 <h2>Si inicias sesión con Google (opcional)</h2>

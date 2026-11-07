@@ -4,7 +4,8 @@
 import { corrigeZonaCervera } from '../../scripts/lib/guardias-rioja.mjs'
 import { frescuraGuardia, estadoGuardia, textoHorarioGuardia, tipoAtencionGuardia, zonaGuardia, fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
-import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 
 export interface GuardiaPageData {
@@ -295,12 +296,10 @@ export function buildGuardiaMunicipioPage(nonce: string, d: GuardiaPageData): st
   return envoltorioIndice(nonce, title, desc, d.canonical, cuerpo, lista.frescura.noindex, lista.script, datos)
 }
 
-const CSS_INDICE =
-  ':root{color-scheme:light;--v:#188148;--vd:#14532d;--tx:#203329;--mu:#506056;--bd:#d5ded6;--bg:#f6f8f5}'
-  + '*{box-sizing:border-box}'
-  + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'main{max-width:760px;margin:0 auto;padding:18px}'
-  + 'h1{font:700 clamp(25px,4vw,34px)/1.2 Georgia,serif;margin:0 0 6px}'
+const CSS_INDICE = PORTAL_BASE_CSS +
+  ':root{color-scheme:light;--v:var(--eu-accent);--vd:var(--eu-accent);--mu:var(--eu-muted);--bd:var(--eu-line);--bg:var(--eu-soft)}'
+  + 'main{max-width:940px;margin:0 auto;padding:32px 24px}'
+  + 'h1{font:750 clamp(28px,4vw,44px)/1.15 var(--eu-font);margin:0 0 6px}'
   + 'h2{font-size:17px;margin:26px 0 10px}'
   + '.sub{color:var(--mu);font-size:14px;margin:0 0 18px}'
   + '.lista ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
@@ -310,17 +309,17 @@ const CSS_INDICE =
   + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
   + '.g-caducado{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;border-radius:10px;padding:14px;margin:0 0 14px;font-size:15px}'
   + '.g-nota{background:var(--bg);border-left:3px solid #f59e0b;color:#92400e;padding:8px 12px;margin:0 0 14px;font-size:13px;border-radius:6px}'
-  + '.btn,.g-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:8px 12px;border-radius:7px;border:1px solid #a2b5a8;'
+  + '.btn,.g-btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border-radius:12px;border:1px solid #a2b5a8;'
   + 'background:#fff;color:var(--vd);text-decoration:none;font:600 14px/1.35 system-ui;cursor:pointer}.g-btn[hidden]{display:none}'
   + 'main a{color:var(--vd);text-underline-offset:.18em}main :focus-visible{outline:3px solid var(--vd);outline-offset:2px}'
   + '.g-provincia,.g-lectura,.g-meta,.g-tipo{font-size:14px;color:var(--mu);margin:4px 0 8px}.g-tipo strong{color:var(--vd)}'
-  + '.g-recuento{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin:8px 0}.g-total{font-size:15px;margin:0}.g-card{padding:14px 16px;margin:0 0 10px;border:1px solid var(--bd);border-radius:10px;background:#fff;overflow-wrap:anywhere}'
+  + '.g-recuento{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px;margin:8px 0}.g-total{font-size:15px;margin:0}.g-card{padding:22px 24px;margin:0 0 14px;border:1px solid var(--bd);border-radius:22px;background:#fff;overflow-wrap:anywhere}'
   + '.g-dir{font-size:18px;line-height:1.3;margin:4px 0}.g-hora{margin:6px 0 10px;white-space:pre-line}.g-distancia{font-size:14px;color:var(--vd);margin:8px 0 0}'
   + '.g-acciones,.g-filtros{display:flex;flex-wrap:wrap;gap:6px}.g-filtros{margin:8px 0}.g-btn--tel,.g-filtros a[aria-current]{color:white;background:var(--vd);border-color:var(--vd)}'
   + '.g-btn--tel{column-gap:.25em;flex-wrap:wrap}.g-btn--tel span{white-space:nowrap}'
   + '#g-ubicacion:empty{display:none}.g-vacio{border-left:3px solid var(--bd);padding:10px 12px;background:var(--bg)}'
   + '.g-otros ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}.g-otros a{display:inline-flex;align-items:center;min-height:44px;padding:4px 8px}'
-  + '@media(max-width:500px){main{padding:14px 12px}.g-card{padding:12px}.g-filtros .g-btn{padding:7px;font-size:13px}}'
+  + '@media(max-width:500px){main{padding:14px 12px}.g-card{padding:18px}.g-filtros .g-btn{padding:7px;font-size:13px}}'
   + '@media(max-width:360px){.g-filtros{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.g-filtros .g-btn{padding:3px;text-align:center}.g-acciones:has(.g-btn--tel+.g-btn--tel) .g-btn--tel{flex:1 1 110px;padding:4px}.g-acciones:has(.g-btn--tel+.g-btn--tel) a:last-child:not(.g-btn--tel){flex-basis:100%}}'
   + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
   + 'footer a{color:var(--vd)}'
@@ -340,7 +339,7 @@ export function envoltorioIndice(nonce: string, title: string, desc: string, can
     + '<meta property="og:url" content="' + esc(canonical) + '" />'
     + ogSocialTags(originFromCanonical(canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + datos + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + '</style></head><body>'
+    + datos + '<style nonce="' + esc(nonce) + '">' + CSS_INDICE + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml('farmacias', { compact: true, hideMunicipioSearch: true }) + '<main>' + cuerpo + '</main>'
     + '<footer>Datos de los Colegios Oficiales de Farmacéuticos. '
     + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'

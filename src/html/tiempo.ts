@@ -3,39 +3,39 @@ import { AEMET_MUNICIPIOS, urlMunicipioAemet, zonaTiempo } from '../../scripts/l
 import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 import type { AvisosTiempo } from '../lib/tiempo-avisos'
 import type { ResultadoTiempo } from '../lib/tiempo-municipios'
-import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
+import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 import { escapeHtml as esc } from './html'
 import { emojiCielo } from './cielo'
 import { buscadorTiempo, resultadosTiempo, CSS_BUSCADOR_TIEMPO } from './tiempo-buscador'
 
-const CSS = `
-:root{color-scheme:light;--ink:#202d27;--muted:#4c5e54;--green:#1a543b;--rule:#ced8cf;--paper:#fffdf8}
-*{box-sizing:border-box}
-body{margin:0;background:var(--paper);color:var(--ink);font:1rem/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-main{max-width:57rem;margin:auto;padding:clamp(1rem,3vw,2rem);overflow-wrap:anywhere}
-h1,h2{font-family:Georgia,"Times New Roman",serif;line-height:1.12;margin:0}
+const CSS = PORTAL_BASE_CSS + `
+:root{color-scheme:light;--muted:var(--eu-muted);--green:var(--eu-accent);--rule:var(--eu-line)}
+
+main{max-width:68rem;margin:auto;padding:clamp(1rem,3vw,2rem);overflow-wrap:anywhere}
+h1,h2{font-family:var(--eu-font);line-height:1.12;margin:0}
 h1{font-size:clamp(1.8rem,5vw,3rem)}h2{font-size:clamp(1.4rem,3vw,1.85rem);margin-bottom:.65rem}
 a{color:var(--green);text-underline-offset:3px} :focus-visible{outline:3px solid #1462a1;outline-offset:3px}
 .sub,.fuente,.aviso-meta{color:var(--muted);font-size:.89rem}.sub{margin:.25rem 0 1rem}.fuente{margin:.8rem 0 0}
-.seccion{margin-top:1.65rem}.panel{background:#eff5ef;border:1px solid #bdcfc0;border-radius:14px;padding:clamp(1rem,3vw,1.6rem)}
-.hoy{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem 1rem;align-items:center}
-.hoy h2{font:600 1rem/1.4 system-ui;margin:0}.hoy .cielo{font:600 clamp(1.45rem,4vw,2.15rem)/1.18 Georgia,serif;margin:.2rem 0 .65rem}
-.temperaturas{display:flex;gap:1.5rem;flex-wrap:wrap}.temperaturas span{display:grid;font-size:.85rem;color:var(--muted)}
-.temperaturas b{color:var(--ink);font-size:clamp(1.75rem,4vw,2.6rem);line-height:1.1;font-variant-numeric:tabular-nums}
+.seccion{margin-top:1.65rem}.panel{background:var(--eu-surface);border:1px solid var(--eu-line);border-radius:24px;padding:clamp(1rem,3vw,1.6rem)}
+.hoy{background:linear-gradient(135deg,#173f34,#356b4b);color:#f4f9ef;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:.25rem 1rem;align-items:center}
+.hoy h2{color:#f4f9ef;font:600 1rem/1.4 var(--eu-font);margin:0}.hoy .cielo{color:#f4f9ef;font:650 clamp(1.6rem,4vw,2.5rem)/1.18 var(--eu-font);margin:.2rem 0 .65rem}
+.temperaturas{display:flex;gap:1.5rem;flex-wrap:wrap}.temperaturas span{display:grid;font-size:.85rem;color:#dbecde}
+.temperaturas b{color:#fff;font-size:clamp(1.75rem,4vw,2.6rem);line-height:1.1;font-variant-numeric:tabular-nums}
 .icono-hoy{font-size:clamp(2.5rem,7vw,4.5rem);line-height:1}
-.condiciones{grid-column:1/-1;margin:.65rem 0 0;color:var(--muted)}
+.condiciones{grid-column:1/-1;margin:.65rem 0 0;color:#dbecde}
 .aviso-zona{margin:1rem 0;border-left:4px solid #98aa9a;padding:.55rem .85rem;background:#f1f4ef}
 .aviso-zona p,.aviso-activo p{margin:.25rem 0}.aviso-activo{padding:.7rem .9rem;margin:.5rem 0;border-left:5px solid #ac780a;background:#fff7db}
 .aviso-naranja{border-color:#a94a09;background:#fff0df}.aviso-rojo{border-color:#b72e24;background:#fff0ed}
 .aviso-zona a,.aviso-activo a{display:inline-block;padding:.25rem 0}
-.dias{list-style:none;padding:0;margin:0;border-top:1px solid var(--rule)}
+.dias{list-style:none;padding:8px 20px;margin:0;background:var(--eu-surface);border:1px solid var(--rule);border-radius:22px}
 .dia{display:grid;grid-template-columns:minmax(8rem,1fr) minmax(8rem,1.45fr) minmax(12rem,1.3fr);gap:.4rem 1rem;align-items:center;padding:.65rem .1rem;border-bottom:1px solid var(--rule)}
 .dia .medidas{font-size:.9rem;color:var(--muted)}.dia small{display:block}
 .lluvia{display:flex;flex-wrap:wrap;gap:.5rem;list-style:none;padding:0;margin:.7rem 0}.lluvia li{background:#edf3f6;border-radius:8px;padding:.45rem .7rem;font-size:.9rem}
 .horas{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}.horas th,.horas td{padding:.45rem .6rem;text-align:right;border-bottom:1px solid var(--rule)}.horas th:first-child,.horas td:first-child{text-align:left}.horas thead{background:#edf3ef}.cielo-hora{display:block;color:var(--muted);font-weight:400}
 details>summary{cursor:pointer;color:var(--green);font-weight:650;padding:.65rem 0;min-height:44px}.cambio{margin-top:1.5rem}.cambio summary{width:fit-content}
-.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0}.lista a{display:inline-flex;align-items:center;min-height:44px;padding:.4rem .75rem;border:1px solid var(--rule);border-radius:7px;background:white;text-decoration:none}
+.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;padding:0}.lista a{display:inline-flex;align-items:center;min-height:44px;padding:.4rem .75rem;border:1px solid var(--rule);border-radius:12px;background:white;text-decoration:none}
 footer{border-top:1px solid var(--rule);margin-top:2rem;padding:1.15rem;text-align:center;font-size:.88rem}
 @media(max-width:600px){.dia{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.dia .medidas{grid-column:1/-1}.horas th,.horas td{padding:.45rem .25rem}.icono-hoy{align-self:start}.hoy{gap:.25rem .4rem}}
 `
@@ -58,7 +58,7 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + ogSocialTags(originFromCanonical(m.canonical))
     + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
     + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + CSS_BUSCADOR_TIEMPO + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + '</style></head><body>'
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + CSS_BUSCADOR_TIEMPO + MASTHEAD_CSS + '</style></head><body>'
     + mastheadHtml('tiempo', { compact: true, hideMunicipioSearch: true }) + '<main>'
     + cuerpo
     + '</main><footer><a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer>'

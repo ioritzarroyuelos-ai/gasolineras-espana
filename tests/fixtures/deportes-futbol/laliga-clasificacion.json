@@ -1,0 +1,73 @@
+{
+  "props": {
+    "country": "ES",
+    "pageProps": {
+      "competition": "primera-division",
+      "season": "2026",
+      "standings": [
+        {
+          "played": 11,
+          "points": 30,
+          "won": 10,
+          "drawn": 0,
+          "lost": 1,
+          "goals_for": 46,
+          "goals_against": 12,
+          "goal_difference": "+34",
+          "position": 1,
+          "previous_position": 1,
+          "difference_position": 0,
+          "team": {
+            "id": 4,
+            "slug": "fc-barcelona",
+            "name": "Fútbol Club Barcelona",
+            "nickname": "FC Barcelona",
+            "boundname": "FC Barcelona",
+            "shortname": "BAR",
+            "sprite_status": "created",
+            "shield": {
+              "id": 127
+            },
+            "competitions": []
+          },
+          "qualify": {
+            "name": "Champions League",
+            "shortname": "Champions League",
+            "color": "#08237f"
+          }
+        },
+        {
+          "played": 11,
+          "points": 28,
+          "won": 9,
+          "drawn": 1,
+          "lost": 1,
+          "goals_for": 22,
+          "goals_against": 8,
+          "goal_difference": "+14",
+          "position": 2,
+          "previous_position": 2,
+          "difference_position": 0,
+          "team": {
+            "id": 2,
+            "slug": "atletico-de-madrid",
+            "name": "Club Atlético de Madrid SAD",
+            "nickname": "Atlético de Madrid",
+            "boundname": "Atlético de Madrid",
+            "shortname": "ATM",
+            "sprite_status": "created",
+            "shield": {
+              "id": 812970
+            },
+            "competitions": []
+          },
+          "qualify": {
+            "name": "Champions League",
+            "shortname": "Champions League",
+            "color": "#08237f"
+          }
+        }
+      ]
+    }
+  }
+}

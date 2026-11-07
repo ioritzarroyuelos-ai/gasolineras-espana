@@ -81,8 +81,8 @@ export function buildLandingPage(
   try { origin = new URL(reqUrl).origin } catch { /* fallback */ }
 
   const canonical = origin + '/'
-  const title = 'España Útil · Datos oficiales de España al instante'
-  const desc = 'El tiempo por municipio (AEMET), gasolineras con precios oficiales, farmacias de guardia, ITV y elecciones de España. Datos oficiales, sin registro y gratis.'
+  const title = 'España Útil · Información útil, con fuentes y fechas'
+  const desc = 'El tiempo, gasolineras, farmacias de guardia, ITV, elecciones y deportes. Información con fuentes y fechas de consulta, sin registro y gratis.'
   const logoUrl = origin + '/static/logo.svg'
 
   // JSON-LD: WebSite + ItemList de servicios (Google lo usa para sitelinks).
@@ -158,6 +158,8 @@ export function buildLandingPage(
               areaServed: { '@type': 'Country', name: 'España' },
             },
           },
+          { '@type': 'ListItem', position: 5, item: { '@type': 'Service', name: 'Elecciones y sondeos', url: origin + '/politica/', serviceType: 'Información electoral' } },
+          { '@type': 'ListItem', position: 6, item: { '@type': 'Service', name: 'Deportes', url: origin + '/deportes/', serviceType: 'Calendarios, resultados y clasificaciones deportivas' } },
         ],
       },
     ],
@@ -211,7 +213,7 @@ export function buildLandingPage(
   <meta property="og:image" content="${esc(origin)}/static/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="España Útil · datos oficiales de España al instante" />
+  <meta property="og:image:alt" content="España Útil · información con fuentes y fechas" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="${esc(title)}" />
   <meta name="twitter:description" content="${esc(desc)}" />
@@ -327,7 +329,7 @@ export function buildLandingPage(
 </head>
 <body>
   ${mastheadHtml(null, { brandAsH1: false })}
-  <h1 class="sr-only">El tiempo, gasolineras, farmacias, ITV y elecciones de España con datos oficiales</h1>
+  <h1 class="sr-only">El tiempo, gasolineras, farmacias, ITV, elecciones y deportes con fuentes verificables</h1>
 
   <main>
     ${localidadHtml(data.localidad, data.encontrados, data.query)}
@@ -362,6 +364,11 @@ export function buildLandingPage(
         <p>Fechas de las elecciones y todos los sondeos, con los escaños estimados frente al último resultado.</p>
         <a class="more" href="/politica/">Elecciones y sondeos &rarr;</a>
       </section>
+      <section class="col" aria-labelledby="t-deportes">
+        <h2 id="t-deportes">Deportes</h2>
+        <p>Calendarios, resultados y clasificaciones de fútbol, baloncesto y motor, con sus fuentes y fechas de consulta.</p>
+        <a class="more" href="/deportes/">Consultar deportes &rarr;</a>
+      </section>
     </div>
 
     <!-- Enlazado interno: sin estos enlaces, las paginas SEO por municipio son
@@ -387,6 +394,7 @@ export function buildLandingPage(
       <a href="/farmacias/guardia">Farmacias de guardia</a>·
       <a href="/itv/">ITV</a>·
       <a href="/politica/">Política</a>·
+      <a href="/deportes/">Deportes</a>·
       <a href="/precios-carburantes">Precios</a>·
       <a href="/acerca">Acerca y fuentes</a>·
       <a href="/privacidad">Privacidad</a>·

@@ -1,0 +1,122 @@
+{
+  "2026-11-07": {
+    "descansa": [],
+    "date": "Sábado, 7 de Noviembre",
+    "matches": [
+      {
+        "status_txt": "Finalizado",
+        "id": "635",
+        "league_id": "1299",
+        "year": "2027",
+        "idcat": "30",
+        "category": "Primera FS Iberdrola  : Jornada 7",
+        "hour": "11:00",
+        "group_code": "1",
+        "total_group": "1",
+        "no_hour": "0",
+        "cat_alias": "primera-femenina",
+        "homeTeamAlias": "lbtl-futsal-alcantarilla",
+        "awayTeamAlias": "futsi-atlético-navalcarnero",
+        "status": "Finalizado",
+        "status_reason": null,
+        "referees": [],
+        "datateam1": "2965",
+        "datateam2": "2963",
+        "r_local": "2",
+        "r_visit": "5",
+        "penaltis1": "99",
+        "penaltis2": "99",
+        "country_team1": "",
+        "country_team2": "",
+        "team_local": " LBTL Futsal Alcantarilla",
+        "shield_local": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/2965.png?size=50",
+        "team_visit": "Futsi Atlético Navalcarnero",
+        "shield_visit": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/2963.png?size=50",
+        "list_tvs": "Teledeporte",
+        "tvs": [
+          {
+            "id": "3",
+            "name": "Teledeporte",
+            "url": "http://www.rtve.es/directo/teledeporte/"
+          }
+        ]
+      },
+      {
+        "status_txt": "Sin comenzar",
+        "id": "796",
+        "league_id": "1299",
+        "year": "2027",
+        "idcat": "30",
+        "category": "Primera FS Iberdrola  : Jornada 7",
+        "hour": "12:00",
+        "group_code": "1",
+        "total_group": "1",
+        "no_hour": "0",
+        "cat_alias": "primera-femenina",
+        "homeTeamAlias": "estrela-revoltosa-verín-fsf",
+        "awayTeamAlias": "ad-ceuta-fc-",
+        "status": "Pendiente",
+        "status_reason": null,
+        "referees": [],
+        "datateam1": "3024",
+        "datateam2": "2960",
+        "r_local": "0",
+        "r_visit": "0",
+        "penaltis1": "99",
+        "penaltis2": "99",
+        "country_team1": "",
+        "country_team2": "",
+        "team_local": "Estrela Revoltosa Verín FSF",
+        "shield_local": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/3024.png?size=50",
+        "team_visit": "AD Ceuta FC",
+        "shield_visit": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/2960.png?size=50",
+        "list_tvs": "YouTube FutsalRFEF",
+        "tvs": [
+          {
+            "id": "161",
+            "name": "YouTube FutsalRFEF",
+            "url": null
+          }
+        ]
+      },
+      {
+        "status_txt": "Sin comenzar",
+        "id": "633",
+        "league_id": "1299",
+        "year": "2027",
+        "idcat": "30",
+        "category": "Primera FS Iberdrola  : Jornada 7",
+        "hour": "17:00",
+        "group_code": "1",
+        "total_group": "1",
+        "no_hour": "0",
+        "cat_alias": "primera-femenina",
+        "homeTeamAlias": "ourense-ontime",
+        "awayTeamAlias": "mrb-móstoles-fsf",
+        "status": "Pendiente",
+        "status_reason": null,
+        "referees": [],
+        "datateam1": "2968",
+        "datateam2": "2962",
+        "r_local": "",
+        "r_visit": "",
+        "penaltis1": "99",
+        "penaltis2": "99",
+        "country_team1": "",
+        "country_team2": "",
+        "team_local": "Ourense Ontime",
+        "shield_local": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/2968.png?size=50",
+        "team_visit": "MRB Móstoles FSF",
+        "shield_visit": "https://thumb2.besoccerapps.com/lnfs/shields_futsal/png/2962.png?size=50",
+        "list_tvs": "YouTube FutsalRFEF",
+        "tvs": [
+          {
+            "id": "161",
+            "name": "YouTube FutsalRFEF",
+            "url": null
+          }
+        ]
+      }
+    ]
+  }
+}

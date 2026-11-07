@@ -145,9 +145,10 @@ self.addEventListener('fetch', event => {
   }
   const turnoFarmacia = /^\/farmacias\/(?!guardia\/?$|buscar\/?$)[a-z0-9-]+(?:\/[a-z0-9-]+)?\/?$/.test(ruta);
   const parteTiempo = /^\/tiempo\/[a-z0-9-]+\/[a-z0-9-]+\/?$/.test(ruta);
-  if (url.origin === self.location.origin && (parteTiempo || turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
+  const deportes = /^\/(?:deportes(?:\/|$)|data\/deportes\/)/.test(ruta);
+  if (url.origin === self.location.origin && (deportes || parteTiempo || turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() =>
-      new Response(parteTiempo ? 'Sin conexión. Vuelve a conectar para consultar la previsión y los avisos vigentes.'
+      new Response(deportes ? 'Sin conexión. Vuelve a conectar para consultar los horarios, resultados y clasificaciones actualizados.' : parteTiempo ? 'Sin conexión. Vuelve a conectar para consultar la previsión y los avisos vigentes.'
         : turnoFarmacia ? 'Sin conexión. Vuelve a conectar para consultar el turno actualizado de la farmacia.' : 'Se necesita conexión para consultar los sondeos.', {
         status: 503,
         headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },

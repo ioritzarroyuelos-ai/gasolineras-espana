@@ -35,7 +35,8 @@ export default defineConfig({
       name: 'rutas-de-sondeos-con-veda',
       apply: 'build',
       generateBundle() {
-        const exclude = exclusionesEstaticas('public')
+        // El código de deportes precede a su primera publicación automática de datos.
+        const exclude = [...new Set([...exclusionesEstaticas('public'), '/data/deportes/*'])].sort()
         this.emitFile({
           type: 'asset', fileName: '_routes.json',
           source: JSON.stringify({ version: 1, include: ['/*'], exclude }),

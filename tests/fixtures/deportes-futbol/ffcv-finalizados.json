@@ -1,0 +1,42 @@
+{
+  "grupo": "",
+  "jornada": "9",
+  "partidos": [
+    {
+      "fecha": "01/11/2026",
+      "hora": "16:00",
+      "local": "Crevillente Deportivo",
+      "visitante": "C.D. Utiel",
+      "cod_equipo_local": "9856",
+      "cod_equipo_visitante": "15022",
+      "resultado": "1 - 1",
+      "resultado_provisional": "0",
+      "campo": "Ciutat del Futbol Juanfran Torres F-11 Campo Enrique Miralles ",
+      "escudo_local": "/pnfg/pimg/Clubes/00100_0074502475_Crevillente_Deportivo.png",
+      "escudo_visitante": "/pnfg/pimg/Clubes/00100_0074811932_Escudo_CDUTIEL_Vector_page_0001.jpg",
+      "retirado_local": "0",
+      "retirado_visitante": "0",
+      "codacta": "26470727",
+      "estado": "1",
+      "motivo_estado": ""
+    },
+    {
+      "fecha": "31/10/2026",
+      "hora": "12:30",
+      "local": "Villarreal C.F. 'C'",
+      "visitante": "S.C. Torrevieja C.F. 'A'",
+      "cod_equipo_local": "11364",
+      "cod_equipo_visitante": "27170",
+      "resultado": "2 - 1",
+      "resultado_provisional": "0",
+      "campo": "Ciudad Dptva. Jose Manuel Llaneza F-11 Vila-real Mini Estadi",
+      "escudo_local": "/pnfg/pimg/Clubes/00100_0074501398_Villarreal_CF.png",
+      "escudo_visitante": "/pnfg/pimg/Clubes/00100_0074582072_ESCUDO.jpg",
+      "retirado_local": "0",
+      "retirado_visitante": "0",
+      "codacta": "26470728",
+      "estado": "1",
+      "motivo_estado": ""
+    }
+  ]
+}

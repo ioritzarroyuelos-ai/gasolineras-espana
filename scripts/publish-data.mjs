@@ -4,7 +4,7 @@ import { appendFileSync } from 'node:fs'
 const repo = process.env.GITHUB_REPOSITORY
 const kind = process.argv[2]
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw Error('Los robots solo pueden publicar partiendo de main')
-if (!repo || !['prices', 'guardias', 'politica', 'tiempo', 'itv', 'chargers', 'municipios'].includes(kind) || !/^\d+$/.test(process.env.GITHUB_RUN_ID || '')) throw Error('Contexto de publicación no válido')
+if (!repo || !['prices', 'guardias', 'politica', 'tiempo', 'itv', 'chargers', 'municipios', 'deportes'].includes(kind) || !/^\d+$/.test(process.env.GITHUB_RUN_ID || '')) throw Error('Contexto de publicación no válido')
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const git = args => run('git', args), gh = args => run('gh', [...args, '--repo', repo])
 const files = git(['diff', '--cached', '--name-only']).split('\n').filter(Boolean)

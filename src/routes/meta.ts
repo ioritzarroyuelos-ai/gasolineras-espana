@@ -22,6 +22,8 @@ import {
 import type { MunicipioLista } from '../../scripts/lib/tiempo.mjs'
 import { catalogoTiempo } from '../lib/tiempo-municipios'
 import { ELECCIONES } from '../../scripts/lib/politica-catalogo.mjs'
+import { idDeportivo, type IndiceDeportes } from '../lib/deportes'
+import { validarIndiceDeportes } from '../../scripts/lib/deportes.mjs'
 
 export function registerMetaRoutes(app: Hono<{ Bindings: Env }>): void {
 app.get('/robots.txt', c => {
@@ -42,9 +44,24 @@ app.get('/robots.txt', c => {
     'Sitemap: ' + site.origin + '/sitemap.xml',
     'Sitemap: ' + site.origin + '/sitemap-guardias.xml',
     'Sitemap: ' + site.origin + '/sitemap-tiempo.xml',
+    'Sitemap: ' + site.origin + '/sitemap-deportes.xml',
     '',
   ].join('\n')
   return c.text(body, 200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=86400' })
+})
+
+app.get('/sitemap-deportes.xml', async c => {
+  const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
+  const copia = await loadSnapshot<IndiceDeportes>(c.req.url, 'deportes/index.json', c.env.ASSETS)
+  let indice: IndiceDeportes | null = null
+  try { indice = validarIndiceDeportes(copia) } catch { /* El mapa general sigue disponible sin inventar fichas. */ }
+  const urls = ['deportes/', 'deportes/futbol', 'deportes/baloncesto', 'deportes/motor'].map(p => `<url><loc>${site.origin}/${p}</loc></url>`)
+  if (indice?.version === 1 && Array.isArray(indice.competiciones)) for (const comp of indice.competiciones) {
+    if (!idDeportivo(comp.id)) continue
+    const fecha = [comp.agenda?.verificadoEn, comp.clasificacion?.verificadoEn].filter((d): d is string => !!d && Number.isFinite(Date.parse(d)) && Date.parse(d) <= Date.now()).sort().at(-1)
+    urls.push(`<url><loc>${site.origin}/deportes/competicion/${comp.id}</loc>${fecha ? '<lastmod>' + new Date(fecha).toISOString() + '</lastmod>' : ''}</url>`)
+  }
+  return c.text('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">' + urls.join('') + '</urlset>', 200, { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'public,max-age=300' })
 })
 
 // ---- SEO: sitemap.xml (home + 52 provincias + TODOS los municipios con gasolinera + privacidad) ----
@@ -395,6 +412,7 @@ Telegram).</p>
 almacenamiento local (<code>localStorage</code>) de tu navegador. <strong>No se
 envían a ningún servidor</strong> y no salen de tu dispositivo. Si borras los
 datos del navegador, desaparecen.</p>
+<p>Los favoritos de deportes se guardan también solo en este navegador y no se sincronizan con tu cuenta. Puedes quitarlos pulsando la estrella de cada favorito.</p>
 
 <h2>Si inicias sesión con Google (opcional)</h2>
 <p>El inicio de sesión sirve para tener tus favoritos y ajustes en varios

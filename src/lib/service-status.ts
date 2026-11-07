@@ -1,7 +1,7 @@
-export type ServiceId = 'gasolineras' | 'farmacias' | 'tiempo' | 'itv' | 'politica'
+export type ServiceId = 'gasolineras' | 'farmacias' | 'tiempo' | 'itv' | 'politica' | 'deportes'
 export interface ServiceItem { name: string; updatedAt: string | null; count: number; issue?: string }
 export interface ServiceManifest { schema: number; services: { id: ServiceId; name: string; maxAgeHours: number; items: ServiceItem[] }[] }
-const SERVICES = { gasolineras: ['Gasolineras', 24], farmacias: ['Farmacias', 30], tiempo: ['Tiempo', 12], itv: ['ITV', 960], politica: ['Política', 30] } as const
+const SERVICES = { gasolineras: ['Gasolineras', 24], farmacias: ['Farmacias', 30], tiempo: ['Tiempo', 12], itv: ['ITV', 960], politica: ['Política', 30], deportes: ['Deportes', 24] } as const
 export function evaluateServices(manifest: ServiceManifest | null, now = Date.now()) {
   const services = (Object.keys(SERVICES) as ServiceId[]).map(id => {
     const [name, maxAgeHours] = SERVICES[id]

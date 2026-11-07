@@ -1,0 +1,84 @@
+name: Actualizar deportes
+
+on:
+  schedule:
+    - cron: '23 */4 * * *'
+    - cron: '23 1-3,5-7,9-11,13-15,17-19,21-23 * * *'
+  workflow_dispatch:
+    inputs:
+      fuentes:
+        description: Deportes que se van a comprobar
+        type: choice
+        default: todos
+        options:
+          - todos
+          - futbol
+          - baloncesto
+          - motor
+      ffcv_no_antes:
+        description: Ampliar la pausa de FFCV hasta una fecha ISO con zona; dejar vacío normalmente
+        type: string
+        required: false
+
+concurrency:
+  group: fetch-deportes
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Recuperar el último punto de continuación de FFCV
+        uses: actions/cache/restore@v5
+        with:
+          path: .tmp/deportes-ffcv-checkpoint.json
+          key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: deportes-ffcv-v1-
+      - name: Instalar lectores de fuentes
+        run: npm ci --omit=dev --ignore-scripts
+      - name: Comprobar calendarios, resultados y clasificaciones
+        id: fetch
+        continue-on-error: true
+        env:
+          DEPORTES_FUENTES: ${{ inputs.fuentes }}
+          DEPORTES_PROGRAMACION: ${{ github.event.schedule }}
+          DEPORTES_FFCV_NO_ANTES: ${{ inputs.ffcv_no_antes }}
+        run: node scripts/fetch-deportes.mjs
+      - name: Conservar progreso y descansos aunque falle la actualización
+        if: always() && hashFiles('.tmp/deportes-ffcv-checkpoint.json') != ''
+        uses: actions/cache/save@v5
+        with:
+          path: .tmp/deportes-ffcv-checkpoint.json
+          key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Crear identidad temporal del robot
+        if: always() && (steps.fetch.outcome == 'success' || steps.fetch.outcome == 'failure')
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar datos mediante PR validado
+        if: always() && steps.data-token.outcome == 'success' && (steps.fetch.outcome == 'success' || steps.fetch.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+        run: |
+          if [ "$FETCH_OUTCOME" = success ]; then
+            git add public/data/deportes
+          elif [ -f public/data/deportes/fuentes/ffcv.json ]; then
+            git add public/data/deportes/fuentes/ffcv.json
+          fi
+          node scripts/publish-data.mjs deportes
+      - name: Señalar un fallo de lectura después de conservar los datos y el estado
+        if: always() && steps.fetch.outcome == 'failure'
+        run: exit 1

@@ -22,6 +22,7 @@ import { registerDataRoutes } from './routes/data'
 import { registerHistoryRoutes } from './routes/history'
 import { registerTelegramRoutes } from './routes/telegram'
 import { registerPoliticaRoutes } from './routes/politica'
+import { registerDeportesRoutes } from './routes/deportes'
 
 // ---- ENV ----
 // Exportado para que los sub-modulos de rutas (src/routes/*) tipen `app` y el
@@ -177,6 +178,7 @@ registerItvRoutes(app)
 // Orden interno crítico (/politica/autonomicas ANTES de /politica/:eleccionId);
 // preservado en el módulo. La veda (LOREG 69.7) se evalúa por request.
 registerPoliticaRoutes(app)
+registerDeportesRoutes(app)
 
 // ---- SEO: robots.txt ----
 // ---- META/SEO ----

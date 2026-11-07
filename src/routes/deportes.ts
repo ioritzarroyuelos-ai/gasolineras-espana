@@ -1,7 +1,7 @@
 import type { Context, Hono } from 'hono'
 import type { Env } from '../index'
 import { loadSnapshot, genNonce, canonicalBase, pageHeaders } from '../lib/runtime'
-import { filtraCompeticiones, esDeporte, idDeportivo, diaDeporte, normalizaDeporte, type IndiceDeportes, type EventoAgenda, type CompeticionDeportiva, type Deporte } from '../lib/deportes'
+import { filtraCompeticiones, esDeporte, idDeportivo, diaDeporte, normalizaDeporte, textoBusquedaCompeticion, type IndiceDeportes, type EventoAgenda, type CompeticionDeportiva, type Deporte } from '../lib/deportes'
 import { fechaDeportiva, validarCompeticionDeportiva, validarIndiceDeportes, validarAgendaDeportes } from '../../scripts/lib/deportes.mjs'
 import { buildDeportesPage, buildCompeticionDeportesPage } from '../html/deportes'
 
@@ -23,7 +23,7 @@ export function registerDeportesRoutes(app: Hono<{ Bindings: Env }>): void {
     const competiciones = filtraCompeticiones(indice?.competiciones || [], { deporte, q, zona, categoria, genero })
     const ids = new Set(competiciones.map(co => co.id))
     const consulta = normalizaDeporte(q)
-    const competicionesCompletas = new Set(competiciones.filter(co => co.deporte === 'motor' || normalizaDeporte([co.nombre, co.grupo, co.temporada].join(' ')).includes(consulta)).map(co => co.id))
+    const competicionesCompletas = new Set(competiciones.filter(co => co.deporte === 'motor' || textoBusquedaCompeticion(co, false).includes(consulta)).map(co => co.id))
     const agenda = indice?.dias.includes(dia) ? await loadSnapshot<{ eventos: EventoAgenda[] }>(c.req.url, `deportes/agenda/${zonaHoraria}/${dia}.json`, c.env.ASSETS) : null
     let eventosDelDia: EventoAgenda[] | null = null
     if (indice && agenda) { try { eventosDelDia = validarAgendaDeportes(agenda, indice, dia, zonaHoraria) } catch { /* No presentar una agenda corrupta como vacía. */ } }

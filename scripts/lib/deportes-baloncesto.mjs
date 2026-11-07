@@ -132,8 +132,8 @@ function codificaConsultaFeb(data) {
   }
   return JSON.stringify({ t: cod({ data }), f: 127, m: [] })
 }
-function codigoFuncion(texto, simbolo) {
-  const seguro = simbolo.replace(/[$]/g, '\\$')
+export function codigoFuncion(texto, simbolo) {
+  const seguro = simbolo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   return [...texto.matchAll(new RegExp(seguro + '=.{0,100}?\\.handler\\([^\x60]*\x60([a-f0-9]{64})\x60\\)\\)', 'g'))].at(-1)?.[1]
 }
 async function funcionesFeb(doc, opciones) {

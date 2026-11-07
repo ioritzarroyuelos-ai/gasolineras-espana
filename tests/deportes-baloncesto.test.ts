@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   datosPaginaAcb, normalizaCalendarioAcb, normalizaClasificacionAcb, normalizaNba,
-  leerLiteralFeb, decodificaRespuestaFeb, normalizaPartidosFeb, normalizaTablaFeb,
+  leerLiteralFeb, codigoFuncion, decodificaRespuestaFeb, normalizaPartidosFeb, normalizaTablaFeb,
   obtieneBaloncesto, normalizaFinalBaseFeb,
 } from '../scripts/lib/deportes-baloncesto.mjs'
 
@@ -84,6 +84,14 @@ describe('baloncesto oficial', () => {
     expect(() => leerLiteralFeb('{"__proto__":{polluted:!0}}')).toThrow()
     expect(() => leerLiteralFeb('$R[7]')).toThrow('incompleta')
     expect(() => leerLiteralFeb('{x:[1,2')).toThrow()
+  })
+
+  it('encuentra las consultas FEB tratando el símbolo como texto y no como expresión regular', () => {
+    const hash = 'a'.repeat(64)
+    expect(codigoFuncion('$partidos=x.handler(f(`' + hash + '`))', '$partidos')).toBe(hash)
+    const especial = 'x\\.*+?^${}()|[]'
+    expect(codigoFuncion(especial + '=x.handler(f(`' + hash + '`))', especial)).toBe(hash)
+    expect(codigoFuncion('ajeno=x.handler(f(`' + hash + '`))', 'ajeno|otro')).toBeUndefined()
   })
 
   it('decodifica el formato público FEB y conserva sus marcadores', () => {

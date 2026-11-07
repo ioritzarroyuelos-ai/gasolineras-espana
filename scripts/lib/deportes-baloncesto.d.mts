@@ -1,5 +1,6 @@
 import type { EventoDeportivo, TablaDeportiva, ResultadoDeportes, OpcionesDeportes, CompeticionDeportiva } from './deportes.mjs'
 export function leerLiteralFeb(texto: string, inicio?: number): any
+export function codigoFuncion(texto: string, simbolo: string): string | undefined
 export function decodificaRespuestaFeb(valor: unknown): any
 export function datosPaginaFeb(html: string): { edicion: any; consultas: any[]; doc: any }
 export function normalizaPartidosFeb(partidos: unknown, fuenteUrl: string): EventoDeportivo[]

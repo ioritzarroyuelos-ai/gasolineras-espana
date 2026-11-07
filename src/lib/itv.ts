@@ -1,19 +1,5 @@
-// Estaciones de ITV — indice por provincia y municipio.
-//
-// Datos: public/data/itv.json, generado por scripts/fetch-itv.mjs a partir del
-// FeatureServer publico de la DGT (mas un parche de la Generalitat Valenciana
-// para Castellon, que la DGT no cubre).
-//
-// POR QUE SE AGRUPA POR MUNICIPIO Y NO HAY FICHA POR ESTACION
-// Una ficha por estacion serian ~473 URLs con direccion, telefono y poco mas:
-// contenido fino, que es justo lo que Google deja sin indexar. Agrupar por
-// municipio da paginas con sustancia y ataca la consulta con intencion real
-// ("ITV en <municipio>"), que es el mismo patron que funciona en las paginas de
-// farmacia de guardia.
-//
-// Solo 393 de los 8.131 municipios de España tienen ITV. NO se generan paginas
-// para el resto: seria contenido doorway sobre un dato estatico en un nicho ya
-// cubierto por competidores especializados.
+// Estaciones de ITV por provincia y municipio.
+// El robot conserva el documento y la fecha de cada fuente por separado.
 
 import { slugifyMunicipio } from './municipios'
 import { PROVINCIAS } from './provincias'
@@ -31,12 +17,39 @@ export interface EstacionITV {
   lineas: number | null
   horario: string
   fuente: string
+  nombre?: string
+  aliasMunicipios?: string[]
+  municipioFuente?: string
+  municipioVerificadoEn?: string
+  municipioFuenteUrl?: string
+  citaVerificadoEn?: string
+  webVerificadoEn?: string
+  verificadoEn?: string
+  publicadoEn?: string
+  fuenteUrl?: string
+  citaUrl?: string
+  webUrl?: string
+  contactoVerificadoEn?: string
+  contactoFuente?: string
+  contactoFuenteUrl?: string
+}
+
+export interface FuenteItvEstado {
+  id: string
+  nombre: string
+  url: string
+  consultado: string
+  publicado?: string
+  estado: 'actualizada' | 'conservada'
+  ultimoExito?: string
+  error?: string
 }
 
 export interface ItvFile {
   v?: number
   generatedAt?: string
   fuentes?: string[]
+  fuentesEstado?: FuenteItvEstado[]
   total?: number
   estaciones?: EstacionITV[]
 }
@@ -116,13 +129,27 @@ export function provinciasConItv(todas: EstacionITV[]): ProvinciaITV[] {
   return out.sort((a, b) => a.name.localeCompare(b.name, 'es'))
 }
 
-export function telHref(t: string): string {
-  const clean = String(t || '').replace(/[^0-9+]/g, '')
-  return clean ? 'tel:' + clean : ''
+export function telefonosItv(t: string): Array<{ texto: string; href: string }> {
+  const numeros = new Set<string>()
+  for (const parte of String(t || '').split(/[/,;|\n]+|\s+y\s+/i)) {
+    const limpio = parte.replace(/[^0-9+]/g, '')
+    const nacional = limpio.replace(/^(?:\+34|0034)/, '')
+    if (/^[6789]\d{8}$/.test(nacional)) numeros.add(nacional)
+  }
+  return [...numeros].map(n => ({ texto: n.slice(0, 3) + ' ' + n.slice(3, 6) + ' ' + n.slice(6), href: 'tel:' + n }))
+}
+
+// Los datos externos nunca pueden introducir enlaces que ejecuten código.
+export function enlaceOficialItv(value?: string): string {
+  if (!value) return ''
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : ''
+  } catch { return '' }
 }
 
 export function mapsHref(e: EstacionITV): string {
-  if (e.lat != null && e.lng != null && Number.isFinite(e.lat) && e.lat !== 0) {
+  if (e.lat != null && e.lng != null && Number.isFinite(e.lat) && Number.isFinite(e.lng) && e.lat >= 27 && e.lat <= 44 && e.lng >= -19 && e.lng <= 5) {
     return 'https://www.google.com/maps/dir/?api=1&destination=' + e.lat + ',' + e.lng
   }
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.dir + ' ' + e.mun)

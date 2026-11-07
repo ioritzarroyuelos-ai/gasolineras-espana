@@ -24,6 +24,7 @@
   "dependencies": {
     "hono": "^4.13.14",
     "node-html-parser": "^9.0.5",
+    "read-excel-file": "^9.3.14",
     "zod": "^4.6.7"
   },
   "devDependencies": {

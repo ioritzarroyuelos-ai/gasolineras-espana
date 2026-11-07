@@ -4,9 +4,8 @@ import type { Hono } from 'hono'
 // Endpoint tests del vertical ITV tras extraerlo a src/routes/itv.ts (B1).
 // Mismo enfoque que routes-tiempo: ASSETS falso via 3er arg de app.request y
 // reimport por test para caches limpias. Con ASSETS 404, parseItv(null) -> []
-// y las paginas con datos degradan a 404 (igual que en prod sin itv.json), lo
-// que basta para fijar el matching de rutas y el orden (/itv/precios antes de
-// /itv/:prov).
+// y la portada avisa de un fallo temporal (503). Las rutas desconocidas
+// conservan 404. Se fija también que /itv/precios preceda a /itv/:prov.
 
 type AnyApp = Hono<{ Bindings: Record<string, unknown> }>
 
@@ -39,9 +38,11 @@ describe('rutas /itv/* tras extraer a src/routes/itv.ts (B1)', () => {
     expect(Array.isArray(await res.json())).toBe(true)
   })
 
-  it('/itv/ -> 404 cuando no hay estaciones (itv.json ausente)', async () => {
+  it('/itv/ -> 503 sin caché cuando no se puede cargar el directorio', async () => {
     const res = await app.request('/itv/', {}, { ASSETS: assets404() })
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(503)
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
+    expect(await res.text()).toContain('Ahora no se puede cargar')
   })
 
   it('/itv/:prov -> 404 si la provincia no existe', async () => {

@@ -1,496 +1,278 @@
-// Paginas SEO de estaciones de ITV: indice nacional, provincia y municipio.
-//
-// Se renderizan enteras en servidor, como las de farmacia de guardia: es lo que
-// permite que Google indexe "ITV en <municipio>", que es la consulta con
-// intencion real. A diferencia de aquellas, el dato aqui es estatico (las
-// estaciones no cambian a diario), asi que la cache puede ser mucho mas larga.
-
-import type { EstacionITV, MunicipioITV, ProvinciaITV } from '../lib/itv'
-import { telHref, mapsHref } from '../lib/itv'
-import {
-  TARIFAS, LIBERALIZADAS, SIN_DATO, TASA_DGT, NOMBRE_IMPUESTO, desglosa,
-  type Tarifa,
-} from '../lib/itv-tarifas'
-import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+// Directorio ITV y precios oficiales, renderizados sin depender de JavaScript.
+import type { EstacionITV, MunicipioITV, ProvinciaITV, FuenteItvEstado } from '../lib/itv'
+import { telefonosItv, mapsHref, enlaceOficialItv, normalizaNombreMunicipio } from '../lib/itv'
+import { TARIFAS, LIBERALIZADAS, SIN_DATO, NOMBRE_IMPUESTO, TASA_DGT_FUENTE, TARIFAS_REVISADAS, tarifaVigente, desglosa, type Tarifa } from '../lib/itv-tarifas'
+import type { ResultadoTiempo } from '../lib/tiempo-municipios'
+import { DISTANCIA_MAX_ITV_KM } from '../lib/itv-busqueda'
+import { mastheadHtml, MASTHEAD_CSS, CABECERA_COMPACTA_CSS } from './masthead'
+import { buscadorItv, resultadosItv, CSS_BUSCADOR_ITV } from './itv-buscador'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
+import { escapeHtml as esc } from './html'
+import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 
-function esc(s: unknown): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+function fecha(value?: string): string {
+  if (!value || !/^\d{4}-\d{2}(?:-\d{2}(?:T.*)?)?$/.test(value)) return ''
+  const date = Date.parse(value.length === 7 ? value + '-01' : value)
+  if (!Number.isFinite(date) || date > Date.now() + 300000) return ''
+  return new Intl.DateTimeFormat('es-ES', {
+    ...(value.length === 7 ? {} : { day: 'numeric' as const }),
+    month: 'long', year: 'numeric', timeZone: 'Europe/Madrid',
+  }).format(date)
 }
 
-export function avisoDirectorio(updatedAt?: string, now = Date.now()): string {
+function fechaHtml(value?: string): string {
+  const label = fecha(value)
+  return label ? '<time datetime="' + esc(value) + '">' + esc(label) + '</time>' : ''
+}
+
+function enlace(url: string | undefined, texto: string): string {
+  const safe = enlaceOficialItv(url)
+  return safe ? '<a href="' + esc(safe) + '" target="_blank" rel="noopener">' + esc(texto) + '</a>' : esc(texto)
+}
+
+export function avisoDirectorio(updatedAt?: string, now = Date.now(), fuentes?: FuenteItvEstado[]): string {
+  if (fuentes?.length) {
+    const conservadas = fuentes.some(f => f.estado === 'conservada')
+    return '<aside class="aviso" aria-label="Actualización del directorio"><details><summary>'
+      + (conservadas ? 'Parte del directorio sigue pendiente de actualizar' : 'Fechas y fuentes del directorio')
+      + '</summary><p>Consultar un documento hoy no cambia la fecha de sus datos. Los teléfonos y los horarios pueden tener una fecha distinta.</p><ul>'
+      + fuentes.map(f => '<li><strong>' + enlace(f.url, f.nombre) + '</strong>'
+        + (fecha(f.publicado) ? ' · Documento de ' + fechaHtml(f.publicado) : '')
+        + (f.estado === 'conservada'
+          ? '. Fuente no disponible; conservamos la copia anterior' + (fecha(f.ultimoExito) ? ' del ' + fechaHtml(f.ultimoExito) : '')
+          : (fecha(f.consultado) ? '. Consultado el ' + fechaHtml(f.consultado) : ''))
+        + '.</li>').join('')
+      + '</ul><p>Confirma horario y cita con la estación antes de acudir.</p></details></aside>'
+  }
   const date = updatedAt ? Date.parse(updatedAt) : NaN
   const valid = Number.isFinite(date) && date <= now + 300000
   const stale = !valid || now - date > 40 * 86400000
-  const fecha = valid ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' }).format(date) : null
+  const label = valid ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' }).format(date) : ''
   return '<aside class="aviso" aria-label="Actualización del directorio">'
     + (stale ? '<strong>Directorio pendiente de actualizar.</strong> ' : '')
-    + (fecha ? 'Última copia de datos: <time datetime="' + esc(updatedAt) + '">' + esc(fecha) + '</time>. ' : 'Fecha de los datos no disponible. ')
-    + 'Consulta el <a href="https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/" target="_blank" rel="noopener">directorio oficial de la DGT</a> y confirma con la estación antes de acudir.</aside>'
+    + (label ? 'Última copia de datos: <time datetime="' + esc(updatedAt) + '">' + esc(label) + '</time>. ' : 'Fecha de los datos no disponible. ')
+    + 'Consulta el ' + enlace('https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/', 'directorio oficial de la DGT')
+    + ' y confirma con la estación antes de acudir.</aside>'
 }
 
-const CSS =
-  ':root{color-scheme:light;--v:#16a34a;--vd:#166534;--tx:#1e293b;--mu:#64748b;--bd:#e2e8f0;--bg:#f8fafc}'
-  + '*{box-sizing:border-box}'
-  + 'body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.5}'
-  + 'main{max-width:760px;margin:0 auto;padding:18px}'
-  + 'h1{font-size:24px;line-height:1.25;margin:0 0 6px}'
-  + 'h2{font-size:17px;margin:26px 0 10px}'
-  + '.sub{color:var(--mu);font-size:14px;margin:0 0 18px}'
-  + '.card{border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px;background:var(--bg)}'
-  + '.dir{font-size:16px;margin:0 0 6px}'
-  + '.meta{margin:0 0 10px;color:var(--mu);font-size:13px}'
-  + '.acciones{display:flex;gap:8px;flex-wrap:wrap}'
-  + '.btn{display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid var(--bd);'
-  + 'background:#fff;color:var(--vd);text-decoration:none;font-size:14px;font-weight:600}'
-  /* Verde mas oscuro que --v (#16a34a): texto blanco sobre #16a34a da 3.29:1
-     (falla WCAG AA). #15803d con blanco da ~5:1. */
-  + '.btn--tel{background:#15803d;border-color:#15803d;color:#fff}'
-  + '.aviso{font-size:13px;color:var(--mu);border-left:3px solid var(--v);padding:8px 12px;margin:18px 0;background:var(--bg)}'
-  + '.lista ul{list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:6px}'
-  + '.lista li a{display:inline-block;padding:5px 10px;border:1px solid var(--bd);border-radius:999px;'
-  + 'font-size:13px;color:var(--vd);text-decoration:none;background:#fff}'
-  + '.lista li a b{font-weight:600;color:var(--mu);font-size:12px}'
-  + 'footer{border-top:1px solid var(--bd);margin-top:28px;padding:16px 18px;color:var(--mu);font-size:13px;text-align:center}'
-  + 'footer a{color:var(--vd)}'
-  // La tabla de precios se desborda en movil: scroll propio, nunca el body.
-  + '.tabla-wrap{overflow-x:auto;margin:0 0 8px}'
-  + 'table.tarifas{border-collapse:collapse;width:100%;font-size:14px;min-width:520px}'
-  + 'table.tarifas th,table.tarifas td{padding:8px 10px;border-bottom:1px solid var(--bd);text-align:left}'
-  + 'table.tarifas thead th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--mu)}'
-  + 'table.tarifas tbody th{font-weight:600}'
-  + 'table.tarifas td b{font-size:15px}'
-  + 'table.tarifas .desg{color:var(--mu);font-size:12.5px;white-space:nowrap}'
-  + '.ojo{color:var(--v);font-weight:700}'
-  + '.motivos,.fuentes{padding-left:18px}'
-  + '.motivos li{margin-bottom:10px}'
-  + '.fuentes{font-size:13px;color:var(--mu)}'
-  + '.fuentes li{margin-bottom:6px}'
-  + '.fuentes a{color:var(--vd)}'
-  + '.vig{opacity:.8}'
-  + '.legal{font-size:12.5px;color:var(--mu);border-top:1px solid var(--bd);margin-top:24px;padding-top:12px}'
-  + '.legal p{margin:0 0 8px}'
-  + '.precio-box{border:1px solid var(--bd);border-radius:10px;padding:14px;background:var(--bg);margin-bottom:12px}'
-  + '.precio-linea{display:flex;justify-content:space-between;align-items:baseline;margin:0 0 6px;gap:12px}'
-  + '.precio-linea b{font-size:20px;color:var(--vd)}'
-  + '.precio-desg{margin:8px 0 0;font-size:13px;color:var(--mu)}'
-  + '.precio-nota{margin:8px 0 0;font-size:13px;color:var(--mu)}'
-  + '.precio-fuente{margin:8px 0 0;font-size:12px;color:var(--mu);opacity:.85}'
-  // Buscador de municipio (mismo patron que /farmacias/, en verde de marca).
-  + '.buscador{margin:0 0 22px}'
-  + '.buscador label{display:block;font-weight:600;margin:0 0 6px;font-size:15px}'
-  + '.buscador .campo{position:relative}'
-  + '.buscador input{width:100%;padding:13px 15px;font-size:16px;border:2px solid var(--bd);border-radius:10px;background:#fff;color:var(--tx)}'
-  + '.buscador input:focus{outline:none;border-color:var(--v)}'
-  + '.sugs{list-style:none;margin:6px 0 0;padding:6px;position:absolute;left:0;right:0;background:#fff;border:1px solid var(--bd);border-radius:10px;box-shadow:0 4px 12px rgba(15,23,42,.08);max-height:300px;overflow-y:auto;z-index:10}'
-  + '.sugs li{margin:0}'
-  + '.sugs a,.sugs .sug-msg{display:block;padding:9px 11px;border-radius:7px;text-decoration:none;color:var(--tx);font-size:15px}'
-  + '.sugs a small{display:block;color:var(--mu);font-size:12px}'
-  + '.sugs a:hover,.sugs a.active{background:#dcfce7}'
-  + '.sug-msg{color:var(--mu);font-size:14px}'
-  + '.hint{font-size:13px;color:var(--mu);margin:8px 0 18px}'
 
-interface Meta {
-  title: string
-  desc: string
-  canonical: string
-  nonce: string
-  jsonLd?: string
-  breadcrumb?: string
-}
+const CSS = ' :root{color-scheme:light;--vd:#225535;--tx:#243129;--mu:#53635a;--bd:#d3ddd5;--bg:#f5f7f3}'
+  + '*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--tx);background:#fff;line-height:1.55}'
+  + 'main{max-width:1000px;margin:0 auto;padding:24px 20px 32px}h1{font-family:Georgia,serif;font-size:clamp(27px,4vw,40px);line-height:1.2;margin:0 0 10px}h2{font-size:21px;margin:28px 0 14px}h3{font-size:19px;line-height:1.3;margin:0 0 8px}'
+  + 'a{color:var(--vd)}.sub,.meta{color:var(--mu)}.sub{margin:0 0 22px}.meta{font-size:13px;margin:8px 0}.hint{font-size:14px;color:var(--mu);margin:10px 0 22px}'
+  + '.card,.precio-box{border:1px solid var(--bd);border-radius:14px;padding:20px;background:#fff;min-width:0;overflow-wrap:anywhere}.card p{margin:8px 0}.cards,.precios{display:grid;gap:16px}.precios{grid-template-columns:repeat(2,minmax(0,1fr))}.precio-box{background:var(--bg)}'
+  + '.card .horario{margin:14px 0;font-size:14px}.acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #9db1a2;border-radius:8px;background:#fff;color:var(--vd);text-decoration:none;font:inherit;font-size:14px;font-weight:650;text-align:center}.btn--principal{color:#fff;background:var(--vd);border-color:var(--vd)}'
+  + ':focus-visible{outline:3px solid #22683e;outline-offset:3px}.aviso{padding:12px 15px;margin:22px 0;background:var(--bg);border-left:3px solid #5c825e;font-size:14px}.aviso p:last-child{margin-bottom:0}summary{cursor:pointer;font-weight:650;min-height:24px}.aviso ul{padding-left:22px}.aviso li{margin:10px 0}'
+  + '.lista ul{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0}.lista a{display:block;padding:9px 12px;border:1px solid var(--bd);border-radius:9px;text-decoration:none;min-height:44px}.lista b{color:var(--mu);margin-left:5px;font-weight:400}.lista a:hover,.btn:hover{background:#eaf0e8}.btn--principal:hover{background:#163e26}'
+  + '.precio-linea{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:10px 0}.precio-linea b{font-size:26px;color:var(--vd);white-space:nowrap}.precio-nota{font-size:14px;margin:12px 0}.precio-fuente,.precio-desg{font-size:13px;color:var(--mu);margin:10px 0 0}.precio-box .etiqueta{font-size:13px;color:var(--mu);margin:0}.precio-box .pendiente{font-weight:650}'
+  + '.filtro{display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:22px 0}.filtro label{display:block;font-weight:650;margin:0 0 5px}.filtro select{font:inherit;min-height:44px;padding:8px 35px 8px 12px;border:1px solid #839788;border-radius:8px;background:#fff;color:var(--tx)}'
+  + '.motivos{padding-left:22px}.motivos li{margin:12px 0}.legal{margin-top:24px;padding-top:16px;border-top:1px solid var(--bd);color:var(--mu);font-size:14px}.volver{margin:0 0 18px;font-size:14px}.distancia{font-weight:650;color:var(--vd)}footer{border-top:1px solid var(--bd);padding:22px 18px;color:var(--mu);font-size:13px;text-align:center}'
+  + '@media(max-width:600px){main{padding:22px 16px}.precios{grid-template-columns:1fr}.card,.precio-box{padding:17px}.acciones .btn{flex:1 1 140px}.precio-linea b{font-size:24px}}'
+
+interface Meta { title: string; desc: string; canonical: string; nonce: string; jsonLd?: string; breadcrumb?: string; noindex?: boolean }
 
 function envoltorio(m: Meta, cuerpo: string): string {
-  return '<!DOCTYPE html><html lang="es"><head>'
-    + '<meta charset="utf-8" />'
-    + '<meta name="viewport" content="width=device-width, initial-scale=1" />'
-    + '<title>' + esc(m.title) + '</title>'
-    + '<meta name="description" content="' + esc(m.desc) + '" />'
-    + '<link rel="canonical" href="' + esc(m.canonical) + '" />'
-    + '<meta name="theme-color" content="#16a34a" />'
-    + '<meta property="og:title" content="' + esc(m.title) + '" />'
-    + '<meta property="og:description" content="' + esc(m.desc) + '" />'
-    + '<meta property="og:type" content="website" />'
-    + '<meta property="og:url" content="' + esc(m.canonical) + '" />'
-    + '<meta name="robots" content="index,follow,max-image-preview:large" />'
-    + ogSocialTags(originFromCanonical(m.canonical))
-    + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32" />'
-    + (m.jsonLd ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.jsonLd + '</script>' : '')
-    + (m.breadcrumb ? '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + m.breadcrumb + '</script>' : '')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + '</style></head><body>'
-    + mastheadHtml('itv') + '<main>'
-    + cuerpo
-    + '</main><footer>Datos de la DGT y de los portales de datos abiertos autonomicos. '
-    + '<a href="/">España Útil</a> &middot; <a href="/privacidad">Privacidad</a></footer>'
-    + '</body></html>'
+  return '<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+    + '<title>' + esc(m.title) + '</title><meta name="description" content="' + esc(m.desc) + '">'
+    + '<link rel="canonical" href="' + esc(m.canonical) + '"><meta name="theme-color" content="#225535">'
+    + '<meta property="og:title" content="' + esc(m.title) + '"><meta property="og:description" content="' + esc(m.desc) + '">'
+    + '<meta property="og:type" content="website"><meta property="og:url" content="' + esc(m.canonical) + '">'
+    + '<meta name="robots" content="' + (m.noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large') + '">'
+    + ogSocialTags(originFromCanonical(m.canonical)) + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32">'
+    + [m.jsonLd, m.breadcrumb].filter(Boolean).map(j => '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + j + '</script>').join('')
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + CABECERA_COMPACTA_CSS + CSS_BUSCADOR_ITV + '</style></head><body>'
+    + mastheadHtml('itv', { compact: true, hideMunicipioSearch: true }) + '<main>' + cuerpo
+    + '</main><footer>Directorio elaborado con fuentes oficiales. <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer></body></html>'
 }
 
-function tarjeta(e: EstacionITV, municipio: string): string {
-  const tel = telHref(e.tel)
+export function tarjetaItv(e: EstacionITV, municipio: string, distanciaKm?: number): string {
+  const telefonos = telefonosItv(e.tel)
+  const cita = enlaceOficialItv(e.citaUrl)
+  const web = enlaceOficialItv(e.webUrl)
+  const contacto = fecha(e.contactoVerificadoEn)
+  const consulta = fecha(e.verificadoEn)
+  const publicacion = fecha(e.publicadoEn)
   return '<article class="card">'
-    + '<h3 class="dir">' + esc(e.dir || 'Estacion de ITV') + '</h3>'
-    + '<p class="meta">'
-    + (e.cp ? esc(e.cp) + ' ' + esc(municipio) : esc(municipio))
-    + (e.op ? ' &middot; ' + esc(e.op) : '')
-    + (e.lineas ? ' &middot; ' + e.lineas + ' lineas de inspeccion' : '')
-    + (e.horario ? ' &middot; ' + esc(e.horario) : '')
-    + '</p>'
+    + (distanciaKm != null ? '<p class="distancia">A ' + esc(distanciaKm.toLocaleString('es-ES', { maximumFractionDigits: 1 })) + ' km en línea recta</p>' : '')
+    + '<h3>' + esc(e.nombre || 'ITV de ' + municipio) + '</h3>'
+    + '<p>' + esc(e.dir || 'Dirección pendiente de confirmar') + '<br>' + esc([e.cp, municipio].filter(Boolean).join(' ')) + '</p>'
+    + (e.op ? '<p class="meta">Gestionada por ' + esc(e.op) + '</p>' : '')
     + '<div class="acciones">'
-    + (tel ? '<a class="btn btn--tel" href="' + esc(tel) + '">Llamar ' + esc(e.tel) + '</a>' : '')
-    + '<a class="btn" href="' + esc(mapsHref(e)) + '" target="_blank" rel="noopener">Como llegar</a>'
-    + '</div></article>'
+    + (cita ? '<a class="btn btn--principal" href="' + esc(cita) + '" target="_blank" rel="noopener">Pedir cita</a>' : '')
+    + telefonos.map(t => '<a class="btn' + (cita ? '' : ' btn--principal') + '" href="' + esc(t.href) + '">Llamar ' + esc(t.texto) + '</a>').join('')
+    + '<a class="btn" href="' + esc(mapsHref(e)) + '" target="_blank" rel="noopener">Cómo llegar</a>'
+    + (web && web !== cita ? '<a class="btn" href="' + esc(web) + '" target="_blank" rel="noopener">Web oficial</a>' : '')
+    + '</div>'
+    + (e.horario.length > 180
+      ? '<details class="horario"><summary>Ver horario y excepciones</summary><p>' + esc(e.horario) + '</p></details>'
+      : '<p><strong>Horario:</strong> ' + (e.horario ? esc(e.horario) : 'confírmalo con la estación') + '</p>')
+    + (!cita ? '<p class="meta">Cita por internet pendiente de verificar' + (telefonos.length ? '; puedes llamar a la estación.' : '.') + '</p>'
+      : '<p class="meta">La reserva se realiza en la web del operador.' + (fecha(e.citaVerificadoEn) ? ' Enlace comprobado el ' + esc(fecha(e.citaVerificadoEn)) + '.' : '') + '</p>')
+    + (e.municipioFuenteUrl && fecha(e.municipioVerificadoEn) ? '<p class="meta">Municipio confirmado el ' + esc(fecha(e.municipioVerificadoEn))
+      + ' · ' + enlace(e.municipioFuenteUrl, 'Fuente del municipio') + '.</p>' : '')
+    + (publicacion || consulta ? '<p class="meta">' + enlace(e.fuenteUrl, 'Fuente oficial')
+      + (publicacion ? ' · Documento de ' + esc(publicacion) : '') + (consulta ? ' · Consultado el ' + esc(consulta) : '') + '.</p>' : '')
+    + (contacto ? '<p class="meta">Teléfono y ubicación de la copia del ' + esc(contacto) + '. ' + enlace(e.contactoFuenteUrl, 'Fuente de contacto') + '.</p>' : '')
+    + '</article>'
 }
 
-// Datos estructurados: una AutomotiveBusiness por estacion.
 function jsonLdEstaciones(nombre: string, ests: EstacionITV[], provincia: string): string {
   const items = ests.slice(0, 15).map((e, i) => ({
-    '@type': 'ListItem',
-    position: i + 1,
-    item: {
-      '@type': 'AutomotiveBusiness',
-      name: 'Estacion de ITV' + (e.op ? ' - ' + e.op : ''),
-      address: {
-        '@type': 'PostalAddress',
-        streetAddress: e.dir,
-        addressLocality: e.mun,
-        postalCode: e.cp || undefined,
-        addressRegion: provincia,
-        addressCountry: 'ES',
-      },
-      telephone: e.tel || undefined,
-      geo: (e.lat != null && e.lng != null)
-        ? { '@type': 'GeoCoordinates', latitude: e.lat, longitude: e.lng }
-        : undefined,
+    '@type': 'ListItem', position: i + 1,
+    item: { '@type': 'AutomotiveBusiness', name: e.nombre || 'ITV de ' + normalizaNombreMunicipio(e.mun),
+      address: { '@type': 'PostalAddress', streetAddress: e.dir, addressLocality: e.mun, postalCode: e.cp || undefined, addressRegion: provincia, addressCountry: 'ES' },
+      telephone: telefonosItv(e.tel).map(t => t.href.slice(4)),
+      geo: mapsHref(e).includes('/dir/') ? { '@type': 'GeoCoordinates', latitude: e.lat, longitude: e.lng } : undefined,
     },
   }))
-  return JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'ItemList',
-    name: 'Estaciones de ITV en ' + nombre,
-    numberOfItems: items.length,   // debe cuadrar con los items emitidos (slice 15)
-    itemListElement: items,
-  }).replace(/</g, '\\u003c')
+  return JSON.stringify({ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Estaciones de ITV en ' + nombre, numberOfItems: items.length, itemListElement: items }).replace(/</g, '\\u003c')
 }
 
-const AVISO = '<p class="aviso">Los precios de la ITV los fija cada comunidad autonoma y varian '
-  + 'segun el tipo de vehiculo y el combustible. Confirma horario y si hace falta cita previa '
-  + 'antes de desplazarte: muchas estaciones solo atienden con reserva.</p>'
-
-// ---- Indice nacional: /itv/ ----
-export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string, updatedAt?: string): string {
-  const title = 'Estaciones de ITV en España por provincia | España Útil'
-  const desc = 'Directorio de las ' + total + ' estaciones de ITV de España: direccion, telefono y como llegar, '
-    + 'organizadas por provincia y municipio.'
-  const lista = provincias.map(p =>
-    '<li><a href="/itv/' + esc(p.slug) + '">' + esc(p.name) + ' <b>' + p.count + '</b></a></li>'
-  ).join('')
-  const buscador =
-    '<div class="buscador">'
-    + '<label for="q">Busca tu municipio</label>'
-    + '<div class="campo">'
-    + '<input id="q" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" '
-    + 'placeholder="Escribe tu municipio…" '
-    + 'role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugs" />'
-    + '<ul id="sugs" class="sugs" role="listbox" aria-label="Municipios con ITV" hidden></ul>'
-    + '</div>'
-    + '<p class="hint">Escribe tu municipio y te llevamos a su ITV. O mira la lista por provincia más abajo.</p>'
-    + '</div>'
-  // Autocompletado: misma logica que /farmacias/, contra /api/itv/municipios.
-  const script = `<script nonce="${esc(nonce)}">
-  (function () {
-    var input = document.getElementById('q');
-    var box = document.getElementById('sugs');
-    var muni = [];
-    var loaded = false;
-    var active = -1;
-    var shown = [];
-    function norm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g, ''); }
-    function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-    function cerrar() { box.hidden = true; box.innerHTML = ''; active = -1; shown = []; input.setAttribute('aria-expanded', 'false'); }
-    function msg(t) { box.innerHTML = '<li><span class="sug-msg">' + esc(t) + '</span></li>'; box.hidden = false; shown = []; active = -1; input.setAttribute('aria-expanded', 'true'); }
-    // Alias cooficiales/alternativos de provincia (se buscan ADEMAS del nombre
-    // canonico) para que 'gipuzkoa', 'araba', 'gerona'... encuentren su provincia.
-    var provs = null;
-    var PROV_ALIAS = {
-      'guipuzcoa': 'gipuzkoa', 'alava': 'araba', 'bizkaia': 'vizcaya',
-      'girona': 'gerona', 'lleida': 'lerida', 'ourense': 'orense',
-      'a coruna': 'la coruna coruna', 'islas baleares': 'illes balears baleares',
-      'santa cruz de tenerife': 'tenerife', 'navarra': 'nafarroa',
-      'alicante': 'alacant', 'castellon': 'castello'
-    };
-    function buildProvs() {
-      if (provs) return provs;
-      provs = []; var seen = {};
-      for (var i = 0; i < muni.length; i++) {
-        var parts = String(muni[i].u || '').split('/'); var slug = parts[2] || '';
-        if (!slug || seen[slug]) continue; seen[slug] = 1;
-        var nombre = muni[i].p || '', np = norm(nombre);
-        provs.push({ n: nombre, u: '/' + parts[1] + '/' + slug, s: np + ' ' + (PROV_ALIAS[np] || '') });
-      }
-      return provs;
-    }
-    function render(q) {
-      var nq = norm(q);
-      if (nq.length < 2) { cerrar(); return; }
-      if (!loaded) { msg('Cargando municipios\\u2026'); return; }
-      var res = [];
-      var pv = buildProvs();
-      for (var k = 0; k < pv.length && res.length < 3; k++) {
-        if (pv[k].s.indexOf(nq) >= 0) res.push({ n: 'Toda la provincia: ' + pv[k].n, p: 'Ver municipios', u: pv[k].u });
-      }
-      for (var i = 0; i < muni.length && res.length < 12; i++) {
-        if (norm(muni[i].n).indexOf(nq) >= 0) res.push(muni[i]);
-      }
-      shown = res; active = -1;
-      if (res.length === 0) { msg('No encontramos ITV en ese municipio. Prueba con otro o mira por provincia.'); return; }
-      var html = '';
-      for (var j = 0; j < res.length; j++) {
-        html += '<li role="option"><a href="' + esc(res[j].u) + '">' + esc(res[j].n) + '<small>' + esc(res[j].p) + '</small></a></li>';
-      }
-      box.innerHTML = html; box.hidden = false; input.setAttribute('aria-expanded', 'true');
-    }
-    function marcar(idx) {
-      var links = box.querySelectorAll('a');
-      for (var i = 0; i < links.length; i++) links[i].classList.toggle('active', i === idx);
-      if (idx >= 0 && links[idx]) links[idx].scrollIntoView({ block: 'nearest' });
-    }
-    function ir(idx) { if (idx >= 0 && shown[idx]) { window.location.href = shown[idx].u; return true; } return false; }
-    function cargar() {
-      if (loaded) return;
-      fetch('/api/itv/municipios', { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : []; })
-        .then(function (data) {
-          muni = Array.isArray(data) ? data : (data && data.municipios) || [];
-          loaded = true;
-          if (norm(input.value).length >= 2) render(input.value);
-        })
-        .catch(function () { loaded = true; msg('No se pudo cargar el listado. Consulta por provincia.'); });
-    }
-    input.addEventListener('focus', cargar);
-    input.addEventListener('input', function () { cargar(); render(input.value); });
-    input.addEventListener('keydown', function (e) {
-      if (box.hidden || shown.length === 0) { if (e.key === 'Enter') { e.preventDefault(); } return; }
-      if (e.key === 'ArrowDown') { e.preventDefault(); active = Math.min(active + 1, shown.length - 1); marcar(active); }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); active = Math.max(active - 1, 0); marcar(active); }
-      else if (e.key === 'Enter') { e.preventDefault(); if (!ir(active)) ir(0); }
-      else if (e.key === 'Escape') { cerrar(); }
-    });
-    document.addEventListener('click', function (e) { if (e.target !== input && !box.contains(e.target)) cerrar(); });
-  })();
-  </script>`
+function migas(canonical: string, provincia?: { name: string; slug: string }, municipio?: string): string {
   const origin = originFromCanonical(canonical)
-  return envoltorio({ title, desc, canonical, nonce,
-    breadcrumb: breadcrumbLd([{ name: 'Inicio', url: origin + '/' }, { name: 'ITV', url: origin + '/itv/' }]) },
-    '<h1>Estaciones de ITV en España</h1>'
-    + '<p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
-    + avisoDirectorio(updatedAt)
-    + buscador
-    + '<p><a class="btn" href="/itv/precios">Cuánto cuesta la ITV en cada comunidad</a></p>'
-    + '<h2>Todas las provincias</h2>'
-    + '<nav class="lista"><ul>' + lista + '</ul></nav>'
-    + AVISO
-    + script
-  )
+  const pasos = [{ name: 'Inicio', url: origin + '/' }, { name: 'ITV', url: origin + '/itv/' }]
+  if (provincia) pasos.push({ name: provincia.name, url: origin + '/itv/' + provincia.slug })
+  if (municipio) pasos.push({ name: municipio, url: canonical })
+  return breadcrumbLd(pasos)
 }
 
-// ---- Provincia: /itv/:provincia ----
+export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string, updatedAt?: string, fuentesEstado?: FuenteItvEstado[]): string {
+  return envoltorio({ title: 'Estaciones de ITV en España | España Útil', desc: 'Busca estaciones de ITV en tu municipio o cerca de él. Dirección, teléfonos, cita y precios con sus fuentes.', canonical, nonce, breadcrumb: migas(canonical) },
+    '<h1>Encuentra tu ITV</h1><p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
+    + buscadorItv(nonce) + '<p class="hint">Busca tu municipio. Si no tenemos una estación allí, te mostramos las más cercanas que podemos localizar.</p>'
+    + '<p><a class="btn" href="/itv/precios">Comparar precios de la ITV</a></p>' + avisoDirectorio(updatedAt, Date.now(), fuentesEstado)
+    + '<h2>Buscar por provincia</h2><nav class="lista" aria-label="Provincias"><ul>'
+    + provincias.map(p => '<li><a href="/itv/' + esc(p.slug) + '">' + esc(p.name) + ' <b>' + p.count + '</b></a></li>').join('')
+    + '</ul></nav>')
+}
+
+export function buildItvBusquedaPage(nonce: string, consulta: string, resultados: ResultadoTiempo[], canonical: string, indisponible = false): string {
+  return envoltorio({ title: 'Buscar ITV | España Útil', desc: 'Busca una estación por municipio o provincia.', canonical, nonce, noindex: true },
+    '<p class="volver"><a href="/itv/">← ITV</a></p><h1>Buscar ITV</h1>'
+    + buscadorItv(nonce, consulta) + '<h2>Resultados de la búsqueda</h2>'
+    + (indisponible ? '<p role="alert">Ahora no se puede cargar el buscador. Vuelve a pulsar Buscar o <a href="/itv/">consulta las provincias</a>.</p>' : resultadosItv(consulta, resultados)))
+}
+
 export interface ItvProvinciaData {
-  updatedAt?: string
-  provinciaSlug: string
-  provinciaName: string
-  estaciones: EstacionITV[]
-  municipios: MunicipioITV[]
-  tarifa: Tarifa | null
-  canonical: string
+  directorioDisponible?: boolean;
+  updatedAt?: string; fuentesEstado?: FuenteItvEstado[]; provinciaSlug: string; provinciaName: string;
+  estaciones: EstacionITV[]; municipios: MunicipioITV[]; tarifa: Tarifa | null; canonical: string
 }
 
 export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): string {
-  const n = d.estaciones.length
-  const precio = d.tarifa && d.tarifa.gasolina != null ? desglosa(d.tarifa, d.tarifa.gasolina) : null
-  const title = 'ITV en ' + d.provinciaName + ': ' + n + ' estaciones'
-    + (precio ? ' y precio ' + eur(precio.total) : '') + ' | España Útil'
-  const desc = (precio
-      ? 'Cuánto cuesta la ITV en ' + d.provinciaName + ' (' + eur(precio.total) + ' un turismo de gasolina) y '
-      : 'Todas las estaciones de ITV de ' + d.provinciaName + ': dirección, teléfono y cómo llegar. ')
-    + 'todas las estaciones por municipio.'
-  const lista = d.municipios.map(m =>
-    '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name)
-    + (m.count > 1 ? ' <b>' + m.count + '</b>' : '') + '</a></li>'
-  ).join('')
-  const origin = originFromCanonical(d.canonical)
-  return envoltorio(
-    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.provinciaName, d.estaciones, d.provinciaName),
-      breadcrumb: breadcrumbLd([
-        { name: 'Inicio', url: origin + '/' },
-        { name: 'ITV', url: origin + '/itv/' },
-        { name: d.provinciaName, url: origin + '/itv/' + d.provinciaSlug },
-      ]) },
-    '<h1>ITV en ' + esc(d.provinciaName) + '</h1>'
-    + '<p class="sub">' + n + ' estacion' + (n === 1 ? '' : 'es') + ' en ' + d.municipios.length + ' municipio'
-    + (d.municipios.length === 1 ? '' : 's') + '</p>'
-    + avisoDirectorio(d.updatedAt)
-    + bloquePrecioProvincia(d.tarifa, d.provinciaName)
-    + (d.municipios.length ? '<h2>Por municipio</h2><nav class="lista"><ul>' + lista + '</ul></nav>' : '')
-    + AVISO
-    + '<p><a class="btn" href="/itv/">Ver todas las provincias</a></p>'
-  )
+  if (d.directorioDisponible === false) return directorioIndisponible(nonce, d.canonical, d.provinciaName)
+  return envoltorio({ title: 'ITV en ' + d.provinciaName + ': estaciones y precios | España Útil', desc: 'Busca tu estación de ITV en ' + d.provinciaName + '. Municipios, precios y fuentes oficiales.', canonical: d.canonical, nonce, breadcrumb: migas(d.canonical, { name: d.provinciaName, slug: d.provinciaSlug }) },
+    '<p class="volver"><a href="/itv/">← Todas las provincias</a></p><h1>ITV en ' + esc(d.provinciaName) + '</h1>'
+    + '<p class="sub">' + d.estaciones.length + ' estaciones en ' + d.municipios.length + ' municipios</p>'
+    + buscadorItv(nonce) + '<h2>Elige un municipio</h2><nav class="lista" aria-label="Municipios con ITV"><ul>'
+    + d.municipios.map(m => '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name) + ' <b>' + m.count + '</b></a></li>').join('')
+    + '</ul></nav>' + bloquePrecioProvincia(d.tarifa, d.provinciaName) + avisoDirectorio(d.updatedAt, Date.now(), d.fuentesEstado))
 }
 
-// ---- Municipio: /itv/:provincia/:municipio ----
 export interface ItvMunicipioData {
-  updatedAt?: string
-  provinciaSlug: string
-  provinciaName: string
-  municipioName: string
-  estaciones: EstacionITV[]
-  otrosMunicipios: MunicipioITV[]
-  canonical: string
+  directorioDisponible?: boolean;
+  updatedAt?: string; fuentesEstado?: FuenteItvEstado[]; provinciaSlug: string; provinciaName: string; municipioName: string;
+  estaciones: EstacionITV[]; otrosMunicipios: MunicipioITV[]; canonical: string; tarifa?: Tarifa | null;
+  cercanas?: Array<{ estacion: EstacionITV; distanciaKm: number }>;
+  origenCercanas?: { nombre: string; lat: number; lng: number }
+}
+
+function directorioIndisponible(nonce: string, canonical: string, nombre: string): string {
+  return envoltorio({ title: 'ITV en ' + nombre + ' | España Útil', desc: 'Consulta de estaciones de ITV.', canonical, nonce, noindex: true },
+    '<h1>ITV en ' + esc(nombre) + '</h1><p role="alert">Ahora no podemos cargar el directorio de estaciones. Inténtalo de nuevo en unos minutos.</p>'
+    + '<p><a class="btn" href="' + esc(canonical) + '">Reintentar</a></p><p>' + enlace('https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/', 'Consultar el directorio oficial') + '</p>')
 }
 
 export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): string {
+  if (d.directorioDisponible === false) return directorioIndisponible(nonce, d.canonical, d.municipioName)
   const n = d.estaciones.length
-  const title = 'ITV en ' + d.municipioName + ': direccion y telefono | España Útil'
-  const desc = (n === 1 ? 'Estacion de ITV en ' : 'Las ' + n + ' estaciones de ITV de ')
-    + d.municipioName + ' (' + d.provinciaName + '): direccion, telefono y como llegar.'
-  const otros = d.otrosMunicipios.length
-    ? '<nav class="lista"><h2>Otros municipios de ' + esc(d.provinciaName) + '</h2><ul>'
-      + d.otrosMunicipios.slice(0, 60).map(m =>
-          '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name) + '</a></li>'
-        ).join('')
-      + '</ul></nav>'
-    : ''
-  const origin = originFromCanonical(d.canonical)
-  return envoltorio(
-    { title, desc, canonical: d.canonical, nonce, jsonLd: jsonLdEstaciones(d.municipioName, d.estaciones, d.provinciaName),
-      breadcrumb: breadcrumbLd([
-        { name: 'Inicio', url: origin + '/' },
-        { name: 'ITV', url: origin + '/itv/' },
-        { name: d.provinciaName, url: origin + '/itv/' + d.provinciaSlug },
-        { name: d.municipioName, url: d.canonical },
-      ]) },
-    '<h1>ITV en ' + esc(d.municipioName) + '</h1>'
-    + '<p class="sub">' + esc(d.provinciaName) + ' &middot; ' + n + ' estacion' + (n === 1 ? '' : 'es') + '</p>'
-    + avisoDirectorio(d.updatedAt)
-    + d.estaciones.map(e => tarjeta(e, d.municipioName)).join('')
-    + AVISO
-    + '<p><a class="btn" href="/itv/' + esc(d.provinciaSlug) + '">Ver toda la provincia de ' + esc(d.provinciaName) + '</a></p>'
-    + otros
-  )
+  const titulo = 'ITV ' + (n ? 'en ' : 'cerca de ') + d.municipioName
+  return envoltorio({ title: titulo + ' | España Útil', desc: titulo + ': direcciones, teléfonos y cómo llegar.', canonical: d.canonical, nonce, noindex: !n,
+    ...(n ? { jsonLd: jsonLdEstaciones(d.municipioName, d.estaciones, d.provinciaName) } : {}),
+    breadcrumb: migas(d.canonical, { name: d.provinciaName, slug: d.provinciaSlug }, d.municipioName) },
+    '<p class="volver"><a href="/itv/' + esc(d.provinciaSlug) + '">← ITV en ' + esc(d.provinciaName) + '</a></p>'
+    + '<h1>' + esc(titulo) + '</h1><p class="sub">' + esc(d.provinciaName)
+    + (n ? ' · ' + n + (n === 1 ? ' estación' : ' estaciones') : '') + '</p>'
+    + (n ? '<div class="cards">' + d.estaciones.map(e => tarjetaItv(e, d.municipioName)).join('') + '</div>'
+      : '<p>No tenemos una estación registrada en este municipio.</p>')
+    + (d.cercanas?.length ? '<h2>Estaciones cercanas</h2><p class="hint">Distancias en línea recta desde el centro de ' + esc(d.origenCercanas?.nombre || d.municipioName)
+      + ', hasta ' + DISTANCIA_MAX_ITV_KM + ' km. El recorrido por carretera puede ser mayor. Solo comparamos estaciones con ubicación conocida.</p><div class="cards">'
+      + d.cercanas.map(x => tarjetaItv(x.estacion, normalizaNombreMunicipio(x.estacion.mun), x.distanciaKm)).join('') + '</div>' : '')
+    + (!n && !d.cercanas?.length ? '<p>' + (d.origenCercanas
+      ? 'No hemos localizado estaciones con ubicación conocida a menos de ' + DISTANCIA_MAX_ITV_KM + ' km.'
+      : 'No disponemos de ubicaciones suficientes para calcular las más cercanas.')
+      + ' Consulta las estaciones de la provincia.</p>' : '')
+    + (n ? bloquePrecioProvincia(d.tarifa || null, d.provinciaName) : '<p><a class="btn" href="/itv/precios">Consultar precios por territorio</a></p>')
+    + avisoDirectorio(d.updatedAt, Date.now(), d.fuentesEstado)
+    + '<h2>Buscar otro lugar</h2>' + buscadorItv(nonce)
+    + (d.otrosMunicipios.length ? '<nav class="lista" aria-label="Otros municipios"><h2>Otros municipios de ' + esc(d.provinciaName) + '</h2><ul>'
+      + d.otrosMunicipios.slice(0, 60).map(m => '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name) + '</a></li>').join('') + '</ul></nav>' : ''))
 }
 
-// ---- Precios: /itv/precios ----
-//
-// La cifra principal es el PRECIO FINAL (base + impuesto del territorio + tasa
-// DGT). Es lo unico comparable entre comunidades: cada boletin publica con un
-// criterio distinto, y poner "46,00 €" de Ceuta al lado de "41,47 €" de Valencia
-// infravalora el gasto real en Ceuta un 18%.
+function eur(n: number): string { return n.toFixed(2).replace('.', ',') + ' €' }
+type Combustible = 'gasolina' | 'diesel'
 
-function eur(n: number): string {
-  return n.toFixed(2).replace('.', ',') + ' €'
+function totalTarifa(t: Tarifa, combustible: Combustible): number | null {
+  const precio = t[combustible]
+  return tarifaVigente(t) && precio != null ? desglosa(t, precio).total : null
 }
 
-function filaTarifa(t: Tarifa): string {
-  const g = t.gasolina != null ? desglosa(t, t.gasolina) : null
-  const d = t.diesel != null ? desglosa(t, t.diesel) : null
-  return '<tr>'
-    + '<th scope="row">' + esc(t.nombre) + (t.fiabilidad === 'media' ? ' <span class="ojo" title="Con matices">*</span>' : '') + '</th>'
-    + '<td>' + (g ? '<b>' + eur(g.total) + '</b>' : '&mdash;') + '</td>'
-    + '<td>' + (d ? '<b>' + eur(d.total) + '</b>' : '&mdash;') + '</td>'
-    + '<td class="desg">' + (g ? eur(g.base) + ' + ' + esc(NOMBRE_IMPUESTO[t.impuesto]) + ' + ' + eur(TASA_DGT) : '&mdash;') + '</td>'
-    + '</tr>'
+function fichaTarifa(t: Tarifa, combustible?: Combustible): string {
+  const lineas: Combustible[] = combustible ? [combustible] : ['gasolina', 'diesel']
+  const condiciones = t.estado === 'verificada' && !tarifaVigente(t)
+    ? 'El precio necesita una nueva revisión. Consulta el total con la estación.'
+    : t.condiciones || ''
+  return '<article class="precio-box"><h3>' + esc(t.nombre) + '</h3>'
+    + '<p class="etiqueta">' + (t.tipoPrecio === 'maximo' ? 'Tarifa máxima publicada' : 'Tarifa publicada') + ' · Inspección periódica de un turismo</p>'
+    + lineas.map(c => {
+      const total = totalTarifa(t, c)
+      const importe = t[c]
+      const d = total != null && importe != null ? desglosa(t, importe) : null
+      return '<p class="precio-linea"><span>' + (c === 'gasolina' ? 'Gasolina' : 'Diésel') + '</span>'
+        + (total != null ? '<b>' + eur(total) + '</b>' : '<span class="pendiente">Pendiente de confirmar</span>') + '</p>'
+        + (total != null && t.alcancePrecio ? '<p class="precio-nota"><strong>' + esc(t.alcancePrecio) + '</strong></p>' : '')
+        + (d ? '<p class="precio-desg">' + eur(d.base) + ' de inspección'
+          + (d.impuesto ? ' + ' + eur(d.impuesto) + ' de ' + esc(NOMBRE_IMPUESTO[t.impuesto]) : '')
+          + ' + ' + eur(d.tasaDgt) + ' de tasa DGT'
+          + (d.suplementos || []).map(s => ' + ' + eur(s.importe) + ' de ' + esc(s.concepto)).join('') + '.</p>' : '')
+    }).join('')
+    + (condiciones ? '<p class="precio-nota">' + esc(condiciones) + '</p>' : '')
+    + '<details class="precio-fuente"><summary>Fuente y revisión'
+    + (fecha(t.revisada) ? ' · ' + esc(fecha(t.revisada)) : '') + '</summary>'
+    + '<p>' + enlace(t.fuenteUrl, t.norma) + '. ' + esc(t.vigencia) + '.</p>'
+    + (t.suplementos || []).filter(s => s.fuenteUrl).map(s => '<p>' + enlace(s.fuenteUrl, 'Fuente de ' + s.concepto.toLowerCase()) + '</p>').join('')
+    + '</details></article>'
 }
 
-export function buildItvPreciosPage(nonce: string, canonical: string): string {
-  const title = 'Precio de la ITV 2026 por comunidad autónoma | España Útil'
-  const desc = 'Cuánto cuesta pasar la ITV en cada comunidad autónoma en 2026, con el precio final '
-    + 'que se paga en caja: tarifa oficial, impuesto de cada territorio y tasa de Tráfico.'
-
-  const ordenadas = [...TARIFAS].sort((a, b) => {
-    const ta = a.gasolina != null ? desglosa(a, a.gasolina).total : Infinity
-    const tb = b.gasolina != null ? desglosa(b, b.gasolina).total : Infinity
-    return ta - tb
-  })
-
-  const conNota = ordenadas.filter(t => t.nota)
-
-  const origin = originFromCanonical(canonical)
-  return envoltorio({ title, desc, canonical, nonce,
-    breadcrumb: breadcrumbLd([
-      { name: 'Inicio', url: origin + '/' },
-      { name: 'ITV', url: origin + '/itv/' },
-      { name: 'Precios', url: canonical },
-    ]) },
-    '<h1>Cuánto cuesta la ITV en 2026</h1>'
-    + '<p class="sub">Precio final de una inspección periódica de turismo, ordenado de más barato a más caro. '
-    + 'Incluye el impuesto de cada territorio y la tasa de Tráfico.</p>'
-
-    + '<div class="tabla-wrap"><table class="tarifas">'
-    + '<thead><tr><th scope="col">Comunidad</th><th scope="col">Gasolina</th>'
-    + '<th scope="col">Diésel</th><th scope="col">Cómo se compone</th></tr></thead>'
-    + '<tbody>' + ordenadas.map(filaTarifa).join('') + '</tbody>'
-    + '</table></div>'
-
-    + '<h2>Dónde no hay precio oficial</h2>'
-    + '<ul class="motivos">'
-    + LIBERALIZADAS.map(x => '<li><b>' + esc(x.nombre) + '.</b> ' + esc(x.motivo) + '</li>').join('')
-    + '</ul>'
-
-    + '<h2>Territorios sin dato publicable</h2>'
-    + '<ul class="motivos">'
-    + SIN_DATO.map(x => '<li><b>' + esc(x.nombre) + '.</b> ' + esc(x.motivo) + '</li>').join('')
-    + '</ul>'
-
-    + (conNota.length
-        ? '<h2>Matices por territorio <span class="ojo">*</span></h2><ul class="motivos">'
-          + conNota.map(t => '<li><b>' + esc(t.nombre) + '.</b> ' + esc(t.nota!) + '</li>').join('')
-          + '</ul>'
-        : '')
-
-    + '<h2>De dónde salen estas cifras</h2>'
-    + '<ul class="fuentes">'
-    + ordenadas.map(t => '<li><b>' + esc(t.nombre) + ':</b> '
-        + (t.fuenteUrl
-            ? '<a href="' + esc(t.fuenteUrl) + '" target="_blank" rel="noopener nofollow">' + esc(t.norma) + '</a>'
-            : esc(t.norma))
-        + ' <span class="vig">(' + esc(t.vigencia) + ')</span></li>').join('')
-    + '</ul>'
-
-    + '<div class="legal">'
-    + '<p><b>Precios máximos, no precios reales.</b> Las tarifas reguladas son máximos: cada estación '
-    + 'puede cobrar menos. Confirma el precio en la estación antes de acudir.</p>'
-    + '<p><b>Impuestos.</b> Se aplica IVA (21%) en la península y Baleares, IGIC (7%) en Canarias e '
-    + 'IPSI en Ceuta (9%) y Melilla (4%). En Extremadura y en los consells de Balears la ITV es una '
-    + 'tasa y no lleva impuesto indirecto. Los tipos pueden cambiar.</p>'
-    + '<p><b>Tasa de Tráfico.</b> A las inspecciones periódicas se suma la tasa de la DGT por anotar '
-    + 'el resultado en el Registro de Vehículos (' + eur(TASA_DGT) + ' en 2026), que la estación '
-    + 'recauda por cuenta de la DGT. No está sujeta a IVA, IGIC ni IPSI.</p>'
-    + '<p><b>Información no vinculante.</b> Datos elaborados a partir de los boletines oficiales '
-    + 'citados arriba. Pueden existir errores o desfases; las fuentes oficiales prevalecen.</p>'
-    + '</div>'
-
-    + '<p><a class="btn" href="/itv/">Ver las estaciones de ITV por provincia</a></p>'
-  )
+export function buildItvPreciosPage(nonce: string, canonical: string, combustible: Combustible = 'gasolina'): string {
+  const ordenadas = [...TARIFAS].sort((a, b) => (totalTarifa(a, combustible) ?? Infinity) - (totalTarifa(b, combustible) ?? Infinity) || a.nombre.localeCompare(b.nombre, 'es'))
+  return envoltorio({ title: 'Precios de la ITV por territorio | España Útil', desc: 'Compara precios publicados de la ITV de gasolina o diésel, con suplementos, condiciones y fuentes oficiales.', canonical, nonce, breadcrumb: migas(canonical, undefined, 'Precios') },
+    '<p class="volver"><a href="/itv/">← Estaciones de ITV</a></p><h1>Compara el precio de la ITV</h1>'
+    + '<p class="sub">Elige el combustible de tu turismo. Ordenamos los importes confirmados de menor a mayor; las condiciones de cada tarifa aparecen junto al precio.</p>'
+    + '<form class="filtro" action="/itv/precios" method="get"><div><label for="combustible">Combustible del coche</label><select id="combustible" name="combustible">'
+    + '<option value="gasolina"' + (combustible === 'gasolina' ? ' selected' : '') + '>Gasolina</option>'
+    + '<option value="diesel"' + (combustible === 'diesel' ? ' selected' : '') + '>Diésel</option></select></div>'
+    + '<button class="btn btn--principal" type="submit">Comparar</button></form>'
+    + '<h2>Precios para ' + (combustible === 'gasolina' ? 'gasolina' : 'diésel') + '</h2><div class="precios">' + ordenadas.map(t => fichaTarifa(t, combustible)).join('') + '</div>'
+    + '<h2>Donde cada estación fija su precio</h2><ul class="motivos">'
+    + LIBERALIZADAS.map(x => '<li><strong>' + esc(x.nombre) + '.</strong> ' + esc(x.motivo) + '</li>').join('') + '</ul>'
+    + (SIN_DATO.length ? '<h2>Otros territorios pendientes de confirmar</h2><ul class="motivos">' + SIN_DATO.map(x => '<li><strong>' + esc(x.nombre) + '.</strong> ' + esc(x.motivo) + '</li>').join('') + '</ul>' : '')
+    + '<div class="legal"><p>Son importes de las fuentes indicadas para la inspección periódica de un turismo. Otros vehículos, reinspecciones, descuentos o pruebas adicionales pueden cambiar el precio. Comprueba las condiciones y el total al reservar.</p></div>'
+    + '<p class="precio-fuente">' + enlace(TASA_DGT_FUENTE, 'Consultar la tasa de la DGT') + ' · Revisión: ' + esc(fecha(TARIFAS_REVISADAS)) + '.</p>'
+    + '<p><a class="btn" href="/itv/">Buscar una estación de ITV</a></p>')
 }
 
-// Bloque de precio que se inserta en la pagina de cada provincia.
 export function bloquePrecioProvincia(t: Tarifa | null, provinciaName: string): string {
-  if (!t || t.gasolina == null) return ''
-  const g = desglosa(t, t.gasolina)
-  const d = t.diesel != null ? desglosa(t, t.diesel) : null
-  return '<h2>Cuánto cuesta la ITV en ' + esc(provinciaName) + '</h2>'
-    + '<div class="precio-box">'
-    + '<p class="precio-linea"><span>Turismo gasolina</span> <b>' + eur(g.total) + '</b></p>'
-    + (d ? '<p class="precio-linea"><span>Turismo diésel</span> <b>' + eur(d.total) + '</b></p>' : '')
-    + '<p class="precio-desg">' + eur(g.base) + ' de tarifa + ' + esc(NOMBRE_IMPUESTO[t.impuesto])
-    + ' + ' + eur(TASA_DGT) + ' de tasa de Tráfico. Es un precio máximo: puede cobrarse menos.</p>'
-    + (t.nota ? '<p class="precio-nota">' + esc(t.nota) + '</p>' : '')
-    + '<p class="precio-fuente">Fuente: ' + esc(t.norma) + '</p>'
-    + '</div>'
-    + '<p><a class="btn" href="/itv/precios">Comparar el precio con el resto de España</a></p>'
+  return '<h2>Precios de ITV en ' + esc(provinciaName) + '</h2>'
+    + (t ? fichaTarifa(t) : '<p>Consulta el precio de tu estación al reservar. No tenemos una tarifa única confirmada para esta provincia.</p>')
+    + '<p><a class="btn" href="/itv/precios">Comparar precios por combustible</a></p>'
 }
 
-export function itvHeaders(nonce: string): Record<string, string> {
+export function itvHeaders(nonce: string, now = Date.now()): Record<string, string> {
+  // Una respuesta con precios no debe sobrevivir al día en que vence la tarifa.
+  const dia = fechaHoraLocal(new Date(now)).slice(0, 10)
+  const manana = new Date(Date.parse(dia + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10)
+  const ttl = Math.max(0, Math.min(3600, Math.floor((instanteLocal(manana + 'T00:00') - now) / 1000)))
   const csp = [
     "default-src 'self'",
     "script-src 'self' 'nonce-" + nonce + "'",
@@ -517,8 +299,6 @@ export function itvHeaders(nonce: string): Record<string, string> {
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
-    // Las estaciones no cambian a diario (a diferencia de las guardias): cache
-    // larga en CDN, que ademas ahorra invocaciones del Worker.
-    'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+    'Cache-Control': 'public, max-age=' + Math.min(300, ttl) + ', s-maxage=' + ttl,
   }
 }

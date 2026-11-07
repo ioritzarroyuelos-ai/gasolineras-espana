@@ -1,30 +1,12 @@
-// Tarifas oficiales de la ITV por territorio.
-//
-// COMO SE HA CONSTRUIDO ESTO
-// Cada cifra viene de un boletin oficial autonomico o del operador que presta el
-// servicio, y ha pasado por un segundo verificador con fuente independiente. Las
-// que no superaron esa doble comprobacion NO estan aqui: es preferible una
-// comunidad ausente a un precio inventado sobre algo que la gente va a pagar.
-//
-// POR QUE NO VALE "PRECIO + 21%"
-// Hay CUATRO regimenes fiscales distintos y dos territorios donde la ITV es una
-// TASA y no lleva impuesto indirecto ninguno:
-//   - IVA 21%  peninsula, Baleares, Pais Vasco y Navarra (territorio IVA)
-//   - IGIC 7%  Canarias
-//   - IPSI 9%  Ceuta   (epigrafe IAE 843.6, Agrupacion 84, fuera del Anexo 3)
-//   - IPSI 4%  Melilla (tipo general de servicios)
-//   - exento   Extremadura y los Consells de Balears: son tasas, no precios
-//
-// Y la tasa de la DGT (4,18 € en 2026) se suma DESPUES del impuesto y nunca
-// lleva impuesto: la estacion actua como sustituto del contribuyente y la
-// repercute como suplido (Orden INT/229/2021, art. 2).
-//
-// El lio de verdad es que cada fuente publica con un criterio distinto: Canarias
-// publica sin impuesto ni tasa, Melilla publica con todo dentro, y Eivissa
-// incluye la tasa pero Mallorca no. Por eso cada entrada lleva sus dos flags
-// propios en vez de deducirlos del territorio.
+// Inspección periódica de turismos particulares. Las cifras siguen el criterio de cada fuente.
+// Cada entrada distingue la fecha de revisión, la vigencia y los suplementos aplicables.
+// Los territorios pendientes conservan su ficha y carecen de importes comparables.
 
 export const TASA_DGT = 4.18
+export const TASA_DGT_FUENTE = 'https://sedeclave.dgt.gob.es/WEB_Tasas/jsp/tasas/catalogo.xhtml'
+export const TARIFAS_REVISADAS = '2026-11-07'
+// Revisión preventiva al cambiar el año, no caducidad legal de la tasa publicada.
+const TASA_DGT_REVISAR_DESDE = '2027-01-01'
 
 export type Impuesto = 'iva21' | 'igic7' | 'ipsi9' | 'ipsi4' | 'exento'
 
@@ -49,9 +31,15 @@ export interface Tarifa {
   nombre: string
   provincias: string[]          // slugs de src/lib/provincias.ts que cubre
   regulada: boolean
+  estado: 'verificada' | 'pendiente'
+  revisada: string
+  tipoPrecio: 'tarifa' | 'maximo'
+  vigenteHasta?: string
+  alcancePrecio?: string
+  condiciones?: string
+  suplementos?: ReadonlyArray<{ concepto: string; importe: number; fuenteUrl?: string }>
   impuesto: Impuesto
-  // Criterio con el que la FUENTE publica sus cifras. No se deduce del
-  // territorio: dos islas de Balears lo hacen distinto.
+  // Conceptos ya incluidos en la cifra guardada, que desglosa conserva al céntimo.
   incluyeImpuesto: boolean
   incluyeTasaDgt: boolean
   gasolina?: number
@@ -59,14 +47,20 @@ export interface Tarifa {
   norma: string
   fuenteUrl?: string
   vigencia: string
-  // 'alta'  = boletin oficial + segunda fuente independiente al centimo
-  // 'media' = cifra correcta pero con un matiz relevante que se avisa al usuario
-  fiabilidad: 'alta' | 'media'
-  nota?: string
 }
 
-// Ordenadas por nombre. Solo territorios con cifra verificada; los que no
-// superaron la verificacion se listan en SIN_DATO mas abajo.
+// Una norma sin fecha de fin también necesita volver a contrastarse con la fuente.
+// El día de vencimiento se interpreta en horario peninsular, como las tarifas publicadas.
+export function tarifaVigente(t: Tarifa, ahora = Date.now()): boolean {
+  if (t.estado !== 'verificada' || !Number.isFinite(ahora)) return false
+  const hoy = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid' }).format(ahora)
+  const antiguedad = Date.parse(hoy + 'T00:00:00Z') - Date.parse(t.revisada + 'T00:00:00Z')
+  return antiguedad >= 0 && antiguedad <= 120 * 24 * 60 * 60 * 1000
+    && hoy < TASA_DGT_REVISAR_DESDE
+    && (!t.vigenteHasta || hoy <= t.vigenteHasta)
+}
+
+// Se conservan también los territorios cuyo precio final sigue pendiente.
 export const TARIFAS: ReadonlyArray<Tarifa> = [
   {
     slug: 'andalucia', nombre: 'Andalucía',
@@ -74,11 +68,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 33.28, diesel: 38.39,
     norma: 'Resolución de 19/12/2016 de la D.G. de Industria, Energía y Minas (BOJA nº 246, 27/12/2016)',
-    fuenteUrl: 'https://www.veiasa.es/itv/tarifas',
-    vigencia: 'Desde 01/01/2017, sin cambios a fecha de hoy',
-    fiabilidad: 'alta',
-    nota: 'Andalucía cobra por cilindrada: estos importes son para turismos de menos de 1.600 cc. '
-      + 'A partir de 1.600 cc son 43,52 € (gasolina) y 48,62 € (diésel).',
+    fuenteUrl: 'https://www.veiasa.es/itv/sobre-la-itv/tarifas',
+    vigencia: 'Tarifas publicadas por VEIASA, aprobadas en diciembre de 2016',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    alcancePrecio: 'Menos de 1.600 cc, sin bonificación',
+    condiciones: 'Para 1.600 cc o más, 43,52 € gasolina y 48,62 € diésel. VEIASA aplica una reducción del 10 % sobre la tarifa del servicio al realizar la inspección o reservar cita dentro del plazo legal, y un recargo del 12 % con más de un mes de retraso. La tasa DGT se conserva. Híbridos y vehículos adaptados tienen reglas propias.',
   },
   {
     slug: 'aragon', nombre: 'Aragón',
@@ -87,7 +83,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     gasolina: 49.56, diesel: 60.76,
     norma: 'Orden PEJ/1853/2025 (tarifa base 37,50 € gasolina / 46,76 € diésel, sin impuesto ni tasa)',
     vigencia: '2026',
-    fiabilidad: 'alta',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1429100330404',
+    vigenteHasta: '2026-12-31',
+    alcancePrecio: 'Inspección periódica con emisiones',
+    condiciones: 'Gasolina matriculada desde 1967 y diésel desde 1980. Otros vehículos y trámites tienen tarifas propias.',
   },
   {
     slug: 'asturias', nombre: 'Asturias',
@@ -95,10 +97,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 45.32, diesel: 45.32,
     norma: 'Resolución de 19/12/2025 (BOPA nº 248, 26/12/2025). Operador público ITVASA',
-    fuenteUrl: 'https://www.itvasa.es/categoriaM.php',
+    fuenteUrl: 'https://www.itvasa.com/tarifas.php',
     vigencia: '2026',
-    fiabilidad: 'alta',
-    nota: 'Asturias cobra lo mismo por gasolina y diésel.',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    vigenteHasta: '2026-12-31',
+    condiciones: 'Turismos particulares en ITVASA. El transporte escolar tiene otra tarifa.',
   },
   {
     slug: 'canarias', nombre: 'Canarias',
@@ -106,11 +111,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'igic7', incluyeImpuesto: false, incluyeTasaDgt: false,
     gasolina: 36.77, diesel: 45.87,
     norma: 'Resolución de 23/01/2026 de la D.G. de Industria (BOC nº 23, 04/02/2026, anuncio 343)',
-    fuenteUrl: 'https://sede.gobiernocanarias.org/boc/boc-a-2026-023-343.pdf',
+    fuenteUrl: 'https://sede.gobiernodecanarias.org/boc/boc-a-2026-023-343.pdf',
     vigencia: '01/02/2026 – 31/01/2027',
-    fiabilidad: 'alta',
-    nota: 'En Canarias no se aplica IVA sino IGIC. La propia resolución advierte de que sus '
-      + 'importes no incluyen ni el IGIC ni la tasa de Tráfico.',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'maximo',
+    vigenteHasta: '2027-01-31',
+    condiciones: 'Gasolina con catalizador y diésel matriculado desde el 1 de enero de 1980. Incluye el control de emisiones. La estación puede cobrar menos que el máximo.',
   },
   {
     slug: 'cantabria', nombre: 'Cantabria',
@@ -119,7 +126,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     gasolina: 51.07, diesel: 57.80,
     norma: 'Orden IND/58/2025 (BOC nº 246, 23/12/2025)',
     vigencia: '2026',
-    fiabilidad: 'alta',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://boc.cantabria.es/boces/verAnuncioAction.do?idAnuBlob=428844',
+    vigenteHasta: '2026-12-31',
+    alcancePrecio: 'Sin control de ruido adicional',
+    condiciones: 'Gasolina con catalizador y diésel de hasta 3.500 kg. Si el vehículo requiere control de ruido, se añaden 9,96 € más IVA (12,05 €).',
   },
   {
     slug: 'castilla-la-mancha', nombre: 'Castilla-La Mancha',
@@ -128,9 +141,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     gasolina: 32.46, diesel: 42.98,
     norma: 'Resolución de 11/12/2025 de la D.G. de Transición Energética (DOCM nº 251, 30/12/2025)',
     vigencia: '01/01/2026 – 31/12/2026',
-    fiabilidad: 'media',
-    nota: 'Son tarifas máximas. Además, la comunidad repercute una tasa autonómica propia de unos '
-      + '1,04 € que puede alterar el total en algunos céntimos.',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'maximo',
+    fuenteUrl: 'https://docm.jccm.es/docm/descargarArchivo.do?ruta=2025/12/30/pdf/2025_9655.pdf&tipo=rutaDocm',
+    vigenteHasta: '2026-12-31',
+    suplementos: [{ concepto: 'Tasa autonómica', importe: 1.04, fuenteUrl: 'https://docm.jccm.es/docm/descargarArchivo.do?ruta=2026/04/30/pdf/2026_3138.pdf&tipo=rutaDocm' }],
+    condiciones: 'Gasolina con catalizador matriculada después del 1 de octubre de 1994 y diésel desde 1980. Incluye emisiones, IVA, DGT y la tasa autonómica de 1,04 €. La estación puede cobrar menos.',
   },
   {
     slug: 'castilla-y-leon', nombre: 'Castilla y León',
@@ -139,30 +156,37 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     gasolina: 51.18, diesel: 60.51,
     norma: 'Resolución de 12/12/2025 (BOCYL nº 245, 22/12/2025)',
     vigencia: '2026',
-    fiabilidad: 'alta',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://bocyl.jcyl.es/boletines/2025/12/22/pdf/BOCYL-D-22122025-24.pdf',
+    vigenteHasta: '2026-12-31',
+    condiciones: 'Gasolina con catalizador y diésel de hasta 3.500 kg. Incluye inspección de seguridad y emisiones.',
   },
   {
     slug: 'cataluna', nombre: 'Cataluña',
     provincias: ['barcelona', 'girona', 'lleida', 'tarragona'],
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 40.60, diesel: 45.59,
-    norma: 'Tarifas máximas reguladas por la Generalitat de Catalunya',
-    vigencia: '2026',
-    fiabilidad: 'alta',
-    nota: 'Son precios máximos: hay operadores que cobran menos. Hay un anteproyecto de '
-      + 'liberalización aprobado en julio de 2026 y pendiente de votación.',
+    norma: 'Tarifario publicado por el operador Applus+ para sus estaciones de Cataluña',
+    vigencia: 'Tarifario consultado el 7 de noviembre de 2026',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://www.applusiteuve.com/es-es/la-itv/precios-itv/precio-itv-cataluna/',
+    alcancePrecio: 'Tarifa publicada por Applus+',
+    condiciones: 'Turismos particulares, gasolina con catalizador o diésel. Precio de Applus+ con impuestos y tasa DGT. Las promociones y los precios de otros operadores pueden variar.',
   },
   {
     slug: 'ceuta', nombre: 'Ceuta',
     provincias: ['ceuta'],
     regulada: true, impuesto: 'ipsi9', incluyeImpuesto: false, incluyeTasaDgt: false,
-    gasolina: 46.00, diesel: 54.57,
     norma: 'Decreto de la Consejería de Medio Ambiente de 16/01/2023 (BOCCE nº 6.271, 20/01/2023)',
-    vigencia: 'Desde 01/01/2023, congelada hasta 2026',
-    fiabilidad: 'media',
-    nota: 'En Ceuta no se aplica IVA sino IPSI. El tipo del 9% se deduce de la ordenanza fiscal '
-      + '(epígrafe 843.6 del IAE) y cuadra al céntimo con los precios finales publicados, pero no '
-      + 'consta en un boletín con esas palabras.',
+    vigencia: 'Vigencia e importe final pendientes de confirmar',
+    estado: 'pendiente',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    condiciones: 'Falta confirmar un tarifario final vigente que detalle el IPSI y la tasa DGT. Consulta el importe completo de tu vehículo al pedir cita.',
   },
   {
     slug: 'comunitat-valenciana', nombre: 'Comunitat Valenciana',
@@ -170,30 +194,39 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 41.47, diesel: 56.15,
     norma: 'Acuerdo del Consell de 25/03/2011, aplicado por la empresa pública SITVAL',
-    vigencia: 'Vigente en 2026',
-    fiabilidad: 'alta',
+    vigencia: 'Tarifario desde 01/01/2023 publicado por SITVAL',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://sitval.com/assets/pdf/tarifas.pdf',
+    condiciones: 'Turismos de gasolina con catalizador o diésel. Incluye IVA, tasa DGT y las comprobaciones indicadas en el tarifario de SITVAL.',
   },
   {
     slug: 'extremadura', nombre: 'Extremadura',
     provincias: ['badajoz', 'caceres'],
     regulada: true, impuesto: 'exento', incluyeImpuesto: true, incluyeTasaDgt: false,
     gasolina: 29.25, diesel: 29.25,
-    norma: 'Tasa publicada en el DOE',
-    vigencia: '2026',
-    fiabilidad: 'media',
-    nota: 'En Extremadura la ITV pública es una TASA y no lleva IVA. Ojo: la red es mixta, y en las '
-      + 'estaciones privadas concesionarias el precio es distinto y más alto.',
+    norma: 'Guía oficial de pago de tasas de las estaciones ITV de la Junta de Extremadura',
+    vigencia: 'Importe publicado en el servicio de pago de la Junta',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://itvcitaprevia.juntaex.es/Pago%20tasas%20ITV.pdf',
+    alcancePrecio: 'Estaciones de la Junta',
+    condiciones: 'Esta tasa corresponde a las estaciones gestionadas por la Junta de Extremadura. Las estaciones concesionarias tienen un precio diferente.',
   },
   {
     slug: 'galicia', nombre: 'Galicia',
     provincias: ['a-coruna', 'lugo', 'ourense', 'pontevedra'],
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 43.76, diesel: 52.30,
-    norma: 'Tarifa del contrato de concesión, con revisión anual por IPC',
-    vigencia: 'Revisión de febrero de 2026',
-    fiabilidad: 'media',
-    nota: 'No hay una orden en el DOG que fije estas tarifas: salen del contrato de concesión, '
-      + 'y se han contrastado con la web del concesionario.',
+    norma: 'Tarifario vigente del concesionario SYC ITV',
+    vigencia: 'Tarifario consultado el 7 de noviembre de 2026',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://www.sycitv.com/es/pasar-la-itv/tarifas/',
+    condiciones: 'Gasolina con catalizador y diésel matriculado después de 1980. Incluye IVA y tasa DGT.',
   },
   {
     slug: 'illes-balears-mallorca', nombre: 'Mallorca',
@@ -201,32 +234,37 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'exento', incluyeImpuesto: true, incluyeTasaDgt: false,
     gasolina: 17.01, diesel: 30.92,
     norma: 'Ordenança fiscal del Consell Insular de Mallorca (BOIB nº 52, 04/04/2020)',
-    vigencia: 'Vigente en 2026',
-    fiabilidad: 'alta',
-    nota: 'En Balears la ITV es una TASA de cada Consell Insular, así que no lleva IVA. '
-      + 'La tasa de Tráfico se suma aparte.',
+    vigencia: 'Ordenanza de 2020, de vigencia indefinida hasta modificación expresa',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://caib.es/eboibfront/pdf/es/2020/52/1057072',
+    condiciones: 'Tasa del Consell de Mallorca más la tasa DGT. El importe diésel incluye 13,91 € de control de gases. Los suplementos de unidades móviles y los trámites especiales se calculan aparte.',
   },
   {
     slug: 'illes-balears-eivissa', nombre: 'Eivissa',
     provincias: [],
     regulada: true, impuesto: 'exento', incluyeImpuesto: true, incluyeTasaDgt: true,
-    gasolina: 24.18, diesel: 32.18,
-    norma: 'Ordenança fiscal del Consell d\'Eivissa',
-    fuenteUrl: 'https://itv.conselldeivissa.es/ca/tarifes/',
-    vigencia: 'Vigente en 2026',
-    fiabilidad: 'alta',
-    nota: 'A diferencia de Mallorca, Eivissa publica los precios con la tasa de Tráfico ya incluida.',
+    gasolina: 32.18, diesel: 32.18,
+    norma: 'Ordenanza fiscal modificada del Consell d’Eivissa (BOIB nº 106, 25/08/2026)',
+    fuenteUrl: 'https://itv.conselldeivissa.es/wp-content/uploads/ordenanza.pdf',
+    vigencia: 'Ordenanza publicada el 25 de agosto de 2026',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    condiciones: 'Turismos particulares de gasolina o diésel. Tasa de 28 € más 4,18 € de DGT, incluidos en el total.',
   },
   {
     slug: 'la-rioja', nombre: 'La Rioja',
     provincias: ['la-rioja'],
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
-    gasolina: 41.80,
     norma: 'Tarifa regulada por el Gobierno de La Rioja',
-    vigencia: '2026',
-    fiabilidad: 'media',
-    nota: 'Solo se publica el precio de gasolina: las fuentes consultadas no coinciden en el importe '
-      + 'del diésel y no se ha podido abrir el boletín oficial para dirimirlo.',
+    vigencia: 'Importe final de 2026 pendiente de confirmar',
+    estado: 'pendiente',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    fuenteUrl: 'https://www.larioja.org/industria-energia/es/industria/vehiculos',
+    condiciones: 'La información oficial consultada no permite confirmar aquí el precio final vigente para ambos combustibles. Solicita el total a la estación antes de reservar.',
   },
   {
     slug: 'melilla', nombre: 'Melilla',
@@ -236,9 +274,13 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     norma: 'Orden nº 2992 de 17/12/2025 (BOME nº 6337, 19/12/2025)',
     fuenteUrl: 'https://bomemelilla.es/bome/descargar/BOME-B-2025-6337.pdf',
     vigencia: 'Desde 01/01/2026',
-    fiabilidad: 'alta',
-    nota: 'En Melilla no se aplica IVA sino IPSI. El control de emisiones se factura aparte '
-      + '(8,69 €), así que un turismo suele pagar unos 43,09 € en total.',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'maximo',
+    vigenteHasta: '2026-12-31',
+    alcancePrecio: 'Con emisiones; diagnóstico OBD aparte',
+    suplementos: [{ concepto: 'Control de emisiones, IPSI incluido', importe: 8.69 }],
+    condiciones: 'El total incorpora 8,69 € de control de emisiones. Si corresponde diagnóstico por ordenador (OBD), la tarifa máxima añade 5,44 €. Confirma qué pruebas necesita tu vehículo.',
   },
   {
     slug: 'pais-vasco', nombre: 'País Vasco',
@@ -248,13 +290,15 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     norma: 'Resolución de 01/12/2025 del director de Desarrollo y Administración Industrial (BOPV nº 238, 10/12/2025)',
     fuenteUrl: 'https://www.euskadi.eus/bopv2/datos/2025/12/2505258a.pdf',
     vigencia: '01/01/2026 – 31/12/2026',
-    fiabilidad: 'alta',
+    estado: 'verificada',
+    revisada: TARIFAS_REVISADAS,
+    tipoPrecio: 'tarifa',
+    vigenteHasta: '2026-12-31',
+    condiciones: 'Turismos M1. El total incluye IVA y la tasa DGT de 4,18 €.',
   },
 ]
 
-// Territorios sin tarifa oficial que publicar, y el motivo. Se muestran en la
-// pagina: saber que en Madrid conviene comparar entre estaciones es informacion
-// util, no un hueco.
+// También se muestran los territorios con precios libres o pendientes de confirmar.
 export interface SinTarifa {
   nombre: string
   motivo: string
@@ -276,13 +320,13 @@ export const LIBERALIZADAS: ReadonlyArray<SinTarifa> = [
 export const SIN_DATO: ReadonlyArray<SinTarifa> = [
   {
     nombre: 'Navarra',
-    motivo: 'La tarifa se actualiza automáticamente por IPC sin publicarse cada año en el Boletín '
-      + 'Oficial de Navarra, así que no hay cifra oficial de 2026 que citar.',
+    motivo: 'Pendiente de comprobar el tarifario final vigente de las estaciones de Navarra. Solicita '
+      + 'el precio completo al pedir cita.',
   },
   {
     nombre: 'Menorca y Formentera',
-    motivo: 'La ordenanza accesible de Menorca es de 2002 y la concesión está en relicitación. '
-      + 'De Formentera no se ha localizado tarifario oficial.',
+    motivo: 'Pendiente de verificar las tarifas actuales de cada Consell. Consulta el total de tu vehículo '
+      + 'antes de reservar.',
   },
 ]
 
@@ -290,6 +334,7 @@ export interface Desglose {
   base: number
   impuesto: number
   tasaDgt: number
+  suplementos: ReadonlyArray<{ concepto: string; importe: number; fuenteUrl?: string }>
   total: number
 }
 
@@ -297,24 +342,22 @@ function redondea(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-// Descompone la cifra publicada en base + impuesto + tasa, sea cual sea el
-// criterio con el que la fuente la publique. La tasa se suma SIEMPRE despues del
-// impuesto: nunca (base + tasa) * factor.
+// Los precios publicados con impuesto se conservan al céntimo. Volver a aplicar
+// el factor a una base reconstruida puede cambiar el total oficial. La tasa DGT
+// y los suplementos ya finales se suman sin volver a gravarlos.
 export function desglosa(t: Tarifa, precio: number): Desglose {
   const factor = FACTOR_IMPUESTO[t.impuesto]
-
-  // Si la cifra publicada lo lleva todo dentro, se va quitando hacia atras.
-  let base = precio
-  if (t.incluyeTasaDgt) base -= TASA_DGT
-  if (t.incluyeImpuesto) base = base / factor
-
-  base = redondea(base)
-  const conImpuesto = redondea(base * factor)
+  const publicadoSinDgt = redondea(precio - (t.incluyeTasaDgt ? TASA_DGT : 0))
+  const base = t.incluyeImpuesto ? redondea(publicadoSinDgt / factor) : publicadoSinDgt
+  const conImpuesto = t.incluyeImpuesto ? publicadoSinDgt : redondea(base * factor)
+  const suplementos = t.suplementos ?? []
+  const extra = suplementos.reduce((suma, suplemento) => suma + suplemento.importe, 0)
   return {
     base,
     impuesto: redondea(conImpuesto - base),
     tasaDgt: TASA_DGT,
-    total: redondea(conImpuesto + TASA_DGT),
+    suplementos,
+    total: redondea(conImpuesto + TASA_DGT + extra),
   }
 }
 

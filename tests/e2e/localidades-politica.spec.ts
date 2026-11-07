@@ -7,9 +7,21 @@ test('ITV conserva y muestra la fecha real del directorio en cada nivel', async 
   for (const url of ['/itv/', '/itv/madrid', '/itv/madrid/madrid']) {
     await page.goto(url)
     const aviso = page.getByRole('complementary', { name: 'Actualización del directorio' })
-    await expect(aviso.locator('time')).toHaveAttribute('datetime', data.generatedAt)
-    await expect(aviso.getByRole('link')).toHaveAttribute('href', 'https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/')
-    if (Date.now() - Date.parse(data.generatedAt) > 40 * 86400000) await expect(aviso).toContainText('Directorio pendiente de actualizar')
+    if (data.fuentesEstado?.length) {
+      await aviso.locator('summary').click()
+      for (const fuente of data.fuentesEstado) {
+        await expect(aviso.getByRole('link', { name: fuente.nombre, exact: true })).toHaveAttribute('href', fuente.url)
+        const bloque = aviso.locator('li').filter({ has: page.getByRole('link', { name: fuente.nombre, exact: true }) })
+        if (fuente.publicado) await expect(bloque.locator('time[datetime="' + fuente.publicado + '"]')).toBeVisible()
+        const fecha = fuente.estado === 'conservada' ? fuente.ultimoExito : fuente.consultado
+        if (fecha) await expect(bloque.locator('time[datetime="' + fecha + '"]')).toBeVisible()
+        if (fuente.estado === 'conservada') await expect(bloque).toContainText('copia anterior')
+      }
+    } else {
+      await expect(aviso.locator('time')).toHaveAttribute('datetime', data.generatedAt)
+      await expect(aviso.getByRole('link')).toHaveAttribute('href', 'https://www.dgt.es/conoce-la-dgt/con-quien-trabajamos/itv/')
+      if (Date.now() - Date.parse(data.generatedAt) > 40 * 86400000) await expect(aviso).toContainText('Directorio pendiente de actualizar')
+    }
   }
 })
 

@@ -28,7 +28,10 @@ const services = [
   { id: 'gasolineras', name: 'Gasolineras', maxAgeHours: 24, items: [item('Precios del Ministerio', gas?.fetchedAt, gas?.stationCount)] },
   { id: 'farmacias', name: 'Farmacias', maxAgeHours: 30, items: guardias },
   { id: 'tiempo', name: 'Tiempo', maxAgeHours: 12, items: tiempo },
-  { id: 'itv', name: 'ITV', maxAgeHours: 40 * 24, items: [item('Directorio de estaciones', itv?.generatedAt, itv?.total)] },
+  { id: 'itv', name: 'ITV', maxAgeHours: 40 * 24, items: itv?.fuentesEstado?.length
+    ? itv.fuentesEstado.map(f => item(f.nombre, f.ultimoExito || f.consultado, f.total,
+      f.estado === 'conservada' ? 'Fuente no disponible. Se conserva su copia anterior.' : undefined))
+    : [item('Directorio de estaciones', itv?.generatedAt, itv?.total)] },
   { id: 'politica', name: 'Política', maxAgeHours: 30, items: [item('Índice de elecciones', politica?.generado, politica?.elecciones?.length), ...elecciones] },
 ]
 writeFileSync(resolve(root, 'service-manifest.json'), JSON.stringify({ schema: 1, services }))

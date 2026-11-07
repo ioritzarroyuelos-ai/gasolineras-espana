@@ -5,6 +5,7 @@ const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toL
 const numero = v => /^\d+$/.test(limpia(v)) ? Number(v) : null
 const validaFecha = f => /^\d{4}-\d\d-\d\d$/.test(f) && Number.isFinite(Date.parse(f)) && new Date(f).toISOString().slice(0, 10) === f
 const nombreSesion = s => s.replace(/^Race /, 'Carrera ').replace(/^Qualifying /, 'Clasificación ').replace(/^Free Practice /, 'Entrenamientos libres ')
+const esCarrera = s => /^(?:Sprint\s+)?Race\b/i.test(s)
 
 // El catálogo es el que carga la página pública de Alkamel. No necesita sesión,
 // ni el formulario de acceso que ofrece para otras funciones de la web.
@@ -66,7 +67,7 @@ export function interpretaResultadoFerrariPorClase(texto, fuenteUrl, verificadoE
 }
 export function interpretaResultadoFerrari(texto, sesion, fuenteUrl, verificadoEn) {
   const [cabecera, ...datos] = csvFilas(texto), nombres = cabecera?.map(limpia) || []
-  const carrera = /^Race\b/.test(sesion), pos = carrera ? 'POSITION' : 'POS', tiempo = carrera ? 'TOTAL_TIME' : 'TIME'
+  const carrera = esCarrera(sesion), pos = carrera ? 'POSITION' : 'POS', tiempo = carrera ? 'TOTAL_TIME' : 'TIME'
   const prefijos = nombres.includes('DRIVER_FIRSTNAME') ? ['DRIVER'] : nombres.filter(n => /^DRIVER\d+_FIRSTNAME$/.test(n)).map(n => n.replace('_FIRSTNAME', ''))
   for (const c of [pos, 'NUMBER', 'LAPS', tiempo, 'TEAM']) if (!nombres.includes(c)) throw Error('CSV Ferrari de otra sesión o columnas incompletas')
   if (!prefijos.length || prefijos.some(p => !nombres.includes(`${p}_SECONDNAME`))) throw Error('CSV Ferrari sin nombres de pilotos')
@@ -113,11 +114,20 @@ export async function ampliaFerrari(c, leer, ano, ahora, consultado, incidencias
     await Promise.all(Array.from({ length: Math.min(3, pendientes.length) }, async () => { while (siguiente < pendientes.length) {
       const e = pendientes[siguiente++]
       try {
-        const texto = await leer(e.fuenteUrl)
+        let texto
+        try { texto = await leer(e.fuenteUrl) }
+        catch (error) {
+          // El lector compartido rechaza cuerpos vacíos después de comprobar
+          // HTTP 2xx. Sólo ese caso permite buscar el CSV alternativo oficial.
+          // Los errores de acceso, pausas y red salen sin consultar otra URL.
+          if (error.message !== 'Fuente vacía') throw error
+          texto = ''
+        }
         try { e.resultados = [interpretaResultadoFerrari(texto, e.sesion, e.fuenteUrl, consultado)] }
         catch (error) {
-          if (!e.porClase || /^Race\b/.test(e.sesion)) throw error
+          if (!e.porClase || esCarrera(e.sesion)) throw error
           e.resultados = [interpretaResultadoFerrariPorClase(await leer(e.porClase), e.porClase, consultado)]
+          e.fuenteUrl = e.porClase
         }
       } catch (error) { falla(e.fuenteUrl, error) }
     } }))

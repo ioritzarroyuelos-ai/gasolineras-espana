@@ -4,9 +4,9 @@ import { interpretaResultadoFerrari } from './deportes-motor-ferrari.mjs'
 export const fuenteAlkamelEspana = 'https://f4spain-e3.alkamelsystems.com/'
 const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-const circuito = v => { const n = slug(v); return /ricardo-tormo|valencia/.test(n) ? 'valencia' : /portimao|algarve/.test(n) ? 'portimao' : n }
-const sesionClave = v => slug(v).replace(/^qualification-/, 'qualifying-').replace(/^clasificacion-/, 'qualifying-').replace(/^carrera-/, 'race-').replace(/^entrenamientos-libres-/, 'free-practice-')
-const nombreSesion = v => limpia(v).replace(/^Qualifying\s/i, 'Clasificación ').replace(/^Race\s/i, 'Carrera ').replace(/^Free Practice\s/i, 'Entrenamientos libres ')
+const circuito = v => { const n = slug(v); return /ricardo-tormo|valencia/.test(n) ? 'valencia' : /portimao|algarve/.test(n) ? 'portimao' : /^(?:montmelo|barcelona)$/.test(n) ? 'barcelona' : n }
+const sesionClave = v => slug(v).replace(/^(?:sprint-race|carrera-sprint)$/, 'sprint').replace(/^qualification-/, 'qualifying-').replace(/^clasificacion-/, 'qualifying-').replace(/^carrera-/, 'race-').replace(/^entrenamientos-libres-/, 'free-practice-')
+const nombreSesion = v => limpia(v).replace(/^Sprint Race$/i, 'Carrera sprint').replace(/^Qualifying\s/i, 'Clasificación ').replace(/^Race\s/i, 'Carrera ').replace(/^Free Practice\s/i, 'Entrenamientos libres ')
 
 export function interpretaIndiceAlkamelEspana(html, ano) {
   const doc = parse(html), temporada = doc.querySelector('select[name="season"]'), elegido = temporada?.querySelector('option[selected]')
@@ -83,7 +83,12 @@ export async function ampliaEspanaAlkamel(competiciones, leer, ano, ahora, consu
         tareas.push(async () => {
           try {
             const resultado = interpretaResultadoAlkamelEspana(await leer(s.fuenteUrl), s.sesion, s.fuenteUrl, consultado)
-            const anteriores = r.eventos.filter(e => sesionClave(e.nombre.split(' · ').at(-1)) === sesionClave(s.sesion))
+            // Algunos títulos del campeonato omiten el número de entrenamiento,
+            // pero su ID conserva free-practice-1/2. Se reutiliza esa identidad
+            // dentro de la ronda verificada, sin añadir una segunda tarjeta.
+            const clave = sesionClave(s.sesion)
+            const anteriores = r.eventos.filter(e => sesionClave(e.nombre.split(' · ').at(-1)) === clave || e.id.endsWith('-' + clave) ||
+              /^free-practice-\d+$/.test(clave) && e.id.endsWith('-free-practice') && e.fecha === s.fecha && e.detalle?.match(/Hora publicada:\s*(\d\d:\d\d)/)?.[1] === s.hora)
             if (anteriores.length > 1) throw Error('Sesión del campeonato ambigua: no se sustituye')
             const anterior = anteriores[0], id = anterior?.id || `${r.c.id}-alkamel-${slug(`${r.lugar}-${s.fecha}-${s.hora}-${s.sesion}`)}`
             const mismaFecha = anterior?.fecha === s.fecha, horaAnterior = anterior?.detalle?.match(/Hora publicada:\s*(\d\d:\d\d)/)?.[1]

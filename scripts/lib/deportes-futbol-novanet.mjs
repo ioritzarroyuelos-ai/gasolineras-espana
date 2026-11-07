@@ -278,6 +278,9 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
   let peticionesPasada = 0, pausado = false, intentados = 0, vaciasSeguidas = 0
   const guarda = async () => { await opciones.guardarEstadoNovanet?.(fuente.id, normalizaEstadoNovanet(estado)) }
   const incidencia = (nombre, motivo, id = `novanet-${fuente.id}`) => incidencias.push({ deporte: 'futbol', nombre, fuenteUrl: urlBase, motivo, id })
+  const registraDiagnostico = error => {
+    if (fuente.id === 'madrid' && error.diagnosticoMadrid) opciones.log?.(`Madrid · diagnóstico de identidad: ${JSON.stringify(error.diagnosticoMadrid)}`)
+  }
   const disponible = () => !pausado && peticionesPasada < maximoPasada && (!estado.noConsultarAntes || Date.now() >= Date.parse(estado.noConsultarAntes))
   const sesion = creaSesionFederativa(fuente.base, {
     fetcher: opciones.fetcher,
@@ -376,7 +379,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
         }
         c.agenda = bloque(url, consultado, 'eventos', eventos)
         c.agenda.aviso = 'Jornada anterior y jornada más cercana a hoy publicadas por la federación. Otros días, en la fuente oficial. No es un marcador en directo.'
-      } catch (error) { incidencia(`${categoria.nombre} · ${grupo.nombre}`, error.message, id) }
+      } catch (error) { registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre}`, error.message, id) }
       let terminoGrupo = false
       if (disponible()) {
         const enlace = jornadaTabla ? `${tablaUrl}&${madrid ? 'jornada' : 'codjornada'}=${jornadaTabla}` : tablaUrl
@@ -385,7 +388,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
           if (doc && !doc.querySelector('table.table-bordered') && doc.querySelectorAll('h3').some(h => /\d{2}-\d{2}-\d{4}.*(?:final|octavos|cuartos|previa)/i.test(h.text)) && doc.querySelectorAll('h4').some(h => normal(h.text) === normal(categoria.nombre))) c.clasificacion.aviso = 'La fuente muestra un cuadro de eliminatorias. Consulta los partidos; no hay una tabla de puntos para este grupo.'
           else c.clasificacion = bloque(enlace, consultado, 'tablas', madrid ? parseaClasificacionMadrid(html, esperada) : parseaClasificacionNovanet(html, esperada, enlace))
         }
-        catch (error) { incidencia(`${categoria.nombre} · ${grupo.nombre} · clasificación`, error.message, id) }
+        catch (error) { registraDiagnostico(error); incidencia(`${categoria.nombre} · ${grupo.nombre} · clasificación`, error.message, id) }
         terminoGrupo = true
       }
       if (c.agenda.eventos.length || c.clasificacion.tablas.length) { competiciones.push(c); estado.verificados[`${categoria.codigo}-${grupo.codigo}`] = consultado; estado.ultimoExito = consultado }

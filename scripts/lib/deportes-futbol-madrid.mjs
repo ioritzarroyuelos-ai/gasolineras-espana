@@ -37,7 +37,17 @@ export function jornadasMadrid(json) {
 }
 
 function identidad(datos, esperada) {
-  if (datos?.estado !== '1' || String(datos.codigo_competicion) !== esperada.competicion || String(datos.codigo_grupo) !== esperada.grupo) throw Error('Madrid devuelve otra competición o grupo')
+  if (datos?.estado !== '1' || String(datos.codigo_competicion) !== esperada.competicion || String(datos.codigo_grupo) !== esperada.grupo) {
+    const digitos = (v, maximo) => (typeof v === 'string' || typeof v === 'number') && new RegExp(`^\\d{1,${maximo}}$`).test(String(v)) ? String(v) : null
+    const error = Error('Madrid devuelve otra competición o grupo')
+    // Sólo metadatos numéricos de identidad: nunca publicar el cuerpo recibido.
+    Object.defineProperty(error, 'diagnosticoMadrid', { value: Object.freeze({
+      estado: digitos(datos?.estado, 6), tipoEstado: typeof datos?.estado,
+      competicionEsperada: digitos(esperada.competicion, 20), grupoEsperado: digitos(esperada.grupo, 20),
+      competicionRecibida: digitos(datos?.codigo_competicion, 20), grupoRecibido: digitos(datos?.codigo_grupo, 20),
+    }) })
+    throw error
+  }
 }
 
 export function parseaAgendaMadrid(json, esperada, fuenteUrl) {

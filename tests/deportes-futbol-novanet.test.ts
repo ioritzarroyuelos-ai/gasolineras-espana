@@ -117,6 +117,53 @@ describe('una única ficha por grupo nacional', () => {
 
 describe('consulta pública de Madrid', () => {
   const esperadaMadrid = { ...esperada, competicion: '26738226', grupo: '26738227' }
+  it.each([
+    { estado: '0', codigo_competicion: '26738226', codigo_grupo: '26738227', tipoEstado: 'string' },
+    { estado: 1, codigo_competicion: '26738226', codigo_grupo: '26738227', tipoEstado: 'number' },
+    { estado: '1', codigo_competicion: '999', codigo_grupo: '26738227', tipoEstado: 'string' },
+    { estado: '1', codigo_competicion: '26738226', codigo_grupo: '999', tipoEstado: 'string' },
+  ])('mantiene el rechazo estricto y un diagnóstico interno acotado: %j', datos => {
+    let error: unknown
+    try { parseaAgendaMadrid(JSON.stringify({ ...datos, equipos: 'NO_PUBLICAR', cookie: 'NO_PUBLICAR' }), esperadaMadrid, fuente) } catch (e) { error = e }
+    expect(error).toMatchObject({ message: 'Madrid devuelve otra competición o grupo', diagnosticoMadrid: {
+      estado: String(datos.estado), tipoEstado: datos.tipoEstado,
+      competicionEsperada: esperadaMadrid.competicion, grupoEsperado: esperadaMadrid.grupo,
+      competicionRecibida: datos.codigo_competicion, grupoRecibido: datos.codigo_grupo,
+    } })
+    expect(JSON.stringify(error)).toBe('{}')
+    expect(String(error)).not.toContain('NO_PUBLICAR')
+  })
+  it('no incluye textos arbitrarios recibidos dentro del diagnóstico de identidad', () => {
+    let error: unknown
+    try { parseaAgendaMadrid(JSON.stringify({ estado: 'NO_PUBLICAR', codigo_competicion: { cuerpo: 'NO_PUBLICAR' }, codigo_grupo: 'NO_PUBLICAR' }), esperadaMadrid, fuente) } catch (e) { error = e }
+    expect(error).toMatchObject({ diagnosticoMadrid: { estado: null, tipoEstado: 'string', competicionRecibida: null, grupoRecibido: null } })
+  })
+  it('envía el diagnóstico sólo al registro del robot y mantiene los avisos públicos sin detalles internos', async () => {
+    vi.useFakeTimers()
+    try {
+      const ahora = Date.parse('2026-11-07T16:00:00Z'); vi.setSystemTime(ahora)
+      const estado = normalizaEstadoNovanet({ version: 1, catalogo: { temporada: { codigo: '22', nombre: '2026-2027' }, verificadoEn: new Date(ahora).toISOString(),
+        categorias: [{ codigo: esperadaMadrid.competicion, nombre: 'TERCERA FEDERACIÓN RFEF', familia: 'Fútbol', grupos: [{ codigo: esperadaMadrid.grupo, nombre: 'GRUPO VII' }] }] } })
+      const log = vi.fn(), fetcher = vi.fn(async (url: RequestInfo | URL) => {
+        if (String(url).includes('/api/group-rounds')) return new Response(JSON.stringify({ estado: '1', jornadas: [{ codjornada: '9', nombre: '9', fecha_jornada: '01-11-2026' }] }))
+        if (String(url).includes('/api/results')) return new Response(JSON.stringify({ estado: '0', codigo_competicion: esperadaMadrid.competicion, codigo_grupo: esperadaMadrid.grupo, cookie: 'NO_PUBLICAR' }))
+        return new Response('<script id="__NEXT_DATA__">' + JSON.stringify({ props: { pageProps: { season: { cod_temporada: '22', nombre: '2026-2027' },
+          standings: { estado: '1', codigo_competicion: esperadaMadrid.competicion, codigo_grupo: '999', equipos: 'NO_PUBLICAR' } } } }) + '</script>')
+      })
+      const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher, log })
+      await vi.runAllTimersAsync()
+      const salida = await pendiente
+      const diagnosticos = log.mock.calls.map(([s]) => s).filter(s => s.startsWith('Madrid · diagnóstico'))
+      expect(diagnosticos).toHaveLength(2)
+      expect(diagnosticos[0]).toContain('"estado":"0"')
+      expect(diagnosticos[1]).toContain('"grupoRecibido":"999"')
+      expect(JSON.stringify(log.mock.calls)).not.toContain('NO_PUBLICAR')
+      expect(salida.incidencias.filter(i => i.motivo === 'Madrid devuelve otra competición o grupo')).toHaveLength(2)
+      expect(JSON.stringify(salida)).not.toMatch(/diagnosticoMadrid|grupoRecibido|competicionEsperada|NO_PUBLICAR/)
+      expect(salida.competiciones).toHaveLength(0)
+      expect(fetcher).toHaveBeenCalledTimes(3)
+    } finally { vi.useRealTimers() }
+  })
   it('contrasta marcadores finales y clasificación de Tercera grupo7', () => {
     const eventos = parseaAgendaMadrid(fixture('madrid-agenda.json'), esperadaMadrid, 'https://www.rffm.es/competicion/resultados-y-jornadas')
     expect(eventos[0]).toMatchObject({ local: 'CLUB SIELLO NUEVO BOADILLA F.C.', resultado: { local: 1, visitante: 4 }, inicio: '2026-11-01T10:30:00.000Z', estado: 'finalizado' })

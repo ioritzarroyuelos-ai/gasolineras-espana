@@ -284,7 +284,7 @@ export function normalizaClasificacionNba(datos, temporada) {
     if (!Array.isArray(valores) || valores.length !== tabla.headers.length) throw Error('Fila de la clasificación NBA incompleta')
     const r = Object.fromEntries(tabla.headers.map((k, i) => [k, valores[i]]))
     if (r.LeagueID !== '00' || r.SeasonID !== '2' + temporada.slice(0, 4) || !esEntero(r.TeamID) || !limpio(r.TeamCity) || !limpio(r.TeamName) || !['East', 'West'].includes(r.Conference) || !Number.isInteger(r.PlayoffRank) || r.PlayoffRank < 1 || r.PlayoffRank > 15 || !['WINS', 'LOSSES', 'TotalPoints', 'OppTotalPoints'].every(k => esEntero(r[k]))) throw Error('Datos de la clasificación NBA incoherentes')
-    return { id: r.TeamID, conferencia: r.Conference, fila: { posicion: r.PlayoffRank, nombre: limpio(r.TeamCity + ' ' + r.TeamName), valores: { pj: r.WINS + r.LOSSES, pg: r.WINS, pp: r.LOSSES, pf: r.TotalPoints, pc: r.OppTotalPoints } } }
+    return { id: r.TeamID, conferencia: r.Conference, fila: { posicion: r.PlayoffRank, nombre: limpio(r.TeamCity + ' ' + r.TeamName), nombreBusqueda: limpio(r.TeamName), valores: { pj: r.WINS + r.LOSSES, pg: r.WINS, pp: r.LOSSES, pf: r.TotalPoints, pc: r.OppTotalPoints } } }
   })
   if (new Set(filas.map(f => f.id)).size !== 30) throw Error('La clasificación NBA repite equipos')
   return [['East', 'Este'], ['West', 'Oeste']].map(([codigo, nombre]) => {

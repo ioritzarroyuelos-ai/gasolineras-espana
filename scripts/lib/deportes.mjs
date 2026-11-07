@@ -27,7 +27,7 @@ const resultadoSesion = z.object({
   id, nombre: texto, fuenteUrl: url, verificadoEn: instante,
   conservado: z.boolean().optional(),
   columnas: z.array(z.object({ clave: id, nombre: texto })).min(1).max(30),
-  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto,
+  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto, nombreBusqueda: texto.optional(),
     valores: z.record(id, z.union([z.string().max(100), z.number().finite()])) })).min(1).max(500),
 }).refine(t => new Set(t.columnas.map(c => c.clave)).size === t.columnas.length &&
   t.filas.every(f => t.columnas.every(c => Object.hasOwn(f.valores, c.clave))), 'Resultado de sesión incompleto')
@@ -44,7 +44,7 @@ const tabla = z.object({
   id, nombre: texto,
   fuenteUrl: url.optional(), verificadoEn: instante.optional(), conservado: z.boolean().optional(),
   columnas: z.array(z.object({ clave: id, nombre: texto })).max(30),
-  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto,
+  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto, nombreBusqueda: texto.optional(),
     valores: z.record(id, z.union([z.string().max(100), z.number().finite()])) })).min(1).max(2000),
 }).refine(t => new Set(t.columnas.map(c => c.clave)).size === t.columnas.length &&
   t.filas.every(f => t.columnas.every(c => Object.hasOwn(f.valores, c.clave))), 'Columnas o celdas incompletas')

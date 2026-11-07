@@ -25,7 +25,7 @@ export interface ResultadoSesionDeportiva {
   verificadoEn: string
   conservado?: boolean
   columnas: Array<{ clave: string; nombre: string }>
-  filas: Array<{ posicion: number | null; nombre: string; valores: Record<string, string | number> }>
+  filas: Array<{ posicion: number | null; nombre: string; nombreBusqueda?: string; valores: Record<string, string | number> }>
 }
 export interface TablaDeportiva {
   id: string
@@ -34,7 +34,7 @@ export interface TablaDeportiva {
   verificadoEn?: string
   conservado?: boolean
   columnas: Array<{ clave: string; nombre: string }>
-  filas: Array<{ posicion: number | null; nombre: string; valores: Record<string, string | number> }>
+  filas: Array<{ posicion: number | null; nombre: string; nombreBusqueda?: string; valores: Record<string, string | number> }>
 }
 export interface BloqueDeportivo {
   estado: 'actualizado' | 'conservado' | 'no_disponible'

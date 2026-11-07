@@ -39,8 +39,8 @@ function enlace(url: string | undefined, nombre: string): string {
 function favorito(id: string, nombre: string, url: string, corto = false): string {
   return `<button type="button" hidden class="fav${corto ? ' team-fav' : ''}" data-fav="${esc(id)}" data-name="${esc(nombre)}" data-url="${esc(url)}"${corto ? ' data-short="1"' : ''} aria-pressed="false">☆ Seguir</button>`
 }
-function favoritoParticipante(nombre: string, deporte: Deporte): string {
-  return favorito(deporte + ':' + normalizaDeporte(nombre), nombre, '/deportes/' + deporte + '?q=' + encodeURIComponent(nombre) + '#competiciones', true)
+function favoritoParticipante(nombre: string, deporte: Deporte, nombreBusqueda = nombre): string {
+  return favorito(deporte + ':' + normalizaDeporte(nombreBusqueda), nombre, '/deportes/' + deporte + '?q=' + encodeURIComponent(nombreBusqueda) + '#competiciones', true)
 }
 function favoritos(): string {
   return '<details class="favorites" id="favoritos" hidden><summary>Mis favoritos</summary><p class="meta">Se guardan solo en este navegador. No necesitas una cuenta.</p><ul class="favorite-links" id="favoritos-lista"></ul></details><p class="sr-only" id="favoritos-estado" role="status" aria-live="polite"></p>'
@@ -71,7 +71,7 @@ function fechaVisible(e: EventoDeportivo, zona: string): string {
   return texto + (e.finFecha && e.finFecha !== dia ? ' al ' + new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(e.finFecha + 'T12:00:00Z')) : '')
 }
 function tablaDeportes(t: TablaDeportiva | ResultadoSesionDeportiva, deporte: Deporte): string {
-  return `<p class="table-hint">Desliza la tabla para ver todos los datos →</p><div class="table-wrap" tabindex="0" role="region" aria-label="${esc(t.nombre)}"><table><caption>${esc(t.nombre)}</caption><thead><tr><th scope="col">Pos.</th><th scope="col">${deporte === 'motor' ? 'Participante' : 'Equipo'}</th>${t.columnas.map(col => `<th scope="col">${esc(col.nombre)}</th>`).join('')}</tr></thead><tbody>${t.filas.map(f => `<tr><td>${f.posicion ?? '—'}</td><th scope="row">${esc(f.nombre)}${favoritoParticipante(f.nombre, deporte)}</th>${t.columnas.map(col => `<td>${esc(f.valores[col.clave])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+  return `<p class="table-hint">Desliza la tabla para ver todos los datos →</p><div class="table-wrap" tabindex="0" role="region" aria-label="${esc(t.nombre)}"><table><caption>${esc(t.nombre)}</caption><thead><tr><th scope="col">Pos.</th><th scope="col">${deporte === 'motor' ? 'Participante' : 'Equipo'}</th>${t.columnas.map(col => `<th scope="col">${esc(col.nombre)}</th>`).join('')}</tr></thead><tbody>${t.filas.map(f => `<tr><td>${f.posicion ?? '—'}</td><th scope="row">${esc(f.nombre)}${favoritoParticipante(f.nombre, deporte, f.nombreBusqueda)}</th>${t.columnas.map(col => `<td>${esc(f.valores[col.clave])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
 }
 function resultadosEvento(e: EventoAgenda, zona: string, mostrar: boolean, abrir: boolean): string {
   if (mostrar && e.resultados?.length) return `<details class="watch race-results"${abrir ? ' open' : ''}><summary>Ver resultados de la sesión</summary>${e.resultados.map(t => `${t.conservado ? '<p class="note warning">No hemos podido actualizar este resultado. Mostramos la última copia comprobada.</p>' : ''}<p class="meta">Resultado comprobado: ${esc(fechaConsultaDeporte(t.verificadoEn, zona))} · ${enlace(t.fuenteUrl, 'Fuente del resultado')}</p>${tablaDeportes(t, e.deporte)}`).join('')}</details>`

@@ -4,6 +4,8 @@ import {
   leerLiteralFeb, codigoFuncion, decodificaRespuestaFeb, normalizaPartidosFeb, normalizaTablaFeb,
   obtieneBaloncesto, normalizaFinalBaseFeb, normalizaClasificacionNba, compruebaLeaguePassEspana,
 } from '../scripts/lib/deportes-baloncesto.mjs'
+import { validarCompeticionDeportiva } from '../scripts/lib/deportes.mjs'
+import { buildCompeticionDeportesPage, tarjetaEvento } from '../src/html/deportes'
 
 const fixtures = import.meta.glob('./fixtures/deportes-baloncesto/*', { query: '?raw', import: 'default', eager: true })
 const fixture = (nombre: string): string => String(fixtures['./fixtures/deportes-baloncesto/' + nombre])
@@ -94,6 +96,24 @@ describe('baloncesto oficial', () => {
     const temporada = structuredClone(original)
     temporada.resultSets[0].rowSet[0][temporada.resultSets[0].headers.indexOf('SeasonID')] = '22025'
     expect(() => normalizaClasificacionNba(temporada, '2026-27')).toThrow('incoherentes')
+  })
+
+  it('seguir un equipo desde su nombre completo NBA busca el mismo equipo del calendario', () => {
+    const { eventos, temporada } = normalizaNba(fixture('nba-dia.html'), '2026-11-07')
+    if (!temporada) throw Error('Falta la temporada NBA de la captura')
+    const tablas = normalizaClasificacionNba(JSON.parse(fixture('nba-clasificacion.json')), temporada)
+    const e = eventos[0], nombre = e.local!
+    const fila = tablas.flatMap(t => t.filas).find(f => f.nombreBusqueda === nombre)!
+    expect(fila.nombre).not.toBe(nombre)
+    const bloque = { estado: 'actualizado' as const, consultado: fecha, verificadoEn: fecha, fuenteUrl: 'https://www.nba.com/' }
+    const c = validarCompeticionDeportiva({ id: 'nba', deporte: 'baloncesto', nombre: 'NBA', temporada, categoria: 'Sénior', zona: 'Estados Unidos y Canadá', fuente: { nombre: 'NBA', url: bloque.fuenteUrl }, comprobadoEn: fecha,
+      agenda: { ...bloque, eventos }, clasificacion: { ...bloque, tablas } }, Date.parse(fecha))
+    const html = buildCompeticionDeportesPage(c, 'prueba', 'https://web.example/deportes/competicion/nba', new URL('https://web.example/deportes/competicion/nba'), 'madrid')
+    const id = 'baloncesto:' + nombre.toLowerCase()
+    expect(html).toContain('data-fav="' + id + '" data-name="' + fila.nombre + '" data-url="/deportes/baloncesto?q=' + encodeURIComponent(nombre) + '#competiciones"')
+    const partido = tarjetaEvento({ ...e, competicionId: 'nba', competicion: 'NBA', deporte: 'baloncesto', temporada, conservado: false }, 'madrid')
+    expect(partido).toContain('data-fav="' + id + '"')
+    expect([e.nombre, e.local, e.visitante].join(' ').toLowerCase()).toContain(nombre.toLowerCase())
   })
 
   it('una agenda NBA incompleta no impide comprobar la clasificación independiente', async () => {

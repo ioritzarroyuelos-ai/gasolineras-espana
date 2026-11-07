@@ -141,7 +141,7 @@ describe('Campeonatos oficiales y cobertura limitada', () => {
 
   it('una caída completa de fuentes mantiene los bloques honestamente sin verificar', async () => {
     const salida = await obtieneMotor({ ahora, fetcher: async () => new Response('Fallo', { status: 503 }) })
-    expect(salida.competiciones).toHaveLength(6)
+    expect(salida.competiciones).toHaveLength(15)
     expect(salida.competiciones.every(c => c.agenda.estado === 'no_disponible' && c.clasificacion.estado === 'no_disponible')).toBe(true)
     expect(salida.incidencias.length).toBeGreaterThanOrEqual(7)
     expect(JSON.stringify(salida.competiciones)).not.toContain('verificadoEn')

@@ -1,5 +1,10 @@
 import { parse } from 'node-html-parser'
 import { leerFuenteDeportiva } from './deportes.mjs'
+import { configuracionPublicaFormula, urlResultadoFormula, interpretaResultadoFormula, interpretaResultadoF1Html, interpretaResultadosAcademy, interpretaEquiposFormula, interpretaEquiposAcademy, interpretaRondaEspanaMotor } from './deportes-motor-resultados.mjs'
+import { clasificacionesRfedaHtml, interpretaClasificacionesRfedaHtml, leerPdfMotor, interpretaClasificacionTcrPdf, interpretaResultadoTcrPdf, rondasTcr, rondasCerx } from './deportes-motor-rfeda.mjs'
+import { ampliaGb3 } from './deportes-motor-gb3.mjs'
+import { ampliaFerrari } from './deportes-motor-ferrari.mjs'
+import { obtieneFrec } from './deportes-motor-frec.mjs'
 
 const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
@@ -234,11 +239,11 @@ export async function obtieneMotor(opciones = {}) {
   const ahora = opciones.ahora ?? Date.now(), consultado = new Date(ahora).toISOString(), ano = Number(diaMadrid(ahora).slice(0, 4))
   const competiciones = [], incidencias = []
   const dominiosLimitados = new Set()
-  const leer = async url => {
+  const leer = async (url, headers, pdf = false) => {
     const dominio = new URL(url).origin
     if (dominiosLimitados.has(dominio)) throw Error('La fuente ha limitado las consultas (HTTP 429). Hemos detenido su actualización.')
     const intento = async () => {
-      try { return await leerFuenteDeportiva(url, opciones) }
+      try { return pdf ? await leerPdfMotor(url, opciones) : await leerFuenteDeportiva(url, headers ? { ...opciones, fetcher: (u, init) => (opciones.fetcher || fetch)(u, { ...init, headers: { ...init?.headers, ...headers } }) } : opciones) }
       catch (e) { if (/HTTP 429\b/.test(e.message)) dominiosLimitados.add(dominio); throw e }
     }
     try { return await intento() } catch (error) {
@@ -257,39 +262,140 @@ export async function obtieneMotor(opciones = {}) {
     const c = { id: config.id, deporte: 'motor', nombre: config.nombre, temporada: String(ano), categoria: config.categoria || 'Monoplazas', zona: config.zona || 'Internacional', genero: config.id === 'f1-academy' ? 'femenino' : 'mixto', fuente: { nombre: config.fuente || config.nombre, url: config.calendario }, comprobadoEn: consultado }
     const resultados = await Promise.allSettled([agendaFn(), clasificacionFn()])
     c.agenda = resultados[0].status === 'fulfilled' ? fuenteBloque(config.calendario, { eventos: resultados[0].value }, config.aviso) : fallo(c.id, c.nombre, config.calendario, resultados[0].reason, { eventos: [] })
-    c.clasificacion = resultados[1].status === 'fulfilled' ? fuenteBloque(config.clasificacion, { tablas: resultados[1].value }) : fallo(c.id, c.nombre, config.clasificacion, resultados[1].reason, { tablas: [] })
+    c.clasificacion = resultados[1].status === 'fulfilled' ? fuenteBloque(config.clasificacion, Array.isArray(resultados[1].value) ? { tablas: resultados[1].value } : resultados[1].value) : fallo(c.id, c.nombre, config.clasificacion, resultados[1].reason, { tablas: [] })
     competiciones.push(c)
+  }
+  async function dosClasificaciones(config, pilotosFn, equiposUrl, equiposFn) {
+    const tareas = [{ id: 'pilotos', url: config.clasificacion, fn: pilotosFn }, { id: 'equipos', url: equiposUrl, fn: equiposFn }]
+    const respuestas = await Promise.allSettled(tareas.map(async t => t.fn(await leer(t.url))))
+    const tablas = [], tablasPendientes = []
+    respuestas.forEach((r, i) => {
+      const t = tareas[i]
+      if (r.status === 'fulfilled') tablas.push(...(Array.isArray(r.value) ? r.value : [r.value]).map(tabla => ({ ...tabla, fuenteUrl: t.url, verificadoEn: consultado })))
+      else { tablasPendientes.push(t.id); incidencias.push({ deporte: 'motor', id: config.id, nombre: `${config.nombre}: ${t.id}`, fuenteUrl: t.url, motivo: r.reason.message }) }
+    })
+    if (!tablas.length) throw Error('No se han podido comprobar las clasificaciones de pilotos y equipos')
+    return { tablas, ...(tablasPendientes.length ? { tablasPendientes, aviso: `No se ha podido actualizar la clasificación de ${tablasPendientes.join(' y ')}.` } : {}) }
   }
   for (const [id, nombre, base] of [['formula-1', 'Fórmula 1', 'https://www.formula1.com'], ['formula-2', 'Fórmula 2', 'https://www.fiaformula2.com'], ['formula-3', 'Fórmula 3', 'https://www.fiaformula3.com']]) {
     const calendario = `${base}/en/racing/${ano}`, clasificacion = `${base}/en/${id === 'formula-1' ? 'results' : 'standings'}/${ano}/drivers`
     await carga({ id, nombre, calendario, clasificacion }, async () => {
       const rondas = interpretaCalendarioFormula(await leer(calendario), base, ano, id)
+      const pendientes = []
       const eventos = await mapaLimitado(rondas, async ronda => {
-        try { return interpretaSesionesFormula(await leer(ronda.fuenteUrl), ronda, ahora) } catch (e) {
+        try {
+          const html = await leer(ronda.fuenteUrl), sesiones = interpretaSesionesFormula(html, ronda, ahora), objetos = objetosFormula(html)
+          const carrera = objetos.find(o => Array.isArray(o.meetingSessions) && String(o.season) === String(ano) && o.url === new URL(ronda.fuenteUrl).pathname)
+          for (const e of sesiones) {
+            const s = carrera.meetingSessions.find(s => e.id === `${ronda.id}-${s.meetingSessionKey}`)
+            if (e.estado !== 'finalizado') continue
+            pendientes.push(async () => {
+              try {
+                const inline = objetos.find(o => o.session === s.session && o.startTime === s.startTime && Array.isArray(o.results))
+                if (inline) e.resultados = [interpretaResultadoFormula(inline, s, ronda.fuenteUrl, consultado)]
+                else if (id !== 'formula-1') {
+                  if (s.isAvailable !== true) return
+                  const marca = id === 'formula-2' ? 'f2' : 'f3', config = configuracionPublicaFormula(html, marca)
+                  e.resultados = [interpretaResultadoFormula(JSON.parse(await leer(urlResultadoFormula(config, s, marca), config.headers)), s, ronda.fuenteUrl, consultado)]
+                } else {
+                  const sufijo = s.sessionType === 'Practice' ? `practice/${s.sessionNumber}` : s.session === 'ss' ? 'sprint-qualifying' : s.session === 's' ? 'sprint-results' : s.sessionType === 'Qualifying' ? 'qualifying' : s.session === 'r' ? 'race-result' : null
+                  const href = parse(html).querySelectorAll('a').map(a => a.getAttribute('href')).find(h => sufijo && h?.startsWith(`/en/results/${ano}/races/`) && h.endsWith(`/${sufijo}`))
+                  if (!href) throw Error('La sesión no enlaza una tabla de resultados oficial')
+                  const url = new URL(href, base).href, etiqueta = sufijo === 'sprint-results' ? 'SPRINT' : sufijo === 'race-result' ? 'RACE RESULT' : s.description
+                  e.resultados = [interpretaResultadoF1Html(await leer(url), `${carrera.meetingOfficialName} - ${etiqueta}`, url, consultado)]
+                }
+              } catch (error) { incidencias.push({ deporte: 'motor', id, nombre: `${nombre}: ${e.nombre}`, fuenteUrl: ronda.fuenteUrl, motivo: error.message }) }
+            })
+          }
+          return sesiones
+        } catch (e) {
           incidencias.push({ deporte: 'motor', id, nombre, fuenteUrl: ronda.fuenteUrl, motivo: e.message })
           const { ganadores, ...evento } = ronda
           return [{ ...evento, estado: 'por_confirmar', detalle: `${rangoTexto(ronda.fecha, ronda.finFecha)}. No se han podido comprobar las sesiones. Consulta el calendario oficial.` }]
         }
       })
+      // Una única cola para todas las sesiones: no se multiplican conexiones
+      // por el número de rondas ni se descarta el calendario por una tabla caída.
+      await mapaLimitado(pendientes, tarea => tarea())
       return eventos.flat()
-    }, async () => interpretaClasificacionMotor(await leer(clasificacion), id, ano))
+    }, async () => dosClasificaciones({ id, nombre, clasificacion }, html => interpretaClasificacionMotor(html, id, ano), `${base}/en/${id === 'formula-1' ? 'results' : 'standings'}/${ano}/${id === 'formula-1' ? 'team' : 'teams'}`, html => interpretaEquiposFormula(html, id, ano)))
     if (incidencias.some(i => i.id === id && i.fuenteUrl.startsWith(`${base}/en/racing/${ano}/`))) {
       const c = competiciones.find(c => c.id === id)
-      c.agenda.aviso = 'Calendario consultado. No se han podido comprobar algunas sesiones; esas rondas muestran solo el fin de semana y un aviso.'
+      c.agenda.aviso = 'Calendario consultado; algunas sesiones o tablas de resultados no se han podido comprobar. Consulta su fuente oficial.'
     }
   }
   const academia = { id: 'f1-academy', nombre: 'F1 Academy', calendario: 'https://www.f1academy.com/Racing-Series/Calendar', clasificacion: 'https://www.f1academy.com/Racing-Series/Standings/Driver' }
-  await carga(academia, async () => interpretaCalendarioAcademy(await leer(academia.calendario), ano, ahora), async () => interpretaClasificacionAcademy(await leer(academia.clasificacion), ano))
+  await carga(academia, async () => {
+    const eventos = interpretaCalendarioAcademy(await leer(academia.calendario), ano, ahora)
+    await mapaLimitado([...new Set(eventos.filter(e => e.estado === 'finalizado').map(e => e.fuenteUrl))], async url => {
+      try { const tablas = interpretaResultadosAcademy(await leer(url), eventos.filter(e => e.fuenteUrl === url), ano, consultado, ahora); for (const e of eventos) if (tablas.has(e.id)) e.resultados = tablas.get(e.id) }
+      catch (e) { incidencias.push({ deporte: 'motor', id: academia.id, nombre: 'F1 Academy: resultados', fuenteUrl: url, motivo: e.message }) }
+    })
+    return eventos
+  }, async () => dosClasificaciones(academia, html => interpretaClasificacionAcademy(html, ano), 'https://www.f1academy.com/Racing-Series/Standings/Team', html => interpretaEquiposAcademy(html, ano)))
   for (const config of [
     { id: 'formula-4-espana', nombre: 'Fórmula 4 España', zona: 'España y Portugal', calendario: `https://f4spain.org/es/f4s-calendario-${ano}/`, clasificacion: `https://f4spain.org/es/standings/standings-${ano}/` },
     { id: 'eurocup-3', nombre: 'Eurocup-3', zona: 'Europa', calendario: `https://eurocup3.org/es/calendario-${ano}/`, clasificacion: `https://eurocup3.org/es/standings/standings-${ano}/` },
   ]) {
-    await carga({ ...config, aviso: 'Calendario de fines de semana y clasificación. Los resultados de cada carrera se consultan en la fuente oficial.' }, async () => interpretaCalendarioEspanaMotor(await leer(config.calendario), config.id, ano, ahora), async () => interpretaClasificacionMotor(await leer(config.clasificacion), config.id, ano))
+    await carga({ ...config, aviso: 'Sesiones y posiciones publicadas por el campeonato. Algunas tablas solo incluyen al primer piloto; los tiempos ausentes no se calculan. Las horas sin zona confirmada se muestran como texto.' }, async () => {
+      const rondas = interpretaCalendarioEspanaMotor(await leer(config.calendario), config.id, ano, ahora)
+      return (await mapaLimitado(rondas, async ronda => {
+        try { return interpretaRondaEspanaMotor(await leer(ronda.fuenteUrl), ronda, ano, consultado, ahora) }
+        catch (e) { incidencias.push({ deporte: 'motor', id: config.id, nombre: `${config.nombre}: ${ronda.nombre}`, fuenteUrl: ronda.fuenteUrl, motivo: e.message }); return [ronda] }
+      })).flat()
+    }, async () => interpretaClasificacionMotor(await leer(config.clasificacion), config.id, ano))
   }
   try {
     const grupos = interpretaCalendarioRfeda(await leer(RFEDA), ano, ahora)
     for (const g of grupos) competiciones.push({ id: g.id, deporte: 'motor', nombre: g.nombre, temporada: String(ano), categoria: 'Calendario RFEDA', zona: 'Pruebas en España', genero: 'mixto', fuente: { nombre: 'Real Federación Española de Automovilismo', url: RFEDA }, comprobadoEn: consultado, agenda: fuenteBloque(RFEDA, { eventos: g.eventos }, 'Próximas pruebas publicadas por la RFEDA. Cobertura de calendario; no incluye resultados ni todas las pruebas de la temporada.'), clasificacion: { estado: 'no_disponible', consultado, fuenteUrl: RFEDA, aviso: 'Esta fuente publica el calendario, sin clasificación.', tablas: [] } })
   } catch (e) { incidencias.push({ deporte: 'motor', nombre: 'Calendario RFEDA', fuenteUrl: RFEDA, motivo: e.message }) }
+  // La portada RFEDA solo enumera próximas pruebas. Una categoría no debe
+  // desaparecer tras su última ronda: sus resultados y puntos siguen vigentes.
+  for (const [id, nombre] of [['rfeda-gb3', 'GB3'], ['rfeda-supercars-espana', 'SUPERCARS ESPAÑA'], ['rfeda-tcr-spain', 'TCR Spain'], ['rfeda-cerx', 'CERX'], ['rfeda-cera', 'CERA'], ['rfeda-copaem', 'CopaEM'], ['rfeda-ferrari-challenge-trofeo-pirelli', 'FERRARI CHALLENGE TROFEO PIRELLI'], ['rfeda-cem-autohebdo', 'CEM AUTOHEBDO']]) {
+    if (competiciones.some(c => c.id === id)) continue
+    competiciones.push({ id, deporte: 'motor', nombre, temporada: String(ano), categoria: 'Calendario RFEDA', zona: 'Pruebas en España', genero: 'mixto', fuente: { nombre: 'Real Federación Española de Automovilismo', url: RFEDA }, comprobadoEn: consultado, agenda: { estado: 'no_disponible', consultado, fuenteUrl: RFEDA, eventos: [], aviso: 'La portada RFEDA no permite confirmar próximas pruebas de esta categoría.' }, clasificacion: { estado: 'no_disponible', consultado, fuenteUrl: RFEDA, tablas: [], aviso: 'Esta fuente publica calendario, sin clasificación.' } })
+  }
+  for (const config of clasificacionesRfedaHtml) {
+    const c = competiciones.find(c => c.id === config.id)
+    if (!c) continue
+    try { c.clasificacion = fuenteBloque(config.url, { tablas: interpretaClasificacionesRfedaHtml(await leer(config.url), config.marca, ano, config.url, consultado) }, 'Clasificaciones provisionales publicadas por la RFEDA. Se conserva su orden, incluidos empates y pilotos sin posición.'); c.categoria = 'Automovilismo RFEDA' }
+    catch (e) { c.clasificacion = fallo(c.id, c.nombre, config.url, e, { tablas: [] }) }
+  }
+  const tcr = competiciones.find(c => c.id === 'rfeda-tcr-spain')
+  if (tcr) {
+    const calendario = `https://spain.tcr-series.com/calendario-${ano}`, clasificacion = 'https://spain.tcr-series.com/clasificaciones-tcr'
+    try {
+      const rondas = rondasTcr(await leer(calendario), ano)
+      const eventos = (await mapaLimitado(rondas, async r => {
+        const rango = interpretaRangoMotor(r.rango, ano)
+        if (!r.documentos.length || rango.fecha > diaMadrid(ahora)) return [{ id: r.id, nombre: r.nombre, ...rango, estado: 'por_confirmar', fuenteUrl: r.fuenteUrl, detalle: 'Fin de semana publicado por TCR Spain. Horarios y documentos oficiales en la fuente de cada ronda.' }]
+        const salida = []
+        for (const d of r.documentos) {
+          const e = { id: `${r.id}-${slug(d.nombre)}`, nombre: `${r.nombre} · ${d.nombre}`, ...rango, estado: 'por_confirmar', fuenteUrl: d.url, detalle: 'Resultado de este fin de semana. Se muestra el orden y el dorsal que permite leer el PDF; consulta en el documento los tiempos y el horario exacto.' }
+          try { e.resultados = [await interpretaResultadoTcrPdf(await leer(d.url, undefined, true), d.nombre, ano, d.url, consultado)] }
+          catch (error) { incidencias.push({ deporte: 'motor', id: tcr.id, nombre: `TCR Spain: ${d.nombre}`, fuenteUrl: d.url, motivo: error.message }); e.detalle = 'Resultado disponible en el PDF oficial. Su formato no permite extraer aquí una tabla fiable. Día y hora exactos de la sesión pendientes de verificar.' }
+          salida.push(e)
+        }
+        return salida
+      })).flat()
+      tcr.agenda = fuenteBloque(calendario, { eventos }, 'Calendario de temporada y orden de sesiones publicado por TCR Spain. Los PDF escaneados se enlazan sin inventar una tabla; no se reconstruyen tiempos de columnas ambiguas.'); tcr.categoria = 'Turismos'; tcr.zona = 'España y Francia'
+    } catch (e) { incidencias.push({ deporte: 'motor', id: tcr.id, nombre: 'TCR Spain: calendario completo', fuenteUrl: calendario, motivo: e.message }) }
+    try {
+      const doc = parse(await leer(clasificacion)), a = doc.querySelectorAll('a').find(a => limpia(a.text) === `Temporada ${ano}`), url = a?.getAttribute('href') && new URL(a.getAttribute('href'), clasificacion).href
+      if (!url?.startsWith(`https://spain.tcr-series.com/docs/${ano}/clasificaciones/`) || !url.endsWith('.pdf')) throw Error('No se encuentra el documento de clasificación de esta temporada')
+      tcr.clasificacion = fuenteBloque(url, { tablas: await interpretaClasificacionTcrPdf(await leer(url, undefined, true), ano, url, consultado) }, 'Puntos publicados en la última clasificación enlazada por TCR Spain. No se recalculan ni se mezclan las distintas categorías.'); tcr.categoria = 'Turismos'
+    } catch (e) { tcr.clasificacion = fallo(tcr.id, tcr.nombre, clasificacion, e, { tablas: [] }) }
+  }
+  const gb3 = competiciones.find(c => c.id === 'rfeda-gb3')
+  if (gb3) await ampliaGb3(gb3, leer, ano, ahora, consultado, incidencias)
+  const ferrari = competiciones.find(c => c.id === 'rfeda-ferrari-challenge-trofeo-pirelli')
+  if (ferrari) await ampliaFerrari(ferrari, leer, ano, ahora, consultado, incidencias)
+  competiciones.push(await obtieneFrec(leer, ano, consultado, incidencias))
+  const cerx = competiciones.find(c => c.id === 'rfeda-cerx'), fuenteCerx = 'https://cerx.rfeda.es/resultados'
+  if (cerx) {
+    try { cerx.agenda = fuenteBloque(fuenteCerx, { eventos: rondasCerx(await leer(fuenteCerx), ano) }, 'Calendario de pruebas publicado por CERX. Sus resultados están en documentos externos y algunos requieren acceso.'); cerx.zona = 'España y Portugal' }
+    catch (e) { incidencias.push({ deporte: 'motor', id: cerx.id, nombre: 'CERX: calendario', fuenteUrl: fuenteCerx, motivo: e.message }) }
+  }
   // Estas fuentes identifican expresamente el territorio y las sesiones cubiertas.
   // Un enlace genérico de YouTube en el menú de otro campeonato no basta.
   for (const [id, url] of [['formula-1', EMISION_F1], ['f1-academy', EMISION_ACADEMY]]) {
@@ -302,6 +408,9 @@ export async function obtieneMotor(opciones = {}) {
         if (id === 'formula-1' ? / · Carrera$/.test(e.nombre) : / · (?:Clasificación|Carrera)/.test(e.nombre)) e.emisiones = [emision]
       }
     } catch (e) { incidencias.push({ deporte: 'motor', id, nombre: `${c.nombre}: dónde verlo`, fuenteUrl: url, motivo: e.message }) }
+  }
+  for (const c of competiciones) for (const e of c.agenda.eventos) {
+    if (e.resultados?.length && e.detalle?.includes('Resultado completo en la fuente oficial.')) e.detalle = e.detalle.replace(' Resultado completo en la fuente oficial.', '')
   }
   return { competiciones, incidencias }
 }

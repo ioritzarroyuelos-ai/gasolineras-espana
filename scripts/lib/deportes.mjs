@@ -23,18 +23,28 @@ const bloque = z.object({
   estado: z.enum(['actualizado', 'conservado', 'no_disponible']),
   consultado: instante, verificadoEn: instante.optional(), fuenteUrl: url, aviso: texto.optional(),
 })
+const resultadoSesion = z.object({
+  id, nombre: texto, fuenteUrl: url, verificadoEn: instante,
+  conservado: z.boolean().optional(),
+  columnas: z.array(z.object({ clave: id, nombre: texto })).min(1).max(30),
+  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto,
+    valores: z.record(id, z.union([z.string().max(100), z.number().finite()])) })).min(1).max(500),
+}).refine(t => new Set(t.columnas.map(c => c.clave)).size === t.columnas.length &&
+  t.filas.every(f => t.columnas.every(c => Object.hasOwn(f.valores, c.clave))), 'Resultado de sesión incompleto')
 const evento = z.object({
   id, nombre: texto, inicio: instante.nullish(), fecha: fecha.nullish(), finFecha: fecha.nullish(),
   estado: z.enum(['programado', 'en_juego', 'finalizado', 'aplazado', 'cancelado', 'por_confirmar']),
   local: texto.optional(), visitante: texto.optional(),
   resultado: z.object({ local: z.number().int().min(0).max(1000), visitante: z.number().int().min(0).max(1000) }).nullish(),
   jornada: texto.optional(), lugar: texto.optional(), detalle: texto.optional(), fuenteUrl: url.optional(),
+  resultados: z.array(resultadoSesion).max(10).optional(),
   emisiones: z.array(z.object({ nombre: texto, url, fuenteUrl: url, territorio: z.literal('España'), verificadoEn: instante })).max(20).optional(),
 }).refine(v => !v.finFecha || (!!v.fecha && v.finFecha >= v.fecha), 'Rango de fechas invertido')
 const tabla = z.object({
   id, nombre: texto,
+  fuenteUrl: url.optional(), verificadoEn: instante.optional(), conservado: z.boolean().optional(),
   columnas: z.array(z.object({ clave: id, nombre: texto })).max(30),
-  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000), nombre: texto,
+  filas: z.array(z.object({ posicion: z.number().int().positive().max(10000).nullable(), nombre: texto,
     valores: z.record(id, z.union([z.string().max(100), z.number().finite()])) })).min(1).max(2000),
 }).refine(t => new Set(t.columnas.map(c => c.clave)).size === t.columnas.length &&
   t.filas.every(f => t.columnas.every(c => Object.hasOwn(f.valores, c.clave))), 'Columnas o celdas incompletas')
@@ -43,7 +53,7 @@ const competicion = z.object({
   temporada: texto, categoria: texto, zona: texto, genero: z.enum(['masculino', 'femenino', 'mixto']).optional(), grupo: texto.optional(),
   fuente: z.object({ nombre: texto, url }), comprobadoEn: instante,
   agenda: bloque.extend({ eventos: z.array(evento).max(20000) }),
-  clasificacion: bloque.extend({ tablas: z.array(tabla).max(30) }),
+  clasificacion: bloque.extend({ tablas: z.array(tabla).max(30), tablasPendientes: z.array(id).max(30).optional() }),
 })
 const resumen = competicion.omit({ agenda: true, clasificacion: true }).extend({
   agenda: bloque.extend({ total: z.number().int().nonnegative() }),
@@ -56,6 +66,7 @@ const indice = z.object({ version: z.literal(1), generado: instante, dias: z.arr
 })
 const eventoAgenda = evento.safeExtend({ competicionId: id, competicion: texto, deporte: z.enum(['futbol', 'baloncesto', 'motor']), temporada: texto,
   grupo: texto.optional(), verificadoEn: instante.optional(), conservado: z.boolean(),
+  resultadosDisponibles: z.number().int().min(1).max(10).optional(),
 })
 
 export function validarIndiceDeportes(valor, ahora = Date.now()) {
@@ -92,8 +103,13 @@ export function validarCompeticionDeportiva(valor, ahora = Date.now()) {
     if (new Set(elementos.map(e => e.id)).size !== elementos.length) throw Error(`${c.id}: identificadores repetidos`)
   }
   const fechas = [c.comprobadoEn, c.agenda.consultado, c.agenda.verificadoEn, c.clasificacion.consultado, c.clasificacion.verificadoEn,
-    ...c.agenda.eventos.flatMap(e => (e.emisiones || []).map(em => em.verificadoEn))]
+    ...c.clasificacion.tablas.map(t => t.verificadoEn),
+    ...c.agenda.eventos.flatMap(e => [...(e.emisiones || []).map(em => em.verificadoEn), ...(e.resultados || []).map(t => t.verificadoEn)])]
   if (fechas.some(f => f && Date.parse(f) > ahora + 300000)) throw Error(`${c.id}: consulta fechada en el futuro`)
+  for (const e of c.agenda.eventos) if (e.resultados && (new Set(e.resultados.map(t => t.id)).size !== e.resultados.length ||
+    e.resultados.some(t => Date.parse(t.verificadoEn) > Date.parse(c.agenda.consultado) + 300000))) throw Error(`${c.id}: resultados de sesión incoherentes`)
+  for (const t of c.clasificacion.tablas) if (!!t.verificadoEn !== !!t.fuenteUrl || t.conservado && !t.verificadoEn ||
+    t.verificadoEn && Date.parse(t.verificadoEn) > Date.parse(c.clasificacion.consultado) + 300000) throw Error(`${c.id}: clasificación sin procedencia coherente`)
   return c
 }
 
@@ -107,6 +123,26 @@ export function conservaCompeticionDeportiva(actual, anterior) {
       ...anterior[k], estado: 'conservado', consultado: actual[k].consultado,
       aviso: 'No hemos podido actualizar este apartado. Mostramos la última copia comprobada, con su fecha original.',
     }
+  }
+  if (actual.agenda.estado !== 'no_disponible') {
+    const previos = new Map(anterior.agenda.eventos.map(e => [e.id, e]))
+    salida.agenda = { ...salida.agenda, eventos: salida.agenda.eventos.map(e => {
+      const previo = previos.get(e.id)
+      const dia = evento => evento?.inicio ? new Date(evento.inicio).toISOString().slice(0, 10) : evento?.fecha || null
+      const futuro = e.inicio ? Date.parse(e.inicio) > Date.parse(actual.agenda.consultado) : e.fecha && e.fecha > actual.agenda.consultado.slice(0, 10)
+      if (e.resultados !== undefined || !previo?.resultados?.length || previo.nombre !== e.nombre ||
+        e.estado === 'cancelado' || e.estado === 'aplazado' || e.estado === 'programado' || futuro || dia(e) !== dia(previo)) return e
+      return { ...e, resultados: previo.resultados.map(t => ({ ...t, conservado: true })) }
+    }) }
+  }
+  if (actual.clasificacion.estado !== 'no_disponible' && actual.clasificacion.tablasPendientes?.length) {
+    const presentes = new Set(salida.clasificacion.tablas.map(t => t.id))
+    const pendientes = new Set(actual.clasificacion.tablasPendientes)
+    const copias = anterior.clasificacion.tablas.filter(t => pendientes.has(t.id) && !presentes.has(t.id)).map(t => ({ ...t,
+      verificadoEn: t.verificadoEn || anterior.clasificacion.verificadoEn,
+      fuenteUrl: t.fuenteUrl || anterior.clasificacion.fuenteUrl, conservado: true,
+    }))
+    salida.clasificacion = { ...salida.clasificacion, tablas: [...salida.clasificacion.tablas, ...copias] }
   }
   return salida
 }

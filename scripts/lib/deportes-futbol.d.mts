@@ -1,4 +1,5 @@
 import type { EventoDeportivo, OpcionesDeportes, ResultadoDeportes, TablaDeportiva } from './deportes.mjs'
+import type { EstadoNovanet } from './deportes-novanet-estado.mjs'
 export interface FichaFutsal { nombre: string; category: string; year: string; league: string; group: string; round: string; rounds: string[]; grupos: string[] }
 export interface GrupoFFCV { codigo: string; nombre: string; ver_clasificacion: string }
 export interface CategoriaFFCV { codigo: string; nombre: string; TipoJuego: string; nombre_grupo_categoria: string; visible_clasificacion: string; grupos: GrupoFFCV[] | null }
@@ -11,7 +12,18 @@ export interface EstadoFFCV {
   ventana: { desde: string | null; peticiones: number }
   verificados: Record<string, string>
 }
-export interface OpcionesFutbol extends OpcionesDeportes { estadoFFCV?: unknown; guardarEstadoFFCV?: (estado: EstadoFFCV) => void | Promise<void>; relojFFCV?: () => number; duermeFFCV?: (ms: number) => Promise<void> }
+export interface OpcionesFutbol extends OpcionesDeportes {
+  gruposCubiertosFutbol?: string[]
+  estadoFFCV?: unknown
+  guardarEstadoFFCV?: (estado: EstadoFFCV) => void | Promise<void>
+  relojFFCV?: () => number
+  duermeFFCV?: (ms: number) => Promise<void>
+  estadoNovanet?: Record<string, unknown>
+  guardarEstadoNovanet?: (id: string, estado: EstadoNovanet) => void | Promise<void>
+  fuentesNovanet?: string[]
+  maxPeticionesNovanet?: number
+  capturaNovanet?: (id: string, url: string, html: string) => void | Promise<void>
+}
 export function creaEstadoFFCV(categorias: unknown[], temporada: { cod_temporada: string; nombre: string }, verificadoEn: string): EstadoFFCV
 export function normalizaEstadoFFCV(estado: unknown): EstadoFFCV
 export function generoFFCV(categoria: { nombre?: string; nombre_grupo_categoria?: string }): 'masculino' | 'femenino' | 'mixto' | undefined

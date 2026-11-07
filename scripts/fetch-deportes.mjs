@@ -1,4 +1,4 @@
-import { readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { obtieneFutbol } from './lib/deportes-futbol.mjs'
@@ -7,13 +7,16 @@ import { obtieneMotor } from './lib/deportes-motor.mjs'
 import { validarCompeticionDeportiva, conservaCompeticionDeportiva, validarIndiceDeportes, validarAgendaDeportes } from './lib/deportes.mjs'
 import { construyeIndiceDeportes } from './lib/deportes-indice.mjs'
 import { checkpointFFCV, recuperaEstadoFFCV, seleccionaFuentesDeportes } from './lib/deportes-checkpoint.mjs'
+import { recuperaEstadoNovanet, checkpointNovanet, parseaPausasPortales } from './lib/deportes-novanet-estado.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = resolve(process.env.DEPORTES_OUTPUT_DIR || join(root, 'public/data/deportes'))
 const anteriorDir = resolve(process.env.DEPORTES_PREVIOUS_DIR || join(root, 'public/data/deportes'))
 const fuentes = seleccionaFuentesDeportes(process.env.DEPORTES_FUENTES, process.env.DEPORTES_PROGRAMACION)
 const checkpointPath = resolve(process.env.DEPORTES_CHECKPOINT_FFCV || join(root, '.tmp/deportes-ffcv-checkpoint.json'))
+const checkpointNovanetDir = resolve(process.env.DEPORTES_CHECKPOINT_NOVANET || join(root, '.tmp/deportes-novanet'))
 const ahora = Date.now(), fecha = new Date(ahora).toISOString()
+const pausasPortales = parseaPausasPortales(process.env.DEPORTES_PORTALES_NO_ANTES)
 function lee(path) { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 function escribe(path, data) {
   mkdirSync(resolve(path, '..'), { recursive: true })
@@ -34,6 +37,35 @@ const guardarEstadoFFCV = estado => {
   escribe(join(out, 'fuentes/ffcv.json'), limpio)
 }
 if (fuentes.has('futbol') || process.env.DEPORTES_FFCV_NO_ANTES) guardarEstadoFFCV(estadoFFCV)
+// Cada portal conserva su punto de continuación; una interrupción no reinicia
+// las consultas ni borra el descanso que haya solicitado la fuente.
+const copiasNovanet = new Map()
+for (const [dir, patron] of [
+  [join(anteriorDir, 'fuentes'), /^novanet-([a-z0-9][a-z0-9-]{0,49})\.json$/],
+  ...(out !== anteriorDir ? [[join(out, 'fuentes'), /^novanet-([a-z0-9][a-z0-9-]{0,49})\.json$/]] : []),
+  [checkpointNovanetDir, /^([a-z0-9][a-z0-9-]{0,49})\.json$/],
+]) {
+  let archivos = []
+  try { archivos = readdirSync(dir) } catch { /* Primera pasada de este portal. */ }
+  for (const archivo of archivos) {
+    const id = archivo.match(patron)?.[1]
+    if (id) copiasNovanet.set(id, [...(copiasNovanet.get(id) || []), lee(join(dir, archivo))])
+  }
+}
+const estadoNovanet = Object.fromEntries([...copiasNovanet].map(([id, copias]) => [id, recuperaEstadoNovanet(copias)]))
+const guardarEstadoNovanet = (id, estado) => {
+  if (!/^[a-z0-9][a-z0-9-]{0,49}$/.test(id)) throw Error('Portal de deportes no válido')
+  const limpio = checkpointNovanet(estado)
+  escribe(join(checkpointNovanetDir, id + '.json'), limpio)
+  escribe(join(out, 'fuentes', 'novanet-' + id + '.json'), limpio)
+  estadoNovanet[id] = limpio
+}
+// Persist every requested pause before readers, even when only motor is selected.
+// Reusing the full recovered state also preserves cursors without a catalogue.
+for (const [id, noConsultarAntes] of Object.entries(pausasPortales)) {
+  const previo = estadoNovanet[id] || { version: 1 }
+  guardarEstadoNovanet(id, recuperaEstadoNovanet([previo, { ...previo, noConsultarAntes }]))
+}
 const anteriores = new Map((indiceAnterior?.competiciones || []).flatMap(c => {
   if (!/^[a-z0-9][a-z0-9_-]{0,149}$/.test(c.id)) return []
   try { return [[c.id, validarCompeticionDeportiva(lee(join(anteriorDir, c.id + '.json')), ahora)]] } catch { return [] }
@@ -43,7 +75,7 @@ let bloquesActualizados = 0
 for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obtieneBaloncesto], ['motor', obtieneMotor]]) {
   if (!fuentes.has(deporte)) continue
   try {
-    const salida = await obtiene({ ahora, log: console.log, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV } : {}) })
+    const salida = await obtiene({ ahora, log: console.log, estadoNovanet, guardarEstadoNovanet, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV } : {}) })
     incidencias.push(...salida.incidencias)
     for (const c of salida.competiciones) {
       try {

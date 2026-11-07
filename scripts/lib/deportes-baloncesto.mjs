@@ -1,10 +1,20 @@
 import { parse } from 'node-html-parser'
 import { leerFuenteDeportiva, validaUrlDeportiva, fechaDeportiva } from './deportes.mjs'
 import { obtieneBaloncestoTerritorial } from './deportes-baloncesto-territorial.mjs'
+import { obtieneBaloncestoEuropa } from './deportes-baloncesto-europa.mjs'
+import { obtieneWnba } from './deportes-baloncesto-wnba.mjs'
+import { obtieneBaloncestoBizkaia } from './deportes-baloncesto-bizkaia.mjs'
+import { obtieneBaloncestoFbcyl } from './deportes-baloncesto-fbcyl.mjs'
+import { obtieneBaloncestoFbcv, obtieneBaloncestoOtrasOW } from './deportes-baloncesto-fbcv.mjs'
+import { obtieneBaloncestoAlava } from './deportes-baloncesto-alava.mjs'
+import { obtieneBaloncestoGesdeportiva } from './deportes-baloncesto-gesdeportiva.mjs'
+import { obtieneBaloncestoAragon } from './deportes-baloncesto-aragon.mjs'
+import { obtieneBaloncestoGalicia } from './deportes-baloncesto-galicia.mjs'
 
 const FEB = 'https://beta.competiciones.feb.es'
 const ACB = 'https://acb.com'
 const NBA = 'https://www.nba.com'
+const NBA_LEAGUE_PASS_ESPANA = 'https://www.primevideo.com/help?nodeId=TsnKYpbmX4KgCuogDS'
 const limpio = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const esEntero = v => Number.isInteger(v) && v >= 0
 const canalesEspana = new Set(['dazn.com', 'movistarplus.es', 'orange.es', 'vodafone.es', '3cat.cat', 'agalega.gal', 'aragonplay.es', 'eitb.eus', 'etbon.eus'])
@@ -265,6 +275,33 @@ export function normalizaNba(html, fechaEsperada) {
   if (new Set(eventos.map(e => e.id)).size !== eventos.length) throw Error('La NBA repite partidos')
   return { eventos, temporada: [...temporadas][0] }
 }
+export function normalizaClasificacionNba(datos, temporada) {
+  if (!/^\d{4}-\d{2}$/.test(temporada) || datos?.parameters?.LeagueID !== '00' || datos.parameters.SeasonYear !== temporada || datos.parameters.SeasonType !== 'Regular Season') throw Error('La clasificación NBA pertenece a otra temporada o competición')
+  const tabla = datos.resultSets?.find(t => t.name === 'Standings')
+  const campos = ['LeagueID', 'SeasonID', 'TeamID', 'TeamCity', 'TeamName', 'Conference', 'PlayoffRank', 'WINS', 'LOSSES', 'TotalPoints', 'OppTotalPoints']
+  if (!Array.isArray(tabla?.headers) || new Set(tabla.headers).size !== tabla.headers.length || campos.some(c => !tabla.headers.includes(c)) || !Array.isArray(tabla.rowSet) || tabla.rowSet.length !== 30) throw Error('La clasificación NBA está incompleta')
+  const filas = tabla.rowSet.map(valores => {
+    if (!Array.isArray(valores) || valores.length !== tabla.headers.length) throw Error('Fila de la clasificación NBA incompleta')
+    const r = Object.fromEntries(tabla.headers.map((k, i) => [k, valores[i]]))
+    if (r.LeagueID !== '00' || r.SeasonID !== '2' + temporada.slice(0, 4) || !esEntero(r.TeamID) || !limpio(r.TeamCity) || !limpio(r.TeamName) || !['East', 'West'].includes(r.Conference) || !Number.isInteger(r.PlayoffRank) || r.PlayoffRank < 1 || r.PlayoffRank > 15 || !['WINS', 'LOSSES', 'TotalPoints', 'OppTotalPoints'].every(k => esEntero(r[k]))) throw Error('Datos de la clasificación NBA incoherentes')
+    return { id: r.TeamID, conferencia: r.Conference, fila: { posicion: r.PlayoffRank, nombre: limpio(r.TeamCity + ' ' + r.TeamName), valores: { pj: r.WINS + r.LOSSES, pg: r.WINS, pp: r.LOSSES, pf: r.TotalPoints, pc: r.OppTotalPoints } } }
+  })
+  if (new Set(filas.map(f => f.id)).size !== 30) throw Error('La clasificación NBA repite equipos')
+  return [['East', 'Este'], ['West', 'Oeste']].map(([codigo, nombre]) => {
+    const grupo = filas.filter(f => f.conferencia === codigo).map(f => f.fila).sort((a, b) => a.posicion - b.posicion)
+    if (grupo.length !== 15 || new Set(grupo.map(f => f.posicion)).size !== 15) throw Error('Conferencia NBA incompleta')
+    return { id: 'nba-' + codigo.toLowerCase(), nombre: 'Conferencia ' + nombre, columnas, filas: grupo }
+  })
+}
+export function compruebaLeaguePassEspana(html) {
+  const parrafos = parse(html).querySelectorAll('section p').map(p => limpio(p.text))
+  // El distribuidor enumera España y afirma expresamente que incluye todos
+  // los partidos. Una oferta global o los canales de EE. UU. no bastan.
+  const paises = parrafos.find(p => p.startsWith('NBA League Pass is available for subscription in:'))
+  return !!paises && /(?:[:,]|\band\b)\s*Spain\s*(?:[,.;]|$)/.test(paises) &&
+    parrafos.some(p => p.startsWith('All NBA games are included in an NBA League Pass subscription.')) &&
+    parrafos.some(p => /both live and on-demand/.test(p))
+}
 async function obtieneAcb(opciones) {
   const fecha = fechaConsulta(opciones), urlAgenda = ACB + '/es/liga/calendario', urlTabla = ACB + '/es/liga/clasificacion'
   const resultados = await Promise.allSettled([leerFuenteDeportiva(urlAgenda, opciones).then(h => normalizaCalendarioAcb(h, urlAgenda, fecha)), leerFuenteDeportiva(urlTabla, opciones).then(normalizaClasificacionAcb)])
@@ -289,13 +326,27 @@ async function obtieneNba(opciones) {
   }
   const temporadas = new Set(coleccion.map(c => c.temporada).filter(Boolean))
   if (!coleccion.length || temporadas.size !== 1) return { competiciones: [], incidencias }
-  const eventos = [...new Map(coleccion.flatMap(c => c.eventos).map(e => [e.id, e])).values()]
-  const url = NBA + '/games'
-  return { competiciones: [{ ...base('nba', 'NBA', [...temporadas][0], { nombre: 'NBA', url }, fecha, { genero: 'masculino', zona: 'Estados Unidos y Canadá' }),
+  let eventos = [...new Map(coleccion.flatMap(c => c.eventos).map(e => [e.id, e])).values()]
+  const url = NBA + '/games', temporada = [...temporadas][0], agendaIncompleta = incidencias.length > 0
+  let tablas
+  const urlTabla = 'https://stats.nba.com/stats/leaguestandingsv3?LeagueID=00&Season=' + encodeURIComponent(temporada) + '&SeasonType=Regular+Season'
+  try {
+    // El servicio público de estadísticas exige la procedencia de su página;
+    // no usa una cuenta, una clave ni una sesión privada.
+    const conProcedencia = { ...opciones, fetcher: (destino, init) => (opciones.fetcher || fetch)(destino, { ...init, headers: { ...init.headers, Referer: NBA + '/' } }) }
+    tablas = normalizaClasificacionNba(JSON.parse(await leerFuenteDeportiva(urlTabla, conProcedencia)), temporada)
+  } catch (e) { incidencias.push(incidencia('NBA · Clasificación', urlTabla, e.message, 'nba')) }
+  let emisionConfirmada = false
+  try {
+    emisionConfirmada = compruebaLeaguePassEspana(await leerFuenteDeportiva(NBA_LEAGUE_PASS_ESPANA, opciones))
+    if (!emisionConfirmada) throw Error('La fuente ya no confirma todos los partidos de League Pass en España')
+    eventos = eventos.map(e => ['programado', 'en_juego', 'finalizado'].includes(e.estado) ? { ...e, emisiones: [{ nombre: 'NBA League Pass (suscripción adicional)', url: e.fuenteUrl, fuenteUrl: NBA_LEAGUE_PASS_ESPANA, territorio: 'España', verificadoEn: fecha }] } : e)
+  } catch (e) { incidencias.push(incidencia('NBA · Dónde verlo', NBA_LEAGUE_PASS_ESPANA, e.message, 'nba')) }
+  return { competiciones: [{ ...base('nba', 'NBA', temporada, { nombre: 'NBA', url }, fecha, { genero: 'masculino', zona: 'Estados Unidos y Canadá' }),
     // Una lectura parcial no debe sustituir la última agenda completa ni darle
     // una fecha nueva a los partidos del día que no se pudo consultar.
-    agenda: bloque(url, fecha, incidencias.length ? null : eventos, 'eventos', incidencias.length ? 'No hemos podido comprobar todos los días de la agenda NBA; consulta la fuente oficial.' : 'Horarios y resultados consultados. Las retransmisiones en España no están confirmadas.'),
-    clasificacion: bloque(NBA + '/standings', fecha, null, 'tablas', 'Consulta la clasificación en la página oficial de la NBA.') }], incidencias }
+    agenda: bloque(url, fecha, agendaIncompleta ? null : eventos, 'eventos', agendaIncompleta ? 'No hemos podido comprobar todos los días de la agenda NBA; consulta la fuente oficial.' : emisionConfirmada ? 'NBA League Pass requiere una suscripción adicional. Incluye los partidos en directo y sus repeticiones; no forma parte de la suscripción básica de Prime Video.' : 'Horarios y resultados consultados. Las retransmisiones en España no están confirmadas.'),
+    clasificacion: bloque(NBA + '/standings', fecha, tablas, 'tablas', tablas ? 'Clasificación de la temporada regular, separada por conferencias.' : 'No hemos podido comprobar la clasificación de la NBA.') }], incidencias }
 }
 function rangosFeb(ahora) {
   const dia = new Date(ahora).toISOString().slice(0, 10)
@@ -364,12 +415,17 @@ async function obtieneFeb(opciones) {
   return { competiciones, incidencias }
 }
 export async function obtieneBaloncesto(opciones = {}) {
-  const resultados = await Promise.allSettled([obtieneAcb(opciones), obtieneFeb(opciones), obtieneNba(opciones), obtieneBaseFeb(opciones), obtieneCopasAcb(opciones), obtieneBaloncestoTerritorial(opciones)])
+  const resultados = await Promise.allSettled([obtieneAcb(opciones), obtieneFeb(opciones), obtieneNba(opciones), obtieneBaseFeb(opciones), obtieneCopasAcb(opciones), obtieneBaloncestoTerritorial(opciones), obtieneBaloncestoEuropa(opciones), obtieneWnba(opciones), obtieneBaloncestoBizkaia(opciones), obtieneBaloncestoFbcyl(opciones), obtieneBaloncestoFbcv(opciones), obtieneBaloncestoOtrasOW(opciones), obtieneBaloncestoAlava(opciones), obtieneBaloncestoGesdeportiva(opciones), obtieneBaloncestoAragon(opciones), obtieneBaloncestoGalicia(opciones)])
   const competiciones = [], incidencias = []
   for (const r of resultados) {
     if (r.status === 'fulfilled') { competiciones.push(...r.value.competiciones); incidencias.push(...r.value.incidencias) }
     else incidencias.push(incidencia('Baloncesto', FEB, r.reason.message))
   }
+  incidencias.push(
+    incidencia('Baloncesto · Cataluña', 'https://www.basquetcatala.cat/competicions', 'Aún sin lectura automática verificada. En la revisión del 7 de noviembre de 2026, el portal solicitó una verificación manual de seguridad.'),
+    incidencia('Baloncesto · Andalucía', 'https://www.andaluzabaloncesto.org/', 'Aún sin lectura automática verificada. En la revisión del 7 de noviembre de 2026, la página oficial respondió con una protección de acceso (HTTP 403).'),
+    incidencia('Baloncesto · Ceuta', 'https://fbceuta.es/calendario/', 'Aún sin lectura automática verificada. El calendario revisado el 7 de noviembre de 2026 contenía un evento de plantilla, sin encuentros oficiales identificables.'),
+  )
   return { competiciones, incidencias }
 }
 

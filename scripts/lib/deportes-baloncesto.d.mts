@@ -9,6 +9,8 @@ export function datosPaginaAcb(html: string): { data: any; resuelve: (valor: unk
 export function normalizaCalendarioAcb(html: string, fuenteUrl: string, verificadoEn: string): { eventos: EventoDeportivo[]; temporada: string }
 export function normalizaClasificacionAcb(html: string): { tablas: TablaDeportiva[]; temporada: string }
 export function normalizaNba(html: string, fechaEsperada?: string): { eventos: EventoDeportivo[]; temporada?: string }
+export function normalizaClasificacionNba(datos: unknown, temporada: string): TablaDeportiva[]
+export function compruebaLeaguePassEspana(html: string): boolean
 export function obtieneBaloncesto(opciones?: OpcionesDeportes): Promise<ResultadoDeportes>
 export function normalizaFinalBaseFeb(html: string, categoria: number, fuenteUrl: string, ahora?: number): CompeticionDeportiva
 

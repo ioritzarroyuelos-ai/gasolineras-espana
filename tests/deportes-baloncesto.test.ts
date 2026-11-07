@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   datosPaginaAcb, normalizaCalendarioAcb, normalizaClasificacionAcb, normalizaNba,
   leerLiteralFeb, codigoFuncion, decodificaRespuestaFeb, normalizaPartidosFeb, normalizaTablaFeb,
-  obtieneBaloncesto, normalizaFinalBaseFeb,
+  obtieneBaloncesto, normalizaFinalBaseFeb, normalizaClasificacionNba, compruebaLeaguePassEspana,
 } from '../scripts/lib/deportes-baloncesto.mjs'
 
 const fixtures = import.meta.glob('./fixtures/deportes-baloncesto/*', { query: '?raw', import: 'default', eager: true })
@@ -75,7 +75,48 @@ describe('baloncesto oficial', () => {
     expect(nba?.agenda.estado).toBe('no_disponible')
     expect(nba?.agenda.eventos).toEqual([])
     expect(nba?.agenda.verificadoEn).toBeUndefined()
-    expect(resultado.incidencias.filter(i => i.id === 'nba')).toHaveLength(3)
+    expect(resultado.incidencias.filter(i => i.id === 'nba' && i.fuenteUrl.includes('/games?'))).toHaveLength(3)
+    expect(nba?.clasificacion.estado).toBe('no_disponible')
+  })
+
+  it('verifica las 30 posiciones NBA por conferencia y rechaza otra temporada, duplicados o faltas', () => {
+    const original = JSON.parse(fixture('nba-clasificacion.json'))
+    const tablas = normalizaClasificacionNba(original, '2026-27')
+    expect(tablas.map(t => [t.nombre, t.filas.length])).toEqual([['Conferencia Este', 15], ['Conferencia Oeste', 15]])
+    expect(tablas[1].filas[0]).toMatchObject({ nombre: 'Los Angeles Lakers', valores: { pg: 8, pp: 2, pj: 10 } })
+    expect(() => normalizaClasificacionNba(original, '2025-26')).toThrow('otra temporada')
+    const falta = structuredClone(original)
+    falta.resultSets[0].rowSet.pop()
+    expect(() => normalizaClasificacionNba(falta, '2026-27')).toThrow('incompleta')
+    const duplicado = structuredClone(original), tabla = duplicado.resultSets[0]
+    tabla.rowSet[1][tabla.headers.indexOf('TeamID')] = tabla.rowSet[0][tabla.headers.indexOf('TeamID')]
+    expect(() => normalizaClasificacionNba(duplicado, '2026-27')).toThrow('repite equipos')
+    const temporada = structuredClone(original)
+    temporada.resultSets[0].rowSet[0][temporada.resultSets[0].headers.indexOf('SeasonID')] = '22025'
+    expect(() => normalizaClasificacionNba(temporada, '2026-27')).toThrow('incoherentes')
+  })
+
+  it('una agenda NBA incompleta no impide comprobar la clasificación independiente', async () => {
+    const resultado = await obtieneBaloncesto({ ahora: Date.parse(fecha), fetcher: async (url, init) => {
+      if (String(url).includes('stats.nba.com/stats/leaguestandingsv3?')) {
+        expect((init?.headers as Record<string, string>)?.Referer).toBe('https://www.nba.com/')
+        return new Response(fixture('nba-clasificacion.json'))
+      }
+      return String(url) === 'https://www.nba.com/games?date=2026-11-07' ? new Response(fixture('nba-dia.html')) : new Response('Error', { status: 503 })
+    } })
+    const nba = resultado.competiciones.find(c => c.id === 'nba')
+    expect(nba?.agenda.estado).toBe('no_disponible')
+    expect(nba?.clasificacion.estado).toBe('actualizado')
+    expect(nba?.clasificacion.tablas.flatMap(t => t.filas)).toHaveLength(30)
+  })
+
+  it('League Pass exige todos los partidos, cobertura en vivo y España explícitamente', () => {
+    const oferta = '<section><p>All NBA games are included in an NBA League Pass subscription.</p><p>both live and on-demand</p><p>NBA League Pass is available for subscription in: Spain</p></section>'
+    expect(compruebaLeaguePassEspana(oferta)).toBe(true)
+    expect(compruebaLeaguePassEspana(oferta.replace('Spain', 'United States'))).toBe(false)
+    expect(compruebaLeaguePassEspana(oferta.replace('All NBA games', 'Selected games'))).toBe(false)
+    expect(compruebaLeaguePassEspana(oferta.replace('both live and on-demand', 'on-demand'))).toBe(false)
+    expect(compruebaLeaguePassEspana('<script>' + oferta + '</script>')).toBe(false)
   })
 
   it('lee literales FEB sin ejecutar funciones, acceder al sistema ni modificar prototipos', () => {

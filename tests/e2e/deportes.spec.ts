@@ -7,13 +7,21 @@ import { pageHeaders } from '../../src/lib/runtime'
 
 // Fixtures solo de presentación. Las rutas y los lectores se prueban también
 // por separado; el último recorrido de este archivo utiliza los datos reales.
-async function presentacion(page: Page) {
+async function presentacion(page: Page, motor = false) {
   const sello = new Date().toISOString(), dia = diaDeporte(Date.now()), fuente = 'https://federacion.example/calendario'
   const c: CompeticionDeportiva = { id: 'liga-prueba', deporte: 'futbol', nombre: 'Liga de prueba', temporada: '2026-27', categoria: 'Sénior', zona: 'España', fuente: { nombre: 'Fuente de prueba', url: fuente }, comprobadoEn: sello,
     agenda: { estado: 'actualizado', consultado: sello, verificadoEn: sello, fuenteUrl: fuente, eventos: [
       { id: 'partido', nombre: 'Águilas – Bosque', local: 'Águilas', visitante: 'Bosque', inicio: dia + 'T17:30:00Z', estado: 'programado', fuenteUrl: fuente },
       { id: 'final', nombre: 'Bosque – Águilas', local: 'Bosque', visitante: 'Águilas', fecha: dia, estado: 'finalizado', resultado: { local: 1, visitante: 2 }, fuenteUrl: fuente },
     ] }, clasificacion: { estado: 'actualizado', consultado: sello, verificadoEn: sello, fuenteUrl: fuente, tablas: [{ id: 'tabla', nombre: 'Clasificación general', columnas: [{ clave: 'puntos', nombre: 'Puntos' }], filas: [{ posicion: 1, nombre: 'Águilas', valores: { puntos: 12 } }] }] } }
+  if (motor) {
+    c.deporte = 'motor'; c.nombre = 'Motor de prueba'
+    c.agenda.eventos = [{ id: 'carrera-prueba', nombre: 'Carrera de prueba', fecha: dia, estado: 'finalizado', resultados: [{
+      id: 'tabla-carrera', nombre: 'Resultado de la carrera', fuenteUrl: fuente, verificadoEn: sello,
+      columnas: [{ clave: 'equipo', nombre: 'Equipo' }, { clave: 'tiempo', nombre: 'Tiempo' }, { clave: 'estado', nombre: 'Estado' }],
+      filas: Array.from({ length: 22 }, (_, i) => ({ posicion: i === 21 ? null : i + 1, nombre: 'Piloto de prueba ' + (i + 1), valores: { equipo: 'Escudería de prueba', tiempo: i ? '+10.500' : '1:23:45.678', estado: i === 21 ? 'Descalificado' : 'Clasificado' } })),
+    }] }]
+  }
   const { indice, agendas } = construyeIndiceDeportes([c], [], Date.now())
   await page.route('**/deportes/**', async route => {
     const u = new URL(route.request().url()), zona = u.searchParams.get('horario') === 'canarias' ? 'canarias' : 'madrid', nonce = 'prueba-deportes'
@@ -61,6 +69,22 @@ test.describe('presentación de deportes con casos controlados', () => {
       }
     }
     expect(errors).toEqual([])
+  })
+  test('motor: el resultado completo abre la carrera y se lee en un móvil estrecho', async ({ page }) => {
+    await presentacion(page, true)
+    await page.setViewportSize({ width: 320, height: 844 })
+    await page.goto('/deportes/')
+    await page.getByRole('link', { name: 'Ver resultados de la sesión →', exact: true }).click()
+    await expect(page).toHaveURL(/evento=carrera-prueba/)
+    await expect(page.locator('.race-results')).toHaveAttribute('open', '')
+    await expect(page.locator('.race-results tbody tr')).toHaveCount(22)
+    await expect(page.locator('.race-results tbody tr').last()).toContainText('Descalificado')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320)
+    expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])
+    await page.getByLabel('Hora local').selectOption('canarias')
+    await page.getByRole('button', { name: 'Cambiar horario' }).click()
+    await expect(page).toHaveURL(/evento=carrera-prueba/)
+    await expect(page.locator('.race-results table')).toBeVisible()
   })
   test.describe('sin JavaScript', () => {
     test.use({ javaScriptEnabled: false })

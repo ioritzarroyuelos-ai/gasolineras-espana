@@ -51,6 +51,8 @@ describe('Baloncesto territorial: identidad y calendario oficiales', () => {
     expect(() => calendarioGipuzkoa(partido({ fecha: '07/11/2026 (Sábado)' }), grupo, '2026/2027', ahora)).toThrow(/futura/)
     expect(() => calendarioGipuzkoa(partido({ fecha: '08/11/2026 (Domingo)', hora: '00:00' }), grupo, '2026/2027', ahora)).toThrow(/futura/)
     expect(() => calendarioGipuzkoa(partido({ fecha: '08/11/2026 (Domingo)', hora: '' }), grupo, '2026/2027', ahora)).toThrow(/futura/)
+    const durante = calendarioGipuzkoa(partido({ fecha: '07/11/2026 (Sábado)', hora: '10:00' }), grupo, '2026/2027', ahora)[0]
+    expect(durante.estado).toBe('por_confirmar'); expect(durante.resultado).toBeUndefined()
   })
 
   it('no presenta como fecha real la jornada original ni la de destino de un aplazamiento', () => {

@@ -11,12 +11,14 @@ export function construyeIndiceDeportes(competiciones, incidencias, ahora = Date
   const agendas = Object.fromEntries(Object.keys(ZONAS_DEPORTES).flatMap(zona => dias.map(dia => [`${zona}/${dia}`, []])))
   const resumen = competiciones.map(c => {
     for (const e of c.agenda.eventos) {
+      // La agenda enlaza el resultado completo sin repetir cientos de filas por día y zona.
+      const { resultados, ...eventoBreve } = e
       for (const zona of Object.keys(ZONAS_DEPORTES)) {
         const primero = e.inicio ? diaDeporte(e.inicio, zona) : e.fecha
         if (!primero) continue
         const ultimo = e.inicio ? primero : e.finFecha || primero
         for (const dia of dias) if (dia >= primero && dia <= ultimo) agendas[`${zona}/${dia}`].push({
-          ...e, competicionId: c.id, competicion: c.nombre, deporte: c.deporte,
+          ...eventoBreve, ...(resultados?.length ? { resultadosDisponibles: resultados.length } : {}), competicionId: c.id, competicion: c.nombre, deporte: c.deporte,
           temporada: c.temporada, grupo: c.grupo, fuenteUrl: e.fuenteUrl || c.agenda.fuenteUrl,
           verificadoEn: c.agenda.verificadoEn, conservado: c.agenda.estado === 'conservado',
         })
@@ -24,6 +26,7 @@ export function construyeIndiceDeportes(competiciones, incidencias, ahora = Date
     }
     const participantes = [...new Set([
       ...c.agenda.eventos.flatMap(e => [e.local, e.visitante].filter(Boolean)),
+      ...c.agenda.eventos.flatMap(e => (e.resultados || []).flatMap(t => t.filas.map(f => f.nombre))),
       ...c.clasificacion.tablas.flatMap(t => t.filas.map(f => f.nombre)),
     ])].sort((a, b) => a.localeCompare(b, 'es'))
     const { eventos, ...agenda } = c.agenda

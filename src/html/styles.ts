@@ -412,13 +412,6 @@ export function getStyles(nonce: string = ''): string {
     .header-badge { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:600; border-radius:9999px; padding:3px 12px; white-space:nowrap; }
     .header-update { color:rgba(255,255,255,0.65); font-size:11px; white-space:nowrap; }
 
-    .masthead.masthead--compact { padding: 0 12px; display: flex; align-items: center; gap: 20px; min-height: 44px; }
-    .masthead.masthead--compact .mh-inner { margin: 0; flex: none; }
-    .masthead.masthead--compact .mh-brand { display: inline-flex; align-items: center; gap: 8px; }
-    .masthead.masthead--compact .mh-logo { width: 24px; height: 24px; margin: 0; }
-    .masthead.masthead--compact .mh-title { font-size: 20px; }
-    .masthead.masthead--compact .mh-nav { margin: 0 0 0 auto; border: 0; }
-    .masthead.masthead--compact .mh-nav a { padding: 14px 12px; font-size: 11px; }
     .btn-favs-open { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; border: 1px solid rgba(255,255,255,.6); background: transparent; color: #fff; padding: 7px 9px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer; }
     .btn-favs-open:hover { background: rgba(255,255,255,.15); }
     .btn-favs-open:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
@@ -439,11 +432,6 @@ export function getStyles(nonce: string = ''): string {
     .ev-pop-note { margin-top: 7px; color: #475569; font-size: 11px; line-height: 1.45; }
     .ev-pop-directions { margin-top: 8px; font-weight: 600; }
     @media (max-width: 639px) {
-      .masthead.masthead--compact { flex-direction: column; gap: 0; padding: 5px 8px 0; }
-      .masthead.masthead--compact .mh-title { font-size: 17px; }
-      .masthead.masthead--compact .mh-logo { width: 18px; height: 18px; }
-      .masthead.masthead--compact .mh-nav { margin: 0; width: 100%; min-width: 0; justify-content: center; flex-wrap: wrap; }
-      .masthead.masthead--compact .mh-nav a { padding: 10px 3px; font-size: 10px; letter-spacing: .01em; white-space: nowrap; }
       .header-logo-img { display: none; }
       #app-header .user-chip { max-width: 90px; }
       #app-header .user-name { max-width: 48px; }
@@ -1099,10 +1087,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark #station-detail-content .popup-seg-day, body.dark #station-detail-content .popup-seg-hrs, body.dark #station-detail-content .hist-stat-label, body.dark #station-detail-content .hist-legend,
     body.dark #station-detail-content .hist-loading, body.dark #station-detail-content .hist-empty, body.dark #station-detail-content .hist-error { color: #cbd5e1; }
     body.dark #station-detail-content .popup-actions button:hover { color: #86efac; }
-    @media (min-width: 640px) and (max-width: 1023px) {
-      .masthead.masthead--compact { gap: 8px; }
-      .masthead.masthead--compact .mh-nav a { padding: 14px 6px; font-size: 10px; }
-    }
     @media (max-width: 1023px) {
       .station-detail { top: auto; left: 0; right: 0; bottom: 0; width: 100%; max-height: min(72%, calc(100% - 164px)); border-radius: 20px 20px 0 0; z-index: 920; }
       #station-detail-content { padding-bottom: env(safe-area-inset-bottom); }
@@ -2023,13 +2007,9 @@ export function getStyles(nonce: string = ''): string {
     .compare-chip-x:hover           { opacity: 0.7; }
 
     ${MASTHEAD_CSS}
-    /* El mapa gestiona el tema MANUALMENTE con body.dark (arranca siempre en
-       claro e ignora el modo del sistema). El @media(prefers-color-scheme) que
-       trae MASTHEAD_CSS descuadraría la cabecera (oscura) sobre un mapa claro si
-       el SO está en oscuro. Por eso fijamos los tokens según body.dark, con más
-       especificidad que la media query, para que la cabecera siga al botón. */
-    body:not(.dark) .masthead{--mh-paper:#faf8f4;--mh-ink:#1a1a1a;--mh-muted:#5b6470;--mh-brand:#16a34a;--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9}
-    body.dark .masthead{--mh-paper:#0f172a;--mh-ink:#f1f5f9;--mh-muted:#94a3b8;--mh-brand:#4ade80;--mh-brand-dark:#86efac;--mh-brand-soft:#064e3b;--mh-rule:#334155}
+    /* La cabecera sigue el botón de tema del mapa, nunca el tema del sistema. */
+    body.dark .masthead{--mh-paper:#101c18;--mh-ink:#eaf4ee;--mh-muted:#a7beb2;--mh-brand-dark:#83d6af;--mh-brand-soft:#203c2e;--mh-rule:#344b3f}
+    body.dark .masthead .mh-day{color:#102c20}
     /* Resumen SEO + listado de municipios (bajo el app). Antes iban con style=""
        inline, que la CSP (sin unsafe-inline en style-src) BLOQUEA -> se veian sin
        estilo. Movido a clases/selectores (H3). */

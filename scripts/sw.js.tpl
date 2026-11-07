@@ -29,12 +29,9 @@ const API_CACHE_MAX = 24;
 // y scripts/fetch-map-vendor.mjs). Los iconos son SVG inline (sprite en el HTML),
 // ya no hay FontAwesome de CDN que cachear.
 const STATIC_ASSETS = [
-  // Ship 26: la home del mapa pasó de `/` a `/gasolineras/` en preparación
-  // para el portal España Útil. Precacheamos ambas: `/gasolineras/` es el shell
-  // real, `/` es el redirect 301 (Response opaca al Cache API pero la
-  // guardamos igualmente como offline-safety-net).
+  // La portada y Mi día muestran resúmenes sensibles a la fecha. No se
+  // precachean: necesitan conexión igual que las fichas de tiempo y guardias.
   '/gasolineras/',
-  '/',
   '/manifest.json',
   '/static/favicon.svg',
   '/static/logo.svg',
@@ -146,9 +143,10 @@ self.addEventListener('fetch', event => {
   const turnoFarmacia = /^\/farmacias\/(?!guardia\/?$|buscar\/?$)[a-z0-9-]+(?:\/[a-z0-9-]+)?\/?$/.test(ruta);
   const parteTiempo = /^\/tiempo\/[a-z0-9-]+\/[a-z0-9-]+\/?$/.test(ruta);
   const deportes = /^\/(?:deportes(?:\/|$)|data\/deportes\/)/.test(ruta);
-  if (url.origin === self.location.origin && (deportes || parteTiempo || turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
+  const resumenDelDia = ruta === '/' || /^\/mi-dia\/?$/.test(ruta);
+  if (url.origin === self.location.origin && (resumenDelDia || deportes || parteTiempo || turnoFarmacia || RUTAS_SONDEOS_CON_VEDA.has(ruta.replace(/\/$/, '')))) {
     event.respondWith(fetch(request, { cache: 'no-store' }).catch(() =>
-      new Response(deportes ? 'Sin conexión. Vuelve a conectar para consultar los horarios, resultados y clasificaciones actualizados.' : parteTiempo ? 'Sin conexión. Vuelve a conectar para consultar la previsión y los avisos vigentes.'
+      new Response(resumenDelDia ? 'Sin conexión. Vuelve a conectar para consultar la información de hoy. Tus preferencias siguen guardadas en este navegador.' : deportes ? 'Sin conexión. Vuelve a conectar para consultar los horarios, resultados y clasificaciones actualizados.' : parteTiempo ? 'Sin conexión. Vuelve a conectar para consultar la previsión y los avisos vigentes.'
         : turnoFarmacia ? 'Sin conexión. Vuelve a conectar para consultar el turno actualizado de la farmacia.' : 'Se necesita conexión para consultar los sondeos.', {
         status: 503,
         headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
@@ -236,7 +234,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match(request).then(r => r || caches.match('/gasolineras/') || caches.match('/')))
+      }).catch(() => caches.match(request).then(r => r || caches.match('/gasolineras/')))
     );
     return;
   }
@@ -300,7 +298,7 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE_NAME).then(cache => cache.put(request, clone));
         }
         return res;
-      }).catch(() => caches.match('/gasolineras/') || caches.match('/'));
+      }).catch(() => caches.match('/gasolineras/'));
     })
   );
 });

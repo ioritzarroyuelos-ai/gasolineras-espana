@@ -13,7 +13,7 @@ function navegadorSinConexion() {
     },
   }
   const almacen = { match: vi.fn(async () => new Response('copia anterior')) }
-  const fetch = vi.fn(async () => { throw Error('sin conexión') })
+  const fetch = vi.fn(async (_request: Request, _options?: RequestInit) => { throw Error('sin conexión') })
   new Function('self', 'caches', 'fetch', plantilla.replace('__RUTAS_SONDEOS_CON_VEDA__', JSON.stringify(RUTAS_SONDEOS_SIN_COPIA)))(self, almacen, fetch)
 
   function pedir(ruta: string, accept: string) {
@@ -23,10 +23,23 @@ function navegadorSinConexion() {
     if (!respuesta) throw Error('El servicio no atendió la petición')
     return respuesta
   }
-  return { pedir, almacen }
+  return { pedir, almacen, fetch }
 }
 
 describe('copias sin conexión y veda de sondeos', () => {
+  it('portada y Mi día no recuperan resúmenes de un día anterior sin conexión', async () => {
+    const { pedir, almacen, fetch } = navegadorSinConexion()
+    for (const ruta of ['/', '/?municipio=28079', '/?q=Madrid', '/mi-dia', '/mi-dia/?municipio=28079', '/mi-%64ia']) {
+      const respuesta = await pedir(ruta, 'text/html')
+      expect(respuesta.status).toBe(503)
+      expect(respuesta.headers.get('cache-control')).toBe('no-store')
+      expect(await respuesta.text()).toContain('información de hoy')
+    }
+    expect(almacen.match).not.toHaveBeenCalled()
+    expect(fetch.mock.calls).toHaveLength(6)
+    for (const llamada of fetch.mock.calls) expect(llamada[1]).toEqual({ cache: 'no-store' })
+  })
+
   it('deportes no recupera horarios ni marcadores de una copia sin conexión', async () => {
     const { pedir, almacen } = navegadorSinConexion()
     for (const ruta of ['/deportes/', '/deportes/futbol', '/deportes/competicion/formula-1', '/data/deportes/index.json']) {

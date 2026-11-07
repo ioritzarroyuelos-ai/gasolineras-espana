@@ -16,11 +16,11 @@ describe('SEO Lote 1 — builders', () => {
     expect(html).toContain('<title>')
   })
 
-  it('portada: H1 descriptivo (sr-only) y la marca ya NO es H1', () => {
+  it('portada: un H1 visible de Cerca de ti y la marca fuera del H1', () => {
     const html = buildLandingPage('n1', 'https://webapp-3ft.pages.dev/')
-    // H1 con términos de búsqueda, no la marca sola.
-    expect(html).toMatch(/<h1 class="sr-only">[^<]*gasolineras[^<]*<\/h1>/i)
-    // La marca en la cabecera es <span>, no <h1>.
+    expect(html.match(/<h1\b/g)).toHaveLength(1)
+    expect(html).toMatch(/<h1[^>]*>[^]*?Hoy lo tienes[^]*?más cerca\.[^]*?<\/h1>/)
+    expect(html).not.toMatch(/<h1[^>]*class="[^"]*sr-only/)
     expect(html).not.toContain('<h1 class="mh-title">')
   })
 
@@ -35,6 +35,6 @@ describe('SEO Lote 1 — builders', () => {
     expect(html).toContain('og:image:width')
     expect(html).toContain('og:image:height')
     expect(html).toContain('twitter:image')
-    expect(html).toContain('content="#16a34a"') // theme-color unificado
+    expect(html).toContain('content="#137954"') // color del diseño compartido
   })
 })

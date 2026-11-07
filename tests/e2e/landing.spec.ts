@@ -1,37 +1,27 @@
-// Portada del portal España Útil en `/` — diseño "periódico" (Ship 28). HTML
-// estatico sin JS. Comprobamos: cabecera de marca, menú de secciones con enlace
-// a cada vertical (El tiempo, Gasolineras, Farmacias, ITV), navegación al
-// clicar, los shortcuts PWA viejos (?action=) siguen redirigiendo al mapa, sin
-// axe violations y con meta description + canonical.
+// La portada Cerca de ti conserva navegación, metadatos y acceso a las seis
+// secciones. Mi día añade personalización sin depender del cliente del mapa.
 
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 
 test.describe('Portada España Útil (/)', () => {
-  test('cabecera de marca + menú con las 4 secciones', async ({ page }) => {
+  test('cabecera compartida, seis secciones y acceso visible a Mi día', async ({ page }) => {
     await page.goto('/')
     await expect(page).toHaveTitle(/España Útil/i)
 
-    // H1 descriptivo (sr-only) con las verticales; existe en el DOM aunque no sea
-    // visible. La marca visible vive ahora en la cabecera como .mh-title (span).
-    await expect(page.getByRole('heading', { level: 1, name: /gasolineras/i })).toBeAttached()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveCount(1)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Hoy lo tienes\s+más cerca\./)
     await expect(page.locator('.mh-title')).toHaveText(/España Útil/i)
 
-    // Menú de secciones con enlace a cada vertical.
-    await expect(page.locator('.mh-nav a[href="/tiempo/"]')).toBeVisible()
-    await expect(page.locator('.mh-nav a[href="/gasolineras/"]')).toBeVisible()
-    await expect(page.locator('.mh-nav a[href="/farmacias/"]')).toBeVisible()
-    await expect(page.locator('.mh-nav a[href="/itv/"]')).toBeVisible()
-
-    // Bloques de portada (cada uno con su h2).
-    await expect(page.getByRole('heading', { level: 2, name: /el tiempo hoy/i })).toBeVisible()
-    await expect(page.getByRole('heading', { level: 2, name: /^gasolineras$/i })).toBeVisible()
-    await expect(page.getByRole('heading', { level: 2, name: /farmacias/i })).toBeVisible()
-    await expect(page.getByRole('heading', { level: 2, name: /^itv$/i })).toBeVisible()
-
-    // El bloque del tiempo siempre lleva un enlace a /tiempo/ (haya o no franja
-    // de ciudades: si el snapshot no está fresco, degrada al gancho de búsqueda).
-    await expect(page.locator('.lead a.more[href="/tiempo/"]')).toBeVisible()
+    for (const seccion of ['tiempo', 'gasolineras', 'farmacias', 'itv', 'politica', 'deportes']) {
+      await expect(page.locator('.mh-nav a[href="/' + seccion + '/"]')).toBeVisible()
+      await expect(page.locator('[data-dia-module="' + seccion + '"]')).toBeVisible()
+    }
+    await expect(page.locator('.masthead a[href="/mi-dia"]')).toBeVisible()
+    await page.locator('.masthead a[href="/mi-dia"]').click()
+    await expect(page).toHaveURL(/\/mi-dia$/)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Tu día\.\s+A tu manera\./)
   })
 
   test('clicar Gasolineras en el menú navega a /gasolineras/', async ({ page }) => {
@@ -80,5 +70,7 @@ test.describe('Portada España Útil (/)', () => {
 
     const canonical = await page.locator('link[rel="canonical"]').getAttribute('href')
     expect(canonical).toMatch(/\/$/)
+    await expect(page.locator('meta[name="google-site-verification"]')).toHaveAttribute('content', 'qzv_20xQiNesXM4hX5ZqYozonYMqZhY-Wop2Tndu81w')
+    await expect(page.locator('script[src*="/static/app.js"]')).toHaveCount(0)
   })
 })

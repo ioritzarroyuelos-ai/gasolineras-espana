@@ -1,7 +1,5 @@
-// Portada "periódico" (/) + observatorio de precios (/precios-carburantes).
-// Extraido de index.tsx (B1). Importa la infra de src/lib/runtime.ts (ya no hay
-// deps-threading). franjaTiempo es helper de una sola ruta -> vive aqui, no en runtime.
-import type { Hono } from 'hono'
+// Portada Cerca de ti, panel Mi día y observatorio de precios.
+import type { Context, Hono } from 'hono'
 import type { Env, MinistryResponse } from '../index'
 import { loadSnapshot, loadStaticNational, slog, genNonce, resolveScheme, resolveHost } from '../lib/runtime'
 import { resumenFromPre } from '../lib/gasolineras-precalculo'
@@ -13,8 +11,9 @@ import { prediccionVigente, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
 import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
 import type { MunicipioLista, Prediccion } from '../../scripts/lib/tiempo.mjs'
 import { buscaLocalidades, serviciosLocalidad, type Localidad, type LocalidadIndex } from '../lib/localidades'
+import { validarCompeticionDeportiva } from '../../scripts/lib/deportes.mjs'
 
-// Hasta seis ciudades con parte vigente de AEMET para su día local.
+// Hasta cuatro ciudades con parte vigente de AEMET para su día local.
 async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<LandingTiempo[] | undefined> {
   const raw = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
   const all = (raw && raw.municipios) || []
@@ -22,12 +21,12 @@ async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<Land
   if (!cand.length) return undefined
   // Recorremos los candidatos por población y cargamos el snapshot de cada
   // provincia SOLO cuando hace falta (una lectura por provincia, memorizada),
-  // hasta llenar 6 ciudades. Así no cargamos 12 provincias para quedarnos con 6
+  // hasta llenar 4 ciudades. Así no cargamos 12 provincias para quedarnos con 4
   // ni desbordamos el LRU en memoria (10 huecos) que comparte todo el sitio.
   const snapCache = new Map<string, Record<string, Prediccion> | null>()
   const out: LandingTiempo[] = []
   for (const m of cand) {
-    if (out.length >= 6) break
+    if (out.length >= 4) break
     let preds = snapCache.get(m.provinciaSlug)
     if (preds === undefined) {
       const s = await loadSnapshot<{ predicciones: Record<string, Prediccion> }>(
@@ -42,11 +41,12 @@ async function franjaTiempo(c: { req: { url: string }; env: Env }): Promise<Land
     if (!hoy) continue
     out.push({
       nombre: m.nombre,
-      provincia: m.provinciaNombre,
       url: '/tiempo/' + m.provinciaSlug + '/' + m.slug,
       tmax: hoy.tmax,
       tmin: hoy.tmin,
       cielo: hoy.cielo || '',
+      elaborado: p.elaborado,
+      fuente: p.fuente,
     })
   }
   return out.length ? out : undefined
@@ -68,17 +68,14 @@ export function registerHomeRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!m) return c.json({ error: 'Municipio no encontrado' }, 404)
     return c.json({ ine: m.ine, nombre: m.nombre, provinciaNombre: m.provinciaNombre, servicios: serviciosLocalidad(m) }, 200, { 'Cache-Control': 'no-store' })
   })
-  // Ship 28: `/` sirve la portada "periódico" con dato fresco (fecha, media
-  // nacional de carburantes y el tiempo de hoy de las ciudades grandes). Todo el
-  // IO va en try/catch: si un snapshot falla, la portada degrada sin romperse.
-  // Compat: `/?action=...` (shortcuts PWA viejos) redirige al mapa.
-  app.get('/', async c => {
+  // Un fallo parcial de una fuente no oculta los demás servicios.
+  async function portada(c: Context<{ Bindings: Env }>, vista: 'inicio' | 'mi-dia') {
     const url = new URL(c.req.url)
-    if (url.searchParams.has('action')) {
+    if (vista === 'inicio' && url.searchParams.has('action')) {
       return c.redirect('/gasolineras/mapa' + url.search, 301)
     }
     const nonce = genNonce()
-    const data: LandingData = {}
+    const data: LandingData = { vista }
     const ine = url.searchParams.get('municipio')
     if (ine) {
       data.localidad = await cargaLocalidad(c, ine)
@@ -89,23 +86,37 @@ export function registerHomeRoutes(app: Hono<{ Bindings: Env }>): void {
       data.query = query.slice(0, 70)
       data.encontrados = buscaLocalidades(await loadSnapshot<LocalidadIndex[]>(c.req.url, 'localidades-index.json', c.env.ASSETS) || [], query)
     }
-    try {
+    await Promise.allSettled([(async () => {
       // M5: media nacional desde el resumen precomputado (KB). Solo parseamos
       // stations.json (12 MB) si el resumen falta o no valida (fallback).
       const resumen = resumenFromPre(await loadSnapshot<unknown>(c.req.url, 'gasolineras-resumen.json', c.env.ASSETS))
+      const fallback = resumen ? null : await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
       const st = resumen
         ? resumen.nacionalStats.stats
-        : statsNacional(await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)).stats
+        : statsNacional(fallback).stats
       if (st['95'] || st['diesel']) {
         data.gasolina = {
           g95: st['95'] ? st['95'].avg : undefined,
           diesel: st['diesel'] ? st['diesel'].avg : undefined,
+          fecha: resumen?.fechaMinisterio || fallback?.Fecha,
         }
       }
-      data.tiempo = await franjaTiempo(c)
-    } catch { /* la portada funciona sin datos frescos */ }
+    })(), (async () => {
+      if (!data.localidad) data.tiempo = await franjaTiempo(c)
+    })(), (async () => {
+      // Una competición pequeña, validada con el mismo contrato de Deportes.
+      // El navegador no descarga el índice completo para mostrar una tarjeta.
+      const raw = await loadSnapshot<unknown>(c.req.url, 'deportes/laliga-easports.json', c.env.ASSETS)
+      if (raw) {
+        const comp = validarCompeticionDeportiva(raw)
+        if (comp.id === 'laliga-easports') data.deporte = comp
+      }
+    })()])
     return new Response(buildLandingPage(nonce, c.req.url, data), { headers: landingHeaders(nonce) })
-  })
+  }
+  app.get('/', c => portada(c, 'inicio'))
+  app.get('/mi-dia', c => portada(c, 'mi-dia'))
+  app.get('/mi-dia/', c => c.redirect('/mi-dia' + new URL(c.req.url).search, 301))
 
   // ---- Observatorio de precios ----
   // Pagina de datos pensada para SER CITADA por medios y foros: el Geoportal

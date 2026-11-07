@@ -1,105 +1,54 @@
-// Cabecera de periódico COMÚN a todo el portal España Útil.
-//
-// Misma cabecera en TODAS las páginas (portada, tiempo, gasolineras, farmacias,
-// ITV, precios y el mapa): fecha del día + marca + lema + menú de secciones.
-// Al navegar entre secciones, como la cabecera es idéntica, se ve como si solo
-// cambiara el cuerpo.
-//
-// Autocontenida a propósito: sus estilos usan variables --mh-* propias y todos
-// los selectores cuelgan de `.masthead`, para NO chocar con la paleta ni las
-// reglas de cada página (cada sección tiene su CSS). Sin JavaScript.
-//
-// - mastheadHtml(active, opts): markup del <header>. Calcula la fecha en el
-//   servidor (Intl, con red de seguridad). `active` subraya la sección actual.
-//   opts.brandAsH1 pinta la marca como <h1> (solo en la portada; el resto de
-//   páginas ya tienen su propio <h1> de contenido).
-// - MASTHEAD_CSS: los estilos, para inyectar en el <style> de cada página.
+// Una sola cabecera para Cerca de ti, Mi día y las seis secciones.
+// El buscador conserva su formulario GET para funcionar sin JavaScript.
+import { PORTAL_TOKENS } from './ui-theme'
 
-export type SeccionActiva = 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
+export type SeccionActiva = 'inicio' | 'mi-dia' | 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
 
-function esc(s: unknown): string {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
-}
-
-// Fecha de hoy en España, capitalizada ("Domingo, 6 de septiembre de 2026").
-// En el Worker y en los tests hay Intl con zonas horarias; si fallara, cadena
-// vacía y la cabecera simplemente no muestra la línea de fecha.
-function fechaHoy(): string {
-  try {
-    const f = new Intl.DateTimeFormat('es-ES', {
-      weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid',
-    }).format(new Date())
-    return f.charAt(0).toUpperCase() + f.slice(1)
-  } catch {
-    return ''
-  }
-}
-
-export function mastheadHtml(active: SeccionActiva = null, opts: { brandAsH1?: boolean; hideMunicipioSearch?: boolean; compact?: boolean } = {}): string {
-  const fecha = fechaHoy()
-  const titulo = opts.brandAsH1
-    ? '<h1 class="mh-title">España Útil</h1>'
-    : '<span class="mh-title">España Útil</span>'
+export function mastheadHtml(active: SeccionActiva = null, opts: { hideMunicipioSearch?: boolean; compact?: boolean } = {}): string {
   const item = (href: string, key: SeccionActiva, label: string): string =>
     '<a href="' + href + '"' + (active === key ? ' class="mh-on" aria-current="page"' : '') + '>' + label + '</a>'
   const municipioTag = opts.compact ? 'details' : 'div'
   return '<header class="masthead' + (opts.compact ? ' masthead--compact' : '') + '">'
-    + '<div class="mh-inner">'
-    + (fecha && !opts.compact ? '<p class="mh-date">' + esc(fecha) + ' · España</p>' : '')
-    + '<a href="/" class="mh-brand" aria-label="España Útil — inicio">'
-    + '<img src="/static/logo.svg" alt="" class="mh-logo" width="44" height="44" decoding="async" />'
-    + titulo
-    + '</a>'
-    + (opts.compact ? '' : '<p class="mh-tag">Información útil, con fuentes y fechas · sin registro y gratis</p>')
-    + '</div>'
+    + '<div class="mh-inner"><a href="/" class="mh-brand" aria-label="España Útil — inicio">'
+    + '<img src="/static/logo.svg" alt="" class="mh-logo" width="36" height="36" decoding="async" /><span class="mh-title">España Útil</span></a>'
+    + '<div class="mh-actions"><a class="mh-location" data-municipio-default data-municipio-nombre="Municipio" href="' + (active === 'mi-dia' ? '/mi-dia' : '/') + '#municipio-form" aria-label="Elegir tu municipio">Tu municipio</a>'
+    + '<a id="municipio-elegido" class="mh-location" hidden></a>'
+    + '<a class="mh-day" href="/mi-dia"' + (active === 'mi-dia' ? ' aria-current="page"' : '') + '>Mi día <span aria-hidden="true">↗</span></a></div></div>'
     + '<nav class="mh-nav" aria-label="Secciones">'
-    + item('/tiempo/', 'tiempo', 'El tiempo')
-    + item('/gasolineras/', 'gasolineras', 'Gasolineras')
-    + item('/farmacias/', 'farmacias', 'Farmacias')
-    + item('/itv/', 'itv', 'ITV')
-    + item('/politica/', 'politica', 'Política')
-    + item('/deportes/', 'deportes', 'Deportes')
-    + '</nav>'
+    + item('/', 'inicio', 'Inicio') + item('/tiempo/', 'tiempo', 'El tiempo')
+    + item('/gasolineras/', 'gasolineras', 'Gasolineras') + item('/farmacias/', 'farmacias', 'Farmacias')
+    + item('/itv/', 'itv', 'ITV') + item('/politica/', 'politica', 'Política') + item('/deportes/', 'deportes', 'Deportes') + '</nav>'
     + (opts.hideMunicipioSearch ? '' : '<' + municipioTag + ' class="mh-local">'
-    + (opts.compact ? '<summary>Tu municipio</summary>' : '')
-    + '<form id="municipio-form" action="/" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
-    + '<a id="municipio-elegido" hidden></a><ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></' + municipioTag + '>'
-    + '<script src="/static/municipio.js" defer></script>')
-    + '</header>'
+      + (opts.compact ? '<summary>Cambiar municipio</summary>' : '')
+      + '<form id="municipio-form" action="' + (active === 'mi-dia' ? '/mi-dia' : '/') + '" method="get" role="search"><label for="municipio-busqueda">Tu municipio</label> <input id="municipio-busqueda" type="search" name="q" minlength="2" maxlength="70" placeholder="Nombre del municipio" autocomplete="off" required /> <button>Buscar</button></form>'
+      + '<ul id="municipio-resultados" aria-label="Sugerencias de municipios"></ul></' + municipioTag + '>')
+    + '<script src="/static/municipio.js" defer></script></header>'
 }
 
-// Estilos de la cabecera. Todo cuelga de `.masthead` y usa variables --mh-*
-// propias, así se puede inyectar en cualquier página sin colisiones.
-export const MASTHEAD_CSS =
-  '.masthead .mh-local{max-width:720px;margin:0 auto;padding:12px 0;font-size:14px}.masthead form{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}.masthead input{font:inherit;padding:9px;border:1px solid #697586;border-radius:5px;min-width:0;max-width:100%}.masthead button{font:inherit;padding:10px 16px;background:#166534;color:#fff;border:0;border-radius:5px;cursor:pointer}.masthead .mh-local a{color:#166534}.masthead #municipio-resultados{padding:0;list-style:none;margin:4px 0}.masthead #municipio-resultados a{display:block;padding:8px}.masthead #municipio-elegido{margin-top:8px}'
-  +
-  '.masthead{--mh-paper:#faf8f4;--mh-ink:#1a1a1a;--mh-muted:#5b6470;--mh-brand:#16a34a;'
-  + '--mh-brand-dark:#166534;--mh-brand-soft:#dcfce7;--mh-rule:#d9d4c9;'
-  + 'background:var(--mh-paper);color:var(--mh-ink);text-align:center;padding:22px 20px 0;'
-  + "font-family:system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',sans-serif}"
-  + '.masthead .mh-inner{max-width:1080px;margin:0 auto}'
-  + '.masthead .mh-date{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mh-muted);'
-  + 'padding-bottom:10px;margin:0 0 14px;border-bottom:1px solid var(--mh-rule)}'
-  + '.masthead .mh-brand{display:inline-block;text-decoration:none;color:inherit}'
-  + '.masthead .mh-logo{width:44px;height:44px;display:block;margin:0 auto 4px}'
-  + ".masthead .mh-title{display:block;font-family:Georgia,'Times New Roman','Nimbus Roman',serif;"
-  + 'font-size:clamp(34px,7vw,64px);font-weight:800;letter-spacing:-.02em;margin:0;color:var(--mh-ink);line-height:1}'
-  + ".masthead .mh-tag{font-family:Georgia,'Times New Roman',serif;font-style:italic;color:var(--mh-muted);"
-  + 'margin:8px 0 16px;font-size:clamp(14px,2vw,17px)}'
-  + '.masthead .mh-nav{max-width:1080px;margin:0 auto;display:flex;flex-wrap:wrap;justify-content:center;'
-  + 'border-top:3px double var(--mh-ink);border-bottom:1px solid var(--mh-rule)}'
-  + '.masthead .mh-nav a{padding:12px 18px;font-size:13px;font-weight:700;text-transform:uppercase;'
-  + 'letter-spacing:.06em;color:var(--mh-brand-dark);text-decoration:none}'
-  + '.masthead .mh-nav a:hover{background:var(--mh-brand-soft)}'
-  + '.masthead .mh-nav a:focus-visible{background:var(--mh-brand-soft);outline:3px solid var(--mh-brand-dark);outline-offset:-3px}'
-  + '.masthead .mh-nav a.mh-on{text-decoration:underline;text-underline-offset:5px;text-decoration-thickness:2px}'
-
-export const CABECERA_COMPACTA_CSS = `
-.masthead.masthead--compact{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:0 16px;padding:4px max(12px,calc((100% - 1024px)/2));border-bottom:1px solid var(--mh-rule)}
-.masthead--compact .mh-inner,.masthead--compact .mh-nav{margin:0}.masthead--compact .mh-brand{display:flex;align-items:center;gap:7px}
-.masthead--compact .mh-logo{width:23px;height:23px;margin:0}.masthead--compact .mh-title{font-size:22px}
-.masthead--compact .mh-nav{border:0}.masthead--compact .mh-nav a{padding:11px 8px;font-size:12px}
-@media(max-width:650px){.masthead.masthead--compact{justify-content:center;padding:6px 10px 0}
-.masthead--compact .mh-nav{flex-basis:100%;justify-content:space-around}.masthead--compact .mh-nav a{padding:10px 2px;font-size:11px;letter-spacing:.01em}}`
+// Selectores acotados: no cambian el mapa, tablas o botones de cada sección.
+export const MASTHEAD_CSS = PORTAL_TOKENS + `
+.masthead{--mh-paper:var(--eu-paper);--mh-ink:var(--eu-ink);--mh-muted:var(--eu-muted);--mh-brand-dark:var(--eu-accent);--mh-brand-soft:var(--eu-soft);--mh-rule:var(--eu-line);background:var(--mh-paper);color:var(--mh-ink);padding:22px 24px 0;border-bottom:1px solid var(--mh-rule);font:14px/1.45 var(--eu-font)}
+.masthead *{box-sizing:border-box}.masthead [hidden]{display:none!important}
+.masthead .mh-inner{max-width:1120px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}
+.masthead .mh-brand{display:inline-flex;align-items:center;gap:9px;text-decoration:none;color:inherit;flex:none}
+.masthead .mh-logo{width:36px;height:36px;display:block;margin:0}
+.masthead .mh-title{display:block;font-family:var(--eu-font);font-size:26px;font-weight:800;letter-spacing:-1px;margin:0;color:var(--mh-ink);line-height:1.15}
+.masthead .mh-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:0}
+.masthead .mh-location{display:inline-flex;align-items:center;gap:6px;max-width:220px;min-height:44px;padding:8px 10px;border-radius:12px;color:var(--mh-muted);font-size:12px;text-decoration:none;overflow-wrap:anywhere}
+.masthead .mh-location::before{content:'⌖';font-size:20px;flex:none;color:var(--mh-brand-dark)}
+.masthead .mh-actions:has(#municipio-elegido:not([hidden])) [data-municipio-default]{display:none}
+.masthead .mh-day{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:10px 18px;border-radius:14px;background:var(--mh-brand-dark);color:#fff;font-weight:700;text-decoration:none;white-space:nowrap}
+.masthead .mh-day:hover{filter:brightness(.93)}.masthead .mh-day[aria-current]{box-shadow:0 0 0 3px var(--mh-rule)}
+.masthead .mh-nav{max-width:1120px;margin:18px auto 0;display:flex;flex-wrap:wrap;gap:4px;padding:0 0 12px;border:0}
+.masthead .mh-nav a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 17px;border-radius:12px;font-size:13px;font-weight:650;color:var(--mh-muted);text-decoration:none;white-space:nowrap}
+.masthead .mh-nav a:hover,.masthead .mh-location:hover{background:var(--mh-brand-soft);color:var(--mh-brand-dark)}
+.masthead .mh-nav a.mh-on{background:var(--mh-brand-soft);color:var(--mh-brand-dark)}
+.masthead :focus-visible{outline:3px solid #1462a1;outline-offset:3px}
+.masthead .mh-local{max-width:1120px;margin:0 auto;padding:0 0 14px;font-size:14px}.masthead .mh-local summary{cursor:pointer;font-weight:650;padding:5px 0;min-height:30px;color:var(--mh-brand-dark)}
+.masthead form{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.masthead label{font-weight:650}.masthead input{font:inherit;padding:10px 12px;border:1px solid #8da596;border-radius:12px;min-width:0;max-width:100%;background:var(--eu-surface);color:var(--eu-ink)}
+.masthead button{font:inherit;font-weight:650;min-height:44px;padding:10px 16px;background:var(--mh-brand-dark);color:#fff;border:0;border-radius:12px;cursor:pointer}
+.masthead #municipio-resultados{padding:0;list-style:none;margin:4px 0}.masthead #municipio-resultados:empty{margin:0}.masthead #municipio-resultados a{display:block;padding:10px 12px;border-radius:10px;color:var(--mh-brand-dark)}.masthead #municipio-resultados a:hover{background:var(--mh-brand-soft)}
+.masthead--compact{padding-top:12px}.masthead--compact .mh-nav{margin-top:6px;padding-bottom:6px}.masthead--compact .mh-title{font-size:23px}.masthead--compact .mh-logo{width:30px;height:30px}
+@media(max-width:650px){.masthead{padding:12px 12px 0}.masthead .mh-title{font-size:20px;letter-spacing:-.7px}.masthead .mh-logo{width:28px;height:28px}.masthead .mh-brand{gap:6px}.masthead .mh-actions{gap:7px}.masthead .mh-day{padding:9px 12px;gap:5px;font-size:13px;border-radius:12px}.masthead .mh-location{display:block;padding:8px 3px;font-size:0;width:76px;flex:none;max-height:44px;overflow:hidden;white-space:nowrap}.masthead .mh-location::before{display:none}.masthead .mh-location::after{content:attr(data-municipio-nombre);display:block;font-size:11px;line-height:28px;text-overflow:ellipsis;overflow:hidden}.masthead .mh-nav{gap:2px;margin-top:6px;padding-bottom:6px}.masthead .mh-nav a{font-size:12px;padding:8px 12px}.masthead .mh-local{padding-bottom:10px}.masthead form{gap:6px}.masthead input{flex:1 1 150px;font-size:16px}.masthead label{flex-basis:100%;font-size:13px}.masthead--compact .mh-local:not([open]){padding-bottom:4px}}
+@media(max-width:360px){.masthead .mh-title{font-size:18px}.masthead .mh-inner{gap:5px}.masthead .mh-actions{gap:4px}.masthead .mh-location{width:60px}.masthead .mh-nav a{padding:8px 10px;font-size:11px}.masthead .mh-day{padding:9px 10px}}
+`

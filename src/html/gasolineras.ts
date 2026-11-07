@@ -11,6 +11,7 @@
 
 import { APP_VERSION } from '../lib/version'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
+import { PORTAL_BASE_CSS } from './ui-theme'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
 
 export interface GasLandingProvincia { slug: string; name: string; count: number }
@@ -107,7 +108,7 @@ export function buildGasolinerasLanding(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="color-scheme" content="light dark" />
-  <meta name="theme-color" content="#16a34a" />
+  <meta name="theme-color" content="#137954" />
 
   <title>${esc(title)}</title>
   <meta name="description" content="${esc(desc)}" />
@@ -137,22 +138,20 @@ export function buildGasolinerasLanding(
   ${jsonLdScript(jsonLd, nonce)}
 
   <style nonce="${nonce}">
+    ${PORTAL_BASE_CSS}
     :root {
       color-scheme:light;
-      --c-bg:#f8fafc; --c-surface:#fff; --c-text:#0f172a; --c-muted:#64748b;
-      --c-brand-dark:#14532d; --c-brand:#16a34a; --c-brand-soft:#dcfce7;
-      --c-border:#e2e8f0; --c-shadow:0 4px 12px rgba(15,23,42,.06);
+      --c-surface:#fff; --c-text:var(--eu-ink); --c-muted:var(--eu-muted);
+      --c-brand-dark:var(--eu-accent); --c-brand:var(--eu-accent); --c-brand-soft:var(--eu-soft);
+      --c-border:var(--eu-line); --c-shadow:0 4px 12px rgba(15,23,42,.06);
     }
-    * { box-sizing:border-box; }
-    body { margin:0; font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
-      color:var(--c-text); background:var(--c-bg); line-height:1.5; }
     ${MASTHEAD_CSS}
-    main { max-width:720px; margin:0 auto; padding:24px 18px 40px; }
-    h1 { font-size:27px; line-height:1.2; margin:8px 0 6px; }
+    main { max-width:1000px; margin:0 auto; padding:24px 18px 40px; }
+    h1 { font-size:clamp(30px,4.5vw,48px); line-height:1.12; margin:8px 0 6px; }
     h2 { font-size:19px; margin:30px 0 12px; }
-    .lead { color:var(--c-muted); margin:0 0 22px; font-size:15px; }
-    .search { position:relative; }
-    .search label { display:block; font-weight:600; margin-bottom:6px; font-size:15px; }
+    .lead { color:var(--c-muted); margin:0 0 22px; font-size:17px; }
+    .search { position:relative; background:var(--eu-surface); border:1px solid var(--eu-line); border-radius:22px; padding:22px; }
+    .search label { display:block; font-weight:600; margin-bottom:6px; font-size:17px; }
     .search input { width:100%; padding:14px 16px; font-size:17px; border:2px solid var(--c-border);
       border-radius:12px; background:var(--c-surface); color:var(--c-text); }
     .search input:focus { outline:none; border-color:var(--c-brand); }
@@ -170,16 +169,14 @@ export function buildGasolinerasLanding(
     .acciones button { display:inline-flex; align-items:center; gap:8px; padding:12px 16px;
       border-radius:10px; font-weight:600; font-size:15px; border:none; cursor:pointer;
       font-family:inherit; }
-    /* Verde mas oscuro que --c-brand: texto blanco sobre #16a34a solo da 3.29:1
-       (falla WCAG AA en texto normal). #15803d con blanco da ~5:1. */
-    .acciones .a-primary { background:#15803d; color:#fff; }
+    .acciones .a-primary { background:var(--eu-accent); color:#fff; }
     .acciones .a-primary:disabled { opacity:.6; cursor:default; }
     .geo-status { color:var(--c-muted); font-size:13px; margin:8px 0 0; }
     .geo-status.err { color:#b91c1c; }
     .precios { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
-    .pcard { border:1px solid var(--c-border); border-radius:10px; padding:12px 14px; background:var(--c-surface); }
+    .pcard { border:1px solid var(--c-border); border-radius:22px; padding:22px 20px; background:var(--c-surface); }
     .pcard-fuel { font-size:13px; color:var(--c-muted); }
-    .pcard-avg { font-size:20px; font-weight:700; color:var(--c-brand-dark); margin:2px 0; }
+    .pcard-avg { font-size:30px; font-weight:700; color:var(--c-brand-dark); margin:2px 0; }
     .pcard-range { font-size:12px; color:var(--c-muted); }
     .provincias ul { list-style:none; padding:0; margin:0; display:flex; flex-wrap:wrap; gap:6px; }
     .provincias li a { display:inline-block; padding:6px 11px; border:1px solid var(--c-border);
@@ -193,7 +190,7 @@ export function buildGasolinerasLanding(
   </style>
 </head>
 <body>
-  ${mastheadHtml('gasolineras', { hideMunicipioSearch: true })}
+  ${mastheadHtml('gasolineras', { compact: true, hideMunicipioSearch: true })}
 
   <main>
     <h1>Gasolineras baratas en España</h1>

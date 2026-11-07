@@ -112,6 +112,14 @@ describe('rutas de deportes', () => {
     const sitemap = await app.request('/sitemap-deportes.xml', {}, { ASSETS })
     expect(await sitemap.text()).toContain('/deportes/competicion/liga-prueba')
   })
+  it('retira el acceso directo a una ficha que nunca tuvo datos comprobados', async () => {
+    const c = competicion()
+    c.agenda = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, eventos: [] }
+    c.clasificacion = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, tablas: [] }
+    const app = (await import('../src/index')).default
+    const ASSETS = { fetch: async () => Response.json(c) }
+    expect((await app.request('/deportes/competicion/liga-prueba', {}, { ASSETS })).status).toBe(404)
+  })
   it('sin copia verificada ofrece un aviso y no una lista vacía supuestamente actual', async () => {
     const app = (await import('../src/index')).default
     const r = await app.request('/deportes/', {}, { ASSETS: { fetch: async () => new Response(null, { status: 404 }) } })

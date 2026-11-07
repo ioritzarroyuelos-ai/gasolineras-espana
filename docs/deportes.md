@@ -28,7 +28,7 @@ En los lectores de motor, omitir `evento.resultados` permite conservar la copia 
 
 ## Actualización y publicación
 
-`Actualizar deportes` intenta renovar todos los deportes cada cuatro horas, a las 00:23, 04:23, 08:23, 12:23, 16:23 y 20:23 UTC. En las horas intermedias intenta actualizar sólo fútbol, también en el minuto 23. GitHub puede retrasar una ejecución; además, la lectura y las comprobaciones de publicación pueden retrasar su llegada a la web. Siempre se muestra la consulta real de cada fuente. No se evaden accesos, CAPTCHA ni límites de descarga.
+`Actualizar deportes` intenta renovar todos los deportes cada cuatro horas, a las 00:23, 04:23, 08:23, 12:23, 16:23 y 20:23 UTC. En las horas intermedias intenta actualizar sólo fútbol, también en el minuto 23. GitHub puede retrasar una ejecución; además, la lectura y las comprobaciones de publicación pueden retrasar su llegada a la web. Al salir de la cola, el robot carga la versión actual de `main`, incluidos los datos incorporados mientras esperaba. Siempre se muestra la consulta real de cada fuente. No se evaden accesos, CAPTCHA ni límites de descarga.
 
 FFCV se recorre por grupos, con un presupuesto propio de 120 consultas por hora y una separación mínima de un segundo. No es una cuota anunciada por la federación. Un `Retry-After` detiene la pasada y su descanso se conserva entre ejecuciones. El catálogo se reutiliza y se renueva semanalmente por bloques; cada grupo aporta la jornada anterior y la más cercana a hoy, más la clasificación cuando se publica. Si falla una jornada, se conserva la última agenda completa. El resto de jornadas permanece enlazado en la fuente oficial.
 

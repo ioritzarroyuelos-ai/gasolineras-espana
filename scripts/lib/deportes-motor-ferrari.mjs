@@ -4,7 +4,7 @@ const limpia = v => String(v ?? '').replace(/\s+/g, ' ').trim()
 const slug = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 const numero = v => /^\d+$/.test(limpia(v)) ? Number(v) : null
 const validaFecha = f => /^\d{4}-\d\d-\d\d$/.test(f) && Number.isFinite(Date.parse(f)) && new Date(f).toISOString().slice(0, 10) === f
-const nombreSesion = s => s.replace(/^Race /, 'Carrera ').replace(/^Qualifying /, 'Clasificación ').replace(/^Free Practice /, 'Entrenamientos libres ').replace(/^Test$/, 'Test')
+const nombreSesion = s => s.replace(/^Race /, 'Carrera ').replace(/^Qualifying /, 'Clasificación ').replace(/^Free Practice /, 'Entrenamientos libres ')
 
 // El catálogo es el que carga la página pública de Alkamel. No necesita sesión,
 // ni el formulario de acceso que ofrece para otras funciones de la web.

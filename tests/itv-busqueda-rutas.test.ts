@@ -3,6 +3,7 @@ import type { Hono } from 'hono'
 import type { Env } from '../src/index'
 import type { EstacionITV } from '../src/lib/itv'
 import type { MunicipioLista } from '../scripts/lib/tiempo.mjs'
+import baseMunicipios from '../public/data/tiempo/municipios.json?raw'
 
 let app: Hono<{ Bindings: Env }>
 beforeEach(async () => {
@@ -62,5 +63,26 @@ describe('rutas de búsqueda ITV', () => {
     disponible = true
     const siguiente = await app.request('/api/itv/municipios', {}, {ASSETS})
     expect(await siguiente.json()).toEqual([{n:'Madrid',p:'Madrid',u:'/itv/madrid/madrid'}])
+  })
+  it.each([
+    ['0441', '04', 'Balanegra', 'Berja', 'almeria', 'balanegra', 'berja'],
+    ['3703', '37', 'Castellanos de Moriscos', 'Salamanca', 'salamanca', 'castellanos-de-moriscos', 'salamanca'],
+    ['3812', '38', 'Tacoronte', 'Santa Cruz de Tenerife', 'santa-cruz-de-tenerife', 'tacoronte', 'santa-cruz-de-tenerife'],
+  ])('la estación %s aparece en su municipio principal y no se duplica por un alias de otra localidad', async (codigo, prov, mun, alias, provinciaSlug, slug, slugAnterior) => {
+    const estacion: EstacionITV = {
+      id: 'itv-' + prov + '-' + codigo, mun, prov, aliasMunicipios: [mun, alias],
+      dir: 'Dirección del centro ' + codigo, cp: '', op: '', tel: '', lat: null, lng: null,
+      lineas: null, horario: '', fuente: 'industria',
+    }
+    const ASSETS = assets(() => ({
+      'itv.json': { estaciones: [estacion] },
+      'tiempo/municipios.json': JSON.parse(baseMunicipios),
+    }))
+    const principal = await app.request('/itv/' + provinciaSlug + '/' + slug, {}, { ASSETS })
+    expect(principal.status).toBe(200)
+    expect(await principal.text()).toContain(estacion.dir)
+    const otroMunicipio = await app.request('/itv/' + provinciaSlug + '/' + slugAnterior, {}, { ASSETS })
+    expect(otroMunicipio.status).toBe(200)
+    expect(await otroMunicipio.text()).not.toContain(estacion.dir)
   })
 })

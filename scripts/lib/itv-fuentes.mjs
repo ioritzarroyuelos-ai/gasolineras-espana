@@ -27,6 +27,22 @@ const postal = valor => /^\d{1,5}$/.test(limpia(valor)) && Number(valor) > 0 ? l
 const numero = valor => valor == null || limpia(valor) === '' || !Number.isFinite(Number(valor)) ? null : Number(valor)
 const identidad = e => e.prov + '/' + e.codigo
 
+// En estas filas el registro nacional omite "móvil" en el domicilio. El anexo
+// de acreditación identifica cada unidad; no es una segunda estación fija.
+const MOVILES_DOCUMENTADAS = new Map([
+  ['22/2281','https://www.enac.es/documents/7020/5d576ff8-a25f-4c98-81bd-7b84c9f4de70'],
+  ['22/2284','https://www.enac.es/documents/7020/5d576ff8-a25f-4c98-81bd-7b84c9f4de70'],
+  ['22/2282','https://www.enac.es/documents/7020/5eadcb67-cedf-43f0-a3fc-4549bce07452'],
+  ['50/5083','https://www.enac.es/documents/7020/2a4035d4-17bf-4993-abd0-e6d7d9ff88c2'],
+  ['22/2283','https://www.enac.es/documents/7020/e5308483-85ac-4544-8c0c-b58556492756'],
+  ['44/4481','https://www.enac.es/documents/7020/e5308483-85ac-4544-8c0c-b58556492756'],
+  ['50/5082','https://www.enac.es/documents/7020/cd1536ec-d8e5-47fd-b36f-ae8f4064a5f3'],
+  ['50/5084','https://www.enac.es/documents/7020/cd1536ec-d8e5-47fd-b36f-ae8f4064a5f3'],
+  ['44/4482','https://www.enac.es/documents/7020/cd1536ec-d8e5-47fd-b36f-ae8f4064a5f3'],
+  // El registro de julio sitúa por error la móvil de Alcañiz en Zaragoza.
+  ['50/4482','https://www.enac.es/documents/7020/cd1536ec-d8e5-47fd-b36f-ae8f4064a5f3'],
+])
+
 export function coordenadasItv(lat, lng) {
   const a = numero(lat), o = numero(lng)
   return a !== null && o !== null && a >= 27 && a <= 44.5 && o >= -19 && o <= 5
@@ -108,7 +124,9 @@ export function estacionesIndustria(filas, meta, ahora = Date.now()) {
     const provinciaPostal = !limpia(f[4]) && cod.slice(0,2) === cp.slice(0,2) ? cp.slice(0,2) : undefined
     const prov = provincias.get(clave(f[4])) || provinciaPostal
     if (!cod) continue
+    const acreditacionMovil = MOVILES_DOCUMENTADAS.get(prov+'/'+cod)
     const noFija = /MOVIL|AGRICOLA/.test(clave([f[4], f[5], f[6]].join(' '))) || clave(f[4]) === 'MOVIAG'
+      || (acreditacionMovil && [f[9],f[10],f[11]].every(v=>numero(v)===0) && numero(f[12])>0)
     const inicio = fechaCelda(f[13]), fin = fechaCelda(f[14])
     const suspendida = Boolean(f[13]) && (!inicio || inicio <= hoy) && (!fin || fin >= hoy)
     const inactiva = /NOOPERATIVA|CERRADA|BAJADEFINITIVA/.test(clave(f[0]))
@@ -118,7 +136,8 @@ export function estacionesIndustria(filas, meta, ahora = Date.now()) {
     const flotaPropia = ['01/0120','20/2020','48/4820'].includes(prov+'/'+cod)
     if (noFija || suspendida || inactiva || flotaPropia) {
       // El código oficial permite evitar resucitar una baja desde una copia DGT anterior.
-      excluidas.push({ codigo: cod, prov: prov || cod.slice(0,2), motivo: flotaPropia ? 'uso exclusivo de la flota de Seguridad' : suspendida || inactiva ? 'suspendida o no operativa' : 'unidad móvil o agrícola' })
+      excluidas.push({ codigo: cod, prov: prov || cod.slice(0,2), motivo: flotaPropia ? 'uso exclusivo de la flota de Seguridad' : suspendida || inactiva ? 'suspendida o no operativa' : 'unidad móvil o agrícola',
+        ...(acreditacionMovil ? { fuenteUrl:acreditacionMovil,verificadoEn:'2026-11-07' } : {}) })
       continue
     }
     if (!prov || !limpia(f[5]) || !limpia(f[6])) continue
@@ -165,6 +184,26 @@ function contactoDesde(estacion, contacto) {
     contactoVerificadoEn: contacto.verificadoEn, contactoFuente: contacto.fuente, contactoFuenteUrl: contacto.fuenteUrl }
 }
 
+// Correcciones de localidad contrastadas con el operador o la administración
+// autonómica. Sólo se aplican al código, CP y dirección documentados; no permiten
+// trasladar una estación futura ni renuevan esta comprobación al ejecutar el robot.
+const MUNICIPIOS_CONFIRMADOS = [
+  { prov:'04', codigo:'0441', cp:'04760', nombre:'BALANEGRA', previos:['BERJA','BALANEGRA'], direccion:/BALANEGRA/,
+    url:'https://www.veiasa.es/itv/estaciones-itv/estaciones-fijas' },
+  { prov:'37', codigo:'3703', cp:'37439', nombre:'CASTELLANOS DE MORISCOS', previos:['SALAMANCA','CASTELLANOSDEMORISCOS'], direccion:/CASTELLANOSDEMORISCOS/,
+    url:'https://www.itevelesa.com/es/nuestras-estaciones/itv-castellanos-de-moriscos' },
+  { prov:'38', codigo:'3812', cp:'38340', nombre:'TACORONTE', previos:['TACORONTE','SANTACRUZDETENERIFE'], direccion:/SANGRADERA/,
+    url:'https://www.gobiernodecanarias.org/industria/temas/itv/Estaciones_ITV/index.html' },
+]
+
+function municipioConfirmado(e) {
+  const correccion=MUNICIPIOS_CONFIRMADOS.find(m=>m.prov===e.prov && m.codigo===e.codigo && m.cp===e.cp
+    && m.previos.includes(clave(e.mun)) && m.direccion.test(clave(e.dir)))
+  return correccion ? { ...e, mun:correccion.nombre,
+    aliasMunicipios:[...new Set([e.mun,...(e.aliasMunicipios || []),correccion.nombre])],
+    municipioVerificadoEn:'2026-11-07', municipioFuenteUrl:correccion.url } : e
+}
+
 export function combinaFuentesItv(fuentes) {
   const industria = fuentes.find(f => f.id === 'industria'), gva = fuentes.find(f => f.id === 'gva'), dgt = fuentes.find(f => f.id === 'dgt')
   const nacionales = industria?.estaciones || []
@@ -194,7 +233,9 @@ export function combinaFuentesItv(fuentes) {
       base.set(id, { ...e, id: e.id + '-' + clave(e.mun).toLowerCase() })
     }
   }
-  const resultado = [...base.values()]
+  // Una copia de otra fuente no puede reintroducir estas unidades documentadas,
+  // incluida Alcañiz cuando la DGT use su provincia correcta (44) y el registro 50.
+  const resultado = [...base.values()].filter(e=>!MOVILES_DOCUMENTADAS.has(identidad(e))).map(municipioConfirmado)
   if (new Set(resultado.map(e => e.id)).size !== resultado.length) throw Error('Identificadores repetidos tras combinar fuentes')
   return resultado.sort((a,b) => a.prov.localeCompare(b.prov) || a.mun.localeCompare(b.mun,'es') || a.codigo.localeCompare(b.codigo))
 }

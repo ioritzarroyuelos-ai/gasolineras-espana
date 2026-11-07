@@ -20,6 +20,8 @@ export interface EstacionITV {
   nombre?: string
   aliasMunicipios?: string[]
   municipioFuente?: string
+  municipioVerificadoEn?: string
+  municipioFuenteUrl?: string
   citaVerificadoEn?: string
   webVerificadoEn?: string
   verificadoEn?: string

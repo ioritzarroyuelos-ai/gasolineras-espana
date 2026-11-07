@@ -60,14 +60,22 @@ describe('búsqueda de ITV para todos los municipios', () => {
     const ribadesella = municipios.find(m => m.ine === '33056')!
     expect(estacionesEnMunicipio([estacion('bilingue', 43.4, -5.1, 'RIBADESELLA/RIBESEYA', '33')], ribadesella, municipios.filter(m => m.provinciaId === '33'))).toHaveLength(1)
   })
-  it('usa alias del mismo centro para mantener enlaces anteriores y rechaza ambigüedad', () => {
+  it('mantiene la ficha principal aunque un alias histórico nombre otro municipio', () => {
     const centro = { ...estacion('uno', 43.2, -2.7), aliasMunicipios:['Amorebieta'] }
     const provincia = municipios.filter(m => m.provinciaId === '48')
     expect(rutaAnteriorItv([centro], 'amorebieta')).toBe('amorebieta-etxano')
     expect(estacionesEnMunicipio([centro], provincia.find(m => m.ine === '48003')!, provincia)).toHaveLength(1)
-    const ambiguo = { ...centro, mun:'Durango', aliasMunicipios:['Amorebieta', 'Amorebieta-Etxano'] }
-    expect(estacionesEnMunicipio([ambiguo], provincia.find(m => m.ine === '48027')!, provincia)).toHaveLength(0)
-    expect(rutaAnteriorItv([centro, ambiguo], 'amorebieta')).toBeUndefined()
+    const distinto = { ...centro, mun:'Durango', aliasMunicipios:['Amorebieta', 'Amorebieta-Etxano'] }
+    expect(estacionesEnMunicipio([distinto], provincia.find(m => m.ine === '48027')!, provincia)).toHaveLength(1)
+    expect(estacionesEnMunicipio([distinto], provincia.find(m => m.ine === '48003')!, provincia)).toHaveLength(0)
+    expect(rutaAnteriorItv([centro, distinto], 'amorebieta')).toBeUndefined()
+  })
+  it('solo utiliza alias municipales si el nombre principal no se reconoce y el destino es único', () => {
+    const provincia = municipios.filter(m => m.provinciaId === '48')
+    const durango = provincia.find(m => m.ine === '48027')!
+    const centro = { ...estacion('nucleo', null, null, 'Núcleo no reconocido'), aliasMunicipios:['Durango'] }
+    expect(estacionesEnMunicipio([centro], durango, provincia)).toHaveLength(1)
+    expect(estacionesEnMunicipio([{ ...centro, aliasMunicipios:['Durango', 'Amorebieta-Etxano'] }], durango, provincia)).toHaveLength(0)
   })
   it('ofrece envío al servidor, escape de texto y enlaces sin JavaScript', () => {
     expect(buscadorItv('nonce', '<prueba>')).toContain('action="/itv/buscar" method="get"')

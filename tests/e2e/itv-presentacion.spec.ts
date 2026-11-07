@@ -36,6 +36,7 @@ test('ITV móvil: cabecera compacta, precios legibles y sin desbordar', async ({
       const header = await page.locator('.masthead').boundingBox()
       expect(header!.height).toBeLessThan(160)
       for (const boton of await page.locator('main .btn').all()) expect((await boton.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      if (width === 390 && route === '/itv/precios') await page.screenshot({ path: test.info().outputPath('itv-precios-movil.png') })
     }
   }
 })

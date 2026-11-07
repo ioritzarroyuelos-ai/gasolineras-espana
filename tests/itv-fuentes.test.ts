@@ -122,6 +122,38 @@ describe('ingesta independiente y procedencia ITV', () => {
     expect(estacionesIndustria([cabecera,s],meta('industria'),ahora).estaciones).toEqual([])
     expect(estacionesIndustria([cabecera,s],meta('industria'),ahora+86400000).estaciones).toHaveLength(1)
   })
+
+  it('corrige los tres municipios documentados conservando alias, pero no una sede trasladada', () => {
+    const entradas=[
+      {...dgt('0441','BERJA','04760','Cruce Balanegra, N-340 km 398'),prov:'04'},
+      {...dgt('3703','SALAMANCA','37439','P.I. de Castellanos de Moriscos'),prov:'37'},
+      {...dgt('3812','SANTA CRUZ DE TENERIFE','38340','P.I. La Sangradera C/ Guimares'),prov:'38'},
+    ]
+    const resultado=combinaFuentesItv([{id:'industria',estaciones:entradas,excluidas:[]}])
+    expect(resultado.map(e=>e.mun)).toEqual(['BALANEGRA','CASTELLANOS DE MORISCOS','TACORONTE'])
+    expect(resultado[0].aliasMunicipios).toContain('BERJA')
+    expect(resultado[1]).toMatchObject({municipioVerificadoEn:'2026-11-07',municipioFuenteUrl:'https://www.itevelesa.com/es/nuestras-estaciones/itv-castellanos-de-moriscos'})
+    const trasladada={...entradas[0],dir:'Otra dirección',cp:'04750'}
+    expect(combinaFuentesItv([{id:'industria',estaciones:[trasladada],excluidas:[]}])[0].mun).toBe('BERJA')
+  })
+
+  it('identifica las unidades móviles acreditadas aunque el domicilio no lo diga', () => {
+    const base=['APPLUS',2281,'CONCESIÓN','ARAGÓN','HUESCA','HUESCA','Ctra. Zaragoza','22080',1,0,0,0,1]
+    const fija=[...base]
+    fija[1]=2201
+    fija[9]=2
+    const resultado=estacionesIndustria([cabecera,fija,base],meta('industria'),ahora)
+    expect(resultado.estaciones.map(e=>e.codigo)).toEqual(['2201'])
+    expect(resultado.excluidas[0]).toMatchObject({codigo:'2281',motivo:'unidad móvil o agrícola',fuenteUrl:expect.stringContaining('www.enac.es')})
+  })
+
+  it('ninguna fuente reintroduce las móviles confirmadas ni Alcañiz con la provincia corregida', () => {
+    const entradas=[['22','2281'],['22','2282'],['22','2283'],['22','2284'],['44','4481'],['44','4482'],['50','4482'],['50','5082'],['50','5083'],['50','5084']]
+      .map(([prov,cod])=>({...dgt(cod,'ALCAÑIZ','44600','P.I. LAS HORCAS'),prov}))
+    const resultado=combinaFuentesItv([{id:'industria',estaciones:[],excluidas:[{prov:'50',codigo:'4482',motivo:'unidad móvil o agrícola'}]},
+      {id:'dgt',estaciones:entradas,excluidas:[]}])
+    expect(resultado).toEqual([])
+  })
 })
 
 describe('canales propios de cita y fichas del operador', () => {

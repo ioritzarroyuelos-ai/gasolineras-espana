@@ -108,6 +108,8 @@ export function tarjetaItv(e: EstacionITV, municipio: string, distanciaKm?: numb
       : '<p><strong>Horario:</strong> ' + (e.horario ? esc(e.horario) : 'confírmalo con la estación') + '</p>')
     + (!cita ? '<p class="meta">Cita por internet pendiente de verificar' + (telefonos.length ? '; puedes llamar a la estación.' : '.') + '</p>'
       : '<p class="meta">La reserva se realiza en la web del operador.' + (fecha(e.citaVerificadoEn) ? ' Enlace comprobado el ' + esc(fecha(e.citaVerificadoEn)) + '.' : '') + '</p>')
+    + (e.municipioFuenteUrl && fecha(e.municipioVerificadoEn) ? '<p class="meta">Municipio confirmado el ' + esc(fecha(e.municipioVerificadoEn))
+      + ' · ' + enlace(e.municipioFuenteUrl, 'Fuente del municipio') + '.</p>' : '')
     + (publicacion || consulta ? '<p class="meta">' + enlace(e.fuenteUrl, 'Fuente oficial')
       + (publicacion ? ' · Documento de ' + esc(publicacion) : '') + (consulta ? ' · Consultado el ' + esc(consulta) : '') + '.</p>' : '')
     + (contacto ? '<p class="meta">Teléfono y ubicación de la copia del ' + esc(contacto) + '. ' + enlace(e.contactoFuenteUrl, 'Fuente de contacto') + '.</p>' : '')

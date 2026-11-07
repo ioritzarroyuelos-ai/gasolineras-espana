@@ -37,13 +37,18 @@ export function estacionesCercanas(estaciones: EstacionITV[], origen: OrigenCerc
     .sort((a, b) => a.distanciaKm - b.distanciaKm || a.estacion.id.localeCompare(b.estacion.id)).slice(0, limite)
 }
 
-// Algunos orígenes usan el nombre de un barrio o núcleo. Sólo se asigna al
-// municipio cuando el nombre o un alias documentado lo identifica sin dudas.
+// El municipio principal conserva la ubicación elegida al conciliar las
+// fuentes. Un alias histórico de otro municipio no debe borrar esa ficha ni
+// duplicarla allí. Los alias sólo resuelven nombres de barrios o núcleos que
+// el catálogo no reconoce y tienen que señalar un único municipio.
 export function estacionesEnMunicipio(estaciones: EstacionITV[], municipio: MunicipioLista, catalogoProvincia: MunicipioLista[]): EstacionITV[] {
   return estaciones.filter(e => {
     if (e.prov !== municipio.provinciaId) return false
-    const nombres = new Set([e.mun, ...(e.aliasMunicipios || [])].flatMap(n => [n, ...n.split('/')]))
-    const candidatos = new Set([...nombres].map(n => rutaMunicipioTiempo(catalogoProvincia, slugifyMunicipio(n))?.municipio.ine).filter(Boolean))
+    const resuelve = (nombres: string[]) => new Set(nombres.flatMap(n => [n, ...n.split('/')])
+      .map(n => rutaMunicipioTiempo(catalogoProvincia, slugifyMunicipio(n))?.municipio.ine).filter(Boolean))
+    const principales = resuelve([e.mun])
+    if (principales.size) return principales.size === 1 && principales.has(municipio.ine)
+    const candidatos = resuelve(e.aliasMunicipios || [])
     return candidatos.size === 1 && candidatos.has(municipio.ine)
   })
 }

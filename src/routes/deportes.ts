@@ -41,7 +41,7 @@ export function registerDeportesRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!file) return c.notFound()
     let competicion: CompeticionDeportiva
     try { competicion = validarCompeticionDeportiva(file) } catch { return c.text('No se pueden comprobar los datos de esta competición. Inténtalo más tarde.', 503, { 'Cache-Control': 'no-store' }) }
-    if (competicion.id !== id) return c.notFound()
+    if (competicion.id !== id || !competicion.agenda.verificadoEn && !competicion.clasificacion.verificadoEn) return c.notFound()
     const nonce = genNonce(), zona = c.req.query('horario') === 'canarias' ? 'canarias' : 'madrid'
     return new Response(buildCompeticionDeportesPage(competicion, nonce, canonicalBase(c) + '/deportes/competicion/' + id, new URL(c.req.url), zona), { headers: pageHeaders(nonce, false) })
   })

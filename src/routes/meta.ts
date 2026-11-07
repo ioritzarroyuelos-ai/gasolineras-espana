@@ -57,7 +57,7 @@ app.get('/sitemap-deportes.xml', async c => {
   try { indice = validarIndiceDeportes(copia) } catch { /* El mapa general sigue disponible sin inventar fichas. */ }
   const urls = ['deportes/', 'deportes/futbol', 'deportes/baloncesto', 'deportes/motor'].map(p => `<url><loc>${site.origin}/${p}</loc></url>`)
   if (indice?.version === 1 && Array.isArray(indice.competiciones)) for (const comp of indice.competiciones) {
-    if (!idDeportivo(comp.id)) continue
+    if (!idDeportivo(comp.id) || !comp.agenda.verificadoEn && !comp.clasificacion.verificadoEn) continue
     const fecha = [comp.agenda?.verificadoEn, comp.clasificacion?.verificadoEn].filter((d): d is string => !!d && Number.isFinite(Date.parse(d)) && Date.parse(d) <= Date.now()).sort().at(-1)
     urls.push(`<url><loc>${site.origin}/deportes/competicion/${comp.id}</loc>${fecha ? '<lastmod>' + new Date(fecha).toISOString() + '</lastmod>' : ''}</url>`)
   }

@@ -56,6 +56,15 @@ describe('datos deportivos verificables', () => {
     expect(filtraCompeticiones(indice.competiciones, { q: 'aguilas' })).toHaveLength(1)
     expect(filtraCompeticiones(indice.competiciones, { q: 'aguilas', zona: 'Portugal' })).toHaveLength(0)
   })
+  it('un grupo enumerado pero sin datos comprobados no cuenta como competición disponible', () => {
+    const c = competicion()
+    c.agenda = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, eventos: [] }
+    c.clasificacion = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, tablas: [] }
+    const { indice } = construyeIndiceDeportes([c], [], ahora)
+    expect(filtraCompeticiones(indice.competiciones, {})).toEqual([])
+    indice.competiciones[0].agenda = { ...indice.competiciones[0].agenda, estado: 'conservado', verificadoEn: sello }
+    expect(filtraCompeticiones(indice.competiciones, {})).toHaveLength(1)
+  })
   it('no muestra un 0-0 pendiente como marcador ni un partido consultado como directo actual', () => {
     const c = competicion(), e = c.agenda.eventos[0]
     e.resultado = { local: 0, visitante: 0 }
@@ -102,6 +111,14 @@ describe('rutas de deportes', () => {
     expect((await app.request('/itv/precios', {}, { ASSETS })).status).toBe(200)
     const sitemap = await app.request('/sitemap-deportes.xml', {}, { ASSETS })
     expect(await sitemap.text()).toContain('/deportes/competicion/liga-prueba')
+  })
+  it('retira el acceso directo a una ficha que nunca tuvo datos comprobados', async () => {
+    const c = competicion()
+    c.agenda = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, eventos: [] }
+    c.clasificacion = { estado: 'no_disponible', consultado: sello, fuenteUrl: fuente, tablas: [] }
+    const app = (await import('../src/index')).default
+    const ASSETS = { fetch: async () => Response.json(c) }
+    expect((await app.request('/deportes/competicion/liga-prueba', {}, { ASSETS })).status).toBe(404)
   })
   it('sin copia verificada ofrece un aviso y no una lista vacía supuestamente actual', async () => {
     const app = (await import('../src/index')).default

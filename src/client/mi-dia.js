@@ -1,12 +1,13 @@
-// Organización personal del portal. Los datos siguen viniendo del servidor;
-// aquí solo guardamos el orden y leemos los favoritos que ya usan las secciones.
-(() => {
+// La cuenta restaura primero las preferencias; el portal sólo las cambia
+// cuando la persona pulsa Guardar, ordena sus bloques o elige sus favoritos.
+(async () => {
   const key = 'eu-mi-dia-v1';
   const gasKey = 'gs_favs_v1', sportKey = 'eu-deportes-favoritos-v1';
   const modules = ['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'];
   const names = { tiempo: 'El tiempo', gasolineras: 'Gasolineras', deportes: 'Deportes', farmacias: 'Farmacias de guardia', itv: 'ITV', politica: 'Política' };
   const defaults = () => ({ version: 1, visible: modules.slice(0, 3), order: [...modules] });
   const panel = document.querySelector('[data-mi-dia]');
+  const homeFavorites = document.getElementById('mis-favoritos');
   const grid = document.getElementById('mi-dia-modulos');
   const status = document.getElementById('mi-dia-estado');
   const organizer = document.getElementById('mi-dia-ajustes');
@@ -14,7 +15,8 @@
   const rows = [...document.querySelectorAll('[data-dia-setting]')];
   const cards = [...document.querySelectorAll('[data-dia-module]')];
   const bookmarks = [...document.querySelectorAll('[data-dia-toggle]')];
-  if (!panel && !bookmarks.length) return;
+  if (!panel && !homeFavorites && !bookmarks.length) return;
+  await Promise.resolve(window.EUCuenta?.ready).catch(() => {});
 
   function cleanState(value) {
     if (!value || value.version !== 1) return defaults();
@@ -29,7 +31,11 @@
     try { return cleanState(JSON.parse(localStorage.getItem(key) || 'null')); }
     catch { return defaults(); }
   }
-  let state = readState(), unsaved = false;
+  function hasSavedState() {
+    try { return JSON.parse(localStorage.getItem(key) || 'null')?.version === 1; }
+    catch { return false; }
+  }
+  let state = readState(), configured = hasSavedState(), unsaved = false, favoriteAnchorRestored = false;
   const announce = (message, warning = false) => {
     if (!status) return;
     status.classList.toggle('sr-only', !warning);
@@ -41,14 +47,15 @@
     for (const button of bookmarks) {
       const id = button.dataset.diaToggle;
       if (!modules.includes(id)) continue;
-      const on = state.visible.includes(id);
+      const on = configured && state.visible.includes(id);
       button.hidden = false;
       button.setAttribute('aria-pressed', String(on));
-      button.setAttribute('aria-label', (on ? 'Quitar ' : 'Añadir ') + names[id] + (on ? ' de Mi día' : ' a Mi día'));
+      button.setAttribute('aria-label', (on ? 'Quitar ' : 'Añadir ') + names[id] + (on ? ' de mis favoritos' : ' a mis favoritos'));
       button.classList.toggle('is-saved', on);
       const label = button.querySelector('[data-dia-toggle-label]');
       if (label) label.textContent = on ? 'Guardado' : 'Guardar';
     }
+    refreshFavorites();
     if (!panel) return;
     if (customize) customize.hidden = false;
     for (const checkbox of document.querySelectorAll('[data-dia-visible]')) {
@@ -72,17 +79,19 @@
   }
 
   function save(message) {
-    try { localStorage.setItem(key, JSON.stringify(state)); unsaved = false; announce(message); }
+    configured = true;
+    try { localStorage.setItem(key, JSON.stringify(state)); unsaved = false; window.EUCuenta?.changed(key); announce(message); }
     catch { unsaved = true; announce(message + ' El navegador no permite guardarlo: se mantendrá durante esta visita.', true); }
     draw();
   }
   function setVisible(id, on) {
     if (!modules.includes(id)) return;
     state.visible = on ? [...new Set([...state.visible, id])] : state.visible.filter(item => item !== id);
-    save(names[id] + (on ? ' añadido a Mi día.' : ' quitado de Mi día.'));
+    save(names[id] + (on ? ' añadido a tus favoritos y a Mi día.' : ' quitado de tus favoritos y de Mi día.'));
   }
   for (const button of bookmarks) button.addEventListener('click', () => {
     const id = button.dataset.diaToggle;
+    if (!configured) state.visible = [];
     setVisible(id, !state.visible.includes(id));
   });
   for (const checkbox of document.querySelectorAll('[data-dia-visible]')) {
@@ -147,6 +156,7 @@
   }
   function drawFavorites(selector, items, emptyText) {
     for (const container of document.querySelectorAll(selector)) {
+      const activeLink = container.contains(document.activeElement) ? document.activeElement.closest('a')?.getAttribute('href') : null;
       container.replaceChildren();
       if (!items.length) {
         const p = document.createElement('p'); p.textContent = emptyText; container.append(p); continue;
@@ -157,21 +167,41 @@
         link.href = item.url; link.textContent = item.nombre; row.append(link); list.append(row);
       }
       container.append(list);
+      if (activeLink) [...list.querySelectorAll('a')].find(link => link.getAttribute('href') === activeLink)?.focus({ preventScroll: true });
       if (items.length > 6) {
         const p = document.createElement('p'); p.textContent = 'Aquí aparecen 6 de tus ' + items.length + ' favoritos. Puedes verlos todos en su sección.'; container.append(p);
       }
     }
   }
   function refreshFavorites() {
-    if (!panel) return;
-    drawFavorites('[data-dia-gas-favs]', gasFavorites(), 'Guarda una gasolinera en el mapa y aparecerá también aquí.');
-    drawFavorites('[data-dia-sport-favs]', sportFavorites(), 'Pulsa Seguir en un equipo, piloto o competición de Deportes para tenerlo aquí.');
+    const gas = gasFavorites(), sport = sportFavorites();
+    drawFavorites('[data-dia-gas-favs]', gas, 'Guarda una gasolinera con la estrella del mapa y aparecerá aquí.');
+    drawFavorites('[data-dia-sport-favs]', sport, 'Pulsa Seguir en un equipo, piloto o competición de Deportes para tenerlo aquí.');
+    if (!homeFavorites) return;
+    const selected = configured ? state.order.filter(id => state.visible.includes(id)) : [];
+    const urls = { tiempo: '/tiempo/', gasolineras: '/gasolineras/mapa', deportes: '/deportes/', farmacias: '/farmacias/guardia', itv: '/itv/', politica: '/politica/' };
+    drawFavorites('[data-home-module-favs]', selected.map(id => ({ nombre: names[id], url: urls[id] })), 'Pulsa Guardar en los bloques de esta página para tenerlos a mano.');
+    homeFavorites.hidden = !window.EUCuenta?.user && !gas.length && !sport.length && !selected.length;
+    if (!homeFavorites.hidden && !favoriteAnchorRestored && location.hash === '#mis-favoritos') {
+      favoriteAnchorRestored = true;
+      homeFavorites.scrollIntoView({ block: 'start' });
+    }
+    const note = document.getElementById('home-favorites-note');
+    if (note) note.textContent = window.EUCuenta?.user
+      ? 'Tus favoritos de esta cuenta, a mano cada vez que entres.'
+      : 'Estos favoritos están en este navegador. Entra con Google para guardarlos en tu cuenta.';
   }
   window.addEventListener('storage', event => {
-    if (event.key === key || event.key === null) { state = readState(); draw(); }
+    if (event.key === key || event.key === null) { state = readState(); configured = hasSavedState(); draw(); }
     if ([gasKey, sportKey, null].includes(event.key)) refreshFavorites();
   });
-  window.addEventListener('pageshow', () => { if (!unsaved) state = readState(); draw(); refreshFavorites(); });
+  window.addEventListener('eu:cuenta', event => {
+    const detail = event.detail || {};
+    if (['account', 'pull', 'import', 'ready'].includes(detail.reason) || detail.keys?.includes(key)) {
+      state = readState(); configured = hasSavedState(); unsaved = false; draw();
+    } else if (detail.keys?.some(value => [gasKey, sportKey].includes(value))) refreshFavorites();
+  });
+  window.addEventListener('pageshow', () => { if (!unsaved) { state = readState(); configured = hasSavedState(); } draw(); });
   window.addEventListener('focus', refreshFavorites);
-  draw(); refreshFavorites();
+  draw();
 })();

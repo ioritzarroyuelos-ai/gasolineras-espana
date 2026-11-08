@@ -46,23 +46,8 @@ export function getStyles(nonce: string = ''): string {
     }
 
     /* ===== LAYOUT PRINCIPAL ===== */
-    /* La cabecera de periódico (.masthead) va en flujo normal encima y se
-       desplaza con la página; la barra de la app queda sticky para que sus
-       controles se peguen arriba al llegar a ella (antes era fixed + el body
-       reservaba padding-top:60px; ahora sticky ocupa su hueco en el flujo). */
-    #app-header {
-      position: sticky; top: 0; left: 0; right: 0;
-      height: 48px; z-index: 1000;
-      background: #166534;
-      display: flex; align-items: center; padding: 0 16px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-    }
-    /* app-body ocupa 1 viewport menos el header. Encima va la cabecera de
-       periodico (.masthead, en flujo) que se desplaza con la pagina; al bajar,
-       el header (sticky) se pega arriba y el mapa llena el viewport. Debajo del
-       app-body queda el contenido SEO (FAQ, tabla de precios, municipios).
-       app-body es el contexto de posicionamiento (relative) de los overlays del
-       mapa (banners, widget de media, sidebar movil) para que sigan al header. */
+    /* El mapa aprovecha el espacio bajo la cabecera común. Sus controles
+       pertenecen al mapa; el contenido SEO sigue accesible al hacer scroll. */
     #app-body {
       position: relative;
       height: calc(100vh - var(--map-chrome-height, 142px));
@@ -261,7 +246,6 @@ export function getStyles(nonce: string = ''): string {
 
     /* ===== MODO OSCURO ===== */
     body.dark { background:#0f172a; color:#f1f5f9; }
-    body.dark #app-header { background:linear-gradient(135deg,#052e16 0%,#14532d 50%,#166534 100%); }
     body.dark #sidebar { background:#1e293b; border-right-color:#334155; }
     body.dark #sidebar-filters { background:#1e293b; border-bottom-color:#334155; }
     body.dark #stats-bar { background:#0f2d1a; border-bottom-color:#166534; }
@@ -400,22 +384,18 @@ export function getStyles(nonce: string = ''): string {
     ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
     ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
 
-    /* ===== SIDEBAR TOGGLE ===== */
-    #btn-toggle-sidebar { display:block; cursor:pointer; background:none; border:none; width:44px; height:44px; flex:none; border-radius:6px; transition:background 0.15s; margin-right:4px; }
-    #btn-toggle-sidebar:hover { background:rgba(255,255,255,0.15); }
+    /* ===== CONTROLES DEL PANEL ===== */
     #sidebar { transition: width 0.28s ease, min-width 0.28s ease; }
-
-    /* ===== HEADER ELEMENTS ===== */
-    .header-logo { font-size:22px; margin-right:8px; flex-shrink:0; }
-    .header-title { color:#fff; font-weight:700; font-size:15px; line-height:1.2; }
-    .header-sub { color:#dcfce7; font-size:11px; line-height:1.2; }
-    .header-badge { background:rgba(255,255,255,0.2); color:#fff; font-size:12px; font-weight:600; border-radius:9999px; padding:3px 12px; white-space:nowrap; }
-    .header-update { color:rgba(255,255,255,0.65); font-size:11px; white-space:nowrap; }
-
-    .btn-favs-open { display: inline-flex; align-items: center; gap: 5px; min-height: 40px; border: 1px solid rgba(255,255,255,.6); background: transparent; color: #fff; padding: 7px 9px; border-radius: 7px; font: inherit; font-size: 12px; cursor: pointer; }
-    .btn-favs-open:hover { background: rgba(255,255,255,.15); }
-    .btn-favs-open:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
-    #sidebar-filters .header-update { color: #475569; white-space: normal; line-height: 1.5; margin-bottom: 10px; }
+    .sidebar-favorites-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+    .station-count { color: #475569; font-size: 11px; line-height: 1.4; }
+    .btn-favs-open { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; border: 1px solid #b6cbbb; background: #f4f8f5; color: #166534; padding: 8px 10px; border-radius: 10px; font: inherit; font-size: 12px; font-weight: 650; cursor: pointer; }
+    .btn-favs-open:hover { background: #e4efe6; }
+    .btn-favs-open:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+    #sidebar-filters .header-update { color: #475569; font-size: 11px; white-space: normal; line-height: 1.5; margin-bottom: 10px; }
+    body.dark .sidebar-favorites-row { border-color: #475569; }
+    body.dark .station-count { color: #cbd5e1; }
+    body.dark .btn-favs-open { color: #bbf7d0; background: #193c29; border-color: #457655; }
+    body.dark .btn-favs-open:hover { background: #245437; }
     .form-help { display: block; font-size: 12px; line-height: 1.45; color: #475569; margin-top: 4px; }
     #refuel-litres-group[hidden], #fuel-unit-note[hidden], #area-group[hidden], #search-origin-note[hidden] { display: none !important; }
     .btn-refresh { border: 1px solid #cbd5e1; background: #fff; color: #166534; border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; cursor: pointer; }
@@ -431,11 +411,6 @@ export function getStyles(nonce: string = ''): string {
     .savings-sub { display: block; margin-top: 3px; line-height: 1.4; }
     .ev-pop-note { margin-top: 7px; color: #475569; font-size: 11px; line-height: 1.45; }
     .ev-pop-directions { margin-top: 8px; font-weight: 600; }
-    @media (max-width: 639px) {
-      .header-logo-img { display: none; }
-      #app-header .user-chip { max-width: 90px; }
-      #app-header .user-name { max-width: 48px; }
-    }
 
     /* ===== ROW LAYOUTS ===== */
     .row { display:flex; gap:8px; align-items:flex-end; }
@@ -513,26 +488,6 @@ export function getStyles(nonce: string = ''): string {
       }
     }
 
-    /* ---- Header compacto < 640px ---- */
-    @media (max-width: 639px) {
-      #app-header { height: 48px; padding: 0 6px; }
-      .header-logo  { font-size: 18px; margin-right: 5px; }
-      .header-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .header-sub   { display: none; }
-      #lbl-count { display: none !important; }
-    }
-
-    /* ---- Muy compacto < 380px (iPhone SE, mini) ---- */
-    @media (max-width: 379px) {
-      .header-title { font-size: 12px; }
-      .header-logo-img { width: 28px !important; height: 28px !important; }
-    }
-
-    /* ---- Header medio 640-1023px ---- */
-    @media (min-width: 640px) and (max-width: 1023px) {
-      .header-sub { display: none; }
-    }
-
     /* El widget cuelga de #app-body, fuera del contexto de capas del mapa.
        Reservamos la columna de ubicación/zoom y lo apartamos al abrir la
        ficha, también si sus datos llegan después de seleccionar la estación. */
@@ -548,8 +503,7 @@ export function getStyles(nonce: string = ''): string {
       font-size: 12px;
       font-weight: 600;
       box-shadow: 0 4px 16px rgba(0,0,0,0.10);
-      /* Por debajo del #app-header sticky (z-index:1000) para deslizarse por
-         detras de la barra al hacer scroll (sobre el mapa: ~400-800). */
+      /* Por encima de las capas del mapa y debajo de sus controles. */
       z-index: 800;
       max-width: 320px;
       line-height: 1.5;
@@ -1015,6 +969,7 @@ export function getStyles(nonce: string = ''): string {
     .map-location-btn { width: 44px; height: 44px; display: grid; place-items: center; background: #fff; color: #334155; border: 1px solid #cbd5e1; border-radius: 10px; box-shadow: 0 2px 8px #0f172a24; cursor: pointer; }
     .location-icon { width: 22px; height: 22px; }
     .map-location-btn[aria-busy="true"] { color: #166534; cursor: wait; }
+    @media (max-width: 1023px) { #btn-toggle-sidebar { display: none; } }
     #map-zoom-controls .leaflet-control { float: none; margin: 0; clear: none; }
     #map-zoom-controls .leaflet-bar { border: 1px solid #cbd5e1 !important; border-radius: 10px !important; overflow: hidden; }
     #map-zoom-controls .leaflet-bar a { width: 42px !important; }
@@ -1474,95 +1429,6 @@ export function getStyles(nonce: string = ''): string {
       body.dark .skeleton-card .sk-line, body.dark .skeleton-card .sk-badge { background: #334155; }
     }
 
-    /* ---- Login (Google) ---- */
-    /* [hidden] pelea con display:inline-flex de los botones del header — forzamos
-       que el atributo HTML mande. Esto evita que .btn-login o .user-menu aparezcan
-       mientras client/ui.ts aun no ha decidido si hay sesion. */
-    .btn-login[hidden], .user-menu[hidden], .user-dropdown[hidden], #login-modal[hidden] { display: none !important; }
-    .btn-login {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: #fff; color: #166534; border: 1px solid #cbd5e1;
-      border-radius: 999px; padding: 4px 10px 4px 8px; font-size: 13px; font-weight: 600;
-      cursor: pointer; transition: background 0.12s, border-color 0.12s;
-    }
-    .btn-login:hover { background: #f0fdf4; border-color: #86efac; }
-    body.dark .btn-login { background: #0f172a; color: #86efac; border-color: #334155; }
-    body.dark .btn-login:hover { background: #14532d; border-color: #166534; }
-    .btn-login i { font-size: 15px; }
-    .btn-login-txt { line-height: 1; }
-
-    .user-menu { position: relative; }
-    .user-chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: #fff; border: 1px solid #cbd5e1; border-radius: 999px;
-      padding: 3px 10px 3px 3px; max-width: 180px;
-      cursor: pointer; transition: background 0.12s;
-    }
-    .user-chip:hover { background: #f0fdf4; }
-    body.dark .user-chip { background: #0f172a; border-color: #334155; }
-    body.dark .user-chip:hover { background: #14532d; }
-    .user-chip img {
-      width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
-      background: #e2e8f0;
-    }
-    .user-chip .user-name {
-      font-size: 12px; font-weight: 600; color: #334155;
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 130px;
-    }
-    body.dark .user-chip .user-name { color: #cbd5e1; }
-
-    .user-dropdown {
-      position: absolute; top: calc(100% + 6px); right: 0; min-width: 240px;
-      background: #fff; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-      padding: 10px 0; z-index: 2500;
-    }
-    body.dark .user-dropdown { background: #1e293b; box-shadow: 0 8px 24px rgba(0,0,0,0.45); }
-    .user-dropdown-head { padding: 4px 14px 10px; }
-    .user-dropdown-name { font-weight: 700; font-size: 14px; color: #0f172a; line-height: 1.2; }
-    .user-dropdown-email { font-size: 12px; color: #64748b; margin-top: 2px; word-break: break-all; }
-    body.dark .user-dropdown-name { color: #f1f5f9; }
-    body.dark .user-dropdown-email { color: #94a3b8; }
-    .user-dropdown-sep { height: 1px; background: #e2e8f0; margin: 6px 0; }
-    body.dark .user-dropdown-sep { background: #334155; }
-    .user-dropdown-sync { padding: 4px 14px; font-size: 11px; color: #16a34a; }
-    .user-dropdown-sync.error { color: #dc2626; }
-    body.dark .user-dropdown-sync { color: #86efac; }
-    body.dark .user-dropdown-sync.error { color: #f87171; }
-    .user-dropdown-item {
-      display: flex; align-items: center; gap: 10px;
-      width: 100%; background: none; border: none; cursor: pointer;
-      padding: 9px 14px; font-size: 13px; color: #334155;
-      font-weight: 500; text-align: left;
-    }
-    .user-dropdown-item i { width: 16px; color: #64748b; }
-    .user-dropdown-item:hover { background: #f0fdf4; color: #14532d; }
-    .user-dropdown-item:hover i { color: #14532d; }
-    body.dark .user-dropdown-item { color: #cbd5e1; }
-    body.dark .user-dropdown-item i { color: #94a3b8; }
-    body.dark .user-dropdown-item:hover { background: #14532d; color: #bbf7d0; }
-    body.dark .user-dropdown-item:hover i { color: #bbf7d0; }
-
-    .login-modal { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; }
-    .login-modal-backdrop { position: absolute; inset: 0; background: rgba(15,23,42,0.55); }
-    .login-modal-card {
-      position: relative; background: #fff; border-radius: 14px;
-      padding: 28px 28px 24px; max-width: 360px; width: calc(100% - 32px);
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-    }
-    body.dark .login-modal-card { background: #1e293b; }
-    .login-modal-close {
-      position: absolute; top: 8px; right: 10px;
-      background: none; border: none; font-size: 24px; line-height: 1;
-      cursor: pointer; color: #94a3b8; padding: 4px 8px;
-    }
-    .login-modal-close:hover { color: #334155; }
-    body.dark .login-modal-close:hover { color: #e2e8f0; }
-    .login-modal-title { margin: 0 0 8px; font-size: 17px; color: #0f172a; }
-    body.dark .login-modal-title { color: #f1f5f9; }
-    .login-modal-sub { margin: 0 0 18px; font-size: 13px; color: #64748b; line-height: 1.45; }
-    body.dark .login-modal-sub { color: #94a3b8; }
-    .login-modal-btn { min-height: 44px; display: flex; justify-content: center; }
-
     /* ---- Modal de favoritas + alertas ---- */
     /* Reutiliza .modal / .modal-backdrop base. Layout mas ancho para que
        la lista no se estreche, y con subsecciones visualmente separadas. */
@@ -1716,11 +1582,6 @@ export function getStyles(nonce: string = ''): string {
     body.dark .tg-link-prompt-secondary { background: #334155; color: #e2e8f0; }
     body.dark .tg-link-prompt-secondary:hover { background: #475569; }
 
-    /* ---- Logo del header (imagen SVG) ---- */
-    .header-logo-img { border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); flex-shrink: 0; }
-    #brand { outline: none; }
-    #brand:focus-visible { outline: 2px solid #86efac; outline-offset: 2px; border-radius: 6px; }
-
     /* ---- Etiquetas de lugar del mapa (capa propia, ver renderLabels en
        client.ts). Tiles base vienen sin nombres; estas las pintamos nosotros
        solo para Espana y en castellano.
@@ -1800,8 +1661,6 @@ export function getStyles(nonce: string = ''): string {
     .u-fs-16                { font-size: 16px; }
 
     /* compuestas (estructura) */
-    .brand-link             { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-width: 0; flex: 1; }
-    .header-actions         { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .search-heading-row     { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
     .search-heading         { font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; gap: 6px; }
     .search-actions         { display: flex; gap: 6px; }
@@ -2014,7 +1873,6 @@ export function getStyles(nonce: string = ''): string {
     ${MASTHEAD_CSS}
     /* La cabecera sigue el botón de tema del mapa, nunca el tema del sistema. */
     body.dark .masthead{--mh-paper:#101c18;--mh-ink:#eaf4ee;--mh-muted:#a7beb2;--mh-brand-dark:#83d6af;--mh-brand-soft:#203c2e;--mh-rule:#344b3f}
-    body.dark .masthead .mh-day{color:#102c20}
     /* Resumen SEO + listado de municipios (bajo el app). Antes iban con style=""
        inline, que la CSP (sin unsafe-inline en style-src) BLOQUEA -> se veian sin
        estilo. Movido a clases/selectores (H3). */

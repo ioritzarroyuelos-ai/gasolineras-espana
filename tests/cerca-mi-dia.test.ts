@@ -123,7 +123,7 @@ describe('salida segura y navegación de la portada', () => {
     expect(doc.querySelector('[data-dia-module="tiempo"]')?.text).toContain(malicioso)
     expect(doc.querySelectorAll('[style]')).toHaveLength(0)
     const scripts = doc.querySelectorAll('script[src]').map(script => script.getAttribute('src'))
-    expect(scripts).toEqual(['/static/municipio.js?v=' + APP_VERSION, '/static/mi-dia.js?v=' + APP_VERSION])
+    expect(scripts).toEqual(['/static/cuenta.js?v=' + APP_VERSION, '/static/municipio.js?v=' + APP_VERSION, '/static/mi-dia.js?v=' + APP_VERSION])
     expect(doc.querySelector('style')?.getAttribute('nonce')).toBe('prueba-nonce')
     expect(landingHeaders('prueba-nonce')['Content-Security-Policy']).not.toContain('unsafe-inline')
     expect(landingHeaders('prueba-nonce')['Cache-Control']).toBe('no-store')

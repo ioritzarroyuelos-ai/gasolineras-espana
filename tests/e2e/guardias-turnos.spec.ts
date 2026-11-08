@@ -53,6 +53,9 @@ test('ordena distancias con permiso y no guarda la ubicación', async ({ page, c
   await context.setGeolocation({ latitude: 40.4168, longitude: -3.7038, accuracy: 30 })
   await context.grantPermissions(['geolocation'])
   await page.goto('/farmacias/madrid/madrid')
+  await page.waitForFunction(() => Boolean((window as any).EUCuenta))
+  await page.evaluate(() => (window as any).EUCuenta.ready)
+  const storageBefore = await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).map(key => [key, localStorage.getItem(key)])))
   await page.getByRole('button', { name: 'Ordenar por cercanía' }).click()
   await expect(page.locator('#g-ubicacion')).toContainText('Ordenadas por distancia')
   const distances = (await page.locator('.g-distancia').allTextContents()).map(s => parseFloat(s))
@@ -61,7 +64,9 @@ test('ordena distancias con permiso y no guarda la ubicación', async ({ page, c
   await expect(page.locator('.g-card .g-dir')).toHaveText([
     'Farmacia de prueba cercana', 'Farmacia de prueba de tarde', 'Farmacia de prueba lejana',
   ])
-  expect(await page.evaluate(() => localStorage.length)).toBe(0)
+  // La cuenta ya puede tener preferencias. Ordenar por ubicación no debe
+  // añadir coordenadas ni cambiar ninguna entrada guardada del navegador.
+  expect(await page.evaluate(() => Object.fromEntries(Object.keys(localStorage).map(key => [key, localStorage.getItem(key)])))).toEqual(storageBefore)
 })
 
 test('denegar ubicación conserva la lista y permite reintentar', async ({ page, context }) => {

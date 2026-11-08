@@ -266,8 +266,8 @@ self.addEventListener('fetch', event => {
 
   // Los clientes propios consultan primero la red, aunque APP_VERSION no haya
   // cambiado. Sin conexión puede recuperarse otra versión del MISMO script;
-  // nunca se entrega app.js en lugar del cliente municipal o de Mi día.
-  if (url.origin === self.location.origin && ['/static/app.js', '/static/municipio.js', '/static/mi-dia.js'].includes(url.pathname)) {
+  // nunca se entrega app.js en lugar de la cuenta o los clientes del portal.
+  if (url.origin === self.location.origin && ['/static/app.js', '/static/cuenta.js', '/static/municipio.js', '/static/mi-dia.js'].includes(url.pathname)) {
     event.respondWith(
       fetch(request).then(res => {
         if (res.ok && request.method === 'GET') {

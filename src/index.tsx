@@ -112,6 +112,8 @@ const app = new Hono<{ Bindings: Env }>()
 export { APP_VERSION }
 
 app.use('/api/*', async (c, next) => {
+  // Even origin/rate-limit errors must not cache a personal session response.
+  if (/^\/api\/(?:auth\/|me$|sync(?:\/|$))/.test(c.req.path)) c.header('Cache-Control', 'no-store')
   const origin = c.req.header('origin') || ''
   const host   = c.req.header('host')   || ''
   if (!originAllowed(origin, host, ALLOWED_ORIGINS)) {

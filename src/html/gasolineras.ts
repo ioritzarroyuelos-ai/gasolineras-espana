@@ -10,6 +10,7 @@
 // municipio/provincia siguen siendo las que posicionan.
 
 import { APP_VERSION } from '../lib/version'
+import { withAccountHeaders } from '../lib/runtime'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { PORTAL_BASE_CSS } from './ui-theme'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
@@ -340,8 +341,8 @@ export function buildGasolinerasLanding(
 </html>`
 }
 
-// CSP estricta para la portada: sin mapa ni CDNs. La unica llamada de red del
-// cliente es /api/gasolineras/municipios (mismo origen -> connect-src 'self').
+// CSP de la portada: búsqueda en el mismo origen y acceso de Google compartido.
+// No necesita los permisos de mapas o imágenes externas del mapa interactivo.
 export function gasolinerasLandingHeaders(nonce: string): Record<string, string> {
   const csp = [
     "default-src 'self'",
@@ -358,18 +359,17 @@ export function gasolinerasLandingHeaders(nonce: string): Record<string, string>
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     // geolocation=(self): la portada usa navigator.geolocation en "usar mi ubicación".
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
-  }
+  })
 }

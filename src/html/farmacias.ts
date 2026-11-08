@@ -13,6 +13,7 @@
 // de guardias en el cliente: solo un indice pequeno de municipios.
 
 import { APP_VERSION } from '../lib/version'
+import { withAccountHeaders } from '../lib/runtime'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { PORTAL_BASE_CSS } from './ui-theme'
 import { jsonLdScript } from './html'   // S2: JSON-LD blindado (< → <)
@@ -297,9 +298,8 @@ export function buildFarmaciasPage(
 </html>`
 }
 
-// Headers HTTP para /farmacias/. CSP estricta: sin mapa ni CDN de tiles, solo
-// mismo origen + nonce. La unica llamada de red del cliente es a
-// /api/guardias/municipios (mismo origen -> connect-src 'self').
+// CSP de /farmacias/: consultas en el mismo origen y acceso de Google
+// compartido, conservando los nonce sin habilitar mapas o imágenes externas.
 export function farmaciasHeaders(nonce: string): Record<string, string> {
   const csp = [
     "default-src 'self'",
@@ -317,17 +317,16 @@ export function farmaciasHeaders(nonce: string): Record<string, string> {
     "report-to csp-endpoint",
   ].join('; ')
 
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=300, stale-while-revalidate=3600',
-  }
+  })
 }

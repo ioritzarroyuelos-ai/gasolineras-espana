@@ -1,4 +1,5 @@
 import type { DiaPrediccion, MunicipioLista, ParteHoras, Prediccion } from '../../scripts/lib/tiempo.mjs'
+import { withAccountHeaders } from '../lib/runtime'
 import { AEMET_MUNICIPIOS, urlMunicipioAemet, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
 import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 import type { AvisosTiempo } from '../lib/tiempo-avisos'
@@ -244,17 +245,16 @@ export function tiempoHeaders(nonce: string): Record<string, string> {
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'no-cache',
-  }
+  })
 }

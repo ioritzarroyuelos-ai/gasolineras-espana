@@ -59,7 +59,7 @@ test('vaciar el panel y restaurarlo funciona, con reordenación accesible por te
 test('el municipio elegido sigue compartido al visitar Mi día y las secciones', async ({ page }) => {
   await page.goto('/?municipio=28079')
   await expect(page.locator('#localidad-titulo')).toHaveText('Tu municipio: Madrid')
-  await page.locator('.masthead a[href="/mi-dia"]').click()
+  await page.locator('.mh-nav a[href="/mi-dia"]').click()
   await expect(page.locator('#localidad-titulo')).toHaveText('Tu municipio: Madrid')
   await expect(page.locator('#localidad-servicios a')).toHaveCount(4)
   const enlaces = await page.locator('#localidad-servicios a').evaluateAll(all => all.map(a => a.getAttribute('href')))
@@ -182,7 +182,7 @@ test('portada, panel y ajustes caben en móvil y conservan contraste, foco y CSP
     for (const ruta of ['/', '/mi-dia']) {
       const respuesta = await page.goto(ruta)
       expect(respuesta?.headers()['content-security-policy']).not.toContain('unsafe-inline')
-      await expect(page.locator('.masthead a[href="/mi-dia"]')).toBeVisible()
+      await expect(page.locator('.mh-nav a[href="/mi-dia"]')).toBeVisible()
       expect(await page.evaluate(() => document.documentElement.scrollWidth), ruta + ' a ' + width).toBe(width)
       expect(await page.locator('[style]').count()).toBe(0)
       expect((await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()).violations).toEqual([])

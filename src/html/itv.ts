@@ -1,5 +1,6 @@
 // Directorio ITV y precios oficiales, renderizados sin depender de JavaScript.
 import type { EstacionITV, MunicipioITV, ProvinciaITV, FuenteItvEstado } from '../lib/itv'
+import { withAccountHeaders } from '../lib/runtime'
 import { telefonosItv, mapsHref, enlaceOficialItv, normalizaNombreMunicipio } from '../lib/itv'
 import { TARIFAS, LIBERALIZADAS, SIN_DATO, NOMBRE_IMPUESTO, TASA_DGT_FUENTE, TARIFAS_REVISADAS, tarifaVigente, desglosa, type Tarifa } from '../lib/itv-tarifas'
 import type { ResultadoTiempo } from '../lib/tiempo-municipios'
@@ -288,17 +289,16 @@ export function itvHeaders(nonce: string, now = Date.now()): Record<string, stri
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=' + Math.min(300, ttl) + ', s-maxage=' + ttl,
-  }
+  })
 }

@@ -1,6 +1,7 @@
 // Portada, directorio territorial y ficha de elecciones. Las referencias y la
 // paginación se resuelven en el servidor, incluso sin JavaScript.
 import type { EleccionFile, IndexEntry, Candidatura } from '../lib/politica-schemas'
+import { withAccountHeaders } from '../lib/runtime'
 import { diaDeCampo } from '../lib/politica'
 import { colorPartido, ordenIdeologico, type EleccionCatalogo } from '../../scripts/lib/politica-catalogo.mjs'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
@@ -388,17 +389,16 @@ export function politicaHeaders(nonce: string): Record<string, string> {
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=1800, s-maxage=3600',
-  }
+  })
 }

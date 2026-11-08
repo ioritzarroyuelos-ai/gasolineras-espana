@@ -1,5 +1,6 @@
 // Cerca de ti y Mi día: HTML útil sin JavaScript; personalización local progresiva.
 import { APP_VERSION } from '../lib/version'
+import { withAccountHeaders } from '../lib/runtime'
 import { BRAND } from '../lib/brand'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { PORTAL_BASE_CSS } from './ui-theme'
@@ -57,7 +58,7 @@ function fecha(ts?: string | null, zona = 'Europe/Madrid'): string {
 }
 function guardar(id: Modulo): string {
   const nombre = MODULOS.find(m => m.id === id)!.nombre
-  return `<button hidden class="eu-bookmark" type="button" data-dia-toggle="${id}" aria-pressed="false" aria-label="Guardar ${esc(nombre)} en Mi día">${icono('guardar')}<span class="sr-only" data-dia-toggle-label>Guardar</span></button>`
+  return `<button hidden class="eu-bookmark" type="button" data-dia-toggle="${id}" aria-pressed="false" aria-label="Guardar ${esc(nombre)} en mis favoritos">${icono('guardar')}<span class="sr-only" data-dia-toggle-label>Guardar</span></button>`
 }
 function abreTarjeta(id: Modulo, day: boolean, clase = ''): string {
   const nombre = MODULOS.find(m => m.id === id)!.nombre
@@ -126,6 +127,17 @@ function ajustes(): string {
   return `<section class="eu-adjust" id="mi-dia-ajustes" aria-labelledby="mi-dia-ajustes-titulo" hidden><h2 id="mi-dia-ajustes-titulo">Pon Mi día a tu gusto</h2><p>Elige tus bloques y usa las flechas para decidir qué aparece primero.</p><ul class="eu-settings">${MODULOS.map(m => `<li class="eu-setting" data-dia-setting="${m.id}"><label><input type="checkbox" data-dia-visible="${m.id}"${PREDETERMINADOS.includes(m.id) ? ' checked' : ''}>${m.nombre}</label><span class="eu-setting-arrows"><button type="button" data-dia-up="${m.id}" aria-label="Subir ${m.nombre}">↑</button><button type="button" data-dia-down="${m.id}" aria-label="Bajar ${m.nombre}">↓</button></span></li>`).join('')}</ul><p>Tu municipio se elige en la cabecera. Tus gasolineras, equipos y competiciones se guardan con la estrella de su sección.</p><button class="eu-button" id="mi-dia-listo" type="button">Listo</button></section>`
 }
 
+function favoritosInicio(): string {
+  return `<section id="mis-favoritos" class="eu-home-favorites" aria-labelledby="home-favorites-title" hidden>
+    <div class="eu-section-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h2 id="home-favorites-title">Tus favoritos, a mano.</h2><p id="home-favorites-note">Con Google se guardan en tu cuenta; sin sesión, en este navegador.</p></div><a class="eu-link" href="/mi-dia">Organizar Mi día →</a></div>
+    <div class="eu-favorite-grid">
+      <article class="eu-favorite-card"><h3>${icono('guardar')} Tus bloques</h3><div class="eu-favorites" data-home-module-favs></div><a class="eu-link" href="#cerca-servicios">Elegir bloques →</a></article>
+      <article class="eu-favorite-card"><h3>${icono('gasolineras')} Tus gasolineras</h3><div class="eu-favorites" data-dia-gas-favs></div><a class="eu-link" href="/gasolineras/mapa?action=favs">Ver favoritas en el mapa →</a></article>
+      <article class="eu-favorite-card"><h3>${icono('deportes')} Lo que sigues</h3><div class="eu-favorites" data-dia-sport-favs></div><a class="eu-link" href="/deportes/#favoritos">Ver favoritos de Deportes →</a></article>
+    </div>
+  </section>`
+}
+
 export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.dev/', data: LandingData = {}): string {
   let origin = 'https://webapp-3ft.pages.dev'
   try { origin = new URL(reqUrl).origin } catch { /* Origen de respaldo. */ }
@@ -140,10 +152,11 @@ export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.
   ] }
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light"><meta name="theme-color" content="#137954"><title>${esc(title)}</title><meta name="description" content="${esc(desc)}"><link rel="canonical" href="${esc(canonical)}"><meta name="robots" content="${day ? 'noindex,follow' : 'index,follow,max-image-preview:large'}"><meta name="google-site-verification" content="qzv_20xQiNesXM4hX5ZqYozonYMqZhY-Wop2Tndu81w"><link rel="icon" href="/static/favicon.svg" type="image/svg+xml"><link rel="icon" href="/static/favicon-32.png" type="image/png" sizes="32x32"><link rel="apple-touch-icon" href="/static/apple-touch-icon.png"><meta property="og:type" content="website"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta property="og:url" content="${esc(canonical)}">${ogSocialTags(origin)}<meta name="twitter:title" content="${esc(title)}"><meta name="twitter:description" content="${esc(desc)}"><meta name="generator" content="España Útil v${APP_VERSION}">${jsonLdScript(schema, nonce)}<style nonce="${esc(nonce)}">${PORTAL_BASE_CSS}${MASTHEAD_CSS}${CERCA_CSS}${LOCALIDAD_CSS}</style></head><body>${mastheadHtml(day ? 'mi-dia' : 'inicio')}
   <main class="eu-main"${day ? ' data-mi-dia' : ''}>
-    ${day ? `<a class="eu-link" href="/${query}">← Volver a Cerca de ti</a><div class="eu-day-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h1>Tu día. <span>A tu manera.</span></h1><p>Lo que te interesa, en el orden que tú eliges. Se recuerda en este navegador, sin crear una cuenta.</p></div><button hidden id="mi-dia-personalizar" class="eu-button secondary" type="button" aria-expanded="false" aria-controls="mi-dia-ajustes">${icono('ajustes')} Personalizar Mi día</button></div>${ajustes()}`
+    ${day ? '' : favoritosInicio()}
+    ${day ? `<a class="eu-link" href="/${query}">← Volver a Cerca de ti</a><div class="eu-day-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h1>Tu día. <span>A tu manera.</span></h1><p>Lo que te interesa, en el orden que tú eliges. Con Google se guarda en tu cuenta; sin sesión, en este navegador.</p></div><button hidden id="mi-dia-personalizar" class="eu-button secondary" type="button" aria-expanded="false" aria-controls="mi-dia-ajustes">${icono('ajustes')} Personalizar Mi día</button></div>${ajustes()}`
       : `<section class="eu-hero" aria-labelledby="portada-titulo"><div class="eu-intro"><p class="eu-eyebrow">Tu zona. Tus planes. Tu día.</p><h1 id="portada-titulo">Hoy lo tienes <span>más cerca.</span></h1><p>El tiempo, gasolineras, farmacias, ITV, política y deportes. Todo a mano para que sigas con tu día.</p><div class="eu-actions"><a class="eu-button" href="/mi-dia${query}">Organizar Mi día →</a><a class="eu-link" href="#cerca-servicios">Explorar los servicios ↓</a></div></div>${tarjetaTiempo(data, false)}</section>`}
     ${localidadHtml(data.localidad, data.encontrados, data.query, day ? '/mi-dia' : '/')}
-    ${day ? '<noscript><p class="eu-muted">Puedes consultar estos servicios sin JavaScript. Para personalizar los bloques y recordar tus preferencias, activa JavaScript en tu navegador.</p></noscript><section id="mi-dia-vacio" class="eu-empty" hidden><h2>Tu día empieza aquí</h2><p>Añade los bloques que quieras ver, o vuelve a la selección inicial.</p><button type="button" class="eu-button" data-dia-reset>Restaurar mis bloques</button></section>' : '<div class="eu-section-head" id="cerca-servicios"><h2>Lo que necesitas, a un toque.</h2><p>Guarda tus bloques favoritos en Mi día.</p></div>'}
+    ${day ? '<noscript><p class="eu-muted">Puedes consultar estos servicios sin JavaScript. Para personalizar los bloques y recordar tus preferencias, activa JavaScript en tu navegador.</p></noscript><section id="mi-dia-vacio" class="eu-empty" hidden><h2>Tu día empieza aquí</h2><p>Añade los bloques que quieras ver, o vuelve a la selección inicial.</p><button type="button" class="eu-button" data-dia-reset>Restaurar mis bloques</button></section>' : '<div class="eu-section-head" id="cerca-servicios"><h2>Lo que necesitas, a un toque.</h2><p>Guarda tus bloques y aparecerán en tus favoritos y en Mi día.</p></div>'}
     <div class="eu-grid${day ? '' : ' eu-home-grid'}"${day ? ' id="mi-dia-modulos"' : ''}>${(day ? MODULOS.map(m => m.id) : ['gasolineras', 'farmacias', 'deportes', 'itv', 'politica'] as Modulo[]).map(id => tarjeta(id, data, day)).join('')}</div>
     <p class="sr-only" id="mi-dia-estado" role="status" aria-live="polite"></p>
     <section class="eu-support"><div><h2>${day ? 'Tus favoritos vienen contigo.' : 'Menos buscar. Más hacer.'}</h2><p>${day ? 'Las estrellas del mapa y de Deportes aparecen también aquí. Elige tu municipio para tener a mano sus servicios.' : 'Entra en Mi día, elige lo que te interesa y ordénalo como prefieras. La próxima vez, lo encontrarás a tu gusto.'}</p></div><a class="eu-button secondary" href="${day ? '/gasolineras/mapa?action=favs' : '/mi-dia' + query}">${day ? 'Ver favoritas en el mapa' : 'Descubrir Mi día →'}</a></section>
@@ -152,7 +165,7 @@ export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.
 }
 
 export function landingHeaders(nonce: string): Record<string, string> {
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': ["default-src 'self'", "script-src 'self' 'nonce-" + nonce + "'", "style-src 'self' 'nonce-" + nonce + "'", "img-src 'self' data:", "font-src 'self'", "connect-src 'self'", "frame-ancestors 'none'", "base-uri 'self'", "form-action 'self'", "object-src 'none'", 'upgrade-insecure-requests', 'report-uri /api/csp-report', 'report-to csp-endpoint'].join('; '),
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -160,5 +173,5 @@ export function landingHeaders(nonce: string): Record<string, string> {
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()', 'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     // No recuperar una previsión o un resultado personal antiguo al volver atrás/offline.
     'Cache-Control': 'no-store',
-  }
+  })
 }

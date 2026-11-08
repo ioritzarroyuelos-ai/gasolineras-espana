@@ -2,6 +2,7 @@
 // turno funciona sin JavaScript; sólo la ordenación por GPS lo necesita.
 
 import { corrigeZonaCervera } from '../../scripts/lib/guardias-rioja.mjs'
+import { withAccountHeaders } from '../lib/runtime'
 import { frescuraGuardia, estadoGuardia, textoHorarioGuardia, tipoAtencionGuardia, zonaGuardia, fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 import type { Guardia, MunicipioGuardia, GuardiaFrescura } from '../lib/guardias'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
@@ -412,18 +413,17 @@ export function guardiaHeaders(nonce: string): Record<string, string> {
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     // El estado a esta hora debe calcularse de nuevo en cada visita.
     'Cache-Control': 'no-store',
-  }
+  })
 }

@@ -14,13 +14,14 @@ import { ministryFixture } from './ministry-fixture'
 test.beforeEach(async ({ page, request }, info) => { await ministryFixture(page, request, info.config.metadata.live === true) })
 
 test.describe('Mapa (/gasolineras/mapa)', () => {
-  test('carga el shell y muestra la barra superior', async ({ page }) => {
+  test('carga el mapa con una sola cabecera común', async ({ page }) => {
     await page.goto('/gasolineras/mapa')
     await expect(page).toHaveTitle(/España Útil/i)
 
     // Cabecera principal presente
-    await expect(page.locator('#app-header')).toBeVisible()
-    await expect(page.locator('#brand')).toBeVisible()
+    await expect(page.locator('.masthead')).toBeVisible()
+    await expect(page.locator('.mh-brand')).toBeVisible()
+    await expect(page.locator('#app-header')).toHaveCount(0)
 
     // El selector de provincia arranca deshabilitado (municipio) y con opciones cargadas
     // tras el bootstrap. Damos tiempo para la llamada /api/provincias.
@@ -52,7 +53,7 @@ test.describe('Mapa (/gasolineras/mapa)', () => {
   test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {
     await page.goto('/gasolineras/mapa')
     // Esperamos al bootstrap para auditar el DOM "real", no el esqueleto inicial.
-    await expect(page.locator('#app-header')).toBeVisible()
+    await expect(page.locator('.masthead')).toBeVisible()
 
     const results = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa'])
@@ -119,7 +120,7 @@ test.describe('Portada gasolineras (/gasolineras/)', () => {
 test.describe('Encuadre por zona (SEO)', () => {
   test('la pagina de provincia encuadra la provincia, no todo el pais', async ({ page }) => {
     await page.goto('/gasolineras/madrid')
-    await expect(page.locator('#app-header')).toBeVisible()
+    await expect(page.locator('.masthead')).toBeVisible()
     // Esperar a que carguen las estaciones de la provincia.
     await expect
       .poll(async () => page.evaluate(() => { try { return ((window as unknown as { allStations?: unknown[] }).allStations || []).length } catch { return 0 } }), { timeout: 20_000 })
@@ -143,7 +144,7 @@ test.describe('Encuadre por zona (SEO)', () => {
 
   test('la pagina de municipio permite ampliar a un radio al elegir También cerca', async ({ page }) => {
     await page.goto('/gasolineras/madrid/alcorcon')
-    await expect(page.locator('#app-header')).toBeVisible()
+    await expect(page.locator('.masthead')).toBeVisible()
     await expect(page.locator('#sel-area')).toBeVisible({ timeout: 20_000 })
     await page.locator('#sel-area').selectOption('cerca')
     await expect(page.locator('#radius-group')).toBeVisible({ timeout: 20_000 })

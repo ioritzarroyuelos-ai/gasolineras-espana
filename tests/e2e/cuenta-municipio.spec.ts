@@ -120,3 +120,25 @@ test('olvidar municipio guarda el borrado antes de navegar y no lo recupera al r
   expect(account.puts).toEqual([{ user: 'ana', value: null }])
   expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull()
 })
+
+test('un 429 en la ficha municipal permite olvidar la preferencia local sin inventar el nombre', async ({ page, context }) => {
+  const account = await server(context, { guest: '28079' })
+  account.user = null
+  await context.route('**/api/localidad/28079', route => route.fulfill({
+    status: 429, headers: { 'Retry-After': '1' }, json: { error: 'rate limited' },
+  }))
+  const municipalResponse = page.waitForResponse('**/api/localidad/28079')
+  await page.goto('/?municipio=28079')
+  await ready(page)
+  expect((await municipalResponse).status()).toBe(429)
+  await expect(page.locator('#localidad-titulo')).toHaveText('Tu municipio: Madrid')
+  await expect(page.locator('#municipio-elegido')).toBeHidden()
+  await expect(page.locator('#localidad-olvidar')).toBeVisible()
+  await page.locator('#localidad-olvidar').click()
+  await expect(page).toHaveURL(test.info().project.use.baseURL! + '/')
+  await ready(page)
+  await expect(page.locator('#localidad-titulo')).toHaveText('Qué necesitas en tu municipio')
+  await expect(page.locator('#localidad-olvidar')).toBeHidden()
+  expect(await page.evaluate(key => localStorage.getItem(key), key)).toBeNull()
+  expect(account.puts).toEqual([])
+})

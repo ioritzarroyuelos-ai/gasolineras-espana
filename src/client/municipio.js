@@ -47,7 +47,8 @@
   function showTown(ine, reconcilePage) {
     const serial = ++townRequest;
     if (chip) chip.hidden = true;
-    if (forget) forget.hidden = true;
+    // Olvidar una preferencia local no depende de poder descargar su ficha.
+    if (forget) forget.hidden = !/^\d{5}$/.test(ine);
     if (!/^\d{5}$/.test(ine)) {
       if (reconcilePage && (home || personal) && selected && !here.searchParams.has('q')) location.replace(destination);
       return;
@@ -63,7 +64,6 @@
         chip.href = townUrl(ine); chip.textContent = 'Tu municipio: ' + m.nombre;
         chip.setAttribute('aria-label', chip.textContent); chip.dataset.municipioNombre = m.nombre; chip.hidden = false;
       }
-      if (forget) forget.hidden = false;
       // No sustituir el HTML con datos parciales ni redirigir una búsqueda:
       // el servidor vuelve a verificar las fechas de los seis bloques.
       if (reconcilePage && (home || personal) && selected !== ine && !here.searchParams.has('q')) {

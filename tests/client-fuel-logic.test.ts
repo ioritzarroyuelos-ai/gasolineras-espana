@@ -120,16 +120,13 @@ describe('simple preferences and actual fuel units', () => {
     expect(petrolHtml).toContain('60 L = 90.00 €')
     expect(petrolHtml).toContain('ahorras 30.00 € en 60 L')
   })
-  it('sanitizes a remote legacy profile and only uploads the simple version', async () => {
+  it('sanitizes a legacy profile before asking the shared account to save it', async () => {
     const { c, storage } = client()
-    runInContext(section(core, 'var FAV_KEY', '// ---- SINCRONIZACION'), c)
-    runInContext(section(core, 'var SYNC_KEYS', 'function isFav('), c)
-    c.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { gs_profile_v1: { fuel: 'Precio Gasoleo A', litres: 70, consumo: 7, strictFuel: true } } }) })
-    await c.enableSync()
-    expect(JSON.parse(storage.get('gs_profile_v1')!)).toEqual({ version: 2, fuel: 'Precio Gasoleo A', litres: 70 })
-    storage.set('gs_profile_v1', JSON.stringify({ fuel: 'Precio Gasoleo A', litres: 55, strictFuel: true }))
-    await c.syncPush('gs_profile_v1')
-    expect(JSON.parse(c.fetch.mock.calls.at(-1)[1].body)).toEqual({ version: 2, fuel: 'Precio Gasoleo A', litres: 55 })
+    c.window = { EUCuenta: { changed: vi.fn().mockResolvedValue(undefined) } }
+    runInContext(section(core, 'function syncPush(', 'function isFav('), c)
+    c.setProfile({ fuel: 'Precio Gasoleo A', litres: 55, strictFuel: true, consumo: 7 })
+    expect(JSON.parse(storage.get('gs_profile_v1')!)).toEqual({ version: 2, fuel: 'Precio Gasoleo A', litres: 55 })
+    expect(c.window.EUCuenta.changed).toHaveBeenCalledWith('gs_profile_v1')
   })
   it('does not hide stations using a saved, now removed, strictFuel switch', () => {
     const { c, storage } = client()

@@ -8,8 +8,8 @@ describe('SEO Lote 3 — rendimiento', () => {
     expect(html).not.toContain('fontawesome')
     expect(html).not.toContain('cdn.jsdelivr.net')
     expect(html).not.toContain('class="fas ')
-    expect(html).toContain('<symbol id="i-bars"')   // sprite presente
-    expect(html).toContain('#i-bars')                 // se referencia con <use>
+    expect(html).toContain('<symbol id="i-chevron-left"') // sprite presente
+    expect(html).toContain('#i-chevron-left')              // control del mapa
   })
 
   it('canonicalOrigin fuerza canonical/OG al origen canónico (no al host del preview)', () => {

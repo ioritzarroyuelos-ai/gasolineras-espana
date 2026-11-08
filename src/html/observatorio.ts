@@ -11,6 +11,7 @@
 // Se renderiza en servidor y se actualiza sola con cada snapshot.
 
 import type { Observatorio, ProvinciaPrecio, MarcaPrecio } from '../lib/observatorio'
+import { withAccountHeaders } from '../lib/runtime'
 import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { PORTAL_BASE_CSS } from './ui-theme'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
@@ -216,17 +217,16 @@ export function observatorioHeaders(nonce: string): Record<string, string> {
     "report-uri /api/csp-report",
     "report-to csp-endpoint",
   ].join('; ')
-  return {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
     'Content-Security-Policy': csp,
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
-    'Cross-Origin-Opener-Policy': 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Permissions-Policy': 'geolocation=(), camera=(), microphone=(), usb=(), payment=(), interest-cohort=()',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
     'Cache-Control': 'public, max-age=900, s-maxage=3600',
-  }
+  })
 }

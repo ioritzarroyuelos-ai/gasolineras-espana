@@ -21,12 +21,28 @@ página municipal. El servidor vuelve a evaluar las fechas. Un municipio que
 ya no existe no provoca redirecciones en bucle.
 
 Los favoritos se leen de `gs_favs_v1` y `eu-deportes-favoritos-v1`, sin escribir
-esas claves desde Mi día ni alterar su sincronización existente. Se muestran
+esas claves desde Mi día. También aparecen en `/#mis-favoritos`. Se muestran
 hasta seis enlaces por sección y se avisa cuando hay más. Una estación antigua
 sin provincia válida abre el listado de favoritas del mapa. Los enlaces de
 deportes se limitan a rutas internas permitidas y los nombres se insertan como
 texto. Si el almacenamiento falla, la organización funciona durante la visita
 y aparece un aviso; no se promete conservarla al cerrar la página.
+
+`src/client/cuenta.js` gestiona la cuenta compartida. Las secciones esperan
+`EUCuenta.ready`, notifican únicamente cambios explícitos con `changed(key)` y
+escuchan `eu:cuenta` para mostrar los datos recuperados sin volver a subirlos.
+Google se carga al abrir el acceso, no al visitar la web. La configuración pública
+sale de `/api/auth/config`; las credenciales se verifican en el servidor.
+
+Con sesión se sincronizan esas dos listas, `gs_profile_v1`, `eu-mi-dia-v1` y
+`espana-util-municipio` mediante el almacenamiento KV existente. Municipio usa
+una cadena INE en localStorage y una cadena JSON o `null` en la API. Las marcas
+sin sesión permanecen separadas y pueden importarse desde el menú de cuenta.
+Cerrar sesión restaura esas marcas, no borra los favoritos de la cuenta.
+Los errores de lectura nunca se interpretan como una lista remota vacía.
+El cliente envía `X-Account-Id` para rechazar una escritura si cambió la cookie
+en otra pestaña. KV tiene consistencia eventual: no ofrece una transacción global
+entre dispositivos que escriben simultáneamente.
 
 ## Datos y ausencia de conexión
 
@@ -69,7 +85,9 @@ de la respuesta, sin atributos `style` ni `unsafe-inline`.
 ## Mapa de gasolineras
 
 El mapa conserva sus controles, filtros, marcadores, paneles y enlaces para llegar
-a una estación. Solo comparte la nueva cabecera. `src/client/ui.js` mide la altura
+a una estación. Utiliza la cabecera común con Google y sin la antigua barra verde
+duplicada. Favoritas y recuento están en el panel; el botón para plegarlo sigue
+en los controles blancos del mapa. `src/client/ui.js` mide la altura
 real de `.masthead` y del resto de barras con `ResizeObserver`; `#app-body` usa ese
 valor para llenar el espacio disponible. No se debe fijar una altura de cabecera
 suponiendo que todos los móviles ocupan una sola fila.

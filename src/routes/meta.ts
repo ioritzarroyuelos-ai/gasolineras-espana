@@ -409,12 +409,11 @@ Telegram).</p>
 </ul>
 
 <h2>Si NO inicias sesión (uso normal)</h2>
-<p>Tus ajustes, favoritos y perfil de vehículo se guardan únicamente en el
+<p>Tus ajustes, favoritos, combustible y litros de repostaje se guardan únicamente en el
 almacenamiento local (<code>localStorage</code>) de tu navegador. <strong>No se
 envían a ningún servidor</strong> y no salen de tu dispositivo. Si borras los
 datos del navegador, desaparecen.</p>
-<p>El municipio elegido y los bloques y el orden de «Mi día» se recuerdan solo en este navegador, incluso si inicias sesión. Puedes usar «Olvidar municipio» o restaurar la selección de bloques desde «Mi día».</p>
-<p>Los favoritos de deportes se guardan también solo en este navegador y no se sincronizan con tu cuenta. Puedes quitarlos pulsando la estrella de cada favorito.</p>
+<p>Sin sesión, esto incluye el municipio elegido, los bloques y el orden de «Mi día» y los favoritos de gasolineras y deportes. Puedes usar «Olvidar municipio», organizar «Mi día» o quitar favoritos con su estrella.</p>
 
 <h2>Si inicias sesión con Google (opcional)</h2>
 <p>El inicio de sesión sirve para tener tus favoritos y ajustes en varios
@@ -425,14 +424,21 @@ dispositivos. Es totalmente voluntario. Cuando inicias sesión:</p>
       mantenerte identificado; no rastrea tu navegación.</li>
   <li>Guardamos un identificador opaco de tu cuenta de Google, tu correo, tu
       nombre y tu foto de perfil, asociados a tu sesión.</li>
-  <li>Sincronizamos tus favoritos, perfil y ajustes en la base de datos de claves
+  <li>Sincronizamos tus favoritos de gasolineras y deportes, combustible y litros,
+      municipio y selección y orden de bloques de «Mi día» en la base de datos de claves
       de Cloudflare (Workers KV), bajo una clave ligada a tu identificador de Google.</li>
 </ul>
+<p>Los favoritos de tu cuenta aparecen en Inicio. Las marcas que hiciste sin sesión
+se conservan por separado; puedes añadirlas a tu cuenta desde su menú. Guardamos
+una copia local y los cambios pendientes para poder reintentar si falla la conexión.
+El estado de la cuenta indica cuándo se han guardado en el servidor.</p>
 <p><strong>Base legal:</strong> tu consentimiento y la prestación del servicio que
 tú pides (la sincronización).</p>
-<p><strong>Cómo borrarlos:</strong> al eliminar un favorito o vaciar tu perfil,
-la app borra ese dato también en el servidor. Cerrar sesión elimina la cookie de
-este dispositivo. Si quieres que borremos por completo tus datos sincronizados,
+<p><strong>Cómo borrarlos:</strong> al eliminar un favorito u olvidar el municipio con sesión iniciada,
+la app actualiza también tu cuenta cuando hay conexión. Cerrar sesión elimina la cookie de
+este dispositivo y vuelve a mostrar las marcas guardadas sin sesión; no borra los favoritos de tu cuenta.
+Puedes eliminar las copias locales borrando los datos del sitio en tu navegador.
+Si quieres que borremos por completo tus datos sincronizados,
 escríbenos (ver <em>Contacto</em>).</p>
 
 <h2>Alertas de precios por Telegram (opcional)</h2>

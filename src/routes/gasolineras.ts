@@ -118,7 +118,6 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get('/gasolineras/mapa', async c => {
     const nonce = genNonce()
     const turnstile = !!c.env.TURNSTILE_SITE_KEY
-    const googleAuth = !!c.env.GOOGLE_CLIENT_ID
     let snapshotDate: string | undefined
     try {
       const snap = await loadSnapshot<MinistryResponse>(c.req.url, 'stations.json', c.env.ASSETS)
@@ -129,9 +128,8 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       canonicalOrigin: canonicalBase(c),
       snapshotDate,
       supportUrl: c.env.SUPPORT_URL,
-      googleClientId: c.env.GOOGLE_CLIENT_ID,
       mapTool: true,
-    }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+    }), { headers: pageHeaders(nonce, turnstile) })
   })
 
   // ---- Rutas SEO por provincia ----
@@ -145,7 +143,6 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!prov) return c.notFound()
     const nonce = genNonce()
     const turnstile = !!c.env.TURNSTILE_SITE_KEY
-    const googleAuth = !!c.env.GOOGLE_CLIENT_ID
 
     // Pre-computamos stats de precios por combustible para la provincia. Sirve
     // para: (a) meta description enriquecida, (b) Dataset variableMeasured en
@@ -225,8 +222,7 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       municipios,
       snapshotDate,
       supportUrl: c.env.SUPPORT_URL,
-      googleClientId: c.env.GOOGLE_CLIENT_ID,
-    }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+    }), { headers: pageHeaders(nonce, turnstile) })
   })
 
   // ---- SEO: /gasolineras/:provinciaSlug/:municipioSlug (Ship 11) ----
@@ -243,7 +239,6 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!prov) return c.notFound()
     const nonce = genNonce()
     const turnstile = !!c.env.TURNSTILE_SITE_KEY
-    const googleAuth = !!c.env.GOOGLE_CLIENT_ID
 
     let stats: Record<string, { min: number; avg: number; max: number; count: number }> | undefined
     let stationCount = 0
@@ -302,7 +297,6 @@ export function registerGasolinerasRoutes(app: Hono<{ Bindings: Env }>): void {
       municipios,
       snapshotDate,
       supportUrl: c.env.SUPPORT_URL,
-      googleClientId: c.env.GOOGLE_CLIENT_ID,
-    }), { headers: pageHeaders(nonce, turnstile, googleAuth) })
+    }), { headers: pageHeaders(nonce, turnstile) })
   })
 }

@@ -71,7 +71,8 @@ describe('gasolineras: controles públicos y unidades', () => {
     expect(html).toContain('Solo este municipio')
     expect(html).toContain('También cerca')
     expect(html).not.toContain('id="municipio-busqueda"')
-    expect(html).not.toContain('id="btn-login"')
+    expect(html.match(/id="btn-login"/g)).toHaveLength(1)
+    expect(html).not.toContain('id="app-header"')
     expect(mastheadHtml('tiempo')).toContain('id="municipio-busqueda"')
   })
 

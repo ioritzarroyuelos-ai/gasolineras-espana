@@ -229,7 +229,7 @@ window.addEventListener('resize', function() {
   var queued = false;
   function measure() {
     queued = false;
-    var nodes = document.querySelectorAll('.masthead, #app-header, #offline-banner, #stale-banner, #trend-strip');
+    var nodes = document.querySelectorAll('.masthead, #offline-banner, #stale-banner, #trend-strip');
     var total = 0;
     for (var i = 0; i < nodes.length; i++) total += nodes[i].getBoundingClientRect().height;
     total = Math.ceil(total);
@@ -253,7 +253,7 @@ window.addEventListener('resize', function() {
     // ResizeObserver llega antes de pintar: actualizar aquí evita un fotograma
     // con el mapa más alto que la ventana al aparecer la barra de tendencias.
     var observer = new ResizeObserver(measure);
-    document.querySelectorAll('.masthead, #app-header, #offline-banner, #stale-banner, #trend-strip').forEach(function(node) { observer.observe(node); });
+    document.querySelectorAll('.masthead, #offline-banner, #stale-banner, #trend-strip').forEach(function(node) { observer.observe(node); });
   }
   window.addEventListener('resize', schedule);
   measure();
@@ -1640,198 +1640,15 @@ function showUpdateToast(newSW) {
   document.body.appendChild(t);
 }
 
-// ---- LOGIN GOOGLE + USER MENU (Ship auth 1.9) ----
-// Se monta solo si shell.ts inyecto window.__GOOGLE_CLIENT_ID__ (es decir, si
-// hay GOOGLE_CLIENT_ID en env). En el resto de entornos el bloque entero es
-// no-op y los nodos #btn-login / #user-menu / #login-modal ni existen en el
-// DOM, asi que todos los getElementById devuelven null y los listeners nunca
-// se registran — cero overhead.
-//
-// El desplegable de la cuenta contiene un unico item de accion — Favoritas —
-// que al clicarse cierra la dropdown y abre su modal (openFavsModal).
-(function() {
-  var CID = (typeof window !== 'undefined') ? window.__GOOGLE_CLIENT_ID__ : null;
-  if (!CID) return;
-
-  var btnLogin      = document.getElementById('btn-login');
-  var userMenu      = document.getElementById('user-menu');
-  var btnUser       = document.getElementById('btn-user');
-  var userDropdown  = document.getElementById('user-dropdown');
-  var userAvatar    = document.getElementById('user-avatar');
-  var userNameEl    = document.getElementById('user-name');
-  var ddName        = document.getElementById('user-dropdown-name');
-  var ddEmail       = document.getElementById('user-dropdown-email');
-  var btnUserFavs    = document.getElementById('btn-user-favs');
-  var btnLogout     = document.getElementById('btn-logout');
-  var loginModal    = document.getElementById('login-modal');
-  var loginClose    = document.getElementById('login-modal-close');
-  var gsiContainer  = document.getElementById('gsi-button-container');
-
-  if (!btnLogin || !userMenu || !loginModal || !gsiContainer) return;
-
-  function setSyncBadge(txt) {
-    var el = document.getElementById('user-dropdown-sync');
-    if (el) el.textContent = txt;
+// La cuenta común emite los cambios recibidos de otro dispositivo o sesión.
+window.addEventListener('eu:cuenta', function(event) {
+  var detail = event.detail || {};
+  if (!detail.keys || !detail.keys.length) return;
+  if (detail.keys.indexOf('gs_profile_v1') >= 0 && detail.reason !== 'local') {
+    var fuel = document.getElementById('sel-combustible');
+    if (fuel && !new URLSearchParams(location.search).has('fuel')) fuel.value = getProfile().fuel;
+    refreshRefuelControls();
   }
-  function setLogged(user) {
-    if (user && user.sub) {
-      btnLogin.hidden = true;
-      userMenu.hidden = false;
-      if (userAvatar && user.picture) { userAvatar.src = user.picture; userAvatar.alt = user.name || ''; }
-      if (userNameEl) userNameEl.textContent = user.name || user.email || '';
-      if (ddName)     ddName.textContent     = user.name  || '';
-      if (ddEmail)    ddEmail.textContent    = user.email || '';
-      // Ship 29: sincronizacion real entre dispositivos. Tira del servidor,
-      // fusiona favoritas (union) y refresca la UI; el badge refleja el estado.
-      if (typeof enableSync === 'function') {
-        setSyncBadge('Sincronizando…');
-        enableSync().then(function (state) {
-          if (state === 'ok' || state === 'pending') { try { renderFavs(); } catch (_) {} }
-          setSyncBadge(
-            state === 'ok'      ? 'Sincronizado'
-          : state === 'pending' ? 'Cambios pendientes'
-          : state === 'expired' ? 'Sesión caducada'
-          : state === 'error'   ? 'Sin conexión'
-          :                       'Sesión iniciada'
-          );
-        });
-      }
-    } else {
-      userMenu.hidden = true;
-      btnLogin.hidden = false;
-      if (typeof disableSync === 'function') disableSync();
-    }
-  }
-
-  // El widget "Media nacional hoy" (#stats-nacional) vive fuera del header
-  // y con z-index 1005 — al abrir el desplegable, se solapaba visualmente
-  // porque el header crea stacking context (z:1000) que capa el z:2500 del
-  // dropdown. Lo ocultamos mientras el desplegable esta abierto.
-  function setStatsWidgetHidden(hide) {
-    var w = document.getElementById('stats-nacional');
-    if (w) w.style.display = hide ? 'none' : '';
-  }
-
-  function closeDropdown() {
-    if (!userDropdown) return;
-    userDropdown.hidden = true;
-    if (btnUser) btnUser.setAttribute('aria-expanded', 'false');
-    setStatsWidgetHidden(false);
-  }
-  function toggleDropdown() {
-    if (!userDropdown) return;
-    var open = !userDropdown.hidden;
-    userDropdown.hidden = open;
-    if (btnUser) btnUser.setAttribute('aria-expanded', open ? 'false' : 'true');
-    setStatsWidgetHidden(!open);
-  }
-
-  // Click fuera de la dropdown la cierra. Se registra una sola vez.
-  document.addEventListener('click', function(ev) {
-    if (!userDropdown || userDropdown.hidden) return;
-    var t = ev.target;
-    if (t && (userMenu.contains(t))) return;
-    closeDropdown();
-  });
-  // Tecla Escape cierra dropdown y modal — consistente con el resto de UI.
-  document.addEventListener('keydown', function(ev) {
-    if (ev.key !== 'Escape') return;
-    if (userDropdown && !userDropdown.hidden) closeDropdown();
-    if (loginModal && !loginModal.hidden) closeLoginModal();
-  });
-
-  if (btnUser) btnUser.addEventListener('click', function(ev) {
-    ev.stopPropagation();
-    toggleDropdown();
-  });
-
-  // El unico item del dropdown es Favoritas -> abre su modal. openFavsModal
-  // es global (declarada top-level).
-  function openModalByName(openFn) {
-    closeDropdown();
-    if (typeof openFn === 'function') openFn();
-  }
-  if (btnUserFavs)    btnUserFavs.addEventListener('click',    function() { openModalByName(typeof openFavsModal === 'function' ? openFavsModal : null); });
-
-  // ---- Login modal ----
-  var gsiInitialized = false;
-  function openLoginModal() {
-    loginModal.hidden = false;
-    ensureGsiButton();
-  }
-  function closeLoginModal() {
-    loginModal.hidden = true;
-  }
-  loginModal.addEventListener('click', function(ev) {
-    var t = ev.target;
-    if (t && t.getAttribute && t.getAttribute('data-close') === '1') closeLoginModal();
-  });
-  if (loginClose) loginClose.addEventListener('click', closeLoginModal);
-  btnLogin.addEventListener('click', openLoginModal);
-
-  // GIS se carga async via <script> en el head. Puede no estar listo cuando
-  // el usuario abre el modal por primera vez — reintentamos hasta 5s.
-  function whenGoogleReady(cb, tries) {
-    var g = window.google;
-    if (g && g.accounts && g.accounts.id) return cb();
-    if ((tries || 0) >= 50) return;
-    setTimeout(function() { whenGoogleReady(cb, (tries || 0) + 1); }, 100);
-  }
-
-  function ensureGsiButton() {
-    if (gsiInitialized) return;
-    whenGoogleReady(function() {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: CID,
-          callback: handleCredential,
-          ux_mode: 'popup',
-          auto_select: false,
-          itp_support: true,
-        });
-        window.google.accounts.id.renderButton(gsiContainer, {
-          type: 'standard',
-          theme: 'filled_blue',
-          size: 'large',
-          text: 'signin_with',
-          shape: 'pill',
-          logo_alignment: 'left',
-          width: 280,
-        });
-        gsiInitialized = true;
-      } catch (e) {
-        gsiContainer.textContent = 'No se pudo cargar Google Sign-In. Revisa la conexion.';
-      }
-    });
-  }
-
-  function handleCredential(resp) {
-    if (!resp || !resp.credential) return;
-    fetch('/api/auth/google', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: resp.credential }),
-    }).then(function(r) {
-      if (!r.ok) throw new Error('auth_failed_' + r.status);
-      return r.json();
-    }).then(function(data) {
-      setLogged(data && data.user);
-      closeLoginModal();
-    }).catch(function() {
-      try { showToast('No se pudo iniciar sesion', 'error'); } catch(_) {}
-    });
-  }
-
-  if (btnLogout) btnLogout.addEventListener('click', function() {
-    fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
-      .then(function() { setLogged(null); closeDropdown(); })
-      .catch(function() { setLogged(null); closeDropdown(); });
-  });
-
-  // Boot: /api/me para decidir si mostramos el boton Entrar o el user-menu.
-  fetch('/api/me', { credentials: 'same-origin', cache: 'no-store' })
-    .then(function(r) { return r.ok ? r.json() : { user: null }; })
-    .then(function(data) { setLogged(data && data.user); })
-    .catch(function() { setLogged(null); });
-})();
+  renderFavs();
+  if (allStations.length) applyFilters();
+});

@@ -383,7 +383,7 @@ function genNonce(): string {
   return btoa(s)
 }
 
-function buildCsp(nonce: string, turnstile = false, googleAuth = false): string {
+function buildCsp(nonce: string, turnstile = false): string {
   const scriptSrc  = ["'self'", "'nonce-" + nonce + "'"]
   const styleSrc   = ["'self'", "'nonce-" + nonce + "'"]
   const frameSrc   = ["'self'"]
@@ -392,12 +392,6 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
     scriptSrc.push('https://challenges.cloudflare.com')
     frameSrc.push('https://challenges.cloudflare.com')
     connectSrc.push('https://challenges.cloudflare.com')
-  }
-  if (googleAuth) {
-    scriptSrc.push('https://accounts.google.com/gsi/client')
-    frameSrc.push('https://accounts.google.com/gsi/')
-    connectSrc.push('https://accounts.google.com/gsi/')
-    styleSrc.push('https://accounts.google.com/gsi/style')
   }
   connectSrc.push('https://tiles.openfreemap.org')
   connectSrc.push('https://tms-pnoa-ma.idee.es')
@@ -421,6 +415,39 @@ function buildCsp(nonce: string, turnstile = false, googleAuth = false): string 
   ].join('; ')
 }
 
+// El acceso a la cuenta está en la cabecera de todo el portal. Cada sección
+// conserva su CSP (incluidos nonce, mapas y Turnstile) y su caducidad; solamente
+// se permiten las rutas que Google necesita para el botón y su ventana de acceso.
+// https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid
+export function withAccountHeaders(headers: Record<string, string>): Record<string, string> {
+  if (!headers['Content-Type']?.startsWith('text/html') || !headers['Content-Security-Policy']) return { ...headers }
+  const directives = headers['Content-Security-Policy'].split(';').map(part => part.trim().split(/\s+/)).filter(parts => parts[0])
+  const defaults = directives.find(parts => parts[0] === 'default-src')?.slice(1) || []
+  const sources: Record<string, string> = {
+    'script-src': 'https://accounts.google.com/gsi/client',
+    'frame-src': 'https://accounts.google.com/gsi/',
+    'connect-src': 'https://accounts.google.com/gsi/',
+    'style-src': 'https://accounts.google.com/gsi/style',
+  }
+  for (const [name, source] of Object.entries(sources)) {
+    let directive = directives.find(parts => parts[0] === name)
+    if (!directive) {
+      const inherited = name === 'frame-src' ? directives.find(parts => parts[0] === 'child-src')?.slice(1) || defaults : defaults
+      directive = [name, ...inherited]
+      directives.push(directive)
+    }
+    // 'none' no puede combinarse con una fuente permitida.
+    const none = directive.indexOf("'none'")
+    if (none !== -1) directive.splice(none, 1)
+    if (!directive.includes(source)) directive.push(source)
+  }
+  return {
+    ...headers,
+    'Content-Security-Policy': directives.map(parts => parts.join(' ')).join('; '),
+    'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+  }
+}
+
 // H4: middleware por-ruta que rechaza cuerpos demasiado grandes ANTES de que corra el
 // handler. bodyLimit de Hono cubre Content-Length y stream (Transfer-Encoding: chunked
 // sin Content-Length): cuenta bytes al leer y aborta al superar maxSize → 413. No cambia
@@ -432,15 +459,14 @@ function jsonBodyLimit(maxSize: number) {
 
 // ---- HTML pages ----
 // Headers compartidos (CSP + seguridad + preconnect).
-function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Record<string, string> {
-  return {
+function pageHeaders(nonce: string, turnstile: boolean): Record<string, string> {
+  return withAccountHeaders({
     'Content-Type': 'text/html; charset=utf-8',
-    'Content-Security-Policy': buildCsp(nonce, turnstile, googleAuth),
+    'Content-Security-Policy': buildCsp(nonce, turnstile),
     'Referrer-Policy': 'strict-origin-when-cross-origin',
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Permissions-Policy': 'geolocation=(self), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()',
-    'Cross-Origin-Opener-Policy': googleAuth ? 'same-origin-allow-popups' : 'same-origin',
     'Cross-Origin-Resource-Policy': 'same-origin',
     'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
     'Reporting-Endpoints': 'csp-endpoint="/api/csp-report"',
@@ -450,7 +476,7 @@ function pageHeaders(nonce: string, turnstile: boolean, googleAuth = false): Rec
       '<https://a.basemaps.cartocdn.com>; rel=preconnect; crossorigin',
       '<https://unpkg.com>; rel=preconnect; crossorigin',
     ].join(', '),
-  }
+  })
 }
 
 export {

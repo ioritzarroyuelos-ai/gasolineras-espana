@@ -69,10 +69,6 @@ export interface BuildPageOpts {
   // GitHub Sponsors, etc). El render valida que sea http(s) para evitar XSS
   // por injection de javascript: URIs.
   supportUrl?: string
-  // Google OAuth Client ID (publico — sale en el HTML servido). Si esta
-  // presente, se inicializa Google Identity Services y se pinta el boton
-  // "Entrar". Si no, el panel de login se oculta y /api/auth/* responde 503.
-  googleClientId?: string
   // Herramienta de mapa a pantalla completa en /gasolineras/mapa. La portada
   // /gasolineras/ paso a ser un buscador (buildGasolinerasLanding); el mapa
   // interactivo completo vive ahora aqui. Cuando es true: canonica
@@ -159,15 +155,6 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
 <script defer async
         src="https://challenges.cloudflare.com/turnstile/v0/api.js"
         nonce="${nonce}"></script>`
-    : ''
-
-  // Google Identity Services (GIS). Solo se carga si GOOGLE_CLIENT_ID esta
-  // configurado. El script publica `window.google.accounts.id` que el cliente
-  // usa para renderizar el boton de login dentro del modal.
-  const gClientId = opts.googleClientId
-  const googleAuthScripts = gClientId
-    ? `<script nonce="${nonce}">window.__GOOGLE_CLIENT_ID__=${jsonLdSafe(gClientId)};</script>
-<script src="https://accounts.google.com/gsi/client" async defer nonce="${nonce}"></script>`
     : ''
 
   // Contexto SEO expuesto al cliente: el script arranque autoseleccionara el
@@ -450,17 +437,14 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   ${seoScript}
   ${snapMetaScript}
   ${turnstileScripts}
-  ${googleAuthScripts}
 
   ${getStyles(nonce)}
 </head>
 <body class="fuel-map-page">
 ${ICON_SPRITE}
 
-<!-- Cabecera de periódico común a todo el portal (misma que el resto de
-     secciones). Va en flujo normal encima de la app y se desplaza con la
-     página; la barra de herramientas del mapa (#app-header) queda sticky justo
-     debajo. -->
+<!-- Cabecera y cuenta comunes a todo el portal. Los controles del mapa
+     están junto al mapa y los filtros, sin una segunda cabecera. -->
 ${mastheadHtml('gasolineras', { hideMunicipioSearch: true, compact: true })}
 
 <!-- H1 semantico. En SEO pages (provincia/municipio) el <section class="seo-summary">
@@ -469,57 +453,6 @@ ${mastheadHtml('gasolineras', { hideMunicipioSearch: true, compact: true })}
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
 ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND} — precios oficiales publicados</h1>` : ''}
-
-<!-- ============ HEADER ============ -->
-<header id="app-header">
-  <button id="btn-toggle-sidebar" type="button" title="Filtros y lista" aria-label="Mostrar filtros y lista" aria-controls="sidebar" aria-expanded="true">
-    ${icon('bars', 'u-c-white u-fs-16')}
-  </button>
-
-  <a href="/gasolineras/" id="brand" class="brand-link" aria-label="${BRAND} · inicio">
-    <img src="${logoUrl}" width="32" height="32" alt="" class="header-logo-img" decoding="async" />
-    <div class="u-mw-0">
-      <div class="header-title">Gasolineras</div>
-      <div class="header-sub">Mapa y precios del Ministerio</div>
-    </div>
-  </a>
-
-  <div class="header-actions">
-    <span id="lbl-count" class="header-badge u-hide"></span>
-    <button id="btn-favs-open" class="btn-favs-open" type="button" aria-label="Ver mis gasolineras favoritas">
-      ${icon('star')} <span>Mis favoritas</span>
-    </button>
-    ${gClientId ? `
-    <!-- Login Google: visible solo si hay GOOGLE_CLIENT_ID configurado. El
-         boton abre el modal de login cuando no hay sesion; cuando la hay,
-         client/ui.ts lo oculta y muestra #user-menu en su lugar. -->
-    <button id="btn-login" class="btn-login" type="button" title="Iniciar sesión" aria-label="Iniciar sesión con Google" hidden>
-      ${icon('user-circle')}
-      <span class="btn-login-txt">Entrar</span>
-    </button>
-    <div id="user-menu" class="user-menu" hidden>
-      <button id="btn-user" class="user-chip" type="button" aria-haspopup="true" aria-expanded="false" title="Mi cuenta">
-        <img id="user-avatar" alt="" width="24" height="24" referrerpolicy="no-referrer" />
-        <span id="user-name" class="user-name"></span>
-      </button>
-      <div id="user-dropdown" class="user-dropdown" role="menu" hidden>
-        <div class="user-dropdown-head">
-          <div class="user-dropdown-name" id="user-dropdown-name"></div>
-          <div class="user-dropdown-email" id="user-dropdown-email"></div>
-        </div>
-        <div class="user-dropdown-sep"></div>
-        <button id="btn-user-favs" class="user-dropdown-item" role="menuitem" type="button">
-          ${icon('star')} Favoritas
-        </button>
-        <div class="user-dropdown-sep"></div>
-        <div class="user-dropdown-sync" id="user-dropdown-sync" aria-live="polite">Sesión iniciada</div>
-        <button id="btn-logout" class="user-dropdown-item" role="menuitem" type="button">
-          ${icon('sign-out')} Cerrar sesión
-        </button>
-      </div>
-    </div>` : ''}
-  </div>
-</header>
 
 <!-- Banner offline -->
 <div id="offline-banner" role="status" aria-live="polite">
@@ -558,6 +491,10 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 
     <!-- FILTROS -->
     <div id="sidebar-filters">
+      <div class="sidebar-favorites-row">
+        <button id="btn-favs-open" class="btn-favs-open" type="button" aria-label="Ver mis gasolineras favoritas">${icon('star')} <span>Mis favoritas</span></button>
+        <span id="lbl-count" class="station-count u-hide"></span>
+      </div>
       <div class="search-heading-row">
         <button id="btn-toggle-filters" class="filter-toggle" type="button" aria-controls="filter-fields" aria-expanded="true">
           ${icon('sliders')} <span>Filtros</span><span class="filter-toggle-state">Ocultar</span>
@@ -655,7 +592,8 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
   <div id="map-container">
     <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
 
-    <div id="map-navigation" class="map-navigation" role="group" aria-label="Mover y acercar el mapa">
+    <div id="map-navigation" class="map-navigation" role="group" aria-label="Controles del mapa">
+      <button id="btn-toggle-sidebar" class="map-location-btn" type="button" title="Mostrar u ocultar filtros y lista" aria-label="Ocultar filtros y lista" aria-controls="sidebar" aria-expanded="true">${icon('chevron-left')}</button>
       <button id="btn-map-location" class="map-location-btn" type="button" aria-label="Buscar gasolineras cerca de mi ubicación" title="Mi ubicación">
         <svg class="location-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
       </button>
@@ -725,20 +663,8 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 
 </div><!-- end app-body -->
 
-<!-- ============ MODAL LOGIN (Google) ============ -->
-${gClientId ? `
-<div id="login-modal" class="login-modal" hidden role="dialog" aria-modal="true" aria-labelledby="login-modal-title">
-  <div class="login-modal-backdrop" data-close="1"></div>
-  <div class="login-modal-card">
-    <button id="login-modal-close" class="login-modal-close" data-close="1" aria-label="Cerrar">&times;</button>
-    <h2 id="login-modal-title" class="login-modal-title">Inicia sesión con Google</h2>
-    <p class="login-modal-sub">Sincroniza tus favoritas entre dispositivos.</p>
-    <div id="gsi-button-container" class="login-modal-btn"></div>
-  </div>
-</div>` : ''}
-
 <!-- ============ MODAL FAVORITAS ============ -->
-<!-- Se abre desde el boton estrella del header. Solo contiene la lista de
+<!-- Se abre desde el boton estrella del panel. Solo contiene la lista de
      gasolineras favoritas. Al hacer click en una, el modal cierra y el
      cliente navega (provincia + municipio + texto de busqueda) para dejar en
      el mapa unicamente esa estacion. Las alertas se gestionan por Telegram

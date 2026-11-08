@@ -340,10 +340,54 @@ export function parseSessionCookie(cookieHeader: string | null | undefined): str
 export const SYNCABLE_KEYS = new Set<string>([
   'gs_profile_v1',
   'gs_favs_v1',
-  'gs_tg_chat_v1',
-  'gs_settings_v1',
+  'eu-deportes-favoritos-v1',
+  'eu-mi-dia-v1',
+  'espana-util-municipio',
 ])
 
 export function isSyncableKey(key: string): boolean {
   return SYNCABLE_KEYS.has(key)
+}
+
+const HOME_MODULES = new Set(['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'])
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+function shortText(value: unknown, max: number): value is string {
+  return typeof value === 'string' && value.length <= max
+}
+function favoriteId(value: unknown): boolean {
+  return (shortText(value, 200) && value.length > 0) || (typeof value === 'number' && Number.isFinite(value))
+}
+
+/** Reject malformed snapshots without replacing the previously saved value. */
+export function isValidSyncValue(key: string, value: unknown): boolean {
+  switch (key) {
+    case 'espana-util-municipio':
+      return value === null || (typeof value === 'string' && /^\d{5}$/.test(value))
+    case 'eu-mi-dia-v1': {
+      if (!record(value) || value.version !== 1) return false
+      const modules = (list: unknown) => Array.isArray(list) && list.length <= HOME_MODULES.size &&
+        list.every(id => typeof id === 'string' && HOME_MODULES.has(id)) && new Set(list).size === list.length
+      return modules(value.visible) && modules(value.order)
+    }
+    case 'eu-deportes-favoritos-v1':
+      return Array.isArray(value) && value.length <= 50 && value.every(item =>
+        record(item) && shortText(item.id, 200) && item.id.length > 0 && shortText(item.nombre, 500) &&
+        shortText(item.url, 2000) && /^\/deportes\/(?:competicion\/|futbol\?|baloncesto\?|motor\?)/.test(item.url) &&
+        !/[\\\u0000-\u001f\u007f]/.test(item.url)) && new Set(value.map(item => item.id)).size === value.length
+    case 'gs_favs_v1':
+      // Older favorites have fewer address fields; preserve those snapshots.
+      return Array.isArray(value) && value.length <= 500 && value.every(item =>
+        record(item) && favoriteId(item.id) &&
+        ['rotulo', 'direccion', 'municipio', 'provincia'].every(field => item[field] === undefined || shortText(item[field], 1000)) &&
+        ['lat', 'lng', 'lon'].every(field => item[field] == null || (typeof item[field] === 'number' && Number.isFinite(item[field])))) &&
+        new Set(value.map(item => String(item.id))).size === value.length
+    case 'gs_profile_v1':
+      // Version 1 may still be waiting for the client's existing migration.
+      return record(value) && (value.fuel === undefined || shortText(value.fuel, 120)) &&
+        (value.litres === undefined || (typeof value.litres === 'number' && Number.isFinite(value.litres) && value.litres >= 1 && value.litres <= 200))
+    default:
+      return false
+  }
 }

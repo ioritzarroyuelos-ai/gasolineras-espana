@@ -23,10 +23,12 @@
     else window.addEventListener('load', updateWorker, { once: true });
   }
   if (form) form.action = destination;
-  let saved = '', timer, request;
-  try { saved = localStorage.getItem(key) || ''; } catch { /* almacenamiento desactivado */ }
+  let timer, request, townRequest = 0, initialized = false, forgetting = false;
   const selected = block?.dataset.localidad || '';
-  const ine = selected || saved;
+  function savedTown() {
+    try { const value = localStorage.getItem(key) || ''; return /^\d{5}$/.test(value) ? value : ''; }
+    catch { return ''; }
+  }
 
   function storageNotice(text) {
     let notice = document.getElementById('municipio-estado');
@@ -42,19 +44,21 @@
     url.searchParams.set('municipio', id);
     return url.pathname + url.search;
   }
-  if (/^\d{5}$/.test(ine)) {
-    if (selected) {
-      try { localStorage.setItem(key, selected); }
-      catch { storageNotice('El navegador no permite recordar tu municipio. Puedes seguir consultándolo en esta página.'); }
+  function showTown(ine, reconcilePage) {
+    const serial = ++townRequest;
+    if (chip) chip.hidden = true;
+    if (forget) forget.hidden = true;
+    if (!/^\d{5}$/.test(ine)) {
+      if (reconcilePage && (home || personal) && selected && !here.searchParams.has('q')) location.replace(destination);
+      return;
     }
     fetch('/api/localidad/' + ine).then(async response => {
       if (!response.ok) {
-        if (response.status === 404 && !selected) { try { localStorage.removeItem(key); } catch { /* preferencia no válida */ } }
         throw Error();
       }
       return response.json();
     }).then(m => {
-      if (m.ine !== ine || typeof m.nombre !== 'string') return;
+      if (serial !== townRequest || m.ine !== ine || typeof m.nombre !== 'string') return;
       if (chip) {
         chip.href = townUrl(ine); chip.textContent = 'Tu municipio: ' + m.nombre;
         chip.setAttribute('aria-label', chip.textContent); chip.dataset.municipioNombre = m.nombre; chip.hidden = false;
@@ -62,14 +66,42 @@
       if (forget) forget.hidden = false;
       // No sustituir el HTML con datos parciales ni redirigir una búsqueda:
       // el servidor vuelve a verificar las fechas de los seis bloques.
-      if ((home || personal) && !selected && !here.searchParams.has('municipio') && !here.searchParams.has('q')) {
+      if (reconcilePage && (home || personal) && selected !== ine && !here.searchParams.has('q')) {
         location.replace(townUrl(ine));
       }
     }).catch(() => { /* Los enlaces y la búsqueda del servidor siguen disponibles. */ });
   }
-  forget?.addEventListener('click', () => {
+  // Sólo la selección explícita de la URL inicial se guarda. Una respuesta
+  // de la cuenta nunca vuelve a subir la localidad del HTML de otra sesión.
+  (async () => {
+    await Promise.resolve(window.EUCuenta?.ready).catch(() => {});
+    const explicit = here.searchParams.get('municipio');
+    if (/^\d{5}$/.test(selected) && explicit === selected) {
+      try {
+        if (savedTown() !== selected) { localStorage.setItem(key, selected); await window.EUCuenta?.changed(key); }
+      } catch { storageNotice('El navegador no permite recordar tu municipio. Puedes seguir consultándolo en esta página.'); }
+    }
+    initialized = true;
+    showTown(explicit === selected && /^\d{5}$/.test(selected) ? selected : savedTown(), !here.searchParams.has('municipio'));
+  })();
+  window.addEventListener('eu:cuenta', event => {
+    if (!initialized || forgetting) return;
+    const detail = event.detail || {};
+    // Al entrar esperamos a que termine la descarga, no navegamos usando una
+    // copia vacía intermedia. Al salir ya se han recuperado las marcas invitadas.
+    if (detail.reason === 'pull' || detail.reason === 'import' || (detail.reason === 'account' && !detail.user)) {
+      showTown(savedTown(), true);
+    }
+  });
+  window.addEventListener('storage', event => {
+    if (initialized && (event.key === key || event.key === null)) showTown(savedTown(), true);
+  });
+  forget?.addEventListener('click', async () => {
+    forgetting = true;
+    await Promise.resolve(window.EUCuenta?.ready).catch(() => {});
     try { localStorage.removeItem(key); }
-    catch { storageNotice('El navegador no permite cambiar esta preferencia. No se ha olvidado el municipio.'); return; }
+    catch { forgetting = false; storageNotice('El navegador no permite cambiar esta preferencia. No se ha olvidado el municipio.'); return; }
+    await window.EUCuenta?.changed(key);
     location.assign(destination);
   });
   if (!input || !list) return;

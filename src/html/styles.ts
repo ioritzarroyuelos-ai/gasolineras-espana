@@ -533,19 +533,13 @@ export function getStyles(nonce: string = ''): string {
       .header-sub { display: none; }
     }
 
-    /* Widget de media nacional (esquina top-right del mapa). Antes los
-       estilos vivian en el JS como w.style.cssText = '...' — los bloqueaba el
-       CSP (style-src sin 'unsafe-inline'), provocando violation-reports y el
-       widget quedaba sin pintar correctamente. Movidos aqui como clase para
-       que respeten el CSP.
-       top:96px: el header mide 60px + sombra ~12px hacia abajo. A 74px el widget
-       casi tocaba la sombra del header y visualmente se amontonaba con el
-       user-chip ("Entrar" / nombre usuario) — el usuario reporto solapamiento.
-       Con 96px queda 36px por debajo del header y hay aire evidente. */
+    /* El widget cuelga de #app-body, fuera del contexto de capas del mapa.
+       Reservamos la columna de ubicación/zoom y lo apartamos al abrir la
+       ficha, también si sus datos llegan después de seleccionar la estación. */
     .stats-nacional-widget {
       position: absolute;
-      top: 44px;
-      right: 16px;
+      top: 12px;
+      right: 68px;
       background: #ffffff;
       border: 1px solid #e5e7eb;
       color: #111827;
@@ -559,6 +553,20 @@ export function getStyles(nonce: string = ''): string {
       z-index: 800;
       max-width: 320px;
       line-height: 1.5;
+    }
+    body.station-detail-open #stats-nacional { visibility: hidden; }
+    @media (max-width: 1023px) {
+      #stats-nacional {
+        top: 166px;
+        right: 12px;
+        max-width: 180px;
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+      #sidebar.open ~ #stats-nacional { visibility: hidden; }
+    }
+    @media (min-width: 600px) and (max-width: 1023px) {
+      #stats-nacional { top: 12px; left: 50%; right: auto; transform: translateX(-50%); }
     }
     .stats-nacional-title {
       font-size: 10px;
@@ -716,17 +724,6 @@ export function getStyles(nonce: string = ''): string {
       .legend-dot  { width: 10px; height: 10px; }
       /* El boton de instalar vive en el sidebar (#install-app-row), ya no
          es un FAB flotante — no necesita override de posicion en mobile. */
-      /* Ship 25.3: Media nacional tambien se reposiciona en mobile. El header
-         aqui es 50px (no 60px), asi que pegamos el widget justo debajo con
-         10px de aire. Tambien apretamos el padding y max-width para que no
-         tape medio mapa en mobiles estrechos. */
-      #stats-nacional {
-        top: 12px !important;
-        right: 8px !important;
-        max-width: 180px !important;
-        padding: 6px 10px !important;
-        font-size: 11px !important;
-      }
     }
 
     /* ---- Formularios tactiles < 640px ---- */
@@ -1095,6 +1092,14 @@ export function getStyles(nonce: string = ''): string {
       #legend { bottom: 160px; left: 12px; max-width: calc(100% - 80px); }
       .map-navigation { z-index: 930; }
       .station-detail-open .map-floating-btn--satellite, .station-detail-open #legend { visibility: hidden; }
+    }
+    /* En horizontal queda poca altura bajo las barras. Los paneles laterales
+       conservan su scroll y el asa cerrada deja libre toda la columna del zoom. */
+    @media (min-width: 600px) and (max-width: 1023px) and (max-height: 500px) {
+      .leaflet-control-scale { margin-bottom: 12px !important; }
+      #sidebar { left: 12px; bottom: 12px; width: min(320px, calc(50% - 114px)) !important; border-bottom: 1px solid #cbd5e1; border-radius: 16px; }
+      #sidebar.open { top: 12px; height: auto; width: min(320px, calc(100% - 92px)) !important; }
+      .station-detail { top: 12px; left: auto; right: 68px; bottom: 12px; width: min(350px, calc(100% - 92px)); max-height: none; border-radius: 16px; }
     }
     @media (prefers-reduced-motion: reduce) {
       #sidebar { transition: none !important; }

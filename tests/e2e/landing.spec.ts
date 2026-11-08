@@ -18,8 +18,9 @@ test.describe('Portada España Útil (/)', () => {
       await expect(page.locator('.mh-nav a[href="/' + seccion + '/"]')).toBeVisible()
       await expect(page.locator('[data-dia-module="' + seccion + '"]')).toBeVisible()
     }
-    await expect(page.locator('.masthead a[href="/mi-dia"]')).toBeVisible()
-    await page.locator('.masthead a[href="/mi-dia"]').click()
+    await expect(page.locator('.mh-nav a[href="/mi-dia"]')).toBeVisible()
+    await expect(page.locator('#btn-login')).toBeVisible()
+    await page.locator('.mh-nav a[href="/mi-dia"]').click()
     await expect(page).toHaveURL(/\/mi-dia$/)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(/Tu día\.\s+A tu manera\./)
   })

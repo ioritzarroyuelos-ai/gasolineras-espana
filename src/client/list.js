@@ -498,11 +498,11 @@ function zoomTo(idx) {
   if (!s || typeof map === 'undefined' || !map) return;
   var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
   var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-  if (!isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0)) {
+  if (coordinatesInSpain(lat, lng)) {
     map.setView([lat, lng], 17);
-    // El identificador distingue incluso dos estaciones en las mismas coordenadas.
-    openStationDetailById(stationId(s), { focus: true });
   }
+  // La ficha sigue disponible aunque la fuente no dé una ubicación utilizable.
+  openStationDetailById(stationId(s), { focus: true });
   highlightCard(idx);
   // Close sidebar on mobile
   if (window.innerWidth < 1024 && typeof closeMobileSidebar === 'function') closeMobileSidebar();

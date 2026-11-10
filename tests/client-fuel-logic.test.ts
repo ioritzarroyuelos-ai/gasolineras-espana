@@ -46,6 +46,18 @@ function station(id: string, lat = '40,4168', lng = '-3,7038') {
   return { IDEESS: id, IDProvincia: '28', IDMunicipio: '28079', Latitud: lat, 'Longitud (WGS84)': lng, 'Precio Gasolina 95 E5': '1,500' }
 }
 function response(id: string) { return { Fecha: '04/11/2026 12:00:00', ListaEESSPrecio: [station(id)] } }
+describe('coordenadas de estaciones sin inventar ubicaciones', () => {
+  it('rechaza ceros, infinito y la coordenada invertida de Tui', () => {
+    const { c } = client()
+    for (const [lat, lng] of [['0','0'], ['-8,659472','42,037472'], ['Infinity','-3']])
+      expect(c.stationLatLng(station('16268', lat, lng))).toBeNull()
+  })
+  it('conserva península, Baleares, Canarias y ciudades autónomas', () => {
+    const { c } = client()
+    for (const [lat, lng] of [['42,037472','-8,659472'], ['39,57','2,65'], ['27,73','-18,0'], ['35,89','-5,31'], ['35,29','-2,94']])
+      expect(c.stationLatLng(station('1', lat, lng))).not.toBeNull()
+  })
+})
 function deferred() {
   let resolve!: (value: any) => void
   const promise = new Promise<any>(r => { resolve = r })

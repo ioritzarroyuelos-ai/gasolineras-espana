@@ -76,6 +76,10 @@ type SnapshotLike = {
  * Llamadas múltiples al día no son problema — Workers mantiene el snapshot en
  * memoria entre requests en la misma instancia.
  */
+function coordenadasEnEspana(lat: number, lon: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lon) && lat >= 26 && lat <= 44.5 && lon >= -19 && lon <= 5.5
+}
+
 export function municipiosInProvincia(
   snap: SnapshotLike | null | undefined,
   provinciaId: string,
@@ -99,7 +103,7 @@ export function municipiosInProvincia(
     if (cur.lat === undefined) {
       const lat = parseFloat(String(s['Latitud'] ?? '').replace(',', '.'))
       const lng = parseFloat(String(s['Longitud (WGS84)'] ?? '').replace(',', '.'))
-      if (Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0) {
+      if (coordenadasEnEspana(lat, lng)) {
         cur.lat = Math.round(lat * 1e5) / 1e5
         cur.lng = Math.round(lng * 1e5) / 1e5
       }
@@ -217,8 +221,7 @@ export function topCheapestStationsIn(
     if (!Number.isFinite(price) || price <= 0) continue
     const lat = parseFloat(String((s as Record<string, unknown>)['Latitud'] ?? '').replace(',', '.'))
     const lon = parseFloat(String((s as Record<string, unknown>)['Longitud (WGS84)'] ?? '').replace(',', '.'))
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue
-    if (lat === 0 && lon === 0) continue
+    if (!coordenadasEnEspana(lat, lon)) continue
     const sr = s as Record<string, unknown>
     const rotulo = String(sr['Rótulo'] || sr['Rotulo'] || '').trim()
     if (!rotulo) continue

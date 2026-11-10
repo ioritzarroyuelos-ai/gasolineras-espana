@@ -2,6 +2,7 @@
 import { parse } from 'node-html-parser'
 import { descargar, fechaMadrid, guardarGuardias, rangoGuardia, texto } from './lib/guardias-fetch.mjs'
 import { paginasConPosicion } from './lib/guardias-pdf-posicion.mjs'
+import { seleccionarSemanaPalencia } from './lib/guardias-palencia.mjs'
 
 const url = 'https://www.cofpalencia.org/PUBLICO/CALENDARIOS%20DE%20GUARDIA/menu_calendarios_guardia.htm'
 const fecha = fechaMadrid()
@@ -25,17 +26,8 @@ async function paginaPdf(enlace) {
   if (paginas.length !== 1) throw new Error('Calendario semanal con formato desconocido')
   return paginas[0]
 }
-const lunes = new Date(hoy)
-lunes.setUTCDate(dia - ((hoy.getUTCDay()+6)%7))
-const domingo = new Date(lunes)
-domingo.setUTCDate(lunes.getUTCDate()+6)
+const { enlace: semana, lunes, domingo } = seleccionarSemanaPalencia(enlaces, fecha)
 const nombreMes = d => sinTildes(d.toLocaleString('es',{month:'long',timeZone:'UTC'}))
-const semana = enlaces.find(({nombre}) => {
-  const m = /^PALENCIA\s*\(DEL\s+(\d+)(?:\s+DE\s+([A-Z]+))?\s+AL\s+(\d+)\s+DE\s+([A-Z]+)\)/.exec(nombre)
-  return m && Number(m[1]) === lunes.getUTCDate() && (m[2] || m[4]) === nombreMes(lunes) &&
-    Number(m[3]) === domingo.getUTCDate() && m[4] === nombreMes(domingo)
-})
-if (!semana) throw new Error('Falta el enlace del colegio a la semana actual')
 const datos = await paginaPdf(semana)
 const semanaDias = ['DOMINGO','LUNES','MARTES','MIERCOLES','JUEVES','VIERNES','SABADO']
 const inicio = datos.findIndex(i=>i.x < .17 && sinTildes(i.texto) === semanaDias[hoy.getUTCDay()])

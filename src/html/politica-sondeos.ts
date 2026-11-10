@@ -77,25 +77,30 @@ function referenciaFicha(sondeo: Sondeo, anterior: Sondeo | undefined, file: Ele
   return 'Sin encuesta anterior comparable de la misma casa para quien encargó este sondeo.'
 }
 
-export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], referencia: ReferenciaSondeo = 'anterior'): string {
-  if (!muestra.length) return ''
-  const elecciones = new Map(file.referencia.escanos.map(r => [r.candidaturaId, r.escanos]))
-  const anteriores = referencia === 'anterior' ? enlazaSondeosAnteriores(file.sondeos) : undefined
-  const nombres = new Map(file.candidaturas.map(c => [c.id, c.siglas]))
-
-  // Un orden común permite seguir una columna en todas las encuestas. Si falta
-  // el escrutinio, las tres primeras se eligen por los escaños publicados aquí.
-  const representacion = new Map<string, number>()
+// Una candidatura nueva puede tener muchos escaños aunque no concurriera con
+// ese nombre en la elección anterior. Mantiene su identidad, sin esconderla al
+// final ni sumar a sus integrantes para fabricar una comparación.
+export function ordenCandidaturas(file: EleccionFile, muestra: readonly Sondeo[]): string[] {
+  const representacion = new Map(file.referencia.escanos.map(r => [r.candidaturaId, r.escanos]))
   for (const s of muestra) {
     for (const d of s.datos) {
       const max = typeof d.escanos === 'number' ? d.escanos : d.escanos?.max
       representacion.set(d.candidaturaId, Math.max(representacion.get(d.candidaturaId) ?? -1, max ?? -1))
     }
   }
-  const ids = new Set([...elecciones.keys(), ...representacion.keys()])
+  return [...representacion.keys()].sort((a, b) => (representacion.get(b) ?? -1) - (representacion.get(a) ?? -1))
+}
+
+export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], referencia: ReferenciaSondeo = 'anterior'): string {
+  if (!muestra.length) return ''
+  const elecciones = new Map(file.referencia.escanos.map(r => [r.candidaturaId, r.escanos]))
+  const anteriores = referencia === 'anterior' ? enlazaSondeosAnteriores(file.sondeos) : undefined
+  const nombres = new Map(file.candidaturas.map(c => [c.id, c.siglas]))
+  // La tabla conserva un orden común; las fichas anteponen las cifras que sí
+  // publica esa encuesta y dejan las referencias sin estimación al final.
+  const ids = new Set(ordenCandidaturas(file, muestra))
   for (const s of muestra) for (const d of anteriores?.get(s)?.datos ?? []) ids.add(d.candidaturaId)
-  const orden = [...ids].sort((a, b) => (elecciones.get(b) ?? 0) - (elecciones.get(a) ?? 0)
-    || (representacion.get(b) ?? -1) - (representacion.get(a) ?? -1))
+  const orden = [...ids]
 
   let tabla = '<div class="pm-table-intro"><h3>Escaños estimados por encuesta</h3><p>Selecciona el nombre de una encuesta para ver sus cifras de referencia.</p></div>'
     + '<div class="pm-table" role="region" aria-label="Comparar los escaños por encuesta y partido" tabindex="0"><table class="s" aria-label="Escaños por encuesta y partido"><thead><tr><th scope="col">Encuesta</th>'
@@ -114,7 +119,7 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
     tabla += '<tr><th scope="row"><a class="empn" href="#' + ancla + '">' + titulo + '</a><small>'
       + (diaDeCampo(sondeo.campoFin) != null ? 'Fin de entrevistas · ' + fmtFecha(sondeo.campoFin) : fecha)
       + '</small>' + (publicada ? '<small>Publicación · ' + publicada + '</small>' : '') + '</th>'
-    const filas: string[] = []
+    const filas: { html: string; conDato: boolean }[] = []
     for (const id of orden) {
       const dato = datos.get(id)
       const base = previos.get(id)
@@ -126,18 +131,19 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
       const cambio = comparaEscanos(actual, base)
       const cifraTabla = actual == null && dato?.pct != null ? 'Solo voto · ' + numero.format(dato.pct) + ' %' : escanos(actual)
       tabla += '<td>' + cifraTabla + (actual != null && base != null ? '<small>' + esc(cambio.texto) + '</small>' : '') + '</td>'
-      filas.push(filaFicha({ siglas: nombres.get(id) || id, actual, pct: dato?.pct, base, cambio },
-        referencia === 'elecciones' ? 'Elecciones' : 'Encuesta anterior', previos.size > 0))
+      filas.push({ html: filaFicha({ siglas: nombres.get(id) || id, actual, pct: dato?.pct, base, cambio },
+        referencia === 'elecciones' ? 'Elecciones' : 'Encuesta anterior', previos.size > 0), conDato: actual != null || dato?.pct != null })
     }
     tabla += '</tr>'
+    const detalle = filas.sort((a, b) => Number(b.conDato) - Number(a.conDato)).map(f => f.html)
     fichas += '<details class="pm-poll"' + (i === 0 ? ' open' : '') + '><summary>' + titulo + '<small>' + fecha + '</small>'
       + (publicada ? '<small>Publicación · ' + publicada + '</small>' : '') + '</summary>'
       + '<div class="pm-inner" id="' + ancla + '" tabindex="-1">'
       + (!publicada || fuente ? '<p class="pm-source">' + (publicada ? '' : 'Fecha de publicación desconocida.')
         + (fuente ? ' <a href="' + esc(fuente) + '" rel="nofollow noreferrer">Ver la fuente de esta encuesta</a>' : '') + '</p>' : '')
       + '<p class="pm-ref">' + referenciaFicha(sondeo, anterior, file, referencia) + '</p>'
-      + '<ul class="pm-rows">' + filas.slice(0, 3).join('') + '</ul>'
-      + (filas.length > 3 ? '<details class="pm-extra"><summary>Ver los demás partidos</summary><ul class="pm-rows">' + filas.slice(3).join('') + '</ul></details>' : '')
+      + '<ul class="pm-rows">' + detalle.slice(0, 3).join('') + '</ul>'
+      + (detalle.length > 3 ? '<details class="pm-extra"><summary>Ver los demás partidos</summary><ul class="pm-rows">' + detalle.slice(3).join('') + '</ul></details>' : '')
       + '</div></details>'
   }
   return tabla + '</tbody></table></div>' + fichas

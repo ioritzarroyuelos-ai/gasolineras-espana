@@ -6,20 +6,20 @@
 //
 //   1) Foto actual (lo que corre el bot tras fetch-prices.mjs):
 //        node scripts/actualiza-historico-estatico.mjs [--fecha YYYY-MM-DD]
-//      Aplica public/data/stations.json con la fecha de hoy (UTC). Las dos
+//      Aplica public/data/stations.json con la fecha indicada por el Ministerio. Las dos
 //      fotos del dia (07:00 y 19:00 UTC) se aplican las dos: la segunda
 //      sustituye a la primera, como INSERT OR REPLACE en D1.
 //
 //   2) Relleno desde el archivo del Ministerio (una vez, o para tapar huecos):
 //        node scripts/actualiza-historico-estatico.mjs --desde 2026-04-26 --hasta 2026-09-03 [--delay 1500]
 //      Descarga cada dia de /EstacionesTerrestresHist/dd-mm-yyyy y lo aplica en
-//      orden. Un dia sin datos se salta (el Worker rehidrata propagando el
-//      ultimo precio, asi que no deja hueco visible).
+//      orden. Un día sin captura oficial queda sin datos y se avisa en la web.
+//      El modo actual también intenta recuperar hasta siete huecos recientes.
 //
 // En ambos modos todo se calcula en memoria y los ficheros se escriben al final:
-// si algo falla a mitad, en disco queda lo anterior intacto. Un fallo termina
-// con exit 1 y el workflow restaura public/data/history con git antes de
-// commitear la foto de precios.
+// Un archivo inválido no sustituye al anterior. Si sólo falla recuperar un hueco,
+// guardamos los días comprobados y salimos con 1: se publica el progreso y el
+// workflow avisa del problema restante.
 //
 // La logica vive en scripts/lib/historico-estatico.mjs (puro, con tests); aqui
 // solo hay fichero y red.
@@ -27,11 +27,11 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aplicaSnapshot, construyeIndex } from './lib/historico-estatico.mjs'
+import { aplicaSnapshot, construyeIndex, fechaSnapshot, fechaArchivoMinisterio, huecosRecientes, reparaSnapshotHistorico } from './lib/historico-estatico.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
+const DATA_DIR = resolve(process.env.HISTORY_DATA_DIR || resolve(ROOT, 'public', 'data'))
 const HIST_DIR = join(DATA_DIR, 'history')
 const MEDIAN_DIR = join(HIST_DIR, 'median')
 const NACIONAL_PATH = join(HIST_DIR, 'national.json')
@@ -58,10 +58,6 @@ function parseArgs(argv) {
   }
   if ((args.desde && !args.hasta) || (!args.desde && args.hasta)) throw new Error('--desde y --hasta van juntos')
   return args
-}
-
-function hoyUtc() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 function leeJson(path) {
@@ -111,20 +107,16 @@ function aplica(estado, snapshot, fecha, ahora) {
 }
 
 // ---- Modo 2: archivo del Ministerio ----
-function aMinisterio(iso) {
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
-
 async function fetchHist(iso, intentos = 4) {
-  const url = BASE + '/EstacionesTerrestresHist/' + aMinisterio(iso)
+  const url = new URL(BASE + '/EstacionesTerrestresHist/' + fechaArchivoMinisterio(iso))
   let ultimo
   for (let i = 1; i <= intentos; i++) {
     try {
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(25000) })
       if (!res.ok) throw new Error('HTTP ' + res.status)
       const json = await res.json()
       if (!json.Fecha || !Array.isArray(json.ListaEESSPrecio) || json.ListaEESSPrecio.length === 0) return null
+      if (fechaSnapshot(json) !== iso) throw Error('Fecha oficial distinta del día solicitado')
       return json
     } catch (e) {
       ultimo = e
@@ -161,19 +153,39 @@ async function main() {
       const t0 = Date.now()
       const snap = await fetchHist(iso)
       if (!snap) { console.log('sin datos'); vacios++; continue }
-      const r = aplica(estado, snap, iso, ahora)
+      const r = reparaSnapshotHistorico(estado, snap, iso, ahora)
+      if (r.resumen.filas < MIN_FILAS) throw Error('Archivo histórico incompleto: '+iso)
       estado = r.estado
       aplicados++
       console.log(`${r.resumen.filas} precios, ${r.resumen.provincias} provincias (${Date.now() - t0} ms)`)
       await new Promise(r => setTimeout(r, args.delay))
     }
     console.log(`Aplicados ${aplicados} dias, ${vacios} sin datos.`)
+    if (vacios) process.exitCode = 1
   } else {
-    const fecha = args.fecha || hoyUtc()
     const snap = leeJson(join(DATA_DIR, 'stations.json'))
+    const fecha = fechaSnapshot(snap)
+    if (args.fecha && args.fecha !== fecha) throw Error('--fecha no coincide con la captura oficial')
+    // Reintenta los huecos del último mes en cada actualización. Un fallo no
+    // impide publicar el precio de hoy; la web distingue esos días sin captura.
+    for (const iso of huecosRecientes(estado,fecha).slice(0,7)) {
+      try {
+        const historica = await fetchHist(iso,2)
+        if (!historica) throw Error('Sin datos oficiales')
+        const reparada = reparaSnapshotHistorico(estado,historica,iso,ahora)
+        if (reparada.resumen.filas < MIN_FILAS || reparada.resumen.provincias < 50) throw Error('Archivo histórico incompleto')
+        estado = reparada.estado
+        console.log('Recuperado '+iso+' del archivo oficial: '+reparada.resumen.filas+' precios')
+      } catch (error) { console.error('Pendiente de recuperar '+iso+': '+error.message) }
+    }
     const r = aplica(estado, snap, fecha, ahora)
     estado = r.estado
     console.log(`[${fecha}] ${r.resumen.filas} precios, ${r.resumen.provincias} provincias (foto del Ministerio: ${snap.Fecha})`)
+    const pendientes = huecosRecientes(estado,fecha)
+    if (pendientes.length) {
+      console.error('Persisten días sin captura oficial: '+pendientes.join(', '))
+      process.exitCode = 1
+    }
   }
 
   const bytes = escribeEstado(estado, ahora)

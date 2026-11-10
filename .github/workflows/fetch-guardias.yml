@@ -120,6 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           persist-credentials: false
 
       - uses: actions/setup-node@v5
@@ -575,62 +576,12 @@ jobs:
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
         run: node scripts/guardias-monitor.mjs
 
-      # Si TODOS fallan, que el job se marque como failed para que el monitor
-      # de GHA lo detecte. Si al menos uno hizo commit, job OK.
-      - name: Fallar si todos los scrapers fallaron
-        if: |
-          (inputs.solo_avila && steps.avila.outcome == 'failure') ||
-          (inputs.solo_almeria && steps.almeria.outcome == 'failure') ||
-          (inputs.solo_valencia_tenerife && (steps.valencia.outcome == 'failure' || steps.tenerife.outcome == 'failure')) || (
-          steps.madrid.outcome == 'failure' &&
-          steps.bizkaia.outcome == 'failure' &&
-          steps.gipuzkoa.outcome == 'failure' &&
-          steps.alava.outcome == 'failure' &&
-          steps.coruna.outcome == 'failure' &&
-          steps.murcia.outcome == 'failure' &&
-          steps.almeria.outcome == 'failure' &&
-          steps.girona.outcome == 'failure' &&
-          steps.tarragona.outcome == 'failure' &&
-          steps.cordoba.outcome == 'failure' &&
-          steps.cantabria.outcome == 'failure' &&
-          steps.pontevedra.outcome == 'failure' &&
-          steps.laspalmas.outcome == 'failure' &&
-          steps.alicante.outcome == 'failure' &&
-          steps.cadiz.outcome == 'failure' &&
-          steps.ceuta.outcome == 'failure' &&
-          steps.valencia.outcome == 'failure' &&
-          steps.clm.outcome == 'failure' &&
-          steps.ourense.outcome == 'failure' &&
-          steps.huesca.outcome == 'failure' &&
-          steps.barcelona.outcome == 'failure' &&
-          steps.baleares.outcome == 'failure' &&
-          steps.navarra.outcome == 'failure' &&
-          steps.castellon.outcome == 'failure' &&
-          steps.asturias.outcome == 'failure' &&
-          steps.rioja.outcome == 'failure' &&
-          steps.caceres.outcome == 'failure' &&
-          steps.lleida.outcome == 'failure' &&
-          steps.soria.outcome == 'failure' &&
-          steps.zamora.outcome == 'failure' &&
-          steps.malaga.outcome == 'failure' &&
-          steps.zaragoza.outcome == 'failure' &&
-          steps.badajoz.outcome == 'failure' &&
-          steps.valladolid.outcome == 'failure' &&
-          steps.melilla.outcome == 'failure' &&
-          steps.avila.outcome == 'failure' &&
-          steps.burgos.outcome == 'failure' &&
-          steps.salamanca.outcome == 'failure' &&
-          steps.tenerife.outcome == 'failure' &&
-          steps.teruel.outcome == 'failure' &&
-          steps.segovia.outcome == 'failure' &&
-          steps.granada.outcome == 'failure' &&
-          steps.palencia.outcome == 'failure' &&
-          steps.huelva.outcome == 'failure' &&
-          steps.jaen.outcome == 'failure' &&
-          steps.sevilla.outcome == 'failure' &&
-          steps.leon.outcome == 'failure')
+      # Se publican primero las fuentes válidas; cualquier fallo parcial queda rojo
+      # para que la recuperación programada lo reintente y no parezca éxito total.
+      - name: Señalar fuentes que no han podido actualizarse
+        if: always() && contains(steps.*.outcome, 'failure')
         run: |
-          echo "::error::Fallaron todas las fuentes seleccionadas. Revisar los logs."
+          echo "::error::Alguna fuente o la publicación no se completó. Los datos válidos se conservan; revisar el resumen de resultados."
           exit 1
 
 # La publicación se realiza exclusivamente mediante CI → Deploy.

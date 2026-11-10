@@ -8,7 +8,7 @@ import { validarCompeticionDeportiva, conservaCompeticionDeportiva, validarIndic
 import { construyeIndiceDeportes } from './lib/deportes-indice.mjs'
 import { checkpointFFCV, recuperaEstadoFFCV, seleccionaFuentesDeportes } from './lib/deportes-checkpoint.mjs'
 import { recuperaEstadoNovanet, checkpointNovanet, parseaPausasPortales } from './lib/deportes-novanet-estado.mjs'
-import { conservaIncidenciasGrupos } from './lib/deportes-incidencias.mjs'
+import { conservaIncidenciasGrupos, conservaGrupoFueraDeTanda } from './lib/deportes-incidencias.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const out = resolve(process.env.DEPORTES_OUTPUT_DIR || join(root, 'public/data/deportes'))
@@ -72,11 +72,14 @@ const anteriores = new Map((indiceAnterior?.competiciones || []).flatMap(c => {
   try { return [[c.id, validarCompeticionDeportiva(lee(join(anteriorDir, c.id + '.json')), ahora)]] } catch { return [] }
 }))
 const competiciones = new Map(), incidencias = (indiceAnterior?.incidencias || []).filter(i => !fuentes.has(i.deporte))
+const gruposIntentados = new Set()
 let bloquesActualizados = 0
 for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obtieneBaloncesto], ['motor', obtieneMotor]]) {
   if (!fuentes.has(deporte)) continue
   try {
-    const salida = await obtiene({ ahora, log: console.log, estadoNovanet, guardarEstadoNovanet, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV } : {}) })
+    const salida = await obtiene({ ahora, log: console.log, estadoNovanet, guardarEstadoNovanet, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV,
+      gruposPublicadosFutbol: [...anteriores.values()].filter(c => c.deporte === 'futbol').map(c => c.id) } : {}) })
+    for (const id of [...(salida.seguimientoGrupos?.intentados || []), ...(salida.seguimientoGrupos?.revisados || []), ...salida.incidencias.map(i => i.id).filter(Boolean)]) gruposIntentados.add(id)
     incidencias.push(...conservaIncidenciasGrupos((indiceAnterior?.incidencias || []).filter(i => i.deporte === deporte), salida.incidencias, salida.seguimientoGrupos))
     for (const c of salida.competiciones) {
       try {
@@ -85,6 +88,7 @@ for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obti
         bloquesActualizados += [validada.agenda, validada.clasificacion].filter(b => b.estado === 'actualizado').length
         competiciones.set(c.id, conservaCompeticionDeportiva(validada, anteriores.get(c.id)))
       } catch (error) {
+        gruposIntentados.add(c.id)
         console.error(`${deporte}: competición rechazada ${c.id}: ${error.message}`)
         incidencias.push({ deporte, nombre: c.nombre || 'Competición no disponible', fuenteUrl: c.fuente?.url || 'https://webapp-3ft.pages.dev/deportes/', motivo: 'Los datos recibidos no han pasado la comprobación. Consulta la fuente mientras revisamos esta competición.' })
       }
@@ -96,12 +100,7 @@ for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obti
 }
 for (const [id, c] of anteriores) if (!competiciones.has(id)) {
   if (!fuentes.has(c.deporte)) { competiciones.set(id, c); continue }
-  const copia = { ...c, comprobadoEn: fecha }
-  for (const k of ['agenda', 'clasificacion']) copia[k] = { ...c[k], consultado: fecha,
-    estado: c[k].verificadoEn ? 'conservado' : 'no_disponible',
-    aviso: 'No se ha podido volver a comprobar esta competición. Consulta la fuente antes de organizarte.',
-  }
-  competiciones.set(id, copia)
+  competiciones.set(id, conservaGrupoFueraDeTanda(c, fecha, gruposIntentados))
 }
 // Un nombre descubierto en un catálogo no acredita partidos ni clasificación.
 const lista = [...competiciones.values()].filter(c => c.agenda.verificadoEn || c.clasificacion.verificadoEn)

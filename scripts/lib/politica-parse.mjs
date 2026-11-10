@@ -15,9 +15,9 @@ import { parse } from 'node-html-parser'
 const RE_EMPRESA = /encuestadora|polling firm|casa encuestadora|pollster|comisionista|commissioner/i
 const RE_CAMPO = /trabajo de campo|fieldwork|fecha/i
 const RE_PUBLICACION = /publicaci[oó]n|publicad[oa]|publicaci[óo]|publication|published|release/i
-const RE_MUESTRA = /muestra|sample/i
+const RE_MUESTRA = /muestra|sample|tama[ñn]o/i
 const RE_PARTICIPACION = /participaci[oó]n|turnout|% ?voto|% ?vote/i
-const RE_VENTAJA = /ventaja|lead|dif\.?|advantage/i
+const RE_VENTAJA = /ventaja|lead|dif\.?|advantage|margen|margin|error/i
 const RE_REFERENCIA = /^\s*\d{4}\b|elecci|general election|regional election|assembly election|european parliament|resultado|referend/i
 // El encabezado de sección de una tabla de estimaciones: o lleva año, o cita
 // estimación/intención/encuesta (excluye "preferencias"/"preferido").
@@ -42,7 +42,7 @@ function norm(s) {
   return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 function limpiaTexto(s) {
-  return (s || '').replace(/\s+/g, ' ').trim()
+  return (s || '').replace(/\p{Cf}/gu, '').replace(/\s+/g, ' ').trim()
 }
 
 // "31.9", "27,3", "?", "—", "" -> number | null

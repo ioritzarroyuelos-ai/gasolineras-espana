@@ -1094,7 +1094,7 @@ function provinciaIdByName(name) {
 // o no hay provincia reconocible, devolvemos ''. El mapeo a codigo INE lo
 // hace provinciaIdByName() a continuacion.
 async function reverseProvinciaFromLatLng(lat, lng) {
-  if (!lat || !lng || isNaN(lat) || isNaN(lng)) return '';
+  if (!coordinatesInSpain(lat, lng)) return '';
   try {
     // Va por /api/geocode/reverse → no exponemos la IP del usuario a OSM.
     var url = '/api/geocode/reverse?lat=' + encodeURIComponent(lat) + '&lon=' + encodeURIComponent(lng);
@@ -1172,7 +1172,7 @@ async function navigateToFav(f) {
   // zoom y abrira el popup.
   var favLat = parseFloat(f.lat);
   var favLng = parseFloat(f.lng);
-  var haveFavCoords = !isNaN(favLat) && !isNaN(favLng) && (favLat !== 0 || favLng !== 0);
+  var haveFavCoords = coordinatesInSpain(favLat, favLng);
   if (haveFavCoords) {
     setMapRegion(isCanarias(favLat, favLng) ? 'canarias' : 'peninsula', true);
     try { map.setView([favLat, favLng], 15); } catch(_) {}

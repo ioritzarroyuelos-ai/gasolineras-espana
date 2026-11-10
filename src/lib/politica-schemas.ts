@@ -94,6 +94,7 @@ export const EleccionFileSchema = z.object({
   sondeos: z.array(SondeoSchema).max(2000), // vacío es legítimo (aún no hay sondeos)
   procedencia: ProcedenciaSchema,
   procedenciasAdicionales: z.array(ProcedenciaSchema.extend({ camposFin: z.array(iso).max(2000).optional() })).max(10).optional(),
+  avisosFuentes: z.array(z.string().max(400)).max(10).optional(),
   ultimaComprobacionOk: iso.nullable().optional(),
 })
 

@@ -271,6 +271,29 @@ function jornadasCercanas(opciones, ahora, seleccionada) {
   return ordenadas.slice(Math.max(0, indice - 1), indice + 1)
 }
 
+function gruposVerificadosNovanet(fuenteId, estado, publicados) {
+  return (estado.catalogo?.categorias || []).flatMap((c, categoria) => categoriaDuplicadaNovanet(c, fuenteId) ? [] : (c.grupos || []).flatMap((g, grupo) => {
+    const clave = `${c.codigo}-${g.codigo}`, fecha = estado.verificados[clave], id = idGrupoNovanet(fuenteId, c, g)
+    return fecha && (!publicados || publicados.includes(id)) ? [{ categoria, grupo, clave, id, fecha, codigoGrupo: g.codigo }] : []
+  }))
+}
+
+// Empezamos a renovar a las 18 h para dejar margen antes de un día entero.
+// El cursor de descubrimiento no se mueve cuando se atiende esta cola.
+export function eligeActualizacionNovanet(fuenteId, estado, ahora, { publicados, cubiertos = [], visitados = [] } = {}) {
+  const candidatos = gruposVerificadosNovanet(fuenteId, estado, publicados).filter(g => ahora - Date.parse(g.fecha) >= 18 * 3600000 &&
+    !cubiertos.includes(g.id) && !visitados.includes(g.clave) && (!estado.intentos?.[g.clave] || ahora - Date.parse(estado.intentos[g.clave].fecha) >= 3600000))
+  candidatos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
+  return candidatos[0] || null
+}
+
+export function presupuestoPortalNovanet(fuenteId, estado, publicados) {
+  // Aproximadamente cinco consultas por grupo, dos renovaciones por cada
+  // avance de descubrimiento y margen de sesión. El límite horario persiste.
+  const grupos = gruposVerificadosNovanet(fuenteId, estado, publicados).length
+  return Math.min(120, Math.max(20, 10 + 8 * Math.ceil(grupos / 18)))
+}
+
 /** Reintentar un fallo anterior tras el avance normal, usando sólo grupos conocidos. */
 export function eligeReintentoNovanet(fuenteId, estado, ahora, cubiertos = []) {
   const candidatos = []
@@ -294,7 +317,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
   const estado = normalizaEstadoNovanet(opciones.estadoNovanet?.[fuente.id]), ahora = opciones.ahora ?? Date.now(), consultado = new Date(ahora).toISOString()
   estado.intentos ||= {}
   if (estado.ventana.desde && Date.now() - Date.parse(estado.ventana.desde) >= 3600000) estado.ventana = { desde: null, peticiones: 0 }
-  const temporadaInicial = estado.catalogo?.temporada.nombre, revisados = new Set(opciones.gruposCubiertosFutbol || [])
+  const temporadaInicial = estado.catalogo?.temporada.nombre, revisados = new Set(opciones.gruposCubiertosFutbol || []), intentadosIds = new Set()
   const madrid = fuente.id === 'madrid'
   const competiciones = [], incidencias = [], categoriasResueltas = [], urlBase = madrid ? `${fuente.base}resultados-y-jornadas` : `${fuente.base}NFG_CmpJornada?cod_primaria=${fuente.primaria}`
   let peticionesPasada = 0, pausado = false, intentados = 0, vaciasSeguidas = 0, reintentados = 0
@@ -355,12 +378,20 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       estado.intentos = normalizaEstadoNovanet(estado).intentos || {}
       await guarda()
     }
-    const visitados = new Set(), pendienteAnterior = eligeReintentoNovanet(fuente.id, estado, Date.now(), opciones.gruposCubiertosFutbol)
-    let avanceNormal = false
+    const visitados = new Set(), gruposIntentados = new Set(), prioridadesVisitadas = new Set(), pendienteAnterior = eligeReintentoNovanet(fuente.id, estado, Date.now(), opciones.gruposCubiertosFutbol)
+    let avanceNormal = false, prioridadesSeguidas = 0
     while (estado.catalogo && disponible()) {
-      const esReintento = avanceNormal && !reintentados && pendienteAnterior && !visitados.has(`normal:${pendienteAnterior.categoria}:${pendienteAnterior.grupo}`) && (pendienteAnterior.categoria !== estado.categoria || pendienteAnterior.grupo !== estado.grupo)
-      const cursor = esReintento ? pendienteAnterior : { categoria: estado.categoria, grupo: estado.grupo }
-      const clave = `${esReintento ? 'reintento' : 'normal'}:${cursor.categoria}:${cursor.grupo}`
+      const prioridad = prioridadesSeguidas < 2 ? eligeActualizacionNovanet(fuente.id, estado, Date.now(), {
+        publicados: opciones.gruposPublicadosFutbol, cubiertos: opciones.gruposCubiertosFutbol, visitados: [...prioridadesVisitadas, ...gruposIntentados]
+      }) : null
+      const categoriaPendiente = pendienteAnterior && estado.catalogo.categorias[pendienteAnterior.categoria]
+      const grupoPendiente = categoriaPendiente?.grupos?.[pendienteAnterior.grupo]
+      const esReintento = !prioridad && avanceNormal && !reintentados && grupoPendiente && !gruposIntentados.has(`${categoriaPendiente.codigo}-${grupoPendiente.codigo}`) && !visitados.has(`normal:${pendienteAnterior.categoria}:${pendienteAnterior.grupo}`) && (pendienteAnterior.categoria !== estado.categoria || pendienteAnterior.grupo !== estado.grupo)
+      const cursor = prioridad || (esReintento ? pendienteAnterior : { categoria: estado.categoria, grupo: estado.grupo })
+      const extraordinario = Boolean(prioridad || esReintento)
+      if (prioridad) { prioridadesVisitadas.add(prioridad.clave); prioridadesSeguidas++ }
+      else if (!esReintento) prioridadesSeguidas = 0
+      const clave = `${prioridad ? 'actualizacion' : esReintento ? 'reintento' : 'normal'}:${cursor.categoria}:${cursor.grupo}`
       if (visitados.has(clave)) break
       visitados.add(clave)
       const categoria = estado.catalogo.categorias[cursor.categoria]
@@ -374,10 +405,17 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
         } catch (error) {
           incidencia(`${fuente.zona} · ${categoria.nombre}`, error.message, `novanet-${fuente.id}-${categoria.codigo}`)
           if (!disponible()) break
-          siguienteCategoria(); await guarda(); continue
+          if (!extraordinario) siguienteCategoria()
+          await guarda(); continue
         }
       }
-      if (!categoria.grupos.length) { siguienteCategoria(); await guarda(); continue }
+      if (prioridad) {
+        // El selector semanal puede haber retirado o reordenado un grupo.
+        cursor.grupo = categoria.grupos.findIndex(g => g.codigo === prioridad.codigoGrupo)
+        if (cursor.grupo < 0) continue
+      }
+      if (!categoria.grupos.length) { if (!extraordinario) siguienteCategoria(); await guarda(); continue }
+      if (!categoria.grupos[cursor.grupo]) { if (!extraordinario) estado.grupo = 0; await guarda(); continue }
       const reserva = sesion.estadisticas().peticiones ? 5 : 7
       if (maximoPasada - peticionesPasada < reserva || 120 - estado.ventana.peticiones < reserva) break
       const grupo = categoria.grupos[cursor.grupo], temporada = estado.catalogo.temporada
@@ -385,12 +423,14 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       const parametrosMadrid = new URLSearchParams({ temporada: temporada.codigo, competicion: categoria.codigo, grupo: grupo.codigo })
       const url = madrid ? `${fuente.base}resultados-y-jornadas?${parametrosMadrid}` : `${fuente.base}NFG_CmpJornada?${params}`, tablaUrl = madrid ? `${fuente.base}clasificaciones?${parametrosMadrid}` : `${fuente.base}NFG_VisClasificacion?cod_primaria=${fuente.primaria}&codcompeticion=${categoria.codigo}&codgrupo=${grupo.codigo}`
       const id = idGrupoNovanet(fuente.id, categoria, grupo)
-      if (opciones.gruposCubiertosFutbol?.includes(id)) {
+      if (opciones.gruposCubiertosFutbol?.includes(id) || gruposIntentados.has(`${categoria.codigo}-${grupo.codigo}`)) {
         // The primary reader has already checked both blocks for this canonical ID.
-        revisados.add(id)
-        estado.grupo++
-        if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
-        avanceNormal = true
+        if (opciones.gruposCubiertosFutbol?.includes(id)) revisados.add(id)
+        if (!extraordinario) {
+          estado.grupo++
+          if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
+          avanceNormal = true
+        }
         await guarda(); continue
       }
       const familia = `${categoria.familia} ${categoria.nombre}`
@@ -398,6 +438,8 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       const c = { id, deporte: 'futbol', nombre: categoria.nombre, grupo: grupo.nombre, temporada: temporada.nombre, categoria: /sala|futsal/i.test(familia) ? 'Fútbol sala' : /playa|platja/i.test(familia) ? 'Fútbol playa' : fuente.id === 'rfef' ? 'Fútbol federado' : 'Fútbol territorial y de base', zona: fuente.zona, ...(genero ? { genero } : {}), fuente: { nombre: fuente.nombre, url }, comprobadoEn: consultado, agenda: vacio(url, consultado, 'eventos'), clasificacion: vacio(tablaUrl, consultado, 'tablas') }
       const esperada = { fuenteId: fuente.id, competicion: categoria.codigo, nombre: categoria.nombre, grupo: grupo.codigo, temporada: temporada.nombre }
       const claveGrupo = `${categoria.codigo}-${grupo.codigo}`
+      gruposIntentados.add(claveGrupo)
+      intentadosIds.add(id)
       // Guardar el intento antes de consultar: un reintento detenido no cambia el cursor normal.
       estado.intentos[claveGrupo] = { fecha: new Date().toISOString(), fallo: true }
       if (esReintento) reintentados++
@@ -444,7 +486,7 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
       // A pause before the table must not silently erase its previous warning.
       if (terminoGrupo) revisados.add(id)
       if (!terminoGrupo || estado.noConsultarAntes) { await guarda(); break }
-      if (!esReintento) {
+      if (!extraordinario) {
         estado.grupo++
         if (estado.grupo >= categoria.grupos.length) siguienteCategoria()
         avanceNormal = true
@@ -461,23 +503,29 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
   // Do not carry a previous season's warning into a new season sharing an ID.
   const conocidos = temporadaInicial && temporadaInicial === estado.catalogo?.temporada.nombre
     ? estado.catalogo.categorias.flatMap(c => (c.grupos || []).map(g => idGrupoNovanet(fuente.id, c, g))) : []
-  return { competiciones, incidencias, categoriasResueltas, fuenteId: fuente.id, estadisticas: sesion.estadisticas(), seguimientoGrupos: { conocidos, revisados: [...revisados] } }
+  return { competiciones, incidencias, categoriasResueltas, fuenteId: fuente.id, estadisticas: sesion.estadisticas(), seguimientoGrupos: { conocidos, revisados: [...revisados], intentados: [...intentadosIds] } }
 }
 
 export async function obtieneNovanet(opciones = {}) {
   const fuentes = FUENTES_NOVANET.filter(f => !opciones.fuentesNovanet || opciones.fuentesNovanet.includes(f.id))
-  const presupuesto = Math.min(250, Math.max(0, opciones.maxPeticionesNovanet ?? 250))
-  const porFuente = Math.min(15, Math.floor(presupuesto / Math.max(1, fuentes.length)))
+  const objetivos = fuentes.map(f => presupuestoPortalNovanet(f.id, normalizaEstadoNovanet(opciones.estadoNovanet?.[f.id]), opciones.gruposPublicadosFutbol))
+  let restante = Math.max(0, Math.floor(opciones.maxPeticionesNovanet ?? objetivos.reduce((a, b) => a + b, 0)))
+  const presupuestos = fuentes.map(() => 0)
+  // Si una prueba o consulta manual limita el total, se reparte en rondas entre
+  // todos los portales. El máximo de cada portal sigue en 120.
+  for (let ronda = 0; ronda < 120 && restante > 0; ronda++) for (let i = 0; i < fuentes.length && restante > 0; i++) {
+    if (presupuestos[i] < objetivos[i]) { presupuestos[i]++; restante-- }
+  }
   const resultados = [], competiciones = [], incidencias = []
   let siguiente = 0
   await Promise.all([0, 1, 2].map(async () => {
     while (siguiente < fuentes.length) {
-      const fuente = fuentes[siguiente++]
-      resultados.push(await obtienePortalNovanet(fuente, opciones, porFuente))
+      const indice = siguiente++, fuente = fuentes[indice]
+      resultados.push(await obtienePortalNovanet(fuente, opciones, presupuestos[indice]))
     }
   }))
   resultados.sort((a, b) => fuentes.findIndex(f => f.id === a.fuenteId) - fuentes.findIndex(f => f.id === b.fuenteId))
   for (const r of resultados) { competiciones.push(...r.competiciones); incidencias.push(...r.incidencias) }
-  const seguimientoGrupos = Object.fromEntries(['conocidos', 'revisados'].map(k => [k, [...new Set(resultados.flatMap(r => r.seguimientoGrupos[k]))]]))
+  const seguimientoGrupos = Object.fromEntries(['conocidos', 'revisados', 'intentados'].map(k => [k, [...new Set(resultados.flatMap(r => r.seguimientoGrupos[k]))]]))
   return { competiciones: fusionaCompeticionesFutbol([], competiciones), incidencias, seguimientoGrupos, rfefResueltas: resultados.find(r => r.fuenteId === 'rfef')?.categoriasResueltas || [], fuentesIntentadas: fuentes.map(f => f.id), estadisticas: resultados.map(r => ({ fuente: r.fuenteId, ...r.estadisticas })) }
 }

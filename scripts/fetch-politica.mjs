@@ -13,12 +13,13 @@ import { resolve, dirname } from 'node:path'
 import { parseSondeos } from './lib/politica-parse.mjs'
 import { combinaSeguimiento, esSeguimientoSW, extraeSeguimientoGenerales } from './lib/politica-seguimiento.mjs'
 import { completaResultadosOficiales } from './lib/politica-resultados-oficiales.mjs'
+import { fetchGad3 } from './lib/politica-gad3.mjs'
 import { validaEleccion } from './lib/politica-validacion.mjs'
 import { ELECCIONES } from './lib/politica-catalogo.mjs'
 import { enVeda } from './lib/politica-veda.mjs'
 
 const SCHEMA_VER = 1
-const UA = 'CercaYaBot/1.0 (+https://webapp-3ft.pages.dev; vertical política)'
+const UA = 'CercaYaBot/1.0 (+https://webapp-3ft.pages.dev; politica)'
 const DIR = resolve('public/data/politica')
 const LICENCIA = 'CC BY-SA 4.0'
 const HOY = new Date()
@@ -55,11 +56,12 @@ async function fetchArticulo(wiki) {
   u.searchParams.set('maxlag', '5')
   for (let intento = 1; intento <= 3; intento++) {
     try {
-      const r = await fetch(u, { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip' } })
+      const r = await fetch(u, { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip' }, signal: AbortSignal.timeout(30000) })
       if (r.status === 429 || r.status === 503) {
         await sleep(2000 * intento)
         continue
       }
+      if (!r.ok) throw new Error('Wikipedia: HTTP ' + r.status)
       const j = await r.json()
       if (j.error) {
         if (j.error.code === 'maxlag') {
@@ -114,6 +116,7 @@ async function construyeEleccion(e, veda, anterior) {
     procedencia: procedenciaDe(e.wikiSondeos, art),
   }
   let falloParcial
+  const avisosFuentes = []
   if (!veda && e.id === 'generales' && e.proxima.valor === '2026-11-29') {
     let seguimiento = []
     try {
@@ -125,6 +128,7 @@ async function construyeEleccion(e, veda, anterior) {
       parsed.incidencias.push(...extra.incidencias)
     } catch (err) {
       falloParcial = 'Seguimiento del Congreso (fuente adicional): ' + String(err.message || err)
+      avisosFuentes.push('El seguimiento de SW Demoscopia para La Séptima no se ha podido verificar. Si hay una entrega anterior comprobada, se conserva con su fecha original.')
       const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
       const fuente = mismaEleccion && anterior.procedenciasAdicionales?.find(p => p.wiki === seguimiento29N.lang && p.articulo === seguimiento29N.articulo)
       if (fuente) {
@@ -137,6 +141,28 @@ async function construyeEleccion(e, veda, anterior) {
     }
     file.sondeos = combinaSeguimiento(sondeos, seguimiento)
   }
+  if (!veda && e.id === 'generales') {
+    const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
+    const previos = mismaEleccion ? anterior.sondeos.filter(s => s.empresa === 'GAD3' && s.fuenteUrl?.startsWith('https://www.gad3.com/') && vigente(s)) : []
+    let originales = previos
+    let procedencia = mismaEleccion && anterior.procedenciasAdicionales?.find(p => p.wiki === 'GAD3')
+    try {
+      const extra = await fetchGad3({ hoy: diaMadrid, userAgent: UA })
+      const actuales = extra.sondeos.filter(vigente)
+      originales = [...previos.filter(s => !actuales.some(a => a.campoFin === s.campoFin)), ...actuales]
+      procedencia = extra.procedencia
+      for (const c of extra.candidaturas) if (!file.candidaturas.some(a => a.id === c.id)) file.candidaturas.push(c)
+    } catch (err) {
+      falloParcial = [falloParcial, 'GAD3 (fuente original): ' + String(err.message || err)].filter(Boolean).join('; ')
+      avisosFuentes.push('No se ha podido comprobar la última publicación nacional de GAD3. Las encuestas anteriores conservan sus fechas originales.')
+    }
+    if (originales.length) {
+      file.sondeos = [...file.sondeos.filter(s => s.empresa !== 'GAD3' || !originales.some(o => o.campoFin === s.campoFin)), ...originales]
+      for (const c of anterior?.candidaturas ?? []) if (originales.some(s => s.datos.some(d => d.candidaturaId === c.id)) && !file.candidaturas.some(a => a.id === c.id)) file.candidaturas.push(c)
+      if (procedencia) (file.procedenciasAdicionales ??= []).push(procedencia)
+    }
+  }
+  if (avisosFuentes.length) file.avisosFuentes = avisosFuentes
   if (veda) file.veda = true
   return { file, incidencias: parsed.incidencias, filas: parsed.filas, falloParcial }
 }
@@ -175,9 +201,9 @@ async function main() {
         fechaUltimaPublicacion = file.sondeos.map(s => s.publicacion).filter(Boolean).sort().at(-1) ?? null
         const cambio = ['sondeos', 'referencia', 'senado'].some(k => JSON.stringify(file[k]) !== JSON.stringify(anterior?.[k]))
         ultimoContenidoModificado = cambio ? HOY.toISOString() : (anterior?.ultimoContenidoModificado || HOY.toISOString())
-        file.ultimaComprobacionOk = candidato.falloParcial
-          ? (anterior?.id === file.id && anterior.ciclo === file.ciclo ? ultimaComprobacionOk : null)
-          : HOY.toISOString()
+        // La fuente principal se ha leído y validado. Los complementos que
+        // fallen conservan su fecha y un aviso propio, sin ocultar esa revisión.
+        file.ultimaComprobacionOk = HOY.toISOString()
         file.ultimoContenidoModificado = ultimoContenidoModificado
         file.fechaUltimoSondeo = fechaUltimoSondeo
         file.fechaUltimaPublicacion = fechaUltimaPublicacion
@@ -185,7 +211,7 @@ async function main() {
         ultimaComprobacionOk = file.ultimaComprobacionOk
         if (candidato.falloParcial) {
           fallos.push({ id: e.id, parcial: true, motivo: candidato.falloParcial })
-          estado = 'desactualizado'
+          estado = sondeosN > 0 ? 'ok' : 'sin_sondeos'
         } else {
           estado = veda ? 'ok' : sondeosN > 0 ? 'ok' : 'sin_sondeos'
         }

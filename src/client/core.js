@@ -457,10 +457,14 @@ function distanceKm(lat1, lon1, lat2, lon2) {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+function coordinatesInSpain(lat, lng) {
+  // Península, islas y ciudades autónomas. No adivinamos coordenadas invertidas.
+  return Number.isFinite(lat) && Number.isFinite(lng) && lat >= 26 && lat <= 44.5 && lng >= -19 && lng <= 5.5;
+}
 function stationLatLng(s) {
   var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
   var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0)) return null;
+  if (!coordinatesInSpain(lat, lng)) return null;
   return { lat: lat, lng: lng };
 }
 

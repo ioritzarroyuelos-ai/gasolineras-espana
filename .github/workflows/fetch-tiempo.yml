@@ -2,14 +2,14 @@ name: Fetch snapshot del tiempo
 
 # Precachea la predicción de los municipios "importantes" (población >= 50.000,
 # ~145) desde AEMET, para servir sus páginas al instante. El resto va bajo demanda
-# + caché en el borde. 4 veces al día (el tiempo cambia durante el día).
+# + caché en el borde. Cada tres horas (el tiempo cambia durante el día).
 #
 # Fuentes de AEMET: OpenData (secreto AEMET_API_KEY) y XML municipal. Ver
 # scripts/fetch-tiempo.mjs. El push dispara CI -> deploy (como fetch-itv).
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # cada 6 h (00, 06, 12, 18 UTC)
+    - cron: '11 */3 * * *'   # cada 3 h
   workflow_dispatch:
 
 concurrency:
@@ -24,6 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           persist-credentials: false
 
       - uses: actions/setup-node@v5

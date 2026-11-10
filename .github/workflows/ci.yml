@@ -88,6 +88,12 @@ jobs:
           name: dist-${{ github.sha }}
           path: dist
 
+      # La página sin guardias vigentes lleva noindex deliberadamente. Probamos
+      # su versión indexable con una fixture aislada, sin rebajar los requisitos
+      # SEO ni impedir la publicación precisamente necesaria para renovar datos.
+      - name: Preparar escenario local de Lighthouse
+        run: node scripts/prepare-lighthouse-fixtures.mjs
+
       - name: Lighthouse CI autorun
         run: npx @lhci/cli autorun --config=./lighthouserc.json
         env:
@@ -102,6 +108,7 @@ jobs:
         with:
           name: lighthouse-${{ github.sha }}
           path: .lighthouseci/
+          include-hidden-files: true
           retention-days: 14
           if-no-files-found: ignore
 

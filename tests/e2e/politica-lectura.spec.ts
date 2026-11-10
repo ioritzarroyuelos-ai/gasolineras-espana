@@ -47,9 +47,17 @@ test.describe('Sondeos sin JavaScript', () => {
       await expect(visibles.first().locator(':scope > span')).toHaveCount(0)
       if (publicado?.pct != null) await expect(visibles.first().locator('b small')).toContainText(/\d.*% del voto/)
     }
-    const oficial = page.locator('.leyenda-res .it').filter({ hasText: partido + ' ' }).first()
-    const base = await oficial.locator('b').innerText()
-    await expect(visibles.first().locator(':scope > small')).toHaveText('Elecciones · ' + base)
+    const referencia = datos.referencia.escanos.find(d => d.candidaturaId === id)
+    if (referencia) {
+      const oficial = page.locator('.leyenda-res .it').filter({ hasText: partido + ' ' }).first()
+      await expect(oficial.locator('b')).toHaveText(String(referencia.escanos))
+      await expect(visibles.first().locator(':scope > small')).toHaveText('Elecciones · ' + referencia.escanos)
+    } else {
+      // Una coalición nueva (p. ej. PP-UPN) no tiene un resultado propio en
+      // 2023. No atribuirle el de un integrante ni inventar una subida/bajada.
+      await expect(visibles.first().locator(':scope > small')).toHaveText('Sin dato de referencia')
+      await expect(visibles.first().locator(':scope > span')).toHaveCount(0)
+    }
     await page.getByRole('link', { name: 'Encuesta anterior', exact: true }).click()
     await expect(page.getByRole('link', { name: 'Encuesta anterior', exact: true })).toHaveAttribute('aria-current', 'true')
     await expect(ficha.locator('.pm-ref')).not.toContainText('Elecciones del')

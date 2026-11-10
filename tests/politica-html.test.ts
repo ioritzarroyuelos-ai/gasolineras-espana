@@ -23,6 +23,29 @@ function fileCon(empresa: string): EleccionFile {
 const base = { nonce: 'n1', cat, estado: 'ok', ahoraISO: '2026-09-23T00:00:00Z', canonical: 'https://x/politica/autonomicas/madrid' }
 
 describe('buildEleccionPage', () => {
+  it('hace visible una coalición nueva con muchos escaños sin confundirla con sus integrantes de 2023', () => {
+    const file = fileCon('GAD3')
+    file.camara = { nombre: 'Congreso', escanos: 350, mayoria: 176 }
+    file.candidaturas.push({ id: 'ppupn', siglas: 'PP-UPN', nombre: 'Coalición PP-UPN' }, { id: 'vox', siglas: 'Vox', nombre: 'Vox' })
+    file.referencia.escanos = [{ candidaturaId: 'pp', escanos: 137 }, { candidaturaId: 'psoe', escanos: 121 }, { candidaturaId: 'vox', escanos: 33 }]
+    file.sondeos = [{ ...file.sondeos[0], datos: [{ candidaturaId: 'ppupn', pct: 31.9, escanos: 136 }, { candidaturaId: 'psoe', pct: 25.9, escanos: 103 }, { candidaturaId: 'vox', pct: 18.6, escanos: 63 }] }]
+    file.sondeos.push({ empresa: 'Otra', campoFin: '2026-06-01', datos: [{ candidaturaId: 'pp', pct: 32, escanos: 137 }, { candidaturaId: 'psoe', pct: 31, escanos: 121 }] })
+    const doc = parse(buildEleccionPage({ ...base, file, enVeda: false, referencia: 'elecciones' }))
+    const visibles = doc.querySelector('details.pm-poll')!.querySelectorAll('.pm-inner > .pm-rows > li')
+    expect(visibles.map(n => n.querySelector('b')?.childNodes[0].text)).toEqual(['PP-UPN', 'PSOE', 'Vox'])
+    expect(visibles[0].text).toContain('136 escaños')
+    expect(visibles[0].text).toContain('Sin dato de referencia')
+    expect(visibles[0].text).not.toMatch(/Sube|Baja/)
+    expect(doc.querySelector('.evsvg')?.text).toContain('PP-UPN')
+    expect(doc.querySelectorAll('table.s thead th').map(n => n.text).slice(0, 4)).toEqual(['Encuesta', 'PP', 'PP-UPN', 'PSOE'])
+  })
+  it('muestra el fallo de una fuente junto a datos vigentes sin convertir todo en un fallo ni insertar HTML externo', () => {
+    const file = { ...fileCon('GAD3'), avisosFuentes: ['La Séptima: pendiente de verificar <script>fuente</script>'] }
+    const doc = parse(buildEleccionPage({ ...base, file, enVeda: false }))
+    expect(doc.querySelector('.aviso')?.text).toContain('La Séptima: pendiente de verificar')
+    expect(doc.querySelector('.aviso script')).toBeNull()
+    expect(doc.querySelector('details.pm-poll summary')?.text).toContain('GAD3')
+  })
   it('permite recorrer todos los sondeos sin repetirlos y limita también la gráfica', () => {
     const file = fileCon('X')
     file.sondeos = Array.from({ length: 61 }, (_, i) => ({

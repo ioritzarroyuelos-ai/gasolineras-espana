@@ -92,7 +92,9 @@ export function parseAlmeria(response, fecha) {
     }
   }
   if (omitidas > farmacias.length * 0.1) throw new Error('Almería: demasiadas fichas sin dirección o municipio')
-  return { rows, omitidas }
+  // Validamos primero todas las fichas y su paginación. Las repeticiones del
+  // proveedor no son turnos adicionales; distintas horas se conservan.
+  return { rows: [...new Map(rows.map(fila => [JSON.stringify(fila), fila])).values()], omitidas }
 }
 
 

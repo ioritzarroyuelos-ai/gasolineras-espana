@@ -3,7 +3,7 @@ import type { Env } from '../index'
 import { canonicalBase, cfCache, genNonce, loadSnapshot, MUNI_INDEX_TTL } from '../lib/runtime'
 import { consultaAvisos } from '../lib/tiempo-avisos'
 import { buscaTiempo, catalogoTiempo, preparaBuscadorTiempo, rutaMunicipioTiempo, type IndiceBusquedaTiempo } from '../lib/tiempo-municipios'
-import { construyeIndiceMunicipios, horasVigentes, prediccionVigente, resuelveHoras, resuelvePrediccion } from '../../scripts/lib/tiempo.mjs'
+import { construyeIndiceMunicipios, frescuraTiempo, horasVigentes, prediccionVigente, resuelveHoras, resuelvePrediccion } from '../../scripts/lib/tiempo.mjs'
 import type { MunicipioLista, ParteHoras, Prediccion } from '../../scripts/lib/tiempo.mjs'
 import { buildTiempoBusquedaPage, buildTiempoIndexPage, buildTiempoMunicipioPage, buildTiempoProvinciaPage, tiempoHeaders } from '../html/tiempo'
 
@@ -28,7 +28,7 @@ async function parteEnCache<T extends Prediccion | ParteHoras>(
   c: Contexto, ruta: string, vigente: (p: T) => T | null, descargar: () => Promise<T>,
 ): Promise<T | null> {
   const cache = cfCache()
-  const key = new Request(new URL('/_cache/tiempo/v2/'+ruta, c.req.url))
+  const key = new Request(new URL('/_cache/tiempo/v3/'+ruta, c.req.url))
   if (cache) {
     try {
       const hit = await cache.match(key)
@@ -52,7 +52,9 @@ async function parteEnCache<T extends Prediccion | ParteHoras>(
 async function prediccionDiaria(c: Contexto, m: MunicipioLista) {
   const snap = await loadSnapshot<{predicciones:Record<string,Prediccion>}>(c.req.url,'tiempo/snapshot/'+m.provinciaSlug+'.json',c.env.ASSETS)
   const copia = prediccionVigente(snap?.predicciones?.[m.ine])
-  if (copia?.fuente === 'AEMET' && copia.versionPeriodos === 2) return copia
+  // Una copia vigente sirve como respaldo; no debe impedir consultar partes
+  // oficiales más recientes durante doce horas. La consulta se comparte 30 min.
+  if (copia?.fuente === 'AEMET' && copia.versionPeriodos === 3 && frescuraTiempo(copia.elaborado).horas <= 0.5) return copia
   return await parteEnCache<Prediccion>(c,m.ine+'/dias',prediccionVigente,() => resuelvePrediccion({
     ...m, provincia:m.provinciaNombre, lat:m.lat ?? NaN, lng:m.lng ?? NaN,
   })) ?? copia

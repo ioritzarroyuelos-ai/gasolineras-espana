@@ -11,7 +11,7 @@ import { escapeHtml as esc, jsonLdScript } from './html'
 import { emojiCielo } from './cielo'
 import { ogSocialTags } from './seo'
 import { prediccionVigente, zonaTiempo } from '../../scripts/lib/tiempo.mjs'
-import { fechaHoraLocal } from '../../scripts/lib/fechas.mjs'
+import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 import { bloqueAtrasado, fechaConsultaDeporte, etiquetaEstadoDeporte, type CompeticionDeportiva } from '../lib/deportes'
 
 export interface LandingTiempo {
@@ -53,8 +53,9 @@ function icono(id: string): string {
   return `<svg class="eu-icon" viewBox="0 0 24 24" aria-hidden="true">${paths[id] || paths.guardar}</svg>`
 }
 function fecha(ts?: string | null, zona = 'Europe/Madrid'): string {
-  if (!ts || !Number.isFinite(Date.parse(ts))) return ''
-  return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: zona }).format(new Date(ts))
+  const instante = instanteLocal(ts || '')
+  if (!Number.isFinite(instante)) return ''
+  return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: zona }).format(new Date(instante))
 }
 function guardar(id: Modulo): string {
   const nombre = MODULOS.find(m => m.id === id)!.nombre

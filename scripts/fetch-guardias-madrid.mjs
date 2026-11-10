@@ -17,12 +17,9 @@
 //   public/data/guardias-madrid.json con formato compacto array-of-arrays:
 //   [lat, lng, direccion, poblacion, telefono, cp, horarioGuardia, horarioGuardiaDesc]
 //
-//   ~160 farmacias por dia, ~12KB gzip. El cron semanal lo actualiza
-//   cada lunes — aunque el COFM actualiza el flag guardia diariamente,
-//   refrescar una vez por semana es suficiente para el caso de uso:
-//   "las de guardia de esta semana" (usuario espanol tipico hace mapa
-//   mental semanal, no diario). Si hace falta frequencia diaria se
-//   cambia el cron sin tocar el scraper.
+//   ~160 farmacias por día, ~12KB gzip. El workflow consulta la fuente
+//   diariamente: el indicador guardia y sus turnos cambian cada día.
+//   Una copia anterior no acredita qué farmacia está de guardia hoy.
 //
 // Umbral defensivo:
 //   - Si el array total tiene < 1000 farmacias (Madrid suele tener ~2950)

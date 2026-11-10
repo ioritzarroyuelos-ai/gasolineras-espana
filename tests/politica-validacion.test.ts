@@ -6,6 +6,11 @@ const file = (sondeos: unknown[]) => ({ schemaVer: 1, id: 'x', tipo: 'autonomica
 const sondeo = (datos: unknown[]) => ({ empresa: 'E', datos })
 
 describe('validaEleccion (validación multinivel)', () => {
+  it('frena la publicación si una cabecera estadística vuelve a convertirse en partido', () => {
+    for (const id of ['tamano', 'margen', 'muestra', 'samplesize', 'lead']) {
+      expect(validaEleccion({ ...file([]), candidaturas: [{ id }] }, null)).toMatchObject({ ok: false, motivo: expect.stringContaining('metadatos') })
+    }
+  })
   it('acepta un candidato válido', () => {
     const nuevo = file([sondeo([{ candidaturaId: 'pp', pct: 30, escanos: 40 }])])
     const r = validaEleccion(nuevo, null)

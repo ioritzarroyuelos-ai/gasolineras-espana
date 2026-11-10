@@ -1,14 +1,13 @@
 import { normalizaEstadoFFCV } from './deportes-ffcv-estado.mjs'
 
-export const HORARIO_DEPORTES_COMPLETO = '23 */4 * * *'
-export const HORARIO_DEPORTES_FUTBOL = '23 1-3,5-7,9-11,13-15,17-19,21-23 * * *'
+export const HORARIO_DEPORTES_COMPLETO = '23 * * * *'
 const deportes = ['futbol', 'baloncesto', 'motor']
 const instante = valor => typeof valor === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(valor) && Number.isFinite(Date.parse(valor)) && new Date(valor.slice(0, 10)).toISOString().slice(0, 10) === valor.slice(0, 10) && Number(valor.slice(11, 13)) < 24 ? new Date(valor).toISOString() : null
 const masTarde = fechas => fechas.filter(Boolean).sort().at(-1) || null
 
 export function seleccionaFuentesDeportes(fuentes = '', programacion = '') {
-  if (!fuentes && programacion && ![HORARIO_DEPORTES_COMPLETO, HORARIO_DEPORTES_FUTBOL].includes(programacion)) throw Error('Horario deportivo no reconocido')
-  const seleccion = fuentes ? fuentes === 'todos' ? deportes : fuentes.split(',').map(v => v.trim()) : programacion === HORARIO_DEPORTES_FUTBOL ? ['futbol'] : deportes
+  if (!fuentes && programacion && programacion !== HORARIO_DEPORTES_COMPLETO) throw Error('Horario deportivo no reconocido')
+  const seleccion = fuentes ? fuentes === 'todos' ? deportes : fuentes.split(',').map(v => v.trim()) : deportes
   if (!seleccion.length || seleccion.some(f => !deportes.includes(f))) throw Error('Selección de deportes no válida')
   return new Set(seleccion)
 }

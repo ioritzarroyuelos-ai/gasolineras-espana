@@ -10,7 +10,7 @@ import {
   incrementIsoDate, maxIsoDate,
 } from '../lib/runtime'
 import { isValidProvinciaId, classifyPriceVsCycle } from '../lib/pure'
-import { FUEL_CODES, centsToEuros, hydrateDedupe } from '../lib/history'
+import { FUEL_CODES, centsToEuros, hydrateDedupe, missingHistoryDates } from '../lib/history'
 import type { FilaHistorico } from '../lib/observatorio'
 
 export function registerHistoryRoutes(app: Hono<{ Bindings: Env }>): void {
@@ -82,7 +82,7 @@ app.get('/api/history/:stationId', async c => {
       for (const fuel of FUEL_CODES) {
         const dedup = staticData.byFuel[fuel]
         if (!dedup || dedup.length === 0) continue
-        series[fuel] = hydrateDedupe(dedup, cutoff, todayIso)
+        series[fuel] = hydrateDedupe(dedup, cutoff, staticData.to < todayIso ? staticData.to : todayIso, staticData.capturedDates?.[fuel])
       }
     }
   } catch (err) {
@@ -97,7 +97,8 @@ app.get('/api/history/:stationId', async c => {
   // Los datos D1 sobreescriben (priorizan) sobre el JSON para esas fechas — el
   // cron diario es la fuente mas reciente; el JSON estatico es snapshot fijo.
   if (c.env.DB) {
-    const d1From = staticTo ? maxIsoDate(incrementIsoDate(staticTo), cutoff) : cutoff
+    const faltantes = Object.values(series).flatMap(points => missingHistoryDates(points, points[0]?.date || cutoff, todayIso))
+    const d1From = staticTo ? [maxIsoDate(incrementIsoDate(staticTo), cutoff), ...faltantes].sort()[0] : cutoff
     if (d1From <= todayIso) {
       try {
         const stmt = c.env.DB
@@ -147,7 +148,9 @@ app.get('/api/history/:stationId', async c => {
   }
 
   return c.json(
-    { station_id: stationId, days, series },
+    { station_id: stationId, days, series,
+      missing_dates: Object.fromEntries(Object.entries(series).map(([fuel,points]) => [fuel,
+        missingHistoryDates(points, points[0]?.date || cutoff, todayIso)])) },
     200,
     { 'Cache-Control': 'public, max-age=3600' },
   )

@@ -57,6 +57,10 @@ describe('seguimiento nacional adicional de La Séptima', () => {
 // Ejecuta el robot por su vía habitual (--solo generales), con dos respuestas
 // controladas y un sistema de archivos en memoria que persiste entre pasadas.
 const archivos = vi.hoisted(() => new Map<string, string>())
+// Estos casos prueban Wikipedia y la conservación por fuente. El lector real
+// GAD3 (incluidas sus correcciones de Datawrapper) tiene fixtures propios.
+const gad3 = vi.hoisted(() => vi.fn())
+vi.mock('../scripts/lib/politica-gad3.mjs', () => ({ fetchGad3: gad3 }))
 vi.mock('node:fs', async importar => {
   const fs = await importar<Record<string, unknown>>()
   const nombre = (ruta: string) => ruta.split(/[\\/]/).at(-1)!
@@ -73,6 +77,7 @@ describe('actualización de las dos fuentes del Congreso', () => {
 
   beforeEach(() => {
     archivos.clear()
+    gad3.mockReset().mockResolvedValue({ sondeos: [], candidaturas: [], procedencia: undefined })
     process.argv = [...argv.slice(0, 2), '--solo', 'generales']
     vi.useFakeTimers({ toFake: ['Date'] })
   })
@@ -108,8 +113,9 @@ describe('actualización de las dos fuentes del Congreso', () => {
     expect(parcial.file.sondeos[1]).toEqual(sw)
     expect(parcial.file.procedenciasAdicionales).toEqual(buena.file.procedenciasAdicionales)
     expect(parcial.file.procedencia.obtenido).toBe('2026-11-07T12:00:00.000Z')
-    expect(parcial.file.ultimaComprobacionOk).toBe(buena.file.ultimaComprobacionOk)
-    expect(parcial.entrada).toMatchObject({ estado: 'desactualizado', ultimaComprobacionOk: buena.file.ultimaComprobacionOk })
+    expect(parcial.file.ultimaComprobacionOk).toBe('2026-11-07T12:00:00.000Z')
+    expect(parcial.entrada).toMatchObject({ estado: 'ok', ultimaComprobacionOk: parcial.file.ultimaComprobacionOk })
+    expect(parcial.file.avisosFuentes[0]).toContain('SW Demoscopia')
     expect(parcial.parte).toMatchObject({ escritas: 1, fallos: [{ id: 'generales', parcial: true }] })
   })
 
@@ -123,7 +129,23 @@ describe('actualización de las dos fuentes del Congreso', () => {
     expect(despues.file.sondeos).toHaveLength(1)
     expect(despues.file.sondeos[0].empresa).toBe('Nueva española')
     expect(despues.file.procedenciasAdicionales).toBeUndefined()
-    expect(despues.file.ultimaComprobacionOk).toBe(veda.file.ultimaComprobacionOk)
+    expect(despues.file.ultimaComprobacionOk).toBe('2026-11-30T12:00:00.000Z')
     expect(despues.parte.fallos[0].parcial).toBe(true)
+  })
+
+  it('conserva la publicación GAD3 y sus candidaturas si mañana falla; la fecha de la encuesta no se rejuvenece', async () => {
+    const original = { empresa: 'GAD3', campoFin: '2026-11-05', publicacion: '2026-11-09', fuenteUrl: 'https://www.gad3.com/barometro-abc-i-estimacion-de-voto-nacional-noviembre-2026/', datos: [{ candidaturaId: 'ppupn', pct: 31.9, escanos: 136 }] }
+    const procedencia = { wiki: 'GAD3', articulo: 'Nacional', url: original.fuenteUrl, licencia: 'Fuente original', obtenido: '2026-11-10T12:00:00.000Z', camposFin: ['2026-11-05'] }
+    gad3.mockResolvedValue({ sondeos: [original], candidaturas: [{ id: 'ppupn', siglas: 'PP-UPN', nombre: 'PP-UPN' }], procedencia })
+    const buena = await pasada('2026-11-10', htmlES('Casa'), inglesa)
+    expect(buena.file.sondeos.filter((s: { empresa: string }) => s.empresa === 'GAD3')).toEqual([original])
+    gad3.mockRejectedValue(new Error('HTTP 503'))
+    const parcial = await pasada('2026-11-11', htmlES('Casa nueva'), inglesa)
+    expect(parcial.file.sondeos.find((s: { empresa: string }) => s.empresa === 'GAD3')).toEqual(original)
+    expect(parcial.file.candidaturas).toContainEqual({ id: 'ppupn', siglas: 'PP-UPN', nombre: 'PP-UPN' })
+    expect(parcial.file.procedenciasAdicionales).toContainEqual(procedencia)
+    expect(parcial.file.avisosFuentes).toEqual([expect.stringContaining('GAD3')])
+    expect(parcial.file.fechaUltimaPublicacion).toBe('2026-11-09')
+    expect(parcial.file.ultimaComprobacionOk).toBe('2026-11-11T12:00:00.000Z')
   })
 })

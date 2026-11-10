@@ -16,7 +16,7 @@ function localidad(ine = '48027'): Localidad {
     farmacias: { url: '/farmacias/bizkaia/durango', ts: PUBLICADO, count: 3, zona: canarias ? 'Atlantic/Canary' : 'Europe/Madrid' },
     itv: { url: '/itv/bizkaia', ts: PUBLICADO, count: 0 },
     tiempo: { url: '/tiempo/bizkaia/durango', pred: {
-      ine, nombre: canarias ? 'Arrecife' : 'Durango', provincia: 'Prueba', fuente: 'AEMET', elaborado: PUBLICADO, versionPeriodos: 2,
+      ine, nombre: canarias ? 'Arrecife' : 'Durango', provincia: 'Prueba', fuente: 'AEMET', elaborado: PUBLICADO, versionPeriodos: 3,
       dias: [
         { fecha: '2026-11-07', tmax: 24, tmin: 15, cielo: 'Cielo del sábado', probLluvia: 0, viento: 5 },
         { fecha: '2026-11-08', tmax: 17, tmin: 8, cielo: 'Cielo del domingo', probLluvia: 50, viento: 10 },
@@ -39,6 +39,11 @@ beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new 
 afterEach(() => vi.useRealTimers())
 
 describe('Cerca de ti y Mi día conservan la verdad de los datos', () => {
+  it('interpreta la elaboración de AEMET sin zona como hora peninsular, sin sumarle otra hora', () => {
+    const m = localidad(); m.tiempo.pred!.elaborado = '2026-11-07T22:45:00'
+    expect(card({ localidad: m }, 'tiempo').text).toContain('22:45')
+    expect(card({ localidad: m }, 'tiempo').text).not.toContain('23:45')
+  })
   it.each(['inicio', 'mi-dia'] as const)('%s elige el día local, incluida la hora de diferencia de Canarias', vista => {
     const peninsular = card({ vista, localidad: localidad() }, 'tiempo')
     const canaria = card({ vista, localidad: localidad('35004') }, 'tiempo')

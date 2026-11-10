@@ -14,6 +14,7 @@ export interface EstadoFFCV {
 }
 export interface OpcionesFutbol extends OpcionesDeportes {
   gruposCubiertosFutbol?: string[]
+  gruposPublicadosFutbol?: string[]
   estadoFFCV?: unknown
   guardarEstadoFFCV?: (estado: EstadoFFCV) => void | Promise<void>
   relojFFCV?: () => number

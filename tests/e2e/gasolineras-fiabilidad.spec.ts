@@ -93,8 +93,10 @@ test('móvil: cabecera, favoritos y filtros caben en la pantalla', async ({ page
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 })
 
-test('la búsqueda distingue un fallo temporal de un municipio inexistente y reintenta', async ({ page, request }) => {
-  const index = await request.get('/api/gasolineras/municipios').then(r => r.json())
+test('la búsqueda distingue un fallo temporal de un municipio inexistente y reintenta', async ({ page }) => {
+  // Este recorrido simula ambas respuestas. Pedir previamente el índice real
+  // mezclaba un posible 429 del resto de la suite con la recuperación simulada.
+  const index = [{ n: 'Madrid', p: 'Madrid', u: '/gasolineras/madrid/madrid' }]
   let attempts = 0
   await page.route('**/api/gasolineras/municipios', async route => {
     attempts++

@@ -1,0 +1,39 @@
+name: Diagnóstico de fuentes de baloncesto OW
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/diagnose-deportes-ow.yml'
+      - 'scripts/diagnose-deportes-ow.mjs'
+      - 'scripts/lib/deportes-ow-diagnostico.*'
+      - 'tests/deportes-ow-diagnostico.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnostico-ow-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  conexiones:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Comprobar las ocho fuentes sin reintentos ni publicación
+        run: node scripts/diagnose-deportes-ow.mjs
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: diagnostico-baloncesto-ow
+          path: .tmp/deportes-ow-diagnostico.json
+          if-no-files-found: warn
+          retention-days: 7

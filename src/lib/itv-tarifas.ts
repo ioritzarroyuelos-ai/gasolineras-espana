@@ -97,7 +97,7 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 45.32, diesel: 45.32,
     norma: 'Resolución de 19/12/2025 (BOPA nº 248, 26/12/2025). Operador público ITVASA',
-    fuenteUrl: 'https://sede.asturias.es/bopa/2025/12/26/2025-10695.pdf',
+    fuenteUrl: 'https://miprincipado.asturias.es/bopa/2025/12/26/2025-10695.pdf',
     vigencia: '2026',
     estado: 'verificada',
     revisada: TARIFAS_REVISADAS,

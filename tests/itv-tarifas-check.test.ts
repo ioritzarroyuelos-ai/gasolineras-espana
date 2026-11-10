@@ -3,6 +3,7 @@ import {compruebaTextoTarifa,compruebaFuenteTarifa,descargaTextoTarifa,textoTari
 import {tarifaComprobadaHoy,comprobacionItvReciente,type EstadoTarifasItv} from '../src/lib/itv-tarifas-estado'
 import {buildItvPreciosPage} from '../src/html/itv'
 import {TARIFAS,desglosa} from '../src/lib/itv-tarifas'
+import {ITV_PUBLIC_SOURCES} from '../src/lib/itv-relay'
 const ahora = new Date('2026-11-10T12:00:00Z')
 const asturias = 'Servicios ITVASA 2026. IVA actualmente vigente del 21%. Importe actual 4,18 euros. Turismos (incluido transporte escolar) 34 € (51€)'
 describe('verificación diaria de las tarifas',()=>{
@@ -78,6 +79,27 @@ describe('verificación diaria de las tarifas',()=>{
       expect(resultado).toMatchObject({intentos:1,codigo:code==='UNABLE_TO_VERIFY_LEAF_SIGNATURE'?code:'NETWORK_ERROR'})
       expect(JSON.stringify(resultado)).not.toMatch(/secreto|unknown-secret-code/)
     }
+  })
+  it('usa el respaldo fijo sólo tras agotar una conexión y vuelve a comprobar los importes',async()=>{
+    const fuente={id:'asturias',url:ITV_PUBLIC_SOURCES.asturias}
+    const descargar=vi.fn().mockRejectedValue(new DOMException('timeout','TimeoutError'))
+    const esperar=async()=>{}
+    const respaldo=vi.fn(async()=>new TextEncoder().encode(asturias+' '.repeat(300)))
+    expect(await compruebaFuenteTarifa(fuente,ahora,descargar,{esperar,respaldo})).toMatchObject({estado:'verificada',via:'respaldo',intentos:3,codigoDirecto:'TIMEOUT'})
+    expect(respaldo).toHaveBeenCalledExactlyOnceWith('asturias',fuente.url)
+    const cambiado=async()=>new TextEncoder().encode(asturias.replace('34 €','35 €')+' '.repeat(300))
+    expect(await compruebaFuenteTarifa(fuente,ahora,descargar,{esperar,respaldo:cambiado})).toMatchObject({estado:'cambiada',via:'respaldo'})
+  })
+  it('nunca usa el respaldo para saltar HTTP403, HTTP429 o un certificado inválido',async()=>{
+    const fuente={id:'asturias',url:ITV_PUBLIC_SOURCES.asturias}
+    const respaldo=vi.fn(async()=>new TextEncoder().encode(asturias))
+    for (const status of [403,429]) {
+      const descargar=(url:string,pages?:number[])=>descargaTextoTarifa(url,pages,async()=>new Response('',{status}))
+      expect((await compruebaFuenteTarifa(fuente,ahora,descargar,{respaldo})).estado).toBe('no_disponible')
+    }
+    const error=Object.assign(new Error('TLS'),{cause:{code:'CERT_HAS_EXPIRED'}})
+    expect((await compruebaFuenteTarifa(fuente,ahora,async()=>{throw error},{respaldo})).estado).toBe('no_disponible')
+    expect(respaldo).not.toHaveBeenCalled()
   })
   it('no confirma sin revisión reciente de la tarifa y todos sus suplementos',()=>{
     const estado: EstadoTarifasItv = {v:1,checkedAt:ahora.toISOString(),estado:'verificada',

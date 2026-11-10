@@ -1,5 +1,6 @@
 import { parse } from 'node-html-parser'
 import { coordenadasItv } from './itv-fuentes.mjs'
+import { descargarRespaldoItv, permiteRespaldoItv } from './itv-respaldo.mjs'
 
 const limpia = v => String(v ?? '').replace(/\s+/g,' ').trim()
 const clave = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'')
@@ -126,9 +127,17 @@ async function leerCanal(canal,fetcher) {
         throw Object.assign(Error('HTTP '+res.status),{temporal})
       }
       if (res.url && new URL(res.url).origin!==new URL(canal.url).origin) throw Error('Redirección fuera del operador')
-      return parse(await res.text())
+      return {doc:parse(await res.text()),via:'directa'}
     } catch(error) {
-      if (intento===intentos || !falloTemporal(error)) throw error
+      if (intento===intentos || !falloTemporal(error)) {
+        if (canal.id==='itvasa' && permiteRespaldoItv(error)) {
+          try {
+            const bytes=await descargarRespaldoItv('itvasa',canal.url,{fetcher})
+            return {doc:parse(new TextDecoder().decode(bytes)),via:'respaldo'}
+          } catch { /* Se conserva la causa directa y la última comprobación válida. */ }
+        }
+        throw error
+      }
       // Dos intentos como máximo: unos 40,5 s de límite total en ITVASA.
       await new Promise(resolve=>setTimeout(resolve,500))
     }
@@ -142,7 +151,7 @@ export async function actualizaOperadoresItv(estaciones, anteriores={}, opciones
   await Promise.all(activos.map(async canal=>{
     const previa=anteriores[canal.id]
     try {
-      const doc=await leerCanal(canal,fetcher)
+      const {doc,via}=await leerCanal(canal,fetcher)
       // Se comprueban identidad y reserva en el contenido, no sólo HTTP 200.
       const titulo=limpia(doc.querySelector('title')?.text)
       const texto=limpia(doc.text)
@@ -154,7 +163,7 @@ export async function actualizaOperadoresItv(estaciones, anteriores={}, opciones
       const estacion=estaciones.find(e=>canal.admite(e))
       const detalles=canal.ficha ? fichaSgs(doc,canal,estacion,consulta) : undefined
       const registro=canal.ficha ? clave([estacion.prov,estacion.codigo,estacion.cp,estacion.dir,estacion.op]) : undefined
-      perfiles[canal.id]={url:canal.url,nombre:canal.nombre,consultado:consulta,ultimoExito:consulta,estado:'actualizada',detalles,registro}
+      perfiles[canal.id]={url:canal.url,nombre:canal.nombre,consultado:consulta,ultimoExito:consulta,estado:'actualizada',via,detalles,registro}
     } catch(e) {
       perfiles[canal.id]={...(previa?.url===canal.url ? previa : {}),url:canal.url,nombre:canal.nombre,
         consultado:consulta,estado:'conservada',error:errorOperador(e)}

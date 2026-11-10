@@ -6,12 +6,20 @@ on:
     paths:
       - '.github/workflows/verify-itv-tarifas.yml'
       - 'scripts/check-itv-tarifas.mjs'
+      - 'scripts/check-itv-citas.mjs'
       - 'scripts/lib/itv-tarifas-check.*'
+      - 'scripts/lib/itv-respaldo.*'
+      - 'scripts/lib/itv-operadores.*'
       - 'src/lib/itv-tarifas.ts'
+      - 'src/lib/itv-relay.ts'
+      - 'workers/guardias.mjs'
       - 'tests/itv-tarifas-check.test.ts'
+      - 'tests/itv-itvasa.test.ts'
+      - 'tests/itv-respaldo.test.ts'
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: verify-itv-tarifas-${{ github.event.pull_request.number || github.ref }}
@@ -20,7 +28,7 @@ concurrency:
 jobs:
   verificar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
         with:
@@ -31,15 +39,42 @@ jobs:
           cache: npm
       - name: Instalar lector de documentos
         run: npm ci --omit=dev --ignore-scripts
+      - name: Esperar al respaldo de este preview
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          for ATTEMPT in $(seq 1 60); do
+            RESULT=$(gh run list --workflow=deploy-preview.yml --commit="$PR_SHA" --limit=1 --json status,conclusion --repo "$GITHUB_REPOSITORY")
+            if echo "$RESULT" | jq -e '.[0].status == "completed" and .[0].conclusion == "success"' >/dev/null; then
+              echo "ITV_RELAY_ORIGIN=https://espana-util-guardias-pr-${{ github.event.pull_request.number }}.ioritz-arroyuelos.workers.dev" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::El preview de este commit no estuvo listo para verificar las fuentes ITV'
+          exit 1
       - name: Comprobar los 17 documentos oficiales sin publicar datos
+        id: tarifas
+        continue-on-error: true
         env:
           ITV_OUT_DIR: .tmp/itv-verificacion
         run: node scripts/check-itv-tarifas.mjs
+      - name: Comprobar el formulario oficial de citas ITVASA
+        id: citas
+        continue-on-error: true
+        env:
+          ITV_OUT_DIR: .tmp/itv-verificacion
+        run: node scripts/check-itv-citas.mjs
       - name: Guardar informe incluso si alguna fuente falla
         if: always()
         uses: actions/upload-artifact@v6
         with:
           name: comprobacion-tarifas-itv
-          path: .tmp/itv-verificacion/itv-tarifas-estado.json
+          path: .tmp/itv-verificacion/*.json
           if-no-files-found: warn
           retention-days: 7
+      - name: Señalar cualquier fuente o formulario pendiente
+        if: steps.tarifas.outcome == 'failure' || steps.citas.outcome == 'failure'
+        run: exit 1

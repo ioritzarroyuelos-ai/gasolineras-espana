@@ -27,7 +27,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aplicaSnapshot, construyeIndex, fechaSnapshot, huecosRecientes, reparaSnapshotHistorico } from './lib/historico-estatico.mjs'
+import { aplicaSnapshot, construyeIndex, fechaSnapshot, fechaArchivoMinisterio, huecosRecientes, reparaSnapshotHistorico } from './lib/historico-estatico.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -107,13 +107,8 @@ function aplica(estado, snapshot, fecha, ahora) {
 }
 
 // ---- Modo 2: archivo del Ministerio ----
-function aMinisterio(iso) {
-  const [y, m, d] = iso.split('-')
-  return `${d}-${m}-${y}`
-}
-
 async function fetchHist(iso, intentos = 4) {
-  const url = BASE + '/EstacionesTerrestresHist/' + aMinisterio(iso)
+  const url = new URL(BASE + '/EstacionesTerrestresHist/' + fechaArchivoMinisterio(iso))
   let ultimo
   for (let i = 1; i <= intentos; i++) {
     try {

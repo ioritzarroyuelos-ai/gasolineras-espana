@@ -17,6 +17,12 @@ describe('verificación diaria de las tarifas',()=>{
     expect(compruebaTextoTarifa('asturias','<nav>Noticias nuevas</nav><p>'+asturias+'</p>',ahora)).toBe(true)
     expect(textoTarifas('MMA <3500 kg, año >2020')).toBe('mma <3500 kg, ano >2020')
   })
+  it('decodifica entidades en una sola pasada y no acepta capas anidadas',()=>{
+    expect(textoTarifas('&amp;#65; &#38;#65; &#x26;#65; &amp;nbsp;')).toBe('&#65; &#65; &#65; &nbsp;')
+    expect(textoTarifas('&#65; &#x41; &Aacute; &euro; &amp;')).toBe('a a a € &')
+    expect(textoTarifas('&#1114112; &#55296;')).toBe('\ufffd \ufffd')
+    expect(compruebaTextoTarifa('asturias',asturias.replace('34 €','34 &#x26;euro;'),ahora)).toBe(false)
+  })
   it('todas las cifras comparables tienen comprobación de componentes y total',()=>{
     for(const t of TARIFAS.filter(t=>t.estado==='verificada')) {
       expect(COMPROBACIONES_TARIFAS[t.slug].total).toEqual([desglosa(t,t.gasolina!).total,desglosa(t,t.diesel!).total])

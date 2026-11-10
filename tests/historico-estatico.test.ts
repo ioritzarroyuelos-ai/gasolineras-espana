@@ -18,7 +18,7 @@ import { hydrateDedupe, snapshotToRows } from '../src/lib/history'
 import {
   filasSnapshot, anadePunto, medianaInferior,
   anadeDiaProvincia, anadeDiaMediana, anadeDiaNacional,
-  aplicaSnapshot, construyeIndex, fechaSnapshot, huecosRecientes, insertaPuntoHistorico, reparaSnapshotHistorico,
+  aplicaSnapshot, construyeIndex, fechaSnapshot, fechaArchivoMinisterio, huecosRecientes, insertaPuntoHistorico, reparaSnapshotHistorico,
   type EstadoHistorico, type FicheroProvincia, type FicheroMediana, type FicheroNacional, type Punto,
 } from '../scripts/lib/historico-estatico.mjs'
 
@@ -51,6 +51,14 @@ function foto(estaciones: EstacionFalsa[]) {
 const AHORA = new Date('2026-09-04T12:00:00Z')
 
 describe('recuperación de una captura oficial intermedia', () => {
+  it('construye la ruta oficial únicamente con números de una fecha real', () => {
+    expect(fechaArchivoMinisterio('2026-11-09')).toBe('09-11-2026')
+    expect(fechaArchivoMinisterio('2024-02-29')).toBe('29-02-2024')
+    for (const fecha of ['2026-02-29','2026-00-01','2026-11-00','2026-13-01','2026-11-32','0000-01-01',
+      '../archivo','https://example.com/secreto','2026-11-09?contenido=secreto','2026-11-09/extra','2026-11-09\ntexto',null]) {
+      expect(() => fechaArchivoMinisterio(fecha)).toThrow()
+    }
+  })
   it('usa la fecha real y rechaza días imposibles o inventados', () => {
     expect(fechaSnapshot({ Fecha: '09/11/2026 0:00:00' })).toBe('2026-11-09')
     expect(() => fechaSnapshot({ Fecha: '31/02/2026 0:00:00' })).toThrow()

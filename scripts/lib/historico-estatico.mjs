@@ -243,6 +243,19 @@ export function fechaSnapshot(snapshot) {
   return iso
 }
 
+// El archivo se consulta sólo por componentes numéricos de una fecha civil.
+// Nunca se incorpora texto arbitrario del fichero descargado a una petición HTTP.
+export function fechaArchivoMinisterio(iso) {
+  if (typeof iso !== 'string') throw Error('Fecha histórica inválida')
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!m) throw Error('Fecha histórica inválida')
+  const year = Number(m[1]), month = Number(m[2]), day = Number(m[3])
+  if (year < 2007 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) throw Error('Fecha histórica fuera de rango')
+  const date = new Date(Date.UTC(year,month-1,day))
+  if (date.getUTCFullYear() !== year || date.getUTCMonth()+1 !== month || date.getUTCDate() !== day) throw Error('Fecha histórica inválida')
+  return String(day).padStart(2,'0')+'-'+String(month).padStart(2,'0')+'-'+String(year)
+}
+
 export function huecosRecientes(estado, hasta, dias = 30) {
   const inicio = new Date(Date.parse(hasta) - (dias - 1) * 86400000).toISOString().slice(0,10)
   const desde = [inicio, estado.nacional?.from || hasta].sort().at(-1)

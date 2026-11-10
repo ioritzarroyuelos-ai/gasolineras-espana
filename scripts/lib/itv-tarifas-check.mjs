@@ -23,10 +23,13 @@ export const COMPROBACIONES_TARIFAS = {
 
 export function textoTarifas(raw) {
   return String(raw).replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi,' ')
-    .replace(/<\/?[a-z][^>]*>|<![^>]*>/gi,' ').replace(/&#(\d+);/g,(_,n)=>String.fromCodePoint(Number(n)))
-    .replace(/&#x([\da-f]+);/gi,(_,n)=>String.fromCodePoint(parseInt(n,16)))
-    .replace(/&nbsp;/g,' ').replace(/&euro;/g,'€').replace(/&amp;/g,'&')
-    .replace(/&([aeiou])acute;/gi,(_,c)=>c).replace(/&ntilde;/gi,'n')
+    .replace(/<\/?[a-z][^>]*>|<![^>]*>/gi,' ')
+    // Una sola pasada: una entidad que produce «&» nunca vuelve a decodificarse.
+    .replace(/&(?:#(\d+)|#x([\da-f]+)|(nbsp|euro|amp|lt|gt|quot|apos|[aeiou]acute|ntilde));/gi, (entity, decimal, hex, named) => {
+      if (named) return {nbsp:' ',euro:'€',amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",aacute:'á',eacute:'é',iacute:'í',oacute:'ó',uacute:'ú',ntilde:'ñ'}[named.toLowerCase()]
+      const value = decimal ? Number(decimal) : parseInt(hex,16)
+      return Number.isInteger(value) && value > 0 && value <= 0x10ffff && !(value >= 0xd800 && value <= 0xdfff) ? String.fromCodePoint(value) : '\ufffd'
+    })
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim()
 }
 

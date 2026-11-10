@@ -5,7 +5,7 @@ const origin = 'https://webapp-3ft.pages.dev'
 let verified = false
 for (let attempt=0; attempt<6; attempt++) {
   try {
-    const response = await fetch(origin+'/data/service-manifest.json?verify='+expected.revision, {signal:AbortSignal.timeout(10000)})
+    const response = await fetch(origin+'/data/service-manifest.json?verify='+Date.now(), {signal:AbortSignal.timeout(10000)})
     const actual = await response.json()
     if (response.ok && JSON.stringify(actual) === JSON.stringify(expected)) {verified=true;break}
   } catch { /* Puede tardar unos segundos en propagarse el despliegue. */ }

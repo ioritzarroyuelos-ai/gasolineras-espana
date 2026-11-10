@@ -1,0 +1,45 @@
+name: Verificar fuentes públicas de tarifas ITV
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/verify-itv-tarifas.yml'
+      - 'scripts/check-itv-tarifas.mjs'
+      - 'scripts/lib/itv-tarifas-check.*'
+      - 'src/lib/itv-tarifas.ts'
+      - 'tests/itv-tarifas-check.test.ts'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-itv-tarifas-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Instalar lector de documentos
+        run: npm ci --omit=dev --ignore-scripts
+      - name: Comprobar los 17 documentos oficiales sin publicar datos
+        env:
+          ITV_OUT_DIR: .tmp/itv-verificacion
+        run: node scripts/check-itv-tarifas.mjs
+      - name: Guardar informe incluso si alguna fuente falla
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: comprobacion-tarifas-itv
+          path: .tmp/itv-verificacion/itv-tarifas-estado.json
+          if-no-files-found: warn
+          retention-days: 7

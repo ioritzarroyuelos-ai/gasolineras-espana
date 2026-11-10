@@ -241,7 +241,7 @@ async function loadStaticHistoryForStation(
   origin: string,
   stationId: string,
   assets?: { fetch: (req: Request) => Promise<Response> },
-): Promise<{ to: string; from: string; byFuel: Record<string, Array<[string, number]>> } | null> {
+): Promise<{ to: string; from: string; byFuel: Record<string, Array<[string, number]>>; capturedDates?: Record<string, string[]> } | null> {
   // 1) Resolvemos la provincia desde stations.json (snapshot estatico ya
   // cacheado en memoria por el resto de endpoints; coste marginal nulo).
   const snap = await loadSnapshot<MinistryResponse>(origin, 'stations.json', assets)
@@ -255,10 +255,15 @@ async function loadStaticHistoryForStation(
   // comportamiento solo-D1.
   const histFile = await loadSnapshot<StaticHistoryFile>(origin, 'history/' + provKey + '.json', assets)
   if (!histFile || !histFile.stations || !histFile.stations[stationId]) return null
+  const medianFile = await loadSnapshot<StaticMedianFile>(origin, 'history/median/' + provKey + '.json', assets)
   return {
     to: histFile.to,
     from: histFile.from,
     byFuel: histFile.stations[stationId],
+    // La mediana guarda cada captura diaria, incluso cuando el precio no cambia.
+    // Es lo que permite distinguir el deduplicado de un día que no se descargó.
+      capturedDates: Object.fromEntries(Object.entries(histFile.stations[stationId])
+        .map(([fuel, points]) => [fuel, (medianFile?.median?.[fuel] || points).map(p => p[0])])),
   }
 }
 

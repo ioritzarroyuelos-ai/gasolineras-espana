@@ -18,7 +18,7 @@ import { hydrateDedupe, snapshotToRows } from '../src/lib/history'
 import {
   filasSnapshot, anadePunto, medianaInferior,
   anadeDiaProvincia, anadeDiaMediana, anadeDiaNacional,
-  aplicaSnapshot, construyeIndex,
+  aplicaSnapshot, construyeIndex, fechaSnapshot, huecosRecientes, insertaPuntoHistorico, reparaSnapshotHistorico,
   type EstadoHistorico, type FicheroProvincia, type FicheroMediana, type FicheroNacional, type Punto,
 } from '../scripts/lib/historico-estatico.mjs'
 
@@ -49,6 +49,32 @@ function foto(estaciones: EstacionFalsa[]) {
 }
 
 const AHORA = new Date('2026-09-04T12:00:00Z')
+
+describe('recuperación de una captura oficial intermedia', () => {
+  it('usa la fecha real y rechaza días imposibles o inventados', () => {
+    expect(fechaSnapshot({ Fecha: '09/11/2026 0:00:00' })).toBe('2026-11-09')
+    expect(() => fechaSnapshot({ Fecha: '31/02/2026 0:00:00' })).toThrow()
+  })
+  it('inserta el día perdido sin prolongar su precio sobre los días siguientes', () => {
+    expect(insertaPuntoHistorico([['2026-11-08', 1500]], '2026-11-09', 1600, '2026-11-10'))
+      .toEqual([['2026-11-08', 1500], ['2026-11-09', 1600], ['2026-11-10', 1500]])
+    expect(insertaPuntoHistorico([['2026-11-08', 1500], ['2026-11-10', 1700]], '2026-11-09', 1600, '2026-11-10'))
+      .toEqual([['2026-11-08', 1500], ['2026-11-09', 1600], ['2026-11-10', 1700]])
+  })
+  it('recupera mediana, nacional y estaciones conservando la captura más reciente', () => {
+    let e = aplicaSnapshot(estadoVacio(), foto([estacion('1', '28', { [G95]: 1500 })]), '2026-11-08', AHORA).estado
+    e = aplicaSnapshot(e, foto([estacion('1', '28', { [G95]: 1700 })]), '2026-11-10', AHORA).estado
+    expect(huecosRecientes(e, '2026-11-10')).toContain('2026-11-09')
+    const snapshot = { ...foto([estacion('1', '28', { [G95]: 1600 })]), Fecha: '09/11/2026 0:00:00' }
+    const reparado = reparaSnapshotHistorico(e, snapshot, '2026-11-09', AHORA).estado
+    expect(reparado.provincias.get('28')!.to).toBe('2026-11-10')
+    expect(reparado.provincias.get('28')!.stations['1']['95']).toEqual([['2026-11-08', 1500], ['2026-11-09', 1600], ['2026-11-10', 1700]])
+    expect(reparado.medianas.get('28')!.median['95']).toContainEqual(['2026-11-09', 1600])
+    expect(reparado.nacional!.series['95'].find(p => p[0] === '2026-11-09')?.[1]).toBe(1600)
+    expect(huecosRecientes(reparado, '2026-11-10')).not.toContain('2026-11-09')
+    expect(() => reparaSnapshotHistorico(e, snapshot, '2026-11-07', AHORA)).toThrow()
+  })
+})
 
 function estadoVacio(): EstadoHistorico {
   return { provincias: new Map(), medianas: new Map(), nacional: null }

@@ -28,6 +28,10 @@ export function validaEleccion(nuevo, anterior, opts = {}) {
     return { ok: false, motivo: 'estructura inválida', revision: false, diagnostico }
   }
   const cam = nuevo.camara.escanos
+  const metadatos = new Set(['tamano', 'margen', 'muestra', 'samplesize', 'lead', 'turnout', 'participacion'])
+  if (nuevo.candidaturas?.some(c => metadatos.has(c.id))) {
+    return { ok: false, motivo: 'columna de metadatos interpretada como candidatura', revision: false, diagnostico }
+  }
 
   // Nivel 2 — coherencia (rangos y tope de cámara)
   for (const s of nuevo.sondeos) {

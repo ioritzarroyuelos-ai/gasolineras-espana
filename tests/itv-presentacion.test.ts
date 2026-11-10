@@ -3,6 +3,16 @@ import { parse } from 'node-html-parser'
 import { telefonosItv, mapsHref, enlaceOficialItv, type EstacionITV } from '../src/lib/itv'
 import { tarjetaItv, avisoDirectorio, buildItvMunicipioPage, buildItvPreciosPage, itvHeaders } from '../src/html/itv'
 import { TARIFAS, desglosa } from '../src/lib/itv-tarifas'
+import type { EstadoTarifasItv } from '../src/lib/itv-tarifas-estado'
+
+function estadoTarifas(): EstadoTarifasItv {
+  const checkedAt = new Date().toISOString()
+  const ids = [...TARIFAS.filter(t => t.estado === 'verificada').map(t => t.slug), 'tasa-dgt']
+  return { v:1, estado:'verificada', checkedAt,
+    fuentes:ids.map(id=>({id,url:'https://example.com/',checkedAt,estado:'verificada'})),
+    tarifas:ids.filter(id=>id!=='tasa-dgt').map(slug=>({slug,estado:'verificada',fuentes:[slug,'tasa-dgt']})),
+  }
+}
 
 const estacion: EstacionITV = {
   id: 'test', prov: '50', mun: 'UTEBO', dir: 'C/ de la prueba, 1', cp: '50180',
@@ -83,7 +93,7 @@ describe('comparación de precios', () => {
   })
   it.each(['gasolina', 'diesel'] as const)('ordena por %s y deja pendientes sin inventar importes', combustible => {
     vi.useFakeTimers().setSystemTime(new Date('2026-11-07T12:00:00Z'))
-    const root = parse(buildItvPreciosPage('nonce', 'https://example.com/itv/precios', combustible))
+    const root = parse(buildItvPreciosPage('nonce', 'https://example.com/itv/precios', combustible, estadoTarifas()))
     expect(root.querySelector('option[selected]')?.getAttribute('value')).toBe(combustible)
     const cifras = root.querySelectorAll('.precios .precio-linea b').map(el => Number(el.textContent.replace(' €', '').replace(',', '.')))
     expect(cifras.length).toBeGreaterThan(0)

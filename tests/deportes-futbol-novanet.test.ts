@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parse } from 'node-html-parser'
-import { categoriaDuplicadaNovanet, fusionaCompeticionesFutbol, idGrupoNovanet, numeroVisualNovanet, obtieneNovanet, parseaAgendaNovanet, parseaCatalogoNovanet, parseaClasificacionNovanet, parseaSelectorNovanet } from '../scripts/lib/deportes-futbol-novanet.mjs'
+import { categoriaDuplicadaNovanet, eligeActualizacionNovanet, presupuestoPortalNovanet, fusionaCompeticionesFutbol, idGrupoNovanet, numeroVisualNovanet, obtieneNovanet, parseaAgendaNovanet, parseaCatalogoNovanet, parseaClasificacionNovanet, parseaSelectorNovanet } from '../scripts/lib/deportes-futbol-novanet.mjs'
 import type { CompeticionDeportiva } from '../scripts/lib/deportes.mjs'
 import { creaSesionFederativa } from '../scripts/lib/deportes-futbol-sesion.mjs'
 import { parseaAgendaMadrid, parseaClasificacionMadrid } from '../scripts/lib/deportes-futbol-madrid.mjs'
@@ -161,7 +161,7 @@ describe('consulta pública de Madrid', () => {
       expect(salida.incidencias.filter(i => i.motivo === 'Madrid devuelve otra competición o grupo')).toHaveLength(2)
       expect(JSON.stringify(salida)).not.toMatch(/diagnosticoMadrid|grupoRecibido|competicionEsperada|NO_PUBLICAR/)
       expect(salida.competiciones).toHaveLength(0)
-      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: ['rfef-tercera-masculina-7'] })
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: ['rfef-tercera-masculina-7'], intentados: ['rfef-tercera-masculina-7'] })
       expect(fetcher).toHaveBeenCalledTimes(3)
     } finally { vi.useRealTimers() }
   })
@@ -185,7 +185,7 @@ describe('consulta pública de Madrid', () => {
       const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
       await vi.runAllTimersAsync()
       const salida = await pendiente
-      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: bloque === 'tabla' ? ['rfef-tercera-masculina-7'] : [] })
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: ['rfef-tercera-masculina-7'], revisados: bloque === 'tabla' ? ['rfef-tercera-masculina-7'] : [], intentados: ['rfef-tercera-masculina-7'] })
       expect(salida.incidencias.some(i => i.id === 'rfef-tercera-masculina-7' && i.motivo.includes('limitado'))).toBe(true)
       expect(fetcher).toHaveBeenCalledTimes(bloque === 'tabla' ? 3 : 2)
     } finally { vi.useRealTimers() }
@@ -315,7 +315,7 @@ describe('checkpoint de categorías y grupos territoriales', () => {
       expect(guardado.catalogo?.temporada.nombre).toBe('2026-2027')
       expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(5)
       expect(idGrupoNovanet('rfef', guardado.catalogo!.categorias[0], guardado.catalogo!.categorias[0].grupos![0])).toBe('rfef-segunda-masculina-1')
-      expect(salida.seguimientoGrupos).toEqual({ conocidos: [], revisados: [] })
+      expect(salida.seguimientoGrupos).toEqual({ conocidos: [], revisados: [], intentados: [] })
       expect(guardado.intentos).toEqual({})
       expect(fetcher).toHaveBeenCalledTimes(2)
     } finally { vi.useRealTimers() }
@@ -332,15 +332,78 @@ describe('checkpoint de categorías y grupos territoriales', () => {
         : '<select name="temporada"><option value="22">2026-2027</option></select><select name="competicion"><optgroup label="Fútbol"><option value="33836091">Campeonato Nacional de Liga de Segunda Federación</option></optgroup></select>'))
       const consulta = () => obtieneNovanet({ fuentesNovanet: ['rfef'], maxPeticionesNovanet: 1, estadoNovanet: { rfef: guardado }, fetcher, guardarEstadoNovanet: (_id, estado) => { guardado = normalizaEstadoNovanet(checkpointNovanet(estado)) } })
       const primera = consulta(); await vi.runAllTimersAsync()
-      expect((await primera).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1', 'rfef-segunda-masculina-2'], revisados: [] })
+      expect((await primera).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1', 'rfef-segunda-masculina-2'], revisados: [], intentados: [] })
       expect(guardado.catalogo?.categorias).toHaveLength(1)
       expect(guardado.catalogo?.categorias[0].gruposPendientes).toBe(true)
       expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(2)
       const segunda = consulta(); await vi.runAllTimersAsync()
-      expect((await segunda).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1'], revisados: [] })
+      expect((await segunda).seguimientoGrupos).toEqual({ conocidos: ['rfef-segunda-masculina-1'], revisados: [], intentados: [] })
       expect(guardado.catalogo?.categorias[0].gruposPendientes).toBeUndefined()
       expect(guardado.catalogo?.categorias[0].grupos).toHaveLength(1)
       expect(fetcher).toHaveBeenCalledTimes(2)
+    } finally { vi.useRealTimers() }
+  })
+})
+
+describe('renovación de grupos publicados antes de agotar un catálogo grande', () => {
+  const ahora = Date.parse('2026-11-10T17:00:00Z'), antigua = '2026-11-08T17:00:00Z'
+  const semilla = (cantidad = 4) => normalizaEstadoNovanet({ version: 1, catalogo: {
+    temporada: { codigo: '22', nombre: '2026-2027' }, verificadoEn: '2026-11-10T12:00:00Z', categorias: [{ codigo: '26738226',
+      nombre: 'LIGA REGIONAL DE PRUEBA', familia: 'Fútbol', grupos: Array.from({ length: cantidad }, (_, i) => ({ codigo: String(100 + i), nombre: 'Grupo ' + i })) }],
+  }, verificados: Object.fromEntries(Array.from({ length: cantidad - 1 }, (_, i) => ['26738226-' + (101 + i), antigua])) })
+  it('elige primero la fecha más antigua y excluye recientes, cubiertos, no publicados y ya intentados', () => {
+    const estado = semilla()
+    estado.verificados['26738226-102'] = '2026-11-07T17:00:00Z'
+    estado.verificados['26738226-103'] = '2026-11-10T10:00:00Z'
+    expect(eligeActualizacionNovanet('madrid', estado, ahora)?.codigoGrupo).toBe('102')
+    expect(eligeActualizacionNovanet('madrid', estado, ahora, { visitados: ['26738226-102'] })?.codigoGrupo).toBe('101')
+    expect(eligeActualizacionNovanet('madrid', estado, ahora, { publicados: ['novanet-madrid-103'] })).toBeNull()
+    expect(eligeActualizacionNovanet('madrid', estado, ahora, { cubiertos: ['novanet-madrid-101', 'novanet-madrid-102'] })).toBeNull()
+    estado.intentos = { '26738226-102': { fecha: '2026-11-10T16:30:00Z', fallo: true } }
+    expect(eligeActualizacionNovanet('madrid', estado, ahora)?.codigoGrupo).toBe('101')
+  })
+  it('amplía el presupuesto de forma acotada por los grupos publicados y nunca excede 120', () => {
+    expect(presupuestoPortalNovanet('madrid', semilla())).toBe(20)
+    expect(presupuestoPortalNovanet('madrid', semilla(100))).toBe(58)
+    expect(presupuestoPortalNovanet('madrid', semilla(1000))).toBe(120)
+    expect(presupuestoPortalNovanet('madrid', semilla(1000), ['novanet-madrid-101'])).toBe(20)
+  })
+  it('renueva dos grupos antiguos y después descubre uno nuevo, sin consultar dos veces el mismo grupo', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(ahora)
+    try {
+      const estado = semilla(), orden: string[] = []
+      const fetcher = vi.fn(async (entrada: RequestInfo | URL) => {
+        const url = new URL(String(entrada))
+        if (url.pathname.includes('/api/group-rounds')) {
+          orden.push(url.searchParams.get('idGroup')!)
+          return new Response(JSON.stringify({ estado: '1', jornadas: [{ codjornada: '9', nombre: '9', fecha_jornada: '01-11-2026' }] }))
+        }
+        const grupo = url.searchParams.get('idGroup') || url.searchParams.get('grupo')!
+        return new Response(fixture(url.pathname.includes('/api/results') ? 'madrid-agenda.json' : 'madrid-tabla.html').replaceAll('26738227', grupo))
+      })
+      const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
+      await vi.runAllTimersAsync()
+      const salida = await pendiente
+      expect(orden).toEqual(['101', '102', '100', '103'])
+      expect(salida.competiciones).toHaveLength(4)
+      expect(salida.seguimientoGrupos?.intentados).toEqual(orden.map(id => 'novanet-madrid-' + id))
+      expect(salida.estadisticas[0].peticiones).toBe(12)
+    } finally { vi.useRealTimers() }
+  })
+  it('la renovación prioritaria respeta el presupuesto horario persistido y Retry-After', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(ahora)
+    try {
+      const estado = semilla(), fetcher = vi.fn(async () => new Response('Descanso', { status: 429, headers: { 'Retry-After': '7200' } }))
+      estado.ventana = { desde: new Date(ahora - 1000).toISOString(), peticiones: 118 }
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
+      expect(fetcher).not.toHaveBeenCalled()
+      estado.ventana = { desde: null, peticiones: 0 }
+      let guardado = estado
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher, guardarEstadoNovanet: (_id, e) => { guardado = e } })
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      expect(guardado.noConsultarAntes).toBe('2026-11-10T19:00:00.000Z')
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: guardado }, fetcher })
+      expect(fetcher).toHaveBeenCalledTimes(1)
     } finally { vi.useRealTimers() }
   })
 })

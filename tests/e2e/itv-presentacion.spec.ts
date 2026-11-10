@@ -8,7 +8,12 @@ test('las fichas de ITV tienen teléfonos separados, nombre y destino', async ({
   const telefonos = card.locator('a[href^="tel:"]')
   expect(await telefonos.count()).toBeGreaterThan(0)
   for (const link of await telefonos.all()) expect(await link.getAttribute('href')).toMatch(/^tel:[6789]\d{8}$/)
-  await expect(card.getByRole('link', { name: 'Cómo llegar' })).toHaveAttribute('href', /^https:\/\/www\.google\.com\/maps\//)
+  const destino = card.getByRole('link', { name: /Cómo llegar|Buscar dirección en el mapa/ })
+  await expect(destino).toHaveAttribute('href', /^https:\/\/www\.google\.com\/maps\//)
+  if ((await destino.getAttribute('href'))?.includes('/search/')) {
+    await expect(destino).toHaveText('Buscar dirección en el mapa')
+    await expect(card).toContainText('Ubicación exacta pendiente de confirmar')
+  }
 })
 
 test('precios: elegir diésel funciona sin JavaScript y ordena los importes', async ({ browser }) => {

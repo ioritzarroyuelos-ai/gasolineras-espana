@@ -32,7 +32,14 @@ async function main() {
   }))
   for (const f of fuentes)
     console.log(f.nombre+': '+f.estaciones.length+' estaciones, '+f.estado+(f.error ? ' ('+f.error+')' : '')+(f.publicado ? ', publicación '+f.publicado : ''))
-  if (!fuentes.some(f => f.estado === 'actualizada')) throw Error('Ninguna fuente oficial respondió correctamente. Se conserva el directorio anterior.')
+  const fuentesEstado = fuentes.map(({ estaciones, excluidas, ...estado }) => ({ ...estado, total:estaciones.length }))
+  if (!fuentes.some(f => f.estado === 'actualizada')) {
+    // Publicamos también el fallo; no rejuvenecemos generatedAt ni las fichas.
+    mkdirSync(FUENTES_DIR,{recursive:true})
+    for (const f of fuentes) escribir(resolve(FUENTES_DIR,f.id+'.json'),f)
+    escribir(ARCHIVO,{...previo,fuentesEstado})
+    throw Error('Ninguna fuente oficial respondió correctamente. Se conserva el directorio anterior con el aviso del intento fallido.')
+  }
   const incidencias = []
   const combinado = combinaFuentesItv(fuentes,incidencias)
   for (const [motivo,filas] of Object.entries(Object.groupBy(incidencias,i=>i.motivo)))
@@ -44,7 +51,6 @@ async function main() {
   for (const p of Object.values(perfiles))
     console.log(p.nombre+': citas '+p.estado+(p.error ? ' ('+p.error+')' : ''))
   if (estaciones.length < 300) throw Error('La combinación no tiene cobertura nacional suficiente')
-  const fuentesEstado = fuentes.map(({ estaciones, excluidas, ...estado }) => ({ ...estado, total:estaciones.length }))
   const payload = { v:2, generatedAt:new Date().toISOString(), fuentes:fuentes.map(f=>f.nombre),
     fuentesEstado, incidencias, total:estaciones.length, estaciones }
   mkdirSync(FUENTES_DIR,{recursive:true})
@@ -53,5 +59,9 @@ async function main() {
   escribir(ARCHIVO,payload)
   console.log('OK: '+estaciones.length+' estaciones en '+new Set(estaciones.map(e=>e.prov)).size+' provincias; '
     +estaciones.filter(e=>e.citaUrl).length+' con cita oficial; '+estaciones.filter(e=>e.lat!==null).length+' con coordenadas.')
+  if (fuentes.some(f=>f.estado!=='actualizada') || Object.values(perfiles).some(p=>p.estado!=='actualizada')) {
+    console.error('Parte de las fuentes o citas no pudo comprobarse: copia conservada con su fecha anterior.')
+    process.exitCode = 1
+  }
 }
 main().catch(e => { console.error('FATAL: '+e.message); process.exitCode = 1 })

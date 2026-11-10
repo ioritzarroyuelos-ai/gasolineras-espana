@@ -9,7 +9,16 @@ import {
   todayUtc,
   buildInsertBatches,
   purgeCutoffDate,
+  hydrateDedupe, missingHistoryDates,
 } from '../src/lib/history'
+
+describe('días realmente capturados', () => {
+  it('no repite el precio sobre días sin captura', () => {
+    const puntos = hydrateDedupe([['2026-11-08', 1500]], '2026-11-08', '2026-11-10', ['2026-11-08', '2026-11-10'])
+    expect(puntos.map(p => p.date)).toEqual(['2026-11-08', '2026-11-10'])
+    expect(missingHistoryDates(puntos, '2026-11-08', '2026-11-10')).toEqual(['2026-11-09'])
+  })
+})
 
 // ============================================================
 // history.ts — conversion snapshot Ministerio → filas D1.

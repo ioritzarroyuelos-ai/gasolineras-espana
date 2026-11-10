@@ -233,3 +233,64 @@ export function construyeIndex(estado, ahora = new Date()) {
     nacional: estado.nacional ? { from: estado.nacional.from, to: estado.nacional.to } : null,
   }
 }
+
+// La fecha pertenece a la captura oficial, no al día en que se descarga.
+export function fechaSnapshot(snapshot) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4}) /.exec(snapshot?.Fecha || '')
+  if (!m) throw Error('Falta la fecha oficial de la captura')
+  const iso = `${m[3]}-${m[2]}-${m[1]}`
+  if (!Number.isFinite(Date.parse(iso)) || new Date(iso).toISOString().slice(0,10) !== iso) throw Error('Fecha oficial inválida')
+  return iso
+}
+
+export function huecosRecientes(estado, hasta, dias = 30) {
+  const inicio = new Date(Date.parse(hasta) - (dias - 1) * 86400000).toISOString().slice(0,10)
+  const desde = [inicio, estado.nacional?.from || hasta].sort().at(-1)
+  const fechas = Object.values(estado.nacional?.series || {}).filter(ps => ps.length).map(ps => new Set(ps.map(p => p[0])))
+  // Una provincia puede no vender alguno de los combustibles. Basta su captura
+  // en cualquier serie provincial; no exigimos precios de un producto ausente.
+  for (const f of estado.medianas.values()) fechas.push(new Set(Object.values(f.median).flatMap(ps => ps.map(p => p[0]))))
+  const out = []
+  for (let d = desde; d < hasta; d = new Date(Date.parse(d) + 86400000).toISOString().slice(0,10)) {
+    if (fechas.some(fs => !fs.has(d))) out.push(d)
+  }
+  return out
+}
+
+// Insertar un día perdido no puede prolongar su precio sobre días posteriores.
+// Materializamos el valor original del día siguiente antes de compactar de nuevo.
+export function insertaPuntoHistorico(serie, fecha, cents, hasta) {
+  const siguiente = new Date(Date.parse(fecha) + 86400000).toISOString().slice(0,10)
+  const previo = serie.filter(p => p[0] <= siguiente).at(-1)
+  const puntos = serie.filter(p => p[0] !== fecha).concat([[fecha, cents]])
+  if (siguiente <= hasta && previo && !puntos.some(p => p[0] === siguiente)) puntos.push([siguiente, previo[1]])
+  puntos.sort((a,b) => a[0].localeCompare(b[0]))
+  return puntos.filter((p,i) => !i || puntos[i-1][1] !== p[1])
+}
+
+export function reparaSnapshotHistorico(estado, snapshot, fecha, ahora = new Date()) {
+  if (fechaSnapshot(snapshot) !== fecha) throw Error('El archivo oficial no corresponde al día solicitado')
+  const filas = filasSnapshot(snapshot)
+  if (!filas.length) throw Error('Captura histórica vacía')
+  const solo = aplicaSnapshot({ provincias:new Map(), medianas:new Map(), nacional:null }, snapshot, fecha, ahora).estado
+  const provincias = new Map(estado.provincias), medianas = new Map(estado.medianas)
+  for (const [prov, nuevo] of solo.provincias) {
+    const anterior = provincias.get(prov)
+    if (!anterior) { provincias.set(prov,nuevo); continue }
+    if (anterior.to < fecha) { provincias.set(prov,anadeDiaProvincia(anterior,prov,filas.filter(f=>f.provincia===prov),fecha,ahora)); continue }
+    const stations = Object.fromEntries(Object.entries(anterior.stations).map(([id,fs]) => [id,{...fs}]))
+    for (const [id,fs] of Object.entries(nuevo.stations)) {
+      stations[id] ||= {}
+      for (const [fuel,puntos] of Object.entries(fs)) stations[id][fuel] = insertaPuntoHistorico(stations[id][fuel] || [], fecha,puntos[0][1],anterior.to)
+    }
+    provincias.set(prov,{...anterior,generated_at:ahora.toISOString(),stations})
+  }
+  const unir = (anterior,nuevo,campo) => {
+    if (!anterior) return nuevo
+    const series = {...anterior[campo]}
+    for (const [fuel,puntos] of Object.entries(nuevo[campo])) series[fuel] = (series[fuel] || []).filter(p => p[0] !== fecha).concat(puntos).sort((a,b)=>a[0].localeCompare(b[0]))
+    return {...anterior,...cabecera(anterior,anterior.to > fecha ? anterior.to : fecha,ahora),[campo]:series}
+  }
+  for (const [prov,nuevo] of solo.medianas) medianas.set(prov,unir(medianas.get(prov),nuevo,'median'))
+  return {estado:{provincias,medianas,nacional:unir(estado.nacional,solo.nacional,'series')},resumen:{fecha,filas:filas.length,provincias:solo.provincias.size}}
+}

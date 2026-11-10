@@ -15,7 +15,8 @@ describe('antigüedad del directorio ITV', () => {
       expect(avisoDirectorio(date, now)).toContain('Fecha de los datos no disponible')
       expect(avisoDirectorio(date, now)).toContain('Directorio pendiente')
     }
-    expect(avisoDirectorio('2026-11-01T08:00:00Z', now)).not.toContain('pendiente de actualizar')
+    expect(avisoDirectorio('2026-11-03T08:00:00Z', now)).not.toContain('pendiente de actualizar')
+    expect(avisoDirectorio('2026-11-01T08:00:00Z', now)).toContain('pendiente de actualizar')
   })
   it('incluye la fecha en los tres niveles del directorio', () => {
     const updatedAt = '2026-08-01T08:00:00Z'

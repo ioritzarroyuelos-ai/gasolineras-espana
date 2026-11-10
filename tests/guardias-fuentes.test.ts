@@ -24,6 +24,16 @@ describe('fuentes oficiales de guardias', () => {
     expect(rows[0][6]).toMatch(/^2026-11-03 /)
     expect(() => parseAlmeria(almeria, '2026-11-05')).toThrow()
   })
+  it('Almería elimina repeticiones exactas, conserva turnos diferentes y valida el total antes de deduplicar', () => {
+    const copia = structuredClone(almeria)
+    const farmacia = copia.data.data.informacion[0].contenido[0]
+    farmacia.guardias.push(structuredClone(farmacia.guardias[0]))
+    expect(parseAlmeria(copia, fecha).rows).toEqual(parseAlmeria(almeria, fecha).rows)
+    copia.data.data.informacion[0].contenido.push(structuredClone(farmacia))
+    expect(() => parseAlmeria(copia, fecha)).toThrow(/incompleto/)
+    copia.data.data.metadatos.paginacion.totalElementos++
+    expect(parseAlmeria(copia, fecha).rows).toEqual(parseAlmeria(almeria, fecha).rows)
+  })
   it('Alicante v2 conserva el turno de ayer y el cruce de medianoche', () => {
     const rows = parseAlicante(alicante, fecha)
     expect(rows).toHaveLength(3)

@@ -32,6 +32,10 @@ describe('estado de los servicios', () => {
     expect(serviceStatusHtml(s, 'nonce')).toContain('&lt;script&gt;')
     expect(serviceStatusHtml(s, 'nonce')).not.toContain('<script>malo')
   })
+  it('ITV requiere una comprobación diaria aunque el documento oficial no haya cambiado', () => {
+    const m = fixture(); m.services[3].items[0].updatedAt = new Date(now - 31 * 3600000).toISOString()
+    expect(evaluateServices(m, now).services[3].ok).toBe(false)
+  })
   it('no envía confirmación verde si falta el estado ni si hay errores recurrentes', () => {
     expect(monitorMessage([], null, 'hoy', 'https://example.test')).toMatch(/^⚠️/)
     expect(monitorMessage([{ count: 2, message: 'fallo' }], evaluateServices(fixture(), now), 'hoy', 'https://example.test')).toMatch(/^⚠️/)

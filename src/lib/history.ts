@@ -139,20 +139,20 @@ export function purgeCutoffDate(now: Date, years: number = 2): string {
 //   from: 2025-04-26, to: 2025-05-17
 //   => [{2025-04-26: 1456}, ..., {2025-05-14: 1456}, {2025-05-15: 1462}, {2025-05-16: 1462}, {2025-05-17: 1462}]
 //
-// Por que hidratar en lugar de devolver dedupe al cliente: el sparkline SVG
-// posiciona los puntos por indice (no por fecha real). Si dejamos solo
-// cambios, dos puntos a 1 mes de distancia se dibujan adyacentes — falsea
-// la trayectoria temporal. Hidratar mantiene el formato esperado por el
-// cliente sin tocar el render.
+// Recupera los días sin cambio de precio para calcular medias y extremos.
+// capturedDates distingue una captura igual a la anterior de un día en el que
+// faltó la descarga. Los días sin captura quedan fuera de la serie y del gráfico.
 export function hydrateDedupe(
   dedup: Array<[string, number]>,
   from: string,
   to: string,
+  capturedDates?: string[],
 ): Array<{ date: string; price: number }> {
   if (dedup.length === 0) return []
   const out: Array<{ date: string; price: number }> = []
   let cursor = 0
   let currentCents: number | null = null
+  const captured = capturedDates ? new Set(capturedDates) : null
 
   // Antes del rango: avanzamos cursor hasta encontrar el ultimo punto <= from
   // (lo guardamos como 'precio inicial'). Esto cubre el caso "el ultimo cambio
@@ -172,10 +172,19 @@ export function hydrateDedupe(
       currentCents = dedup[cursor][1]
       cursor++
     }
-    if (currentCents != null) {
+    if (currentCents != null && (!captured || captured.has(iso))) {
       out.push({ date: iso, price: currentCents / 1000 })
     }
     day.setUTCDate(day.getUTCDate() + 1)
   }
   return out
+}
+
+export function missingHistoryDates(points: Array<{date: string}>, from: string, to: string): string[] {
+  if (!points.length) return []
+  const dates = new Set(points.map(p=>p.date)), missing: string[] = []
+  for (let day = from; day <= to; day = new Date(Date.parse(day) + 86400000).toISOString().slice(0,10)) {
+    if (!dates.has(day)) missing.push(day)
+  }
+  return missing
 }

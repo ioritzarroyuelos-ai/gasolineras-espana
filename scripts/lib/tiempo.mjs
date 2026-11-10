@@ -79,6 +79,15 @@ function maxVelocidad(arr) {
   return m
 }
 
+// Algunas respuestas OpenData rellenan 00-24 con 0 cuando solo quedan franjas.
+// Si contradice las probabilidades parciales, el resumen diario es desconocido.
+function lluviaDiaria(arr) {
+  const diario = num(periodoDia(arr, 'value'))
+  if (diario === null || diario < 0 || diario > 100) return null
+  const contradictorio = (arr || []).some(p => p?.periodo && p.periodo !== '00-24' && num(p.value) > diario)
+  return contradictorio ? null : diario
+}
+
 /** Predicción diaria de AEMET (respuesta del segundo paso) -> normalizada. */
 export function normalizaAemet(raw, meta) {
   const root = Array.isArray(raw) ? raw[0] : raw
@@ -92,13 +101,13 @@ export function normalizaAemet(raw, meta) {
     tmax: num(d.temperatura?.maxima),
     tmin: num(d.temperatura?.minima),
     cielo: String(periodoDia(d.estadoCielo, 'descripcion') || '').trim(),
-    probLluvia: num(periodoDia(d.probPrecipitacion, 'value')),
+    probLluvia: lluviaDiaria(d.probPrecipitacion),
     viento: maxVelocidad(d.viento),
   }))
   return {
     ine: meta.ine, nombre: meta.nombre, provincia: meta.provincia,
     urlMunicipio: urlMunicipioAemet(root?.origen?.enlace, meta.ine),
-    elaborado: root?.elaborado || '', fuente: 'AEMET', versionPeriodos: 2, dias,
+    elaborado: root?.elaborado || '', fuente: 'AEMET', versionPeriodos: 3, dias,
   }
 }
 
@@ -182,7 +191,7 @@ export function prediccionVigente(pred, ahora = Date.now()) {
     return fecha >= hoy && fecha <= limite && (d.tmin != null || d.tmax != null)
   }).sort((a,b) => a.fecha.localeCompare(b.fecha)).map(d => {
     // Los snapshots anteriores no conservaban el periodo de la lluvia o el cielo.
-    return pred.fuente === 'AEMET' && pred.versionPeriodos !== 2 ? { ...d, cielo: '', probLluvia: null } : d
+    return pred.fuente === 'AEMET' && pred.versionPeriodos !== 3 ? { ...d, cielo: '', probLluvia: null } : d
   })
   return dias.length ? { ...pred, dias } : null
 }

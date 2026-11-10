@@ -10,3 +10,15 @@ export function conservaIncidenciasGrupos(anteriores, actuales, seguimiento) {
   }
   return [...unicas.values()]
 }
+
+// Omitir un grupo por cupo no es una consulta ni un fallo. Sólo un intento
+// identificado puede cambiar la fecha de consulta; la de verificación no cambia.
+export function conservaGrupoFueraDeTanda(anterior, fecha, intentados) {
+  if (!intentados.has(anterior.id)) return anterior
+  const copia = { ...anterior, comprobadoEn: fecha }
+  for (const k of ['agenda', 'clasificacion']) copia[k] = { ...anterior[k], consultado: fecha,
+    estado: anterior[k].verificadoEn ? 'conservado' : 'no_disponible',
+    aviso: 'No se ha podido volver a comprobar esta competición. Consulta la fuente antes de organizarte.',
+  }
+  return copia
+}

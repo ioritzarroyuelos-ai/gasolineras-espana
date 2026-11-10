@@ -11,6 +11,7 @@ import { buscadorItv, resultadosItv, CSS_BUSCADOR_ITV } from './itv-buscador'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 import { escapeHtml as esc } from './html'
 import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
+import { comprobacionItvReciente, tarifaComprobadaHoy, type EstadoTarifasItv } from '../lib/itv-tarifas-estado'
 
 function fecha(value?: string): string {
   if (!value || !/^\d{4}-\d{2}(?:-\d{2}(?:T.*)?)?$/.test(value)) return ''
@@ -34,7 +35,7 @@ function enlace(url: string | undefined, texto: string): string {
 
 export function avisoDirectorio(updatedAt?: string, now = Date.now(), fuentes?: FuenteItvEstado[]): string {
   if (fuentes?.length) {
-    const conservadas = fuentes.some(f => f.estado === 'conservada')
+    const conservadas = fuentes.some(f => f.estado === 'conservada' || !comprobacionItvReciente(f.consultado, now))
     return '<aside class="aviso" aria-label="Actualización del directorio"><details><summary>'
       + (conservadas ? 'Parte del directorio sigue pendiente de actualizar' : 'Fechas y fuentes del directorio')
       + '</summary><p>Consultar un documento hoy no cambia la fecha de sus datos. Los teléfonos y los horarios pueden tener una fecha distinta.</p><ul>'
@@ -43,12 +44,13 @@ export function avisoDirectorio(updatedAt?: string, now = Date.now(), fuentes?: 
         + (f.estado === 'conservada'
           ? '. Fuente no disponible; conservamos la copia anterior' + (fecha(f.ultimoExito) ? ' del ' + fechaHtml(f.ultimoExito) : '')
           : (fecha(f.consultado) ? '. Consultado el ' + fechaHtml(f.consultado) : ''))
+        + (!comprobacionItvReciente(f.consultado, now) ? '. Comprobación diaria pendiente' : '')
         + '.</li>').join('')
       + '</ul><p>Confirma horario y cita con la estación antes de acudir.</p></details></aside>'
   }
   const date = updatedAt ? Date.parse(updatedAt) : NaN
   const valid = Number.isFinite(date) && date <= now + 300000
-  const stale = !valid || now - date > 40 * 86400000
+  const stale = !valid || !comprobacionItvReciente(updatedAt, now)
   const label = valid ? new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Madrid' }).format(date) : ''
   return '<aside class="aviso" aria-label="Actualización del directorio">'
     + (stale ? '<strong>Directorio pendiente de actualizar.</strong> ' : '')
@@ -101,14 +103,16 @@ export function tarjetaItv(e: EstacionITV, municipio: string, distanciaKm?: numb
     + '<div class="acciones">'
     + (cita ? '<a class="btn btn--principal" href="' + esc(cita) + '" target="_blank" rel="noopener">Pedir cita</a>' : '')
     + telefonos.map(t => '<a class="btn' + (cita ? '' : ' btn--principal') + '" href="' + esc(t.href) + '">Llamar ' + esc(t.texto) + '</a>').join('')
-    + '<a class="btn" href="' + esc(mapsHref(e)) + '" target="_blank" rel="noopener">Cómo llegar</a>'
+    + '<a class="btn" href="' + esc(mapsHref(e)) + '" target="_blank" rel="noopener">' + (mapsHref(e).includes('/dir/') ? 'Cómo llegar' : 'Buscar dirección en el mapa') + '</a>'
     + (web && web !== cita ? '<a class="btn" href="' + esc(web) + '" target="_blank" rel="noopener">Web oficial</a>' : '')
     + '</div>'
+    + (!mapsHref(e).includes('/dir/') ? '<p class="meta">Ubicación exacta pendiente de confirmar. Comprueba que el mapa encuentra esta dirección.</p>' : '')
     + (e.horario.length > 180
       ? '<details class="horario"><summary>Ver horario y excepciones</summary><p>' + esc(e.horario) + '</p></details>'
       : '<p><strong>Horario:</strong> ' + (e.horario ? esc(e.horario) : 'confírmalo con la estación') + '</p>')
     + (!cita ? '<p class="meta">Cita por internet pendiente de verificar' + (telefonos.length ? '; puedes llamar a la estación.' : '.') + '</p>'
-      : '<p class="meta">La reserva se realiza en la web del operador.' + (fecha(e.citaVerificadoEn) ? ' Enlace comprobado el ' + esc(fecha(e.citaVerificadoEn)) + '.' : '') + '</p>')
+      : '<p class="meta">La reserva se realiza en la web del operador.' + (fecha(e.citaVerificadoEn) ? ' Enlace comprobado el ' + esc(fecha(e.citaVerificadoEn)) + '.' : '')
+        + (!comprobacionItvReciente(e.citaVerificadoEn) ? ' Comprobación diaria del enlace pendiente.' : '') + '</p>')
     + (e.municipioFuenteUrl && fecha(e.municipioVerificadoEn) ? '<p class="meta">Municipio confirmado el ' + esc(fecha(e.municipioVerificadoEn))
       + ' · ' + enlace(e.municipioFuenteUrl, 'Fuente del municipio') + '.</p>' : '')
     + (publicacion || consulta ? '<p class="meta">' + enlace(e.fuenteUrl, 'Fuente oficial')
@@ -140,7 +144,7 @@ function migas(canonical: string, provincia?: { name: string; slug: string }, mu
 export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], total: number, canonical: string, updatedAt?: string, fuentesEstado?: FuenteItvEstado[]): string {
   return envoltorio({ title: 'Estaciones de ITV en España | España Útil', desc: 'Busca estaciones de ITV en tu municipio o cerca de él. Dirección, teléfonos, cita y precios con sus fuentes.', canonical, nonce, breadcrumb: migas(canonical) },
     '<h1>Encuentra tu ITV</h1><p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
-    + buscadorItv(nonce) + '<p class="hint">Busca tu municipio. Si no tenemos una estación allí, te mostramos las más cercanas que podemos localizar.</p>'
+    + buscadorItv(nonce) + '<p class="hint">Busca tu municipio. Si no tenemos una estación allí, te mostramos las más cercanas que podemos localizar. No todas las estaciones publican ubicación, teléfono u horario: el directorio por provincias incluye también las que no podemos situar en el mapa.</p>'
     + '<p><a class="btn" href="/itv/precios">Comparar precios de la ITV</a></p>' + avisoDirectorio(updatedAt, Date.now(), fuentesEstado)
     + '<h2>Buscar por provincia</h2><nav class="lista" aria-label="Provincias"><ul>'
     + provincias.map(p => '<li><a href="/itv/' + esc(p.slug) + '">' + esc(p.name) + ' <b>' + p.count + '</b></a></li>').join('')
@@ -155,6 +159,7 @@ export function buildItvBusquedaPage(nonce: string, consulta: string, resultados
 }
 
 export interface ItvProvinciaData {
+  tarifasEstado?: EstadoTarifasItv | null;
   directorioDisponible?: boolean;
   updatedAt?: string; fuentesEstado?: FuenteItvEstado[]; provinciaSlug: string; provinciaName: string;
   estaciones: EstacionITV[]; municipios: MunicipioITV[]; tarifa: Tarifa | null; canonical: string
@@ -167,10 +172,11 @@ export function buildItvProvinciaPage(nonce: string, d: ItvProvinciaData): strin
     + '<p class="sub">' + d.estaciones.length + ' estaciones en ' + d.municipios.length + ' municipios</p>'
     + buscadorItv(nonce) + '<h2>Elige un municipio</h2><nav class="lista" aria-label="Municipios con ITV"><ul>'
     + d.municipios.map(m => '<li><a href="/itv/' + esc(d.provinciaSlug) + '/' + esc(m.slug) + '">' + esc(m.name) + ' <b>' + m.count + '</b></a></li>').join('')
-    + '</ul></nav>' + bloquePrecioProvincia(d.tarifa, d.provinciaName) + avisoDirectorio(d.updatedAt, Date.now(), d.fuentesEstado))
+    + '</ul></nav>' + bloquePrecioProvincia(d.tarifa, d.provinciaName, d.tarifasEstado) + avisoDirectorio(d.updatedAt, Date.now(), d.fuentesEstado))
 }
 
 export interface ItvMunicipioData {
+  tarifasEstado?: EstadoTarifasItv | null;
   directorioDisponible?: boolean;
   updatedAt?: string; fuentesEstado?: FuenteItvEstado[]; provinciaSlug: string; provinciaName: string; municipioName: string;
   estaciones: EstacionITV[]; otrosMunicipios: MunicipioITV[]; canonical: string; tarifa?: Tarifa | null;
@@ -203,7 +209,7 @@ export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): strin
       ? 'No hemos localizado estaciones con ubicación conocida a menos de ' + DISTANCIA_MAX_ITV_KM + ' km.'
       : 'No disponemos de ubicaciones suficientes para calcular las más cercanas.')
       + ' Consulta las estaciones de la provincia.</p>' : '')
-    + (n ? bloquePrecioProvincia(d.tarifa || null, d.provinciaName) : '<p><a class="btn" href="/itv/precios">Consultar precios por territorio</a></p>')
+    + (n ? bloquePrecioProvincia(d.tarifa || null, d.provinciaName, d.tarifasEstado) : '<p><a class="btn" href="/itv/precios">Consultar precios por territorio</a></p>')
     + avisoDirectorio(d.updatedAt, Date.now(), d.fuentesEstado)
     + '<h2>Buscar otro lugar</h2>' + buscadorItv(nonce)
     + (d.otrosMunicipios.length ? '<nav class="lista" aria-label="Otros municipios"><h2>Otros municipios de ' + esc(d.provinciaName) + '</h2><ul>'
@@ -213,20 +219,20 @@ export function buildItvMunicipioPage(nonce: string, d: ItvMunicipioData): strin
 function eur(n: number): string { return n.toFixed(2).replace('.', ',') + ' €' }
 type Combustible = 'gasolina' | 'diesel'
 
-function totalTarifa(t: Tarifa, combustible: Combustible): number | null {
+function totalTarifa(t: Tarifa, combustible: Combustible, estado?: EstadoTarifasItv | null): number | null {
   const precio = t[combustible]
-  return tarifaVigente(t) && precio != null ? desglosa(t, precio).total : null
+  return tarifaVigente(t) && tarifaComprobadaHoy(t.slug, estado) && precio != null ? desglosa(t, precio).total : null
 }
 
-function fichaTarifa(t: Tarifa, combustible?: Combustible): string {
+function fichaTarifa(t: Tarifa, combustible?: Combustible, estado?: EstadoTarifasItv | null): string {
   const lineas: Combustible[] = combustible ? [combustible] : ['gasolina', 'diesel']
   const condiciones = t.estado === 'verificada' && !tarifaVigente(t)
     ? 'El precio necesita una nueva revisión. Consulta el total con la estación.'
-    : t.condiciones || ''
+    : t.estado === 'verificada' && !tarifaComprobadaHoy(t.slug, estado) ? '' : t.condiciones || ''
   return '<article class="precio-box"><h3>' + esc(t.nombre) + '</h3>'
     + '<p class="etiqueta">' + (t.tipoPrecio === 'maximo' ? 'Tarifa máxima publicada' : 'Tarifa publicada') + ' · Inspección periódica de un turismo</p>'
     + lineas.map(c => {
-      const total = totalTarifa(t, c)
+      const total = totalTarifa(t, c, estado)
       const importe = t[c]
       const d = total != null && importe != null ? desglosa(t, importe) : null
       return '<p class="precio-linea"><span>' + (c === 'gasolina' ? 'Gasolina' : 'Diésel') + '</span>'
@@ -237,6 +243,9 @@ function fichaTarifa(t: Tarifa, combustible?: Combustible): string {
           + ' + ' + eur(d.tasaDgt) + ' de tasa DGT'
           + (d.suplementos || []).map(s => ' + ' + eur(s.importe) + ' de ' + esc(s.concepto)).join('') + '.</p>' : '')
     }).join('')
+    + (t.estado === 'verificada' ? '<p class="precio-nota">' + (tarifaComprobadaHoy(t.slug, estado)
+      ? 'Fuente comprobada el ' + fechaHtml(estado!.checkedAt) + '. Esta consulta no cambia la fecha de la norma.'
+      : 'Comprobación diaria pendiente: no podemos confirmar ahora el importe de la fuente. Consulta el precio completo al reservar.') + '</p>' : '')
     + (condiciones ? '<p class="precio-nota">' + esc(condiciones) + '</p>' : '')
     + '<details class="precio-fuente"><summary>Fuente y revisión'
     + (fecha(t.revisada) ? ' · ' + esc(fecha(t.revisada)) : '') + '</summary>'
@@ -245,8 +254,8 @@ function fichaTarifa(t: Tarifa, combustible?: Combustible): string {
     + '</details></article>'
 }
 
-export function buildItvPreciosPage(nonce: string, canonical: string, combustible: Combustible = 'gasolina'): string {
-  const ordenadas = [...TARIFAS].sort((a, b) => (totalTarifa(a, combustible) ?? Infinity) - (totalTarifa(b, combustible) ?? Infinity) || a.nombre.localeCompare(b.nombre, 'es'))
+export function buildItvPreciosPage(nonce: string, canonical: string, combustible: Combustible = 'gasolina', estado?: EstadoTarifasItv | null): string {
+  const ordenadas = [...TARIFAS].sort((a, b) => (totalTarifa(a, combustible, estado) ?? Infinity) - (totalTarifa(b, combustible, estado) ?? Infinity) || a.nombre.localeCompare(b.nombre, 'es'))
   return envoltorio({ title: 'Precios de la ITV por territorio | España Útil', desc: 'Compara precios publicados de la ITV de gasolina o diésel, con suplementos, condiciones y fuentes oficiales.', canonical, nonce, breadcrumb: migas(canonical, undefined, 'Precios') },
     '<p class="volver"><a href="/itv/">← Estaciones de ITV</a></p><h1>Compara el precio de la ITV</h1>'
     + '<p class="sub">Elige el combustible de tu turismo. Ordenamos los importes confirmados de menor a mayor; las condiciones de cada tarifa aparecen junto al precio.</p>'
@@ -254,7 +263,7 @@ export function buildItvPreciosPage(nonce: string, canonical: string, combustibl
     + '<option value="gasolina"' + (combustible === 'gasolina' ? ' selected' : '') + '>Gasolina</option>'
     + '<option value="diesel"' + (combustible === 'diesel' ? ' selected' : '') + '>Diésel</option></select></div>'
     + '<button class="btn btn--principal" type="submit">Comparar</button></form>'
-    + '<h2>Precios para ' + (combustible === 'gasolina' ? 'gasolina' : 'diésel') + '</h2><div class="precios">' + ordenadas.map(t => fichaTarifa(t, combustible)).join('') + '</div>'
+    + '<h2>Precios para ' + (combustible === 'gasolina' ? 'gasolina' : 'diésel') + '</h2><div class="precios">' + ordenadas.map(t => fichaTarifa(t, combustible, estado)).join('') + '</div>'
     + '<h2>Donde cada estación fija su precio</h2><ul class="motivos">'
     + LIBERALIZADAS.map(x => '<li><strong>' + esc(x.nombre) + '.</strong> ' + esc(x.motivo) + '</li>').join('') + '</ul>'
     + (SIN_DATO.length ? '<h2>Otros territorios pendientes de confirmar</h2><ul class="motivos">' + SIN_DATO.map(x => '<li><strong>' + esc(x.nombre) + '.</strong> ' + esc(x.motivo) + '</li>').join('') + '</ul>' : '')
@@ -263,9 +272,9 @@ export function buildItvPreciosPage(nonce: string, canonical: string, combustibl
     + '<p><a class="btn" href="/itv/">Buscar una estación de ITV</a></p>')
 }
 
-export function bloquePrecioProvincia(t: Tarifa | null, provinciaName: string): string {
+export function bloquePrecioProvincia(t: Tarifa | null, provinciaName: string, estado?: EstadoTarifasItv | null): string {
   return '<h2>Precios de ITV en ' + esc(provinciaName) + '</h2>'
-    + (t ? fichaTarifa(t) : '<p>Consulta el precio de tu estación al reservar. No tenemos una tarifa única confirmada para esta provincia.</p>')
+    + (t ? fichaTarifa(t, undefined, estado) : '<p>Consulta el precio de tu estación al reservar. No tenemos una tarifa única confirmada para esta provincia.</p>')
     + '<p><a class="btn" href="/itv/precios">Comparar precios por combustible</a></p>'
 }
 

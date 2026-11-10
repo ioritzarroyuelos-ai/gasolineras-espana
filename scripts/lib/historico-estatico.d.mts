@@ -87,3 +87,7 @@ export declare function aplicaSnapshot(
 ): { estado: EstadoHistorico; resumen: { fecha: string; filas: number; provincias: number } }
 
 export declare function construyeIndex(estado: EstadoHistorico, ahora?: Date): IndexHistorico
+export declare function fechaSnapshot(snapshot: unknown): string
+export declare function huecosRecientes(estado: EstadoHistorico, hasta: string, dias?: number): string[]
+export declare function insertaPuntoHistorico(serie: Punto[], fecha: string, cents: number, hasta: string): Punto[]
+export declare function reparaSnapshotHistorico(estado: EstadoHistorico, snapshot: unknown, fecha: string, ahora?: Date): { estado: EstadoHistorico; resumen: { fecha: string; filas: number; provincias: number } }

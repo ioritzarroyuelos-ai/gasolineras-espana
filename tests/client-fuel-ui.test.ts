@@ -18,6 +18,19 @@ function runFunction(source: string, name: string, deps: Record<string, unknown>
   return new Function(...Object.keys(deps), sourceFunction(source, name) + '\nreturn ' + name)(...Object.values(deps))
 }
 const fuelUnit = runFunction(coreSource, 'fuelUnit')
+const coordinatesInSpain = runFunction(coreSource, 'coordinatesInSpain')
+
+describe('gráfica de precios sin datos inventados', () => {
+  const sparkline = runFunction(mapSource, 'buildSparkline')
+  it('deja el espacio del día perdido y corta la línea y el área', () => {
+    const html = sparkline([{ d: '2026-11-07', p: 1.5 }, { d: '2026-11-08', p: 1.6 }, { d: '2026-11-10', p: 1.7 }])
+    expect(html).toContain('M0.0,58.0 L73.3,30.0 M220.0,2.0')
+    expect(html).not.toContain('sp-area')
+  })
+  it('mantiene la gráfica continua cuando todos los días están capturados', () => {
+    expect(sparkline([{ d: '2026-11-09', p: 1.5 }, { d: '2026-11-10', p: 1.7 }])).toContain('class="sp-area"')
+  })
+})
 const esc = (text: unknown) => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
 
 function reportForm() {
@@ -122,7 +135,7 @@ describe('compartir una estación y cómo llegar', () => {
   })
 
   it('los tres navegadores reciben las mismas coordenadas, incluidos signos negativos', () => {
-    const build = runFunction(mapSource, 'buildNavigationLinks')
+    const build = runFunction(mapSource, 'buildNavigationLinks', { coordinatesInSpain })
     const html = build(28.123456, -15.4321, 'Estación & prueba')
     const links = [...html.matchAll(/href="([^"]+)"/g)].map(m => new URL(m[1].replace(/&amp;/g, '&')))
     expect(links).toHaveLength(3)
@@ -132,6 +145,7 @@ describe('compartir una estación y cómo llegar', () => {
     expect(links[2].searchParams.get('daddr')).toBe('28.123456,-15.432100')
     expect(links[2].searchParams.get('q')).toBe('Estación & prueba')
     expect(build(NaN, -15, 'Sin posición')).toBe('')
+    expect(build(-8.659472, 42.037472, 'GUAY Tui')).toBe('')
   })
 
   it('valida el fragmento privado GPS y elige Canarias antes de pintar', () => {
@@ -157,7 +171,7 @@ describe('horarios, historial y recarga sin promesas falsas', () => {
       isOpenNow: () => null, fuelUnit, getRefuelLitres: () => 30, searchOrigin: null,
       munCenter: { lat: 40, lng: -3 }, distanceKm: () => 7.7, currentMedianPrice: 1.6,
       buildHistoryPlaceholder: () => '', buildNavigationLinks: () => '', compareIds: [], filteredStations: [],
-      horarioPopup: () => '', esc,
+      horarioPopup: () => '', esc, coordinatesInSpain,
     }
     const station = { 'Precio Gasolina 95 E5': '1.5', Latitud: '40', 'Longitud (WGS84)': '-3' }
     const popup = runFunction(mapSource, 'buildPopup', deps)(station)
@@ -166,6 +180,9 @@ describe('horarios, historial y recarga sin promesas falsas', () => {
     expect(popup).toContain('7,7 km en línea recta desde el centro de la zona elegida')
     expect(popup).not.toContain(' min')
     expect(popup).not.toContain('Ahorro neto')
+    const invalidPopup = runFunction(mapSource, 'buildPopup', deps)({ ...station, Latitud: '-8,659472', 'Longitud (WGS84)': '42,037472' })
+    expect(invalidPopup).toContain('Ubicación en el mapa pendiente de confirmar')
+    expect(invalidPopup).not.toContain('km en línea recta')
     const gasPopup = runFunction(mapSource, 'buildPopup', {
       ...deps, document: { getElementById: () => ({ value: 'Precio Hidrogeno' }) },
     })({ ...station, 'Precio Hidrogeno': '9.9' })
@@ -199,7 +216,7 @@ describe('horarios, historial y recarga sin promesas falsas', () => {
 
   it('la ficha eléctrica muestra la fecha del directorio, límites y navegación', () => {
     const chargerDateLabel = runFunction(mapSource, 'chargerDateLabel')
-    const buildNavigationLinks = runFunction(mapSource, 'buildNavigationLinks')
+    const buildNavigationLinks = runFunction(mapSource, 'buildNavigationLinks', { coordinatesInSpain })
     const popup = runFunction(mapSource, 'buildChargerPopup', {
       esc, chargerDateLabel, buildNavigationLinks, chargersUpdatedAt: '2026-11-03T12:45:25Z',
     })([39.59, 2.63, 'Recarga', 'Operador', 350, 'CCS', 2, 'dgt'])

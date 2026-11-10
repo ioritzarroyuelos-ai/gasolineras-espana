@@ -3,6 +3,7 @@ import { parsePct, parseEscanos, parseFecha, parseSondeos } from '../scripts/lib
 import generalesEs from './fixtures/politica/generales.es.html?raw'
 import europeasEs from './fixtures/politica/europeas.es.html?raw'
 import laRiojaEn from './fixtures/politica/la-rioja.en.html?raw'
+import asturias2026 from './fixtures/politica/asturias-20261110.html?raw'
 
 const FIXTURES: Record<string, string> = {
   'generales.es.html': generalesEs,
@@ -10,6 +11,23 @@ const FIXTURES: Record<string, string> = {
   'la-rioja.en.html': laRiojaEn,
 }
 const fx = (f: string) => FIXTURES[f]
+
+describe('encabezados reales que no son partidos', () => {
+  it('Asturias: Tamaño es muestra y Margen es ventaja, nunca porcentajes de candidaturas', () => {
+    const r = parseSondeos(asturias2026)
+    expect(r.sondeos).toHaveLength(1)
+    expect(r.sondeos[0]).toMatchObject({ muestra: 1129, campoFin: '2026-09-03' })
+    expect(r.candidaturas.map(c => c.id)).not.toEqual(expect.arrayContaining(['tamano', 'margen']))
+    expect(r.sondeos[0].datos.find(d => d.candidaturaId === 'psoe')).toMatchObject({ pct: 32.4, escanos: { min: 15, max: 17 } })
+    expect(r.sondeos[0].datos.some(d => ['tamano', 'margen'].includes(d.candidaturaId))).toBe(false)
+  })
+
+  it('una nota invisible no oculta el nombre o las cifras de Frente Amplio', () => {
+    const r = parseSondeos('<h2>2026</h2><table class="wikitable"><tr><th>Encuestadora</th><th>Fecha</th><th><img alt="FA"><sup>1</sup>&#8203;</th></tr><tr><td>Casa</td><td>3–5 Nov</td><td>5,1<br><span style="font-size:75%">6</span></td></tr></table>')
+    expect(r.candidaturas).toEqual([{ id: 'fa', siglas: 'FA', nombre: 'FA' }])
+    expect(r.sondeos[0].datos).toEqual([{ candidaturaId: 'fa', pct: 5.1, escanos: 6 }])
+  })
+})
 
 describe('parsePct / parseEscanos / parseFecha (unidades)', () => {
   it('pct: normaliza coma, rechaza no-números', () => {

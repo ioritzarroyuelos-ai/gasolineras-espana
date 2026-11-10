@@ -58,6 +58,14 @@ const FIXTURE = {
 }
 
 describe('municipiosInProvincia', () => {
+  it('no centra un municipio ni publica un destino SEO con coordenadas invertidas', () => {
+    const mala = { IDEESS:'16268', IDProvincia:'36', IDMunicipio:'5322', Municipio:'Tui', 'Rótulo':'GUAY',
+      'Precio Gasolina 95 E5':'1,499', Latitud:'-8,659472', 'Longitud (WGS84)':'42,037472' }
+    const snapshot={ListaEESSPrecio:[mala]}
+    expect(municipiosInProvincia(snapshot,'36')[0].lat).toBeUndefined()
+    expect(municipiosInProvincia(snapshot,'36')[0].stationCount).toBe(1)
+    expect(topCheapestStationsIn(snapshot,{provinciaId:'36',fuelCode:'95'})).toEqual([])
+  })
   it('agrupa por IDMunicipio y cuenta estaciones', () => {
     const out = municipiosInProvincia(FIXTURE, '28')
     expect(out).toHaveLength(3)

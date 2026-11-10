@@ -1,25 +1,14 @@
 #!/usr/bin/env node
 // El listado diario de guardias de COFBi agrupa las farmacias por franja.
 // El directorio general de horarios de apertura es una fuente distinta.
-import { descargar, desplazaFecha, guardarGuardias } from './lib/guardias-fetch.mjs'
+import { desplazaFecha, guardarGuardias } from './lib/guardias-fetch.mjs'
 import { fechaHoraLocal } from './lib/fechas.mjs'
-import { parseGuardiasBizkaia } from './lib/guardias-bizkaia.mjs'
-
-const directorio = 'https://www.cofbizkaia.eus/farmacia_de_guardia/'
-
-async function consultar(fecha) {
-  const url = new URL(directorio)
-  url.searchParams.set('fecha_guardia', fecha.split('-').reverse().join('/'))
-  url.searchParams.set('submitForm', '1')
-  url.searchParams.set('pagetype', 'farmacias_de_guardia')
-  const respuesta = await descargar(url, { headers: { Accept: 'text/html' } })
-  return { filas: parseGuardiasBizkaia(await respuesta.text(), fecha), url: url.href }
-}
+import { recogerGuardiasBizkaia } from './lib/guardias-bizkaia.mjs'
 
 async function main() {
   const ahora = fechaHoraLocal(new Date()), fecha = ahora.slice(0, 10)
-  const hoy = await consultar(fecha)
-  const ayer = await consultar(desplazaFecha(fecha, -1))
+  const hoy = await recogerGuardiasBizkaia(fecha)
+  const ayer = await recogerGuardiasBizkaia(desplazaFecha(fecha, -1))
   const guardias = [...ayer.filas.filter(fila => fila[6].slice(17) > ahora), ...hoy.filas]
   const avisosMunicipales = {}
   for (const fila of guardias.filter(f => f[8] && f[9])) {
@@ -33,7 +22,9 @@ async function main() {
     avisosMunicipales[zona].push(aviso)
   }
   guardarGuardias('bizkaia', 'cofbizkaia.eus', guardias.filter(f => !f[8]), {
-    fecha, sourceUrl: hoy.url, guardiasVerificadas: true, avisosMunicipales
+    fecha, sourceUrl: hoy.url, guardiasVerificadas: true, avisosMunicipales,
+    cobertura: 'Consultadas las ' + hoy.municipios + ' opciones municipales del colegio. Las farmacias se muestran en el municipio donde están situadas.',
+    incidencias: hoy.sinResultados.map(m => 'El colegio no devuelve resultados para ' + m.nombre + ' el ' + fecha + '. Consulta la fuente oficial antes de desplazarte.')
   })
 }
 

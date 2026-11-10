@@ -8,7 +8,7 @@ import { mastheadHtml, MASTHEAD_CSS } from './masthead'
 import { PORTAL_BASE_CSS } from './ui-theme'
 import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 import { esc, fmtFecha, fmtMesAnio } from './politica-formato'
-import { renderSondeos, SONDEOS_CSS, urlFuenteHttps, type ReferenciaSondeo } from './politica-sondeos'
+import { renderSondeos, ordenCandidaturas, SONDEOS_CSS, urlFuenteHttps, type ReferenciaSondeo } from './politica-sondeos'
 import { renderGrafica, POLITICA_GRAFICA_CSS } from './politica-grafica'
 
 const CSS = PORTAL_BASE_CSS + `
@@ -296,6 +296,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
     + '<p class="fecha-eleccion">' + textoFecha(cat.proxima, o.ahoraISO) + fuenteCalendario(cat.proxima) + '</p>'
     + (europeas ? resultado : '')
   if (estado === 'desactualizado' || estado === 'no_disponible') cuerpo += '<p class="aviso">' + ESTADOS[estado] + '</p>'
+  for (const aviso of file.avisosFuentes ?? []) cuerpo += '<p class="aviso">' + esc(aviso) + '</p>'
 
   if (enVeda) {
     cuerpo += '<p class="veda"><b>Veda electoral.</b> La difusión de sondeos está suspendida durante el periodo electoral establecido.</p>'
@@ -331,8 +332,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
       + renderSondeos(file, muestra, referencia)
       + '<p class="fuente">Sondeos ' + (offset + 1) + '–' + (offset + muestra.length) + ' de ' + orden.length + ' recopilados.</p>'
       + navegacion + '</section>'
-    const topIds = [...file.referencia.escanos].sort((a, b) => b.escanos - a.escanos).map(r => r.candidaturaId)
-    const partidos = [...new Set([...topIds, ...file.candidaturas.map(c => c.id)])].slice(0, 8)
+    const partidos = ordenCandidaturas(file, muestra).slice(0, 8)
     cuerpo += renderGrafica(file, muestra, partidos, colores, nonce)
   }
   if (!europeas) cuerpo += resultado

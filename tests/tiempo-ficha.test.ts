@@ -17,7 +17,7 @@ const ARRECIFE: MunicipioLista = {
 
 function parte(m: MunicipioLista): Prediccion {
   return { ine: m.ine, nombre: m.nombre, provincia: m.provinciaNombre, fuente: 'AEMET',
-    elaborado: PUBLICADO, versionPeriodos: 2,
+    elaborado: PUBLICADO, versionPeriodos: 3,
     dias: [
       { fecha: '2026-11-06', tmax: 24, tmin: 15, cielo: 'Despejado', probLluvia: 0, viento: null },
       { fecha: '2026-11-07', tmax: 19, tmin: 8, cielo: '', probLluvia: null, viento: 12 },
@@ -56,6 +56,14 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers() })
 
 describe('ficha municipal que recibe el navegador', () => {
+  it('renueva una copia de hoy cuando AEMET ya ha publicado otro parte', async () => {
+    const doc = await ficha(ARRECIFE, parte(ARRECIFE), url => {
+      if (!url.pathname.includes('/xml/municipios/')) return
+      return xmlHoras(ARRECIFE, '<dia fecha="2026-11-06"><temperatura><maxima>26</maxima><minima>21</minima></temperatura></dia>')
+    })
+    expect(doc.querySelector('.temperaturas')?.text).toContain('26°')
+    expect(doc.querySelector('.temperaturas')?.text).not.toContain('24°')
+  })
   it('en Durango ya es sábado y el 75 % cruza de viernes a sábado sin anunciarse como probabilidad diaria', async () => {
     const doc = await ficha(DURANGO, parte(DURANGO), url => {
       if (!url.pathname.includes('/municipios_h/')) return

@@ -1233,9 +1233,8 @@ var REPORT_FUEL_CODES = {
 //                     de referencia discontinua (misma escala vertical).
 // Ambas series comparten eje: calculamos min/max considerando las dos, asi
 // la linea de mediana no se sale del SVG si la estacion se dispara. El eje X
-// se reparte por indice de fecha — para que dos series con fechas distintas
-// (la estacion puede tener huecos) queden alineadas, fabricamos una ventana
-// de fechas unica y posicionamos cada punto por su indice en esa ventana.
+// conserva la distancia real entre días. Los huecos cortan las líneas: nunca
+// dibujamos un precio confirmado para un día que no se pudo descargar.
 function buildSparkline(points, medianPoints) {
   if (!points || points.length < 2) return '';
   // Ventana de fechas: union ordenada de las dos series.
@@ -1244,8 +1243,7 @@ function buildSparkline(points, medianPoints) {
   if (medianPoints) medianPoints.forEach(function(mp) { dateSet[mp.d] = true; });
   var dates = Object.keys(dateSet).sort();
   if (dates.length < 2) return '';
-  var idxByDate = {};
-  for (var i = 0; i < dates.length; i++) idxByDate[dates[i]] = i;
+  var startTime = Date.parse(dates[0]), endTime = Date.parse(dates[dates.length - 1]);
 
   // Escala vertical sobre el conjunto completo (estacion + mediana) para
   // evitar que una serie se salga arriba/abajo.
@@ -1254,22 +1252,24 @@ function buildSparkline(points, medianPoints) {
   var min = Math.min.apply(null, allVals);
   var max = Math.max.apply(null, allVals);
   var range = max - min || 0.001;
-  var w = 220, h = 60, step = dates.length > 1 ? w / (dates.length - 1) : 0;
+  var w = 220, h = 60;
+  function xOf(date) { return ((Date.parse(date) - startTime) / (endTime - startTime) * w).toFixed(1); }
   function yOf(p) {
     return (h - ((p - min) / range) * (h - 4) - 2).toFixed(1);
   }
   function pathFor(series) {
     return series.map(function(pt, i) {
-      var x = (idxByDate[pt.d] * step).toFixed(1);
+      var x = xOf(pt.d);
       var y = yOf(pt.p);
-      return (i === 0 ? 'M' : 'L') + x + ',' + y;
+      var gap = i === 0 || Date.parse(pt.d) - Date.parse(series[i - 1].d) > 86400000;
+      return (gap ? 'M' : 'L') + x + ',' + y;
     }).join(' ');
   }
   var path = pathFor(points);
   // Area bajo la curva: cerramos desde el ultimo punto hasta el primero por
   // la base del SVG. Usamos solo los puntos de la estacion (no la mediana).
-  var lastX = (idxByDate[points[points.length-1].d] * step).toFixed(1);
-  var firstX = (idxByDate[points[0].d] * step).toFixed(1);
+  var lastX = xOf(points[points.length-1].d);
+  var firstX = xOf(points[0].d);
   var area = path + ' L' + lastX + ',' + h + ' L' + firstX + ',' + h + ' Z';
   var first = points[0].p, last = points[points.length-1].p;
   var cls = last > first + 0.005 ? 'sp-up' : (last < first - 0.005 ? 'sp-down' : 'sp-flat');
@@ -1279,7 +1279,7 @@ function buildSparkline(points, medianPoints) {
   // al estirarse en X se ve como un punto rectangular — aceptable y muy claro.
   var lastY = yOf(points[points.length - 1].p);
   var svg = '<svg class="sparkline ' + cls + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">'
-          + '<path class="sp-area" d="' + area + '"/>'
+          + (path.indexOf(' M') < 0 ? '<path class="sp-area" d="' + area + '"/>' : '')
           + '<path d="' + path + '"/>';
   if (medianPoints && medianPoints.length >= 2) {
     svg += '<path class="sp-median" d="' + pathFor(medianPoints) + '"/>';
@@ -1394,13 +1394,21 @@ function renderHistoryPanel(container, days) {
     if (md && md.median && md.median.length >= 2) {
       medianPoints = md.median.map(function(p) { return { d: p.date, p: p.price }; });
     }
-    if (points.length < 2) {
+    var missing = st && st.missing_dates && st.missing_dates[fuelCodeForUrl] || [];
+    if (points.length < 2 && !missing.length) {
       // Fallback a localStorage si no hay 2 puntos historicos aun (primer
       // dia tras deploy o estacion sin tracking suficiente).
       renderFallbackLocal(body, stationIdV, fuel, days);
       return;
     }
     renderHistoryBody(body, points, medianPoints, currentP, fuelLabel, fuel);
+    if (missing.length) {
+      var note = document.createElement('p');
+      note.className = 'trend-label u-mt-2';
+      note.textContent = 'Falta la captura de ' + missing.length + (missing.length === 1 ? ' día' : ' días')
+        + ' en este periodo. La gráfica deja esos días sin datos.';
+      body.appendChild(note);
+    }
   }).catch(function() {
     // Un cambio posterior de rango tiene prioridad sobre esta respuesta.
     if (container.__historyRequestId !== requestId) return;
@@ -1597,7 +1605,7 @@ function applyPercentileMarkerPos(popupNode) {
 
 // Enlaces por coordenadas: cada proveedor recibe el destino de esta estación.
 function buildNavigationLinks(lat, lng, name) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return '';
+  if (!coordinatesInSpain(lat, lng)) return '';
   var coords = lat.toFixed(6) + ',' + lng.toFixed(6);
   return '<div class="popup-nav-section"><h3 class="popup-nav-title">Cómo llegar</h3><div class="popup-nav-row">'
     + '<a class="popup-nav-btn popup-nav-google" href="https://www.google.com/maps/dir/?api=1&amp;destination=' + coords + '&amp;travelmode=driving" target="_blank" rel="noopener">Google Maps</a>'
@@ -1617,7 +1625,7 @@ function buildPopup(s) {
 
   var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
   var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-  var hasCoords = !isNaN(lat) && !isNaN(lng) && (lat !== 0 || lng !== 0);
+  var hasCoords = coordinatesInSpain(lat, lng);
 
   // Estado abierta/cerrada
   var status = isOpenNow(s['Horario'], s);
@@ -1681,7 +1689,8 @@ function buildPopup(s) {
   var provinciaId = s['IDProvincia'] || '';
   var sparkHtml = mainPrice ? buildHistoryPlaceholder(id, provinciaId, fuel, fuelLabel, mainPrice) : '';
 
-  var navBtns = hasCoords ? buildNavigationLinks(lat, lng, s['Rotulo'] || 'Gasolinera') : '';
+  var navBtns = hasCoords ? buildNavigationLinks(lat, lng, s['Rotulo'] || 'Gasolinera')
+    : '<p class="hint">Ubicación en el mapa pendiente de confirmar. Comprueba la dirección antes de acudir.</p>';
 
   // Acciones (fav, share, copiar, comparar)
   // El boton "Comparar" cambia de label segun si la estacion ya esta en la
@@ -1816,7 +1825,7 @@ function renderMarkers(stations) {
   stations.forEach(function(s) {
     var lat = parseFloat((s['Latitud'] || '').replace(',', '.'));
     var lng = parseFloat((s['Longitud (WGS84)'] || '').replace(',', '.'));
-    if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return;
+    if (!coordinatesInSpain(lat, lng)) return;
 
     var price = parsePrice(s[fuel]);
     var color = priceColor(price);

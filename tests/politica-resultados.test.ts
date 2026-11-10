@@ -26,6 +26,22 @@ function porCandidatura(resultado: EleccionFile['referencia']) {
 }
 
 describe('repartos certificados por la Junta Electoral Central', () => {
+  it.each([
+    ['aragon', '2026-02-08', 67, { pp: 26, psoe: 18, vox: 14, cha: 6, existe: 2, iusumar: 1 }, 'www.boa.aragon.es'],
+    ['castilla-y-leon', '2026-03-15', 82, { pp: 33, psoe: 30, vox: 14, upl: 3, xav: 1, sy: 1 }, 'bocyl.jcyl.es'],
+    ['extremadura', '2025-12-21', 65, { pp: 29, psoe: 18, vox: 11, unidasporextremadura: 7 }, 'www.juntaelectoralcentral.es'],
+  ] as const)('recupera %s del boletín de su propia elección, sin alterar encuestas', (id, fecha, total, esperado, host) => {
+    const original = { ...archivo('europeas', fecha), id, tipo: 'autonomica' as const, camara: { nombre: id, escanos: total, mayoria: Math.floor(total / 2) + 1 } }
+    const file = EleccionFileSchema.parse(completaResultadosOficiales(original))
+    expect(porCandidatura(file.referencia)).toEqual(esperado)
+    expect(file.referencia.escanos.reduce((n, d) => n + d.escanos, 0)).toBe(total)
+    expect(new URL(file.referencia.url!).hostname).toBe(host)
+    expect(file.sondeos).toEqual(original.sondeos)
+    for (const d of file.referencia.escanos) expect(file.candidaturas.some(c => c.id === d.candidaturaId)).toBe(true)
+    expect(completaResultadosOficiales(file)).toEqual(file)
+    const siguiente = { ...original, referencia: { ...original.referencia, fecha: '2030-01-01' } }
+    expect(completaResultadosOficiales(siguiente)).toBe(siguiente)
+  })
   it('recupera los 61 eurodiputados del 9-J y conserva las candidaturas y cifras de las encuestas', () => {
     const original = archivo('europeas', '2024-06-09')
     const file = EleccionFileSchema.parse(completaResultadosOficiales(original))

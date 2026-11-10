@@ -12,6 +12,7 @@ import {
   buildItvIndexPage, buildItvProvinciaPage, buildItvMunicipioPage, buildItvPreciosPage, buildItvBusquedaPage, itvHeaders,
 } from '../html/itv'
 import { tarifaPorProvincia } from '../lib/itv-tarifas'
+import type { EstadoTarifasItv } from '../lib/itv-tarifas-estado'
 import type { MunicipioLista } from '../../scripts/lib/tiempo.mjs'
 import { catalogoTiempo, preparaBuscadorTiempo, rutaMunicipioTiempo, type IndiceBusquedaTiempo } from '../lib/tiempo-municipios'
 import { buscaItv, estacionesCercanas, estacionesEnMunicipio, origenDelMunicipio, rutaAnteriorItv } from '../lib/itv-busqueda'
@@ -21,8 +22,11 @@ type Contexto = Context<{ Bindings: Env }>
 export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
 
   async function cargaItv(c: Contexto) {
-    const file = await loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS)
-    return { estaciones: parseItv(file), updatedAt: file?.generatedAt, fuentesEstado: file?.fuentesEstado }
+    const [file, tarifasEstado] = await Promise.all([
+      loadSnapshot<ItvFile>(c.req.url, 'itv.json', c.env.ASSETS),
+      loadSnapshot<EstadoTarifasItv>(c.req.url, 'itv-tarifas-estado.json', c.env.ASSETS),
+    ])
+    return { estaciones: parseItv(file), updatedAt: file?.generatedAt, fuentesEstado: file?.fuentesEstado, tarifasEstado }
   }
 
   let catalogo: { ts: number; datos: MunicipioLista[] } | undefined
@@ -106,11 +110,12 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
   // `/itv/precios` — comparativa nacional. Va ANTES de `/itv/:provinciaSlug` o el
   // parametro se tragaria "precios" como si fuera un slug de provincia.
   //
-  app.get('/itv/precios', c => {
+  app.get('/itv/precios', async c => {
     const nonce = genNonce()
     const canonical = canonicalBase(c) + '/itv/precios'
     const combustible = c.req.query('combustible') === 'diesel' ? 'diesel' : 'gasolina'
-    return new Response(buildItvPreciosPage(nonce, canonical, combustible), { headers: itvHeaders(nonce) })
+    const estado = await loadSnapshot<EstadoTarifasItv>(c.req.url, 'itv-tarifas-estado.json', c.env.ASSETS)
+    return new Response(buildItvPreciosPage(nonce, canonical, combustible, estado), { headers: itvHeaders(nonce) })
   })
 
   app.get('/itv/:provinciaSlug', async c => {
@@ -118,7 +123,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaPorSlug(provSlug)
     if (!prov) return c.notFound()
 
-    const { estaciones, updatedAt, fuentesEstado } = await cargaItv(c)
+    const { estaciones, updatedAt, fuentesEstado, tarifasEstado } = await cargaItv(c)
     const deProvincia = estacionesDeProvincia(estaciones, prov.id)
     // Un municipio puede tener centros próximos aunque su provincia carezca de datos.
     if (!deProvincia.length && !(await cargaCatalogo(c)).some(m => m.provinciaId === prov.id)) return c.notFound()
@@ -128,6 +133,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     return new Response(buildItvProvinciaPage(nonce, {
       updatedAt,
       fuentesEstado,
+      tarifasEstado,
       directorioDisponible: estaciones.length > 0,
       provinciaSlug: provSlug,
       provinciaName: prov.name,
@@ -145,7 +151,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     const prov = provinciaPorSlug(provSlug)
     if (!prov) return c.notFound()
 
-    const [{ estaciones, updatedAt, fuentesEstado }, catalogo] = await Promise.all([cargaItv(c), cargaCatalogo(c)])
+    const [{ estaciones, updatedAt, fuentesEstado, tarifasEstado }, catalogo] = await Promise.all([cargaItv(c), cargaCatalogo(c)])
     const deProvincia = estacionesDeProvincia(estaciones, prov.id)
     const catalogoProvincia = catalogo.filter(m => m.provinciaId === prov.id)
     const municipios = municipiosConItv(deProvincia)
@@ -166,6 +172,7 @@ export function registerItvRoutes(app: Hono<{ Bindings: Env }>): void {
     return new Response(buildItvMunicipioPage(nonce, {
       updatedAt,
       fuentesEstado,
+      tarifasEstado,
       directorioDisponible: estaciones.length > 0,
       provinciaSlug: provSlug,
       provinciaName: prov.name,

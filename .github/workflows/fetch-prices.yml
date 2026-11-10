@@ -32,6 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           persist-credentials: false
 
       - uses: actions/setup-node@v5
@@ -45,17 +46,12 @@ jobs:
       # series por gasolinera, mediana provincial y media nacional). Es lo que
       # permite que las graficas, la portada y el observatorio no toquen D1, cuyo
       # cupo gratuito de lecturas (5 M/dia) se agoto el 3 de septiembre de 2026.
-      # Si falla, se restauran los ficheros anteriores y la foto de precios se
-      # sube igual: el Worker pedira a D1 solo el dia que falte.
+      # Cada captura se valida antes de escribir. Un hueco pendiente no deshace
+      # los días recuperados ni el precio de hoy; queda señalado y se reintenta.
       - name: Actualizar historico estatico
-        run: |
-          set +e
-          node scripts/actualiza-historico-estatico.mjs
-          RC=$?
-          if [ $RC -ne 0 ]; then
-            echo "::warning::actualiza-historico-estatico fallo (exit $RC): se restaura public/data/history y se sube solo la foto."
-            git checkout -- public/data/history
-          fi
+        id: history
+        continue-on-error: true
+        run: node scripts/actualiza-historico-estatico.mjs
 
       - name: Crear identidad temporal del robot
         id: data-token
@@ -71,6 +67,10 @@ jobs:
         run: |
           git add public/data/trends.json public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/gasolineras-resumen.json public/data/history
           node scripts/publish-data.mjs prices
+
+      - name: Señalar histórico pendiente después de publicar precios válidos
+        if: always() && steps.history.outcome == 'failure'
+        run: exit 1
 
   dead-man:
     runs-on: ubuntu-latest

@@ -1,6 +1,7 @@
 // Publica únicamente datos mediante PR y pruebas reales; no necesita saltarse main.
 import { execFileSync } from 'node:child_process'
 import { appendFileSync } from 'node:fs'
+import { setTimeout as pausa } from 'node:timers/promises'
 const repo = process.env.GITHUB_REPOSITORY
 const kind = process.argv[2]
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw Error('Los robots solo pueden publicar partiendo de main')
@@ -16,14 +17,37 @@ const branch = `datos/${kind}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_
 git(['config', 'user.name', 'github-actions[bot]'])
 git(['config', 'user.email', '41898282+github-actions[bot]@users.noreply.github.com'])
 git(['switch', '-c', branch])
+let baseSha = git(['rev-parse', 'HEAD'])
 const title = `chore(data): actualizar ${kind} ${new Date().toISOString().slice(0, 16)}Z`
 git(['commit', '-m', title])
-const sha = git(['rev-parse', 'HEAD'])
+let sha = git(['rev-parse', 'HEAD'])
 // checkout no conserva GITHUB_TOKEN. Git y gh usan la misma identidad de la App.
 run('gh', ['auth', 'setup-git', '--hostname', 'github.com'])
 git(['push', '--set-upstream', 'origin', branch])
 const url = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body', 'Actualización automática de datos oficiales. Solo se incorpora tras superar CI (tipos, pruebas, navegador y rendimiento) y Security. Si falla una fuente, se conserva su última copia válida.'])
 console.log('Propuesta de datos: ' + url)
+let actualizacionesBase = 0
+async function actualizaBaseSiCambio(soloSiNecesario = false) {
+  const pr = JSON.parse(gh(['pr', 'view', url, '--json', 'baseRefOid,headRefOid,mergeStateStatus']))
+  if (soloSiNecesario && pr.mergeStateStatus !== 'BEHIND') return false
+  if (!pr.baseRefOid || pr.baseRefOid === baseSha || actualizacionesBase >= 2) return false
+  // Un robot largo puede empezar antes de que se publique otro bloque o arreglo.
+  // GitHub solo reconcilia cambios sin conflictos; volvemos a comprobar el SHA
+  // resultante completo. Nunca se fuerza la fusión ni se omite CI.
+  gh(['pr', 'update-branch', url, '--rebase'])
+  let actualizado
+  for (let intento = 0; intento < 12; intento++) {
+    actualizado = JSON.parse(gh(['pr', 'view', url, '--json', 'baseRefOid,headRefOid']))
+    if (actualizado.headRefOid && actualizado.headRefOid !== sha) break
+    if (intento < 11) await pausa(5000)
+  }
+  if (!actualizado?.headRefOid || actualizado.headRefOid === sha) throw Error('GitHub aún no confirma la actualización de la rama; el PR se conserva sin fusionar.')
+  sha = actualizado.headRefOid
+  baseSha = actualizado.baseRefOid
+  actualizacionesBase++
+  console.log('Main avanzó: se repiten las comprobaciones sobre la propuesta actualizada.')
+  return true
+}
 // La App dispara pull_request de forma nativa. Los checks de workflow_dispatch
 // no satisfacen las reglas de una rama protegida, aunque salgan verdes.
 for (let intento = 0; intento < 120; intento++) {
@@ -32,13 +56,17 @@ for (let intento = 0; intento < 120; intento++) {
     return rows[0]
   })
   const failed = checks.find(c => c?.status === 'completed' && c.conclusion !== 'success')
-  if (failed) throw Error(`Los datos quedan en el PR: comprobación ${failed.databaseId} ${failed.conclusion}`)
+  if (failed) {
+    if (await actualizaBaseSiCambio()) continue
+    throw Error(`Los datos quedan en el PR: comprobación ${failed.databaseId} ${failed.conclusion}`)
+  }
   if (checks.every(c => c?.status === 'completed' && c.conclusion === 'success')) {
+    if (await actualizaBaseSiCambio(true)) continue
     gh(['pr', 'merge', url, '--squash', '--delete-branch', '--match-head-commit', sha])
     output(true)
     console.log('Datos incorporados tras pasar todas las pruebas. CI → Deploy verificará y publicará main.')
     process.exit(0)
   }
-  await new Promise(resolve => setTimeout(resolve, 20000))
+  await pausa(20000)
 }
 throw Error('Las comprobaciones no terminaron en 40 minutos; se conserva el PR sin publicar datos sin validar.')

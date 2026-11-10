@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkpointFFCV, HORARIO_DEPORTES_COMPLETO, HORARIO_DEPORTES_FUTBOL, recuperaEstadoFFCV, seleccionaFuentesDeportes } from '../scripts/lib/deportes-checkpoint.mjs'
+import { checkpointFFCV, HORARIO_DEPORTES_COMPLETO, recuperaEstadoFFCV, seleccionaFuentesDeportes } from '../scripts/lib/deportes-checkpoint.mjs'
 import { creaEstadoFFCV } from '../scripts/lib/deportes-futbol.mjs'
 
 const fecha = '2026-11-07T12:00:00.000Z'
@@ -48,9 +48,9 @@ describe('continuación de deportes después de un fallo', () => {
 })
 
 describe('selección de las actualizaciones deportivas', () => {
-  it('comprueba todos los deportes cada cuatro horas y sólo fútbol en las horas intermedias', () => {
+  it('comprueba todos los deportes en cada pasada horaria', () => {
     expect([...seleccionaFuentesDeportes('', HORARIO_DEPORTES_COMPLETO)]).toEqual(['futbol', 'baloncesto', 'motor'])
-    expect([...seleccionaFuentesDeportes('', HORARIO_DEPORTES_FUTBOL)]).toEqual(['futbol'])
+    expect(HORARIO_DEPORTES_COMPLETO).toBe('23 * * * *')
   })
   it('admite las selecciones manuales y rechaza las que no existen antes de descargar', () => {
     expect([...seleccionaFuentesDeportes('motor')]).toEqual(['motor'])

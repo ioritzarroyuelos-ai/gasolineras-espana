@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
+// @ts-expect-error Playwright se ejecuta en Node; la aplicación sólo carga los tipos de Workers.
+import { readFileSync } from 'node:fs'
 import { buildGuardiaMunicipioPage, guardiaHeaders } from '../../src/html/guardia-municipio'
 import { parseGuardias, type GuardiasFile } from '../../src/lib/guardias'
+import { parseGuardiasBizkaia } from '../../scripts/lib/guardias-bizkaia.mjs'
 
 // Estas tres pruebas verifican la interacción con el HTML y CSP reales.
 // Datos sintéticos y reloj inyectado evitan depender del día en que se descargó
@@ -99,5 +102,34 @@ test('Madrid con datos publicados: muestra turnos vigentes o avisa de que no hay
     await expect(page.getByText('Hoy no tenemos un turno confirmado en Madrid.', { exact: true })).toHaveCount(0)
     await expect(page.locator('.g-card a[href^="tel:"]').first()).toBeVisible()
     info.annotations.push({ type: 'datos publicados', description: total + ' turnos visibles; las pruebas de interacción utilizan los datos de prueba de este archivo.' })
+  }
+})
+
+test('Durango: el resultado municipal oficial se ve una sola vez y cabe en móvil y escritorio', async ({ page }, info) => {
+  const ahora = new Date('2026-11-10T16:40:00Z')
+  const fuente = readFileSync(new URL('../fixtures/guardias/bizkaia-municipios.html', import.meta.url), 'utf8')
+  const datos: GuardiasFile = { ts: ahora.toISOString(), fecha: '2026-11-10', source: 'cofbizkaia.eus', territorio: 'bizkaia',
+    guardiasVerificadas: true, guardias: parseGuardiasBizkaia(fuente, '2026-11-10', '48027') }
+  await page.route(/\/farmacias\/bizkaia\/durango(?:\?.*)?$/, async route => {
+    const url = new URL(route.request().url()), nonce = 'guardias-bizkaia-e2e'
+    const body = buildGuardiaMunicipioPage(nonce, {
+      provinciaSlug: 'bizkaia', provinciaName: 'Bizkaia', municipioSlug: 'durango', municipioName: 'Durango',
+      guardias: parseGuardias(datos, ahora).filter(f => f.municipio.toLowerCase() === 'durango'), otrosMunicipios: [], actualizado: datos.ts,
+      fuente: datos.source, metadatos: datos, canonical: url.origin + url.pathname, turno: url.searchParams.get('turno') === 'ahora' ? 'ahora' : 'todas', ahora,
+    })
+    await route.fulfill({ status: 200, headers: guardiaHeaders(nonce), body })
+  })
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/farmacias/bizkaia/durango')
+    await expect(page.locator('.g-card')).toHaveCount(1)
+    await expect(page.locator('.g-card')).toContainText('SAGASTIZABAL SALAZAR')
+    await expect(page.locator('.g-card')).toContainText('De guardia ahora')
+    await expect(page.locator('.g-card')).toContainText('11/11/2026')
+    await expect(page.locator('.g-card a[href="tel:+34946201684"]')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
+    await page.getByRole('link', { name: 'Abierta ahora', exact: true }).click()
+    await expect(page.locator('.g-card')).toHaveCount(1)
+    await page.screenshot({ path: info.outputPath('durango-' + width + '.png'), fullPage: true })
   }
 })

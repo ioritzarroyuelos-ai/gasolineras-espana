@@ -173,13 +173,15 @@ describe('fecha civil del municipio y periodos de lluvia', () => {
     expect(prediccionVigente({...antiguo, elaborado:''}, ahora)).toBeNull()
   })
 
-  it('acepta 0% diario, pero no presenta una franja como día entero', () => {
+  it('descarta un porcentaje diario que contradice sus franjas y conserva un cero real', () => {
     const dias = normalizaAemet({prediccion:{dia:[
       {probPrecipitacion:[{periodo:'00-24',value:''},{periodo:'18-24',value:90}]},
       {probPrecipitacion:[{periodo:'00-24',value:0},{periodo:'18-24',value:10}]},
       {probPrecipitacion:[{value:65}]},
+      {probPrecipitacion:[{periodo:'00-24',value:0},{periodo:'18-24',value:0}]},
+      {probPrecipitacion:[{periodo:'00-24',value:10},{periodo:'12-24',value:100}]},
     ]}}, meta).dias
-    expect(dias.map(d => d.probLluvia)).toEqual([null,0,65])
+    expect(dias.map(d => d.probLluvia)).toEqual([null,null,65,0,null])
   })
 
   it('descarta un parte antiguo de AEMET y pide el respaldo con el huso canario', async () => {

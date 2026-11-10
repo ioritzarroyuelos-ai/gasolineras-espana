@@ -1,15 +1,46 @@
 import { parse } from 'node-html-parser'
-import { rangoGuardia, texto } from './guardias-fetch.mjs'
+import { descargar, rangoGuardia, texto } from './guardias-fetch.mjs'
 
-export function parseGuardiasBizkaia(html, fecha) {
+const directorio = 'https://www.cofbizkaia.eus/farmacia_de_guardia/'
+const unicas = filas => [...new Map(filas.map(fila => [JSON.stringify(fila), fila])).values()]
+
+export function urlGuardiasBizkaia(fecha, municipio = '') {
+  const url = new URL(directorio)
+  // Son los campos que envía el formulario oficial. El listado sin municipio
+  // está limitado a 200 registros y no es una copia provincial completa.
+  for (const [k, v] of Object.entries({ idmunicipio: municipio, zonasalud: '', fecha_guardia: fecha.split('-').reverse().join('/'),
+    submitForm: '1', orderby: 'farmacia', order: 'desc', pagetype: 'farmacias_de_guardia' })) url.searchParams.set(k, v)
+  return url.href
+}
+
+export function municipiosGuardiasBizkaia(html) {
   const listado = parse(html).querySelector('#content.farmaciasGuardia')
+  const opciones = listado?.querySelectorAll('select[name=idmunicipio] option[value]') || []
+  const municipios = opciones.filter(op => op.getAttribute('value')).map(op => {
+    const id = op.getAttribute('value'), nombre = texto(op.getAttribute('data_municipio'))
+    if (!/^\d{5}$/.test(id) || op.getAttribute('data_id') !== id || !nombre) throw new Error('COFBi: catálogo municipal desconocido')
+    return { id, nombre }
+  }).filter(m => m.id.startsWith('48'))
+  if (municipios.length < 60 || municipios.length > 150 || new Set(municipios.map(m => m.id)).size !== municipios.length)
+    throw new Error('COFBi: catálogo municipal incompleto o duplicado')
+  return municipios
+}
+
+export function parseGuardiasBizkaia(html, fecha, municipio = '') {
+  const documento = parse(html), listado = documento.querySelector('#content.farmaciasGuardia')
   const dia = fecha.split('-').reverse().join('/')
   if (listado?.querySelector('input[name=fecha_guardia]')?.getAttribute('value') !== dia)
     throw new Error('COFBi: la fecha devuelta no coincide con la solicitada')
-  if (listado.querySelectorAll('select option[selected]').some(opcion => opcion.getAttribute('value')))
+  if (municipio && (!/^48\d{3}$/.test(municipio) || !listado.querySelector('select[name=idmunicipio] option[value="' + municipio + '"]')))
+    throw new Error('COFBi: municipio no reconocido en la respuesta')
+  if (listado.querySelectorAll('select option[selected]').some(opcion => opcion.getAttribute('value') && opcion.getAttribute('value') !== municipio))
     throw new Error('COFBi: el listado está limitado a un municipio o zona')
   const total = /^Total de farmacias\s*:\s*(\d+)$/i.exec(texto(listado.querySelector('.horarioComun p')?.text))
-  if (!total || Number(total[1]) < 1) throw new Error('COFBi: falta el total provincial de guardias')
+  // Orozko, Otxandio y Urduña/Orduña devuelven el formulario entero, sin tabla
+  // ni total. Esto significa «sin resultados publicados», nunca «sin guardia».
+  if (!total && municipio && !listado.querySelector('.horarioComun, h2, table') && listado.querySelector('.formularioDuda') && documento.querySelector('footer#footer')) return []
+  if (!total || Number(total[1]) < 1) throw new Error('COFBi: falta el total de guardias')
+  if (Number(total[1]) >= 200) throw new Error('COFBi: listado posiblemente truncado por el límite de 200 filas')
 
   const guardias = []
   const codigos = new Map(listado.querySelectorAll('option[data_municipio][data_id]').map(op =>
@@ -36,5 +67,32 @@ export function parseGuardiasBizkaia(html, fecha) {
     }
   }
   if (guardias.length !== Number(total[1])) throw new Error('COFBi: el número de filas no cuadra con el total publicado')
-  return guardias
+  return unicas(guardias)
+}
+
+export async function recogerGuardiasBizkaia(fecha, { descargarHtml = async url => (await descargar(url, { headers: { Accept: 'text/html' } })).text(),
+  esperar = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  const url = urlGuardiasBizkaia(fecha)
+  const municipios = municipiosGuardiasBizkaia(await descargarHtml(url))
+  const resultados = new Array(municipios.length)
+  let cursor = 0
+  async function worker() {
+    while (cursor < municipios.length) {
+      const indice = cursor++, municipio = municipios[indice]
+      try {
+        resultados[indice] = parseGuardiasBizkaia(await descargarHtml(urlGuardiasBizkaia(fecha, municipio.id)), fecha, municipio.id)
+      } catch (error) {
+        throw new Error('COFBi: no se pudo verificar ' + municipio.nombre + ' (' + fecha + '): ' + error.message, { cause: error })
+      }
+      await esperar(300)
+    }
+  }
+  // Dos consultas simultáneas para no sobrecargar al colegio. Cualquier fallo
+  // aborta la copia; no sustituimos la última buena por un barrido incompleto.
+  const trabajos = await Promise.allSettled([worker(), worker()])
+  const fallo = trabajos.find(t => t.status === 'rejected')
+  if (fallo) throw fallo.reason
+  const sinResultados = municipios.filter((_, i) => !resultados[i].length)
+  if (sinResultados.length > municipios.length * .1) throw new Error('COFBi: demasiados municipios sin resultados verificables')
+  return { filas: unicas(resultados.flat()), url, municipios: municipios.length, sinResultados }
 }

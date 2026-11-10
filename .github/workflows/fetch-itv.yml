@@ -1,11 +1,11 @@
 name: Fetch estaciones de ITV
 
-# Revisa semanalmente DGT, registro nacional de Industria y datos abiertos GVA.
+# Revisa cada día DGT, registro nacional de Industria y datos abiertos GVA.
 # Cada fuente conserva su copia anterior y su fecha si falla.
 
 on:
   schedule:
-    - cron: '0 4 * * 1'   # lunes, 04:00 UTC
+    - cron: '17 4 * * *'   # diario, 04:17 UTC
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           persist-credentials: false
 
       - uses: actions/setup-node@v5
@@ -30,7 +31,14 @@ jobs:
         run: npm ci --omit=dev --ignore-scripts
 
       - name: Descargar estaciones de ITV
+        id: directorio
+        continue-on-error: true
         run: node scripts/fetch-itv.mjs
+
+      - name: Comprobar los documentos oficiales de tarifas
+        id: tarifas
+        continue-on-error: true
+        run: node scripts/check-itv-tarifas.mjs
 
       - name: Crear identidad temporal del robot
         id: data-token
@@ -44,5 +52,9 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.data-token.outputs.token }}
         run: |
-          git add public/data/itv.json public/data/itv-fuentes
+          git add public/data/itv.json public/data/itv-fuentes public/data/itv-tarifas-estado.json
           node scripts/publish-data.mjs itv
+
+      - name: Señalar fuentes pendientes después de publicar su aviso
+        if: always() && (steps.tarifas.outcome == 'failure' || steps.directorio.outcome == 'failure')
+        run: exit 1

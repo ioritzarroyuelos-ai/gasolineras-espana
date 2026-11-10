@@ -12,9 +12,10 @@ const limpia = (objeto, campos) => Object.fromEntries(campos.map(c => [c, String
 
 /** Persist only public catalogue/progress metadata, never anonymous session tokens. */
 export function normalizaEstadoFFCV(valor) {
-  const estado = { version: 1, catalogo: null, cursor: 0, ultimoExito: null, noConsultarAntes: null, ventana: { desde: null, peticiones: 0 }, verificados: {} };
+  const estado = { version: 1, catalogo: null, cursor: 0, ultimoExito: null, noConsultarAntes: null, motivoPausa: null, ventana: { desde: null, peticiones: 0 }, verificados: {}, intentos: {} };
   if (!valor || valor.version !== 1) return estado;
   estado.noConsultarAntes = iso(valor.noConsultarAntes);
+  if (estado.noConsultarAntes && ['presupuesto', 'fuente'].includes(valor.motivoPausa)) estado.motivoPausa = valor.motivoPausa;
   estado.ultimoExito = iso(valor.ultimoExito);
   if (iso(valor.ventana?.desde) && Number.isSafeInteger(valor.ventana.peticiones) && valor.ventana.peticiones >= 0) estado.ventana = { desde: iso(valor.ventana.desde), peticiones: valor.ventana.peticiones };
   const cat = valor.catalogo;
@@ -26,6 +27,7 @@ export function normalizaEstadoFFCV(valor) {
       estado.catalogo = { temporada: { cod_temporada: String(cat.temporada.cod_temporada), nombre: cat.temporada.nombre }, categorias, verificadoEn: iso(cat.verificadoEn), completo: categorias.every(c => Array.isArray(c.grupos)) };
       estado.cursor = Number.isSafeInteger(valor.cursor) && valor.cursor >= 0 && valor.cursor < grupos.length ? valor.cursor : 0;
       for (const g of grupos) if (iso(valor.verificados?.[g.codigo])) estado.verificados[g.codigo] = iso(valor.verificados[g.codigo]);
+      for (const g of grupos) if (iso(valor.intentos?.[g.codigo])) estado.intentos[g.codigo] = iso(valor.intentos[g.codigo]);
     }
   }
   return estado;
@@ -45,6 +47,26 @@ export function generoFFCV(categoria) {
   return undefined;
 }
 
+export function eligeActualizacionFFCV(estado, ahora, { publicados, fechas = {}, visitados = [] } = {}) {
+  const candidatos = (estado.catalogo?.categorias || []).flatMap(categoria => (categoria.grupos || []).map(grupo => {
+    const id = `ffcv-${grupo.codigo}`, fecha = iso(fechas[id]) || estado.verificados[grupo.codigo];
+    return { categoria, grupo, id, fecha, intento: estado.intentos?.[grupo.codigo] };
+  })).filter(g => g.fecha && (!publicados || publicados.includes(g.id)) && !visitados.includes(g.grupo.codigo) &&
+    ahora - Date.parse(g.fecha) >= 18 * HORA && (!g.intento || ahora - Date.parse(g.intento) >= HORA));
+  // Un fallo persistente vuelve al final de los pendientes: no puede monopolizar
+  // las primeras posiciones en cada pasada e impedir renovar los demás grupos.
+  const turno = g => Math.max(Date.parse(g.fecha), Date.parse(g.intento || '') || 0);
+  candidatos.sort((a, b) => turno(a) - turno(b) || a.fecha.localeCompare(b.fecha) || a.grupo.codigo.localeCompare(b.grupo.codigo));
+  return candidatos[0] || null;
+}
+
+export function capacidadActualizacionFFCV(publicados = []) {
+  const grupos = new Set(publicados.filter(id => /^ffcv-\d+$/.test(id))).size;
+  // Caso conservador: 4 GET por grupo + sesión, cinco renovaciones por cada
+  // descubrimiento => 24 renovaciones por pasada sin superar 120 consultas.
+  return { grupos, renovacionesPorPasada: 24, pasadasNecesarias: Math.ceil(grupos / 24), margenHoras: 24 - Math.ceil(grupos / 24) };
+}
+
 export function creaConsultaFFCV(opciones) {
   const estado = normalizaEstadoFFCV(opciones.estadoFFCV);
   const reloj = opciones.relojFFCV || Date.now;
@@ -58,7 +80,9 @@ export function creaConsultaFFCV(opciones) {
   };
   const disponible = () => !detenido && (!estado.noConsultarAntes || reloj() >= Date.parse(estado.noConsultarAntes)) && restantes() > 0;
   const pausaPresupuesto = async () => {
-    estado.noConsultarAntes = new Date(Math.max(Date.parse(estado.ventana.desde) + HORA, Date.parse(estado.noConsultarAntes || '') || 0)).toISOString();
+    const fin = Date.parse(estado.ventana.desde) + HORA;
+    if (!estado.noConsultarAntes || fin > Date.parse(estado.noConsultarAntes)) estado.motivoPausa = 'presupuesto';
+    estado.noConsultarAntes = new Date(Math.max(fin, Date.parse(estado.noConsultarAntes || '') || 0)).toISOString();
     detenido = true;
     await guardar();
   };
@@ -69,6 +93,7 @@ export function creaConsultaFFCV(opciones) {
     if (!estado.ventana.desde || reloj() - Date.parse(estado.ventana.desde) >= HORA) estado.ventana = { desde: new Date(reloj()).toISOString(), peticiones: 0 };
     estado.ventana.peticiones++;
     estado.noConsultarAntes = null;
+    estado.motivoPausa = null;
     siguiente = reloj() + 1000;
     await guardar(); // An interrupted job still consumes its request reservation.
     const respuesta = await fetcher(url, { ...init, signal: AbortSignal.timeout(30000), headers: { ...init.headers, ...(token ? { 'X-FFCV-Page-Token': token, Cookie: cookie, Referer: BASE } : {}) } });
@@ -76,6 +101,7 @@ export function creaConsultaFFCV(opciones) {
       const valor = respuesta.headers.get('Retry-After');
       const segundos = /^\d+$/.test(valor || '') ? Number(valor) : iso(valor) ? Math.max(0, (Date.parse(valor) - reloj()) / 1000) : 3600;
       estado.noConsultarAntes = new Date(reloj() + Math.max(1, segundos) * 1000).toISOString();
+      estado.motivoPausa = 'fuente';
       detenido = true;
       await guardar();
       await respuesta.body?.cancel();
@@ -89,10 +115,14 @@ export function creaConsultaFFCV(opciones) {
     token = parse(pagina).querySelector('meta[name=ffcv-pt]')?.getAttribute('content');
     if (!token || !cookie) throw new Error('La federación valenciana no ha entregado una sesión pública de consulta.');
   };
+  const esperaVentana = async () => {
+    const espera = Date.parse(estado.noConsultarAntes || '') - reloj();
+    if (estado.motivoPausa === 'presupuesto' && espera > 0 && espera <= 15000) await duerme(espera);
+  };
   const leer = async ruta => {
     const datos = JSON.parse(await leerFuenteDeportiva(BASE + ruta, { ...opciones, fetcher: consulta }));
     if (datos.error || datos.estado === '0' || datos.sesion_ok === '0') throw new Error('La federación valenciana no ha podido completar la consulta pública.');
     return datos;
   };
-  return { estado, guardar, restantes, disponible, pausaPresupuesto, iniciar, leer };
+  return { estado, guardar, restantes, disponible, pausaPresupuesto, esperaVentana, iniciar, leer };
 }

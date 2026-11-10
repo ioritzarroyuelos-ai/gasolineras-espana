@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parse } from 'node-html-parser'
 import municipalHTML from './fixtures/guardias/bizkaia-municipios.html?raw'
 import { municipiosGuardiasBizkaia, parseGuardiasBizkaia, recogerGuardiasBizkaia, urlGuardiasBizkaia } from '../scripts/lib/guardias-bizkaia.mjs'
@@ -108,5 +108,54 @@ describe('COFBi · barrido del catálogo municipal', () => {
     fila.querySelector('[data-label=Municipio]')!.set_content('EIBAR')
     fila.querySelector('[data-label=Zona]')!.set_content('ERMUA')
     expect(parseGuardiasBizkaia(doc.toString(), dia, '48034')[0].slice(8)).toEqual(['20', 'ERMUA'])
+  })
+  it.each([new DOMException('The operation was aborted due to timeout', 'TimeoutError'), Object.assign(new Error('HTTP 503'), { status: 503 })])('recupera un corte transitorio con una sola pausa y vuelve a verificar todas las opciones: %s', async error => {
+    let intentos = 0
+    const esperar = vi.fn(async (_ms: number) => {})
+    const resultado = await recogerGuardiasBizkaia(dia, { esperar, descargarHtml: async url => {
+      if (new URL(url).searchParams.get('idmunicipio') === '48027' && ++intentos === 1) throw error
+      return municipalHTML
+    } })
+    expect(intentos).toBe(2)
+    expect(esperar.mock.calls.filter(([ms]) => ms === 2000)).toHaveLength(1)
+    expect(resultado.municipios).toBe(84)
+    expect(resultado.filas).toHaveLength(2)
+  })
+  it('un timeout persistente se intenta dos veces y rechaza la copia parcial', async () => {
+    let intentos = 0
+    const esperar = vi.fn(async (_ms: number) => {})
+    await expect(recogerGuardiasBizkaia(dia, { esperar, descargarHtml: async url => {
+      if (new URL(url).searchParams.get('idmunicipio') === '48027') { intentos++; throw new DOMException('Tiempo agotado', 'TimeoutError') }
+      return municipalHTML
+    } })).rejects.toThrow(/DURANGO.*Tiempo agotado/)
+    expect(intentos).toBe(2)
+    expect(esperar.mock.calls.filter(([ms]) => ms === 2000)).toHaveLength(1)
+  })
+  it.each([403, 429])('la descarga real no repite HTTP%d ni completa una copia sin ese municipio', async status => {
+    let intentos = 0
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (new URL(String(url)).searchParams.get('idmunicipio') === '48027') { intentos++; return new Response('Rechazo', { status }) }
+      return new Response(municipalHTML)
+    })
+    const esperar = vi.fn(async (_ms: number) => {})
+    try {
+      await expect(recogerGuardiasBizkaia(dia, { esperar })).rejects.toThrow('HTTP ' + status)
+      expect(intentos).toBe(1)
+      expect(esperar.mock.calls.filter(([ms]) => ms === 2000)).toHaveLength(0)
+    } finally { fetcher.mockRestore() }
+  })
+  it('recupera también el timeout del cuerpo de una respuesta HTTP200', async () => {
+    let intentos = 0
+    const fetcher = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+      if (new URL(String(url)).searchParams.get('idmunicipio') === '48027' && ++intentos === 1) {
+        return new Response(new ReadableStream({ start(controller) { controller.error(new DOMException('Body timeout', 'TimeoutError')) } }))
+      }
+      return new Response(municipalHTML)
+    })
+    try {
+      const resultado = await recogerGuardiasBizkaia(dia, { esperar: async () => {} })
+      expect(intentos).toBe(2)
+      expect(resultado.municipios).toBe(84)
+    } finally { fetcher.mockRestore() }
   })
 })

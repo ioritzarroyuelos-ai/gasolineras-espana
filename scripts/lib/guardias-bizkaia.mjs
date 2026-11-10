@@ -1,8 +1,35 @@
 import { parse } from 'node-html-parser'
-import { descargar, rangoGuardia, texto } from './guardias-fetch.mjs'
+import { USER_AGENT, rangoGuardia, texto } from './guardias-fetch.mjs'
 
 const directorio = 'https://www.cofbizkaia.eus/farmacia_de_guardia/'
 const unicas = filas => [...new Map(filas.map(fila => [JSON.stringify(fila), fila])).values()]
+
+async function descargarHtmlBizkaia(url) {
+  const signal = AbortSignal.timeout(25000)
+  try {
+    const response = await fetch(url, { signal, headers: { 'User-Agent': USER_AGENT, Accept: 'text/html' } })
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => {})
+      throw Object.assign(new Error('HTTP ' + response.status), { status: response.status })
+    }
+    // El corte observado ocurrió leyendo el cuerpo, después de recibir HTTP200.
+    // La lectura completa debe quedar dentro del mismo intento y su plazo.
+    return await response.text()
+  } catch (error) {
+    if (signal.aborted && !error.status) throw signal.reason
+    throw error
+  }
+}
+
+function transitorio(error) {
+  const causas = []
+  for (let e = error; e && causas.length < 5; e = e.cause) causas.push(e)
+  const estados = causas.map(e => Number(e.status || /\bHTTP\s+(\d{3})\b/i.exec(e.message || '')?.[1])).filter(Number.isFinite)
+  // Un rechazo o un límite del colegio no autoriza a insistir.
+  if (estados.some(status => status >= 400 && status < 500)) return false
+  return estados.some(status => status >= 500 && status < 600) || causas.some(e => e.name === 'TimeoutError' ||
+    /timeout|timed?\s*out/i.test(e.message || '') || ['ETIMEDOUT', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT'].includes(e.code))
+}
 
 export function urlGuardiasBizkaia(fecha, municipio = '') {
   const url = new URL(directorio)
@@ -70,18 +97,30 @@ export function parseGuardiasBizkaia(html, fecha, municipio = '') {
   return unicas(guardias)
 }
 
-export async function recogerGuardiasBizkaia(fecha, { descargarHtml = async url => (await descargar(url, { headers: { Accept: 'text/html' } })).text(),
+export async function recogerGuardiasBizkaia(fecha, { descargarHtml = descargarHtmlBizkaia,
   esperar = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+  let detenido = false
+  async function leer(url) {
+    try { return await descargarHtml(url) }
+    catch (error) {
+      if (detenido || !transitorio(error)) throw error
+      await esperar(2000)
+      if (detenido) throw error
+      // Sólo un reintento. Un segundo fallo rechaza el barrido completo.
+      return descargarHtml(url)
+    }
+  }
   const url = urlGuardiasBizkaia(fecha)
-  const municipios = municipiosGuardiasBizkaia(await descargarHtml(url))
+  const municipios = municipiosGuardiasBizkaia(await leer(url))
   const resultados = new Array(municipios.length)
   let cursor = 0
   async function worker() {
-    while (cursor < municipios.length) {
+    while (!detenido && cursor < municipios.length) {
       const indice = cursor++, municipio = municipios[indice]
       try {
-        resultados[indice] = parseGuardiasBizkaia(await descargarHtml(urlGuardiasBizkaia(fecha, municipio.id)), fecha, municipio.id)
+        resultados[indice] = parseGuardiasBizkaia(await leer(urlGuardiasBizkaia(fecha, municipio.id)), fecha, municipio.id)
       } catch (error) {
+        detenido = true
         throw new Error('COFBi: no se pudo verificar ' + municipio.nombre + ' (' + fecha + '): ' + error.message, { cause: error })
       }
       await esperar(300)

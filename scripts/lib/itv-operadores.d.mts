@@ -5,6 +5,7 @@ interface PerfilOperador {
   consultado: string
   ultimoExito?: string
   estado: 'actualizada' | 'conservada'
+  via?: 'directa' | 'respaldo'
   error?: string
   detalles?: Partial<EstacionFuente>
   registro?: string

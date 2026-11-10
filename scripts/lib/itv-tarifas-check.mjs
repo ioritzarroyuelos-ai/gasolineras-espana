@@ -1,3 +1,5 @@
+import { descargarRespaldoItv, permiteRespaldoItv } from './itv-respaldo.mjs'
+import { ITV_PUBLIC_SOURCES } from '../../src/lib/itv-relay.ts'
 // Revisión de los componentes contrastados el 10/11/2026. Nunca sustituye una
 // revisión normativa ni incorpora importes nuevos sin conocer sus condiciones.
 // Los patrones leen la fila/epígrafe aplicable, no un hash de menús o anuncios.
@@ -70,10 +72,14 @@ function retryAfter(response) {
 export async function descargaTextoTarifa(url, pages, fetcher = fetch) {
   const response = await fetcher(url, {signal:AbortSignal.timeout(30000),headers:{'User-Agent':'EspanaUtil/1.0 (comprobacion de fuentes publicas)'}})
   if (!response.ok) {
-    await response.body?.cancel()
+    await response.body?.cancel().catch(()=>{})
     throw new ErrorFuenteTarifa('HTTP_'+response.status,retryAfter(response))
   }
   const bytes = new Uint8Array(await response.arrayBuffer())
+  return textoDocumentoTarifa(bytes,pages)
+}
+
+async function textoDocumentoTarifa(bytes,pages) {
   if (bytes.length < 300 || bytes.length > 15000000) throw new ErrorFuenteTarifa('DOCUMENT_SIZE')
   if (bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70) {
     const {PDFParse} = await import('pdf-parse')
@@ -93,7 +99,7 @@ export async function compruebaFuenteTarifa(fuente, ahora = new Date(), descarga
     try {
       const text = await descargar(fuente.url,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
       if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,intentos,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
-      return {...base,intentos,estado:'verificada'}
+      return {...base,intentos,via:'directa',estado:'verificada'}
     } catch (error) {
       const {codigo,retryAfterMs}=diagnosticoError(error)
       const temporal = codigo==='TIMEOUT' || ERRORES_TEMPORALES.has(codigo) || /^HTTP_5\d\d$/.test(codigo) || codigo==='HTTP_429' && retryAfterMs!==null
@@ -103,6 +109,14 @@ export async function compruebaFuenteTarifa(fuente, ahora = new Date(), descarga
       if (intentos<3 && temporal && esperaMs<=5000 && Date.now()+esperaMs+30000<=limite) {
         await esperar(esperaMs)
         continue
+      }
+      if (opciones.respaldo!==null && ITV_PUBLIC_SOURCES[fuente.id]===fuente.url && permiteRespaldoItv(error)) {
+        try {
+          const bytes=await (opciones.respaldo || descargarRespaldoItv)(fuente.id,fuente.url)
+          const text=await textoDocumentoTarifa(bytes,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
+          if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
+          return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'verificada'}
+        } catch { return {...base,intentos,codigo,codigoRespaldo:'RESPALDO_NO_DISPONIBLE',estado:'no_disponible',error:'No se pudo consultar el documento oficial por ninguna de las dos conexiones.'} }
       }
       return {...base,intentos,codigo,estado:'no_disponible',error:'No se pudo consultar el documento oficial.'}
     }

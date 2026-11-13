@@ -64,7 +64,7 @@ describe('verificación del canal de citas ITVASA',()=>{
     expect(res.estaciones[0]).toMatchObject({citaUrl:url,citaVerificadoEn:new Date(ahora).toISOString()})
     expect(res.perfiles.itvasa).toMatchObject({estado:'conservada',consultado:new Date(ahora+86400000).toISOString(),
       ultimoExito:new Date(ahora).toISOString(),error:'[UND_ERR_CONNECT_TIMEOUT] fetch failed'})
-    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
   it.each([
@@ -85,7 +85,7 @@ describe('verificación del canal de citas ITVASA',()=>{
     const fetcher=vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('',{status:503})).mockResolvedValueOnce(respuesta())
     expect((await actualizaOperadoresItv([estacion],{},{ahora,fetcher})).estaciones[0].citaUrl).toBe(url)
     expect(fetcher).toHaveBeenCalledTimes(2)
-    for (const respuestaError of [new Response('',{status:403}),new Response('',{status:404}),
+    for (const respuestaError of [new Response('',{status:403}),new Response('',{status:404}),new Response('',{status:429}),
       new Response('',{status:503,headers:{'Retry-After':'120'}})]) {
       const permanente=vi.fn(async()=>respuestaError)
       const res=await actualizaOperadoresItv([estacion],{},{ahora,fetcher:permanente})
@@ -109,6 +109,19 @@ describe('verificación del canal de citas ITVASA',()=>{
     const res=await actualizaOperadoresItv([{...estacion,op:'ITEVELESA'}],{},{ahora,fetcher})
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(res.estaciones[0].citaUrl).toBeUndefined()
+  })
+
+  it.each([true,false])('comprueba el formulario completo también cuando usa el respaldo (válido=%s)',async valido=>{
+    const fallo=Object.assign(new Error('connect'),{cause:{code:'UND_ERR_CONNECT_TIMEOUT'}})
+    const respaldo=new Response(pagina(valido?formulario:'<p>No disponible</p>'),{headers:{
+      'X-ITV-Source-Id':'itvasa','X-ITV-Source-Url':url,'X-ITV-Fetched-At':new Date().toISOString()}})
+    const fetcher=vi.fn<typeof fetch>().mockRejectedValueOnce(fallo).mockRejectedValueOnce(fallo).mockResolvedValueOnce(respaldo)
+    const res=await actualizaOperadoresItv([estacion],{},{ahora,fetcher})
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(String(fetcher.mock.calls[2][0])).toContain('/itv/fuentes/itvasa')
+    expect(res.perfiles.itvasa.estado).toBe(valido?'actualizada':'conservada')
+    expect(res.estaciones[0].citaUrl).toBe(valido?url:undefined)
+    if (valido) expect(res.perfiles.itvasa.via).toBe('respaldo')
   })
 
   it('un fallo de certificado sigue siendo un fallo y no activa una conexión insegura',async()=>{

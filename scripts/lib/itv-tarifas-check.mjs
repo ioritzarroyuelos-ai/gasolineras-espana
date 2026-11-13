@@ -1,3 +1,5 @@
+import { descargarRespaldoItv, permiteRespaldoItv } from './itv-respaldo.mjs'
+import { ITV_PUBLIC_SOURCES } from '../../src/lib/itv-relay.ts'
 // Revisión de los componentes contrastados el 10/11/2026. Nunca sustituye una
 // revisión normativa ni incorpora importes nuevos sin conocer sus condiciones.
 // Los patrones leen la fila/epígrafe aplicable, no un hash de menús o anuncios.
@@ -40,24 +42,83 @@ export function compruebaTextoTarifa(id, raw, ahora = new Date()) {
   return spec.checks.every(r => r.test(text))
 }
 
+class ErrorFuenteTarifa extends Error {
+  constructor(codigo, retryAfterMs = null) {
+    super(codigo)
+    this.codigo = codigo
+    this.retryAfterMs = retryAfterMs
+  }
+}
+
+const ERRORES_TEMPORALES = new Set(['EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'])
+const ERRORES_TLS = new Set(['CERT_HAS_EXPIRED','CERT_NOT_YET_VALID','DEPTH_ZERO_SELF_SIGNED_CERT','SELF_SIGNED_CERT_IN_CHAIN','UNABLE_TO_VERIFY_LEAF_SIGNATURE','UNABLE_TO_GET_ISSUER_CERT_LOCALLY','ERR_TLS_CERT_ALTNAME_INVALID','ERR_SSL_TLSV1_ALERT_INTERNAL_ERROR','EPROTO'])
+function diagnosticoError(error) {
+  if (error instanceof ErrorFuenteTarifa) return {codigo:error.codigo,retryAfterMs:error.retryAfterMs}
+  // Sólo códigos conocidos: nunca mensajes, cuerpos HTTP ni URLs recibidos en errores.
+  for (let cause=error,depth=0;cause && depth<4;cause=cause.cause,depth++) {
+    if (cause.name==='TimeoutError') return {codigo:'TIMEOUT'}
+    if (ERRORES_TEMPORALES.has(cause.code) || ERRORES_TLS.has(cause.code) || cause.code==='ENOTFOUND') return {codigo:cause.code}
+  }
+  return {codigo:'NETWORK_ERROR'}
+}
+
+function retryAfter(response) {
+  const value=response.headers.get('retry-after')
+  if (!value) return null
+  const ms=/^\d+$/.test(value.trim()) ? Number(value.trim())*1000 : Date.parse(value)-Date.now()
+  return Number.isFinite(ms) && ms>=0 ? ms : null
+}
+
 export async function descargaTextoTarifa(url, pages, fetcher = fetch) {
   const response = await fetcher(url, {signal:AbortSignal.timeout(30000),headers:{'User-Agent':'EspanaUtil/1.0 (comprobacion de fuentes publicas)'}})
-  if (!response.ok) throw Error('HTTP '+response.status)
+  if (!response.ok) {
+    await response.body?.cancel().catch(()=>{})
+    throw new ErrorFuenteTarifa('HTTP_'+response.status,retryAfter(response))
+  }
   const bytes = new Uint8Array(await response.arrayBuffer())
-  if (bytes.length < 300 || bytes.length > 15000000) throw Error('Tamaño de documento inesperado')
+  return textoDocumentoTarifa(bytes,pages)
+}
+
+async function textoDocumentoTarifa(bytes,pages) {
+  if (bytes.length < 300 || bytes.length > 15000000) throw new ErrorFuenteTarifa('DOCUMENT_SIZE')
   if (bytes[0] === 37 && bytes[1] === 80 && bytes[2] === 68 && bytes[3] === 70) {
     const {PDFParse} = await import('pdf-parse')
     const parser = new PDFParse({data:bytes,isEvalSupported:false})
-    try { return (await parser.getText(pages ? {partial:pages} : {})).text } finally { await parser.destroy() }
+    try { return (await parser.getText(pages ? {partial:pages} : {})).text }
+    catch { throw new ErrorFuenteTarifa('PDF_READ_ERROR') }
+    finally { await parser.destroy() }
   }
   return new TextDecoder().decode(bytes)
 }
 
-export async function compruebaFuenteTarifa(fuente, ahora = new Date(), descargar = descargaTextoTarifa) {
+export async function compruebaFuenteTarifa(fuente, ahora = new Date(), descargar = descargaTextoTarifa, opciones = {}) {
   const base = {id:fuente.id,url:fuente.url,checkedAt:ahora.toISOString()}
-  try {
-    const text = await descargar(fuente.url,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
-    if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
-    return {...base,estado:'verificada'}
-  } catch { return {...base,estado:'no_disponible',error:'No se pudo consultar el documento oficial.'} }
+  const esperar = opciones.esperar || (ms=>new Promise(resolve=>setTimeout(resolve,ms)))
+  const limite = Date.now()+95000
+  for (let intentos=1;intentos<=3;intentos++) {
+    try {
+      const text = await descargar(fuente.url,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
+      if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,intentos,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
+      return {...base,intentos,via:'directa',estado:'verificada'}
+    } catch (error) {
+      const {codigo,retryAfterMs}=diagnosticoError(error)
+      const temporal = codigo==='TIMEOUT' || ERRORES_TEMPORALES.has(codigo) || /^HTTP_5\d\d$/.test(codigo) || codigo==='HTTP_429' && retryAfterMs!==null
+      const esperaMs = retryAfterMs ?? intentos*1000
+      // 429 sólo con Retry-After válido, respetado completo y dentro del presupuesto.
+      // 403, TLS y contenidos inválidos permanecen pendientes sin insistir.
+      if (intentos<3 && temporal && esperaMs<=5000 && Date.now()+esperaMs+30000<=limite) {
+        await esperar(esperaMs)
+        continue
+      }
+      if (opciones.respaldo!==null && ITV_PUBLIC_SOURCES[fuente.id]===fuente.url && permiteRespaldoItv(error)) {
+        try {
+          const bytes=await (opciones.respaldo || descargarRespaldoItv)(fuente.id,fuente.url)
+          const text=await textoDocumentoTarifa(bytes,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
+          if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
+          return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'verificada'}
+        } catch { return {...base,intentos,codigo,codigoRespaldo:'RESPALDO_NO_DISPONIBLE',estado:'no_disponible',error:'No se pudo consultar el documento oficial por ninguna de las dos conexiones.'} }
+      }
+      return {...base,intentos,codigo,estado:'no_disponible',error:'No se pudo consultar el documento oficial.'}
+    }
+  }
 }

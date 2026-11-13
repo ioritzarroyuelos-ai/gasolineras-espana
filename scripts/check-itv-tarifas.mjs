@@ -25,6 +25,6 @@ const payload = {v:1,checkedAt:ahora.toISOString(),estado,fuentes,tarifas}
 mkdirSync(directory,{recursive:true})
 const path = resolve(directory,'itv-tarifas-estado.json')
 writeFileSync(path+'.tmp',JSON.stringify(payload)); renameSync(path+'.tmp',path)
-for (const f of fuentes) console.log(f.id+': '+f.estado+(f.error?' — '+f.error:''))
+for (const f of fuentes) console.log(f.id+': '+f.estado+' ('+f.intentos+' intento(s)'+(f.via?', '+f.via:'')+(f.codigo?', '+f.codigo:'')+(f.codigoRespaldo?', '+f.codigoRespaldo:'')+')'+(f.error?' — '+f.error:''))
 console.log('Tarifas comprobadas: '+tarifas.filter(t=>t.estado==='verificada').length+'/'+tarifas.length)
 if (estado!=='verificada') process.exitCode=1

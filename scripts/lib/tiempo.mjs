@@ -196,6 +196,13 @@ export function prediccionVigente(pred, ahora = Date.now()) {
   return dias.length ? { ...pred, dias } : null
 }
 
+// Un fallo de la siguiente pasada debe conservar también las copias del formato
+// actual. Las antiguas sólo aportan los campos que prediccionVigente valida.
+export function prediccionSnapshotAnterior(pred, ine, ahora = Date.now()) {
+  if (pred?.ine !== ine || pred.fuente !== 'AEMET' || ![2, 3].includes(pred.versionPeriodos)) return null
+  return prediccionVigente(pred, ahora)
+}
+
 async function documentoAemet(ine, porHoras) {
   if (!/^\d{5}$/.test(ine)) throw new Error('Municipio inválido')
   const recurso = porHoras ? 'municipios_h/localidad_h_' : 'municipios/localidad_'

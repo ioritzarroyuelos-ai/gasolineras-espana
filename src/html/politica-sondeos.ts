@@ -17,7 +17,7 @@ export const SONDEOS_CSS = [
   '.pm-poll{background:#fff;color:var(--ink);border:1px solid #d7ddcf;border-radius:9px;margin:10px 0;overflow-wrap:anywhere}',
   '.pm-poll summary{display:list-item;cursor:pointer;min-height:46px;padding:12px 14px;color:var(--vd);font-weight:650;line-height:1.45}',
   '.pm-poll summary small{padding:3px 0 0 16px;font-weight:400}.pm-inner{padding:0 9px 9px;scroll-margin-top:14px}',
-  '.pm-inner:focus-visible{outline:2px solid var(--vd);outline-offset:-2px}.pm-ref{margin:0 5px 9px;font-size:13px;color:#4b584f}',
+  '.pm-inner:focus-visible{outline:2px solid var(--vd);outline-offset:-2px}.pm-ref,.pm-source-note{margin:0 5px 9px;font-size:13px;color:#4b584f}',
   '.pm-rows{margin:0;padding:0;list-style:none}.pm-rows li{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:2px 8px;padding:8px 5px;border-top:1px solid #d7ddcf;align-items:baseline;font-variant-numeric:tabular-nums}',
   '.pm-rows b{font-weight:650}.pm-rows strong,.pm-rows span{text-align:right}.pm-rows strong{font-size:16px;font-weight:550}.pm-rows span{font-size:13px}.pm-rows b small{font-weight:400}',
   '.pm-extra>summary{padding:11px 5px;min-height:44px;font-size:14px}.pm-details-title{font-size:20px;margin:20px 0 8px}',
@@ -142,7 +142,7 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
       + (!publicada || fuente ? '<p class="pm-source">' + (publicada ? '' : 'Fecha de publicación desconocida.')
         + (fuente ? ' <a href="' + esc(fuente) + '" rel="nofollow noreferrer">Ver la fuente de esta encuesta</a>' : '') + '</p>' : '')
       + '<p class="pm-ref">' + referenciaFicha(sondeo, anterior, file, referencia) + '</p>'
-      + (sondeo.notaFuente ? '<p class="pm-ref">' + esc(sondeo.notaFuente) + '</p>' : '')
+      + (sondeo.notaFuente ? '<p class="pm-source-note">' + esc(sondeo.notaFuente) + '</p>' : '')
       + '<ul class="pm-rows">' + detalle.slice(0, 3).join('') + '</ul>'
       + (detalle.length > 3 ? '<details class="pm-extra"><summary>Ver los demás partidos</summary><ul class="pm-rows">' + detalle.slice(3).join('') + '</ul></details>' : '')
       + '</div></details>'

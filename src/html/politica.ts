@@ -121,6 +121,17 @@ function urlBoe(valor?: string): string | undefined {
   if (/^https:\/\/(?:www\.)?boe\.es\/(?:(?:diario_boe\/txt|buscar\/doc)\.php\?id=BOE-A-\d{4}-\d+|boe\/dias\/\d{4}\/\d{2}\/\d{2}\/pdfs\/BOE-A-\d{4}-\d+\.pdf)$/i.test(valor)) return valor
 }
 
+function urlResultadoOficial(valor?: string): string | undefined {
+  const boe = urlBoe(valor)
+  if (boe) return boe
+  // Documentos regionales contrastados, sin admitir otros destinos del JSON.
+  if (valor && [
+    'https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1437358090606',
+    'https://bocyl.jcyl.es/boletines/2026/04/29/pdf/BOCYL-D-29042026-80-13.pdf',
+    'https://www.juntaelectoralcentral.es/cs/jec/documentos/extremadura_2025_resultados.pdf',
+  ].includes(valor)) return valor
+}
+
 function fuenteCalendario(fecha: IndexEntry['fecha']): string {
   if (!fecha.confirmada && fecha.anioPrevisto && /^https:\/\/elections\.europa\.eu\//i.test(fecha.fuente ?? '')) {
     return ' · <a class="decreto" href="' + esc(fecha.fuente) + '">Calendario del Parlamento Europeo</a>'
@@ -261,7 +272,7 @@ function barraResultado(ref: EleccionFile['referencia'], colores: ReturnType<typ
   const resumen = ambito === 'camara' ? 'Mayoría de esa elección: ' + mayoria + ' escaños'
     : ambito === 'europeas' ? total + ' eurodiputados elegidos en España' : total + ' senadores elegidos en las urnas'
   const titulo = ambito === 'europeas' ? 'Resultado de las elecciones europeas en España' : 'Último resultado oficial'
-  const url = urlBoe(ref.url) || enlace
+  const url = urlResultadoOficial(ref.url) || enlace
   return '<section class="resultado"><h2>' + titulo + '</h2>'
     + '<p class="cap">Elecciones del ' + fmtFecha(ref.fecha) + ' · ' + resumen + '</p>'
     + svg
@@ -338,7 +349,7 @@ export function buildEleccionPage(o: EleccionOpts): string {
   if (!europeas) cuerpo += resultado
   cuerpo += creditoRecopilacion(file.procedencia, 'Recopilación principal')
   for (const pro of file.procedenciasAdicionales ?? []) cuerpo += creditoRecopilacion(pro, 'Recopilación adicional')
-  if (file.referencia.escanos.length && !urlBoe(file.referencia.url) && !anteriorBoe) cuerpo += '<p class="fuente datos-fuente">Fuente del reparto electoral: ' + esc(file.referencia.fuente) + '.</p>'
+  if (file.referencia.escanos.length && !urlResultadoOficial(file.referencia.url) && !anteriorBoe) cuerpo += '<p class="fuente datos-fuente">Fuente del reparto electoral: ' + esc(file.referencia.fuente) + '.</p>'
   return envoltorio({
     title: cat.nombre + (europeas ? ' · resultados' : ' · sondeos') + ' · España Útil',
     desc: europeas ? 'Resultados de las elecciones europeas en España, reparto de eurodiputados por candidatura y próxima votación.' : 'Sondeos de ' + cat.nombre + '. Compara los escaños estimados con la encuesta anterior de la misma casa o con el último resultado electoral.',

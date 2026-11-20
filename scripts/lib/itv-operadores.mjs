@@ -1,6 +1,6 @@
 import { parse } from 'node-html-parser'
 import { coordenadasItv } from './itv-fuentes.mjs'
-import { descargarRespaldoItv, permiteRespaldoItv } from './itv-respaldo.mjs'
+import { descargarRespaldoItv, permiteRespaldoItv, codigoRespaldoItv } from './itv-respaldo.mjs'
 
 const limpia = v => String(v ?? '').replace(/\s+/g,' ').trim()
 const clave = v => limpia(v).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/[^A-Z0-9]/g,'')
@@ -102,6 +102,7 @@ function errorOperador(error) {
   }
   visita(error)
   return limpia((codigos.size ? '['+[...codigos].join(', ')+'] ' : '')+(error?.message || error)).slice(0,160)
+    +(error?.respaldoFallido ? '; respaldo: '+codigoRespaldoItv(error.respaldoFallido) : '')
 }
 
 function falloTemporal(error,nivel=0) {
@@ -134,7 +135,7 @@ async function leerCanal(canal,fetcher) {
           try {
             const bytes=await descargarRespaldoItv('itvasa',canal.url,{fetcher})
             return {doc:parse(new TextDecoder().decode(bytes)),via:'respaldo'}
-          } catch { /* Se conserva la causa directa y la última comprobación válida. */ }
+          } catch (respaldoFallido) { error.respaldoFallido=respaldoFallido }
         }
         throw error
       }

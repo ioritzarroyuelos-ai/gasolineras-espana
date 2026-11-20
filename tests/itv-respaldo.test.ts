@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest'
-import {descargarRespaldoItv,permiteRespaldoItv} from '../scripts/lib/itv-respaldo.mjs'
+import {descargarRespaldoItv,permiteRespaldoItv,codigoRespaldoItv} from '../scripts/lib/itv-respaldo.mjs'
 import {ITV_PUBLIC_SOURCES,ITV_MAX_BYTES} from '../src/lib/itv-relay'
 const ahora=Date.parse('2026-11-10T12:00:00Z')
 const source=ITV_PUBLIC_SOURCES.asturias
@@ -44,5 +44,16 @@ describe('consumo limitado del respaldo ITV',()=>{
     await expect(descargarRespaldoItv('asturias',source,{origin:origen,ahora,fetcher:async()=>new Response('',{status:302})})).rejects.toThrow()
     const grande=respuesta({},'x'.repeat(ITV_MAX_BYTES+1))
     await expect(descargarRespaldoItv('asturias',source,{origin:origen,ahora,fetcher:async()=>grande})).rejects.toThrow('demasiado grande')
+  })
+  it('conserva sólo códigos seguros del fallo, nunca mensajes remotos',async()=>{
+    for (const code of ['SOURCE_HTTP_522','secreto del servidor']) {
+      try {
+        await descargarRespaldoItv('asturias',source,{origin:origen,ahora,fetcher:async()=>Response.json({code,error:'detalle privado'},{status:502})})
+        expect.unreachable()
+      } catch (error) {
+        expect(codigoRespaldoItv(error)).toBe(code==='SOURCE_HTTP_522'?'HTTP_502/SOURCE_HTTP_522':'HTTP_502')
+        expect(String(error)).not.toMatch(/secreto|privado/)
+      }
+    }
   })
 })

@@ -67,6 +67,12 @@ jobs:
         env:
           ITV_OUT_DIR: .tmp/itv-verificacion
         run: node scripts/check-itv-citas.mjs
+      - name: Diagnosticar la variante oficial Default.aspx si falla la cita
+        if: steps.citas.outcome == 'failure'
+        continue-on-error: true
+        env:
+          ITV_OUT_DIR: .tmp/itv-verificacion
+        run: node scripts/check-itv-citas.mjs --diagnostico-default-aspx
       - name: Guardar informe incluso si alguna fuente falla
         if: always()
         uses: actions/upload-artifact@v6

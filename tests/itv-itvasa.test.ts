@@ -63,7 +63,7 @@ describe('verificación del canal de citas ITVASA',()=>{
     const res=await actualizaOperadoresItv([estacion],valida.perfiles,{ahora:ahora+86400000,fetcher})
     expect(res.estaciones[0]).toMatchObject({citaUrl:url,citaVerificadoEn:new Date(ahora).toISOString()})
     expect(res.perfiles.itvasa).toMatchObject({estado:'conservada',consultado:new Date(ahora+86400000).toISOString(),
-      ultimoExito:new Date(ahora).toISOString(),error:'[UND_ERR_CONNECT_TIMEOUT] fetch failed'})
+      ultimoExito:new Date(ahora).toISOString(),error:'[UND_ERR_CONNECT_TIMEOUT] fetch failed; respaldo: RESPALDO_NO_DISPONIBLE'})
     expect(fetcher).toHaveBeenCalledTimes(3)
   })
 
@@ -122,6 +122,14 @@ describe('verificación del canal de citas ITVASA',()=>{
     expect(res.perfiles.itvasa.estado).toBe(valido?'actualizada':'conservada')
     expect(res.estaciones[0].citaUrl).toBe(valido?url:undefined)
     if (valido) expect(res.perfiles.itvasa.via).toBe('respaldo')
+  })
+  it('deja visibles las dos causas si el respaldo también pierde la conexión',async()=>{
+    const fallo=Object.assign(new Error('fetch failed'),{cause:{code:'UND_ERR_CONNECT_TIMEOUT'}})
+    const fetcher=vi.fn<typeof fetch>().mockRejectedValueOnce(fallo).mockRejectedValueOnce(fallo)
+      .mockResolvedValueOnce(Response.json({code:'SOURCE_HTTP_522',error:'detalle privado'},{status:502}))
+    const res=await actualizaOperadoresItv([estacion],{},{ahora,fetcher})
+    expect(res.perfiles.itvasa.estado).toBe('conservada')
+    expect(res.perfiles.itvasa.error).toBe('[UND_ERR_CONNECT_TIMEOUT] fetch failed; respaldo: HTTP_502/SOURCE_HTTP_522')
   })
 
   it('un fallo de certificado sigue siendo un fallo y no activa una conexión insegura',async()=>{

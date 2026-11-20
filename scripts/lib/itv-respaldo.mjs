@@ -1,6 +1,36 @@
 import { ITV_PUBLIC_SOURCES, ITV_MAX_BYTES } from '../../src/lib/itv-relay.ts'
 
 const CONEXION = new Set(['EAI_AGAIN','ECONNRESET','ECONNREFUSED','ETIMEDOUT','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'])
+const CODIGO_FUENTE=/^SOURCE_(?:TIMEOUT|TOO_LARGE|EMPTY|FORMAT|NETWORK|HTTP_[1-5]\d\d)$/
+export function codigoRespaldoItv(error) {
+  const code=error?.itvRespaldoCodigo
+  return typeof code==='string' && /^HTTP_[1-5]\d\d(?:\/SOURCE_(?:TIMEOUT|TOO_LARGE|EMPTY|FORMAT|NETWORK|HTTP_[1-5]\d\d))?$/.test(code) ? code : 'RESPALDO_NO_DISPONIBLE'
+}
+
+async function falloHttpRespaldo(response) {
+  let code='HTTP_'+response.status
+  const reader=response.body?.getReader()
+  if (reader) {
+    try {
+      const chunks=[]
+      let size=0
+      for (;;) {
+        const {value,done}=await reader.read()
+        if (done) break
+        size+=value.byteLength
+        if (size>1024) throw Error('Diagnóstico demasiado grande')
+        chunks.push(value)
+      }
+      const bytes=new Uint8Array(size)
+      let offset=0
+      for (const chunk of chunks) { bytes.set(chunk,offset);offset+=chunk.length }
+      const data=JSON.parse(new TextDecoder().decode(bytes))
+      if (typeof data?.code==='string' && CODIGO_FUENTE.test(data.code)) code+='/'+data.code
+    } catch { /* Un diagnóstico inválido no oculta el código HTTP conocido. */ }
+    finally { await reader.cancel().catch(()=>{}) }
+  }
+  return Object.assign(Error('Respaldo ITV: '+code),{itvRespaldoCodigo:code})
+}
 // Sólo fallos de transporte. HTTP, certificados y respuestas inválidas no
 // autorizan otra ruta de acceso; un AggregateError debe contener sólo conexiones.
 export function permiteRespaldoItv(error, profundidad=0) {
@@ -19,8 +49,9 @@ export async function descargarRespaldoItv(id, source, opciones={}) {
   const url=origin+'/itv/fuentes/'+id
   // El Worker dispone de30s para el origen; dejamos margen al trayecto adicional.
   const response=await (opciones.fetcher || fetch)(url,{method:'GET',redirect:'manual',signal:AbortSignal.timeout(35000)})
+  if (!response.ok) throw await falloHttpRespaldo(response)
   const age=(opciones.ahora ?? Date.now())-Date.parse(response.headers.get('X-ITV-Fetched-At'))
-  if (!response.ok || response.url && response.url!==url || response.headers.get('X-ITV-Source-Id')!==id
+  if (response.url && response.url!==url || response.headers.get('X-ITV-Source-Id')!==id
       || response.headers.get('X-ITV-Source-Url')!==source || !Number.isFinite(age) || age < -60000 || age > 360000 || !response.body) {
     await response.body?.cancel().catch(()=>{})
     throw Error('Respaldo ITV: respuesta sin origen o fecha válidos')

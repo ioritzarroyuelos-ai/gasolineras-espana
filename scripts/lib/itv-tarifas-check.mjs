@@ -1,4 +1,4 @@
-import { descargarRespaldoItv, permiteRespaldoItv } from './itv-respaldo.mjs'
+import { descargarRespaldoItv, permiteRespaldoItv, codigoRespaldoItv } from './itv-respaldo.mjs'
 import { ITV_PUBLIC_SOURCES } from '../../src/lib/itv-relay.ts'
 // Revisión de los componentes contrastados el 10/11/2026. Nunca sustituye una
 // revisión normativa ni incorpora importes nuevos sin conocer sus condiciones.
@@ -116,7 +116,7 @@ export async function compruebaFuenteTarifa(fuente, ahora = new Date(), descarga
           const text=await textoDocumentoTarifa(bytes,COMPROBACIONES_TARIFAS[fuente.id]?.pages)
           if (!compruebaTextoTarifa(fuente.id,text,ahora)) return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'cambiada',error:'El contenido o la vigencia requieren una nueva revisión.'}
           return {...base,intentos,via:'respaldo',codigoDirecto:codigo,estado:'verificada'}
-        } catch { return {...base,intentos,codigo,codigoRespaldo:'RESPALDO_NO_DISPONIBLE',estado:'no_disponible',error:'No se pudo consultar el documento oficial por ninguna de las dos conexiones.'} }
+        } catch (errorRespaldo) { return {...base,intentos,codigo,codigoRespaldo:codigoRespaldoItv(errorRespaldo),estado:'no_disponible',error:'No se pudo consultar el documento oficial por ninguna de las dos conexiones.'} }
       }
       return {...base,intentos,codigo,estado:'no_disponible',error:'No se pudo consultar el documento oficial.'}
     }

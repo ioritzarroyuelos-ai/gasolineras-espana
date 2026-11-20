@@ -172,6 +172,7 @@ const fechaMadrid = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Madrid'
 function editorDelDominio(url) {
   const host = url.hostname.replace(/^www\./, '')
   if (host === 'moreincommones.substack.com') return 'MOREINCOMMON'
+  if (host === 'heraldo.es') return 'HERALDODEARAGON'
   if (host === 'x.com' && /^\/la_septima_tv\/status\/\d+\/?$/i.test(url.pathname)) return 'LASEPTIMA'
   // elmundo.es identifica al medio; elmundo.es.ejemplo.com no lo hace.
   const m = /(?:^|\.)([a-z0-9-]+)\.(?:com|es|org|net)$/.exec(host)

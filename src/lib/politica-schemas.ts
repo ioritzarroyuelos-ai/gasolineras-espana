@@ -97,6 +97,9 @@ export const EleccionFileSchema = z.object({
   procedencia: ProcedenciaSchema,
   procedenciasAdicionales: z.array(ProcedenciaSchema.extend({ camposFin: z.array(iso).max(2000).optional() })).max(10).optional(),
   avisosFuentes: z.array(z.string().max(400)).max(10).optional(),
+  informesPendientes: z.array(z.object({
+    empresa: z.string().min(1).max(120), url: z.string().max(400), publicacion: iso, comprobado: iso,
+  })).max(10).optional(),
   ultimaComprobacionOk: iso.nullable().optional(),
 })
 

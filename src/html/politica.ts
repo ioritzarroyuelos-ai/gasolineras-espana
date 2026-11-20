@@ -178,7 +178,7 @@ export function buildIndexPage(nonce: string, elecciones: IndexEntry[], canonica
     return '<article class="el"><h3 class="el-name">' + esc(e.nombre) + '</h3>'
       + '<span class="el-fecha">' + textoFecha(e.fecha) + fuenteCalendario(e.fecha) + '</span>'
       + (entrevistas ? '<span>Fin de las últimas entrevistas recopiladas · ' + fmtFecha(entrevistas) + '</span>' : '')
-      + (publicacion ? '<span>Publicación más reciente con fecha conocida · ' + fmtFecha(publicacion) + '</span>' : '')
+      + (publicacion ? '<span>Publicación incorporada más reciente · ' + fmtFecha(publicacion) + '</span>' : '')
       + (comprobacion ? '<small>Última comprobación de las fuentes · ' + fmtFecha(comprobacion) + '</small>' : '')
       + (!entrevistas || e.estado !== 'ok' ? '<span class="badge">' + esc(ESTADOS[e.estado]) + '</span>' : '')
       + '<a class="go" href="/politica/' + esc(e.id) + '" aria-label="' + accion + ' · ' + esc(e.nombre) + '">' + accion + ' →</a></article>'
@@ -308,6 +308,14 @@ export function buildEleccionPage(o: EleccionOpts): string {
     + (europeas ? resultado : '')
   if (estado === 'desactualizado' || estado === 'no_disponible') cuerpo += '<p class="aviso">' + ESTADOS[estado] + '</p>'
   for (const aviso of file.avisosFuentes ?? []) cuerpo += '<p class="aviso">' + esc(aviso) + '</p>'
+  if (!enVeda) for (const informe of file.informesPendientes ?? []) {
+    const url = urlFuenteHttps(informe.url)
+    if (url && diaDeCampo(informe.publicacion) != null) cuerpo += '<p class="aviso informe-pendiente">'
+      + esc(informe.empresa) + ' publicó un informe el ' + fmtFecha(informe.publicacion)
+      + ' que todavía está pendiente de incorporar a esta recopilación. '
+      + '<a href="' + esc(url) + '" rel="nofollow noreferrer">Abrir el informe original</a>'
+      + (diaEnMadrid(informe.comprobado) ? ' · Enlace comprobado el ' + fmtFecha(diaEnMadrid(informe.comprobado)!) : '') + '.</p>'
+  }
 
   if (enVeda) {
     cuerpo += '<p class="veda"><b>Veda electoral.</b> La difusión de sondeos está suspendida durante el periodo electoral establecido.</p>'
@@ -332,11 +340,11 @@ export function buildEleccionPage(o: EleccionOpts): string {
       + '</nav>' : ''
     const opcion = (modo: ReferenciaSondeo, titulo: string) =>
       '<a href="' + esc(urlSondeos(ruta, pagina, modo)) + '#sondeos"' + (referencia === modo ? ' aria-current="true"' : '') + '>' + titulo + '</a>'
-    cuerpo += '<section id="sondeos"><h2>' + (pagina === 1 ? 'Últimos sondeos' : 'Histórico de sondeos') + '</h2>'
+    cuerpo += '<section id="sondeos"><h2>' + (pagina === 1 ? 'Últimos sondeos incorporados' : 'Histórico de sondeos') + '</h2>'
       + '<p class="nota-sondeos">La lista reúne los sondeos de las fuentes citadas al pie, ordenados por el fin de las entrevistas.</p>'
       + (pagina === 1 ? '<ul class="fechas-sondeos">'
         + (ultimaEntrevista ? '<li>Fin de las últimas entrevistas recopiladas · ' + fmtFecha(ultimaEntrevista) + '</li>' : '')
-        + (ultimaPublicacion ? '<li>Publicación más reciente con fecha conocida · ' + fmtFecha(ultimaPublicacion) + '</li>' : '')
+        + (ultimaPublicacion ? '<li>Publicación incorporada más reciente · ' + fmtFecha(ultimaPublicacion) + '</li>' : '')
         + (comprobacion ? '<li>Última comprobación de las fuentes · ' + fmtFecha(comprobacion) + '</li>' : '') + '</ul>' : '')
       + '<nav class="referencias" aria-label="Referencia para comparar los escaños"><span>Comparar con</span><div class="opciones">'
       + opcion('anterior', 'Encuesta anterior') + opcion('elecciones', 'Elecciones del ' + fmtFecha(file.referencia.fecha)) + '</div></nav>'

@@ -81,6 +81,7 @@ describe('EleccionFileSchema', () => {
 
   it('acepta un fichero de elección completo', () => {
     expect(EleccionFileSchema.safeParse(base).success).toBe(true)
+    expect(EleccionFileSchema.parse(base).informesPendientes).toBeUndefined()
   })
 
   it('acepta sondeos vacíos (aún no hay sondeos es legítimo)', () => {

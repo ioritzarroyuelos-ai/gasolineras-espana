@@ -61,6 +61,8 @@ const archivos = vi.hoisted(() => new Map<string, string>())
 // GAD3 (incluidas sus correcciones de Datawrapper) tiene fixtures propios.
 const gad3 = vi.hoisted(() => vi.fn())
 vi.mock('../scripts/lib/politica-gad3.mjs', () => ({ fetchGad3: gad3 }))
+const informePendiente = vi.hoisted(() => vi.fn())
+vi.mock('../scripts/lib/politica-informes-pendientes.mjs', () => ({ compruebaInformePendiente: informePendiente }))
 const swPdf = vi.hoisted(() => vi.fn())
 vi.mock('../scripts/lib/politica-sw-pdf.mjs', async importar => ({
   ...await importar<Record<string,unknown>>(), fetchSeguimientoPdf: swPdf,
@@ -73,7 +75,7 @@ vi.mock('node:fs', async importar => {
     writeFileSync: (r: string, v: string) => archivos.set(nombre(r), v) }
 })
 
-describe('actualización de las dos fuentes del Congreso', () => {
+describe('actualización de las fuentes del Congreso', () => {
   const argv = process.argv
   const leer = (nombre: string) => JSON.parse(archivos.get(nombre)!)
   const inglesa = titulo + tabla(fila('4 Nov')) + cita()
@@ -82,6 +84,7 @@ describe('actualización de las dos fuentes del Congreso', () => {
   beforeEach(() => {
     archivos.clear()
     gad3.mockReset().mockResolvedValue({ sondeos: [], candidaturas: [], procedencia: undefined })
+    informePendiente.mockReset().mockResolvedValue({pendiente:null})
     swPdf.mockReset().mockImplementation(async candidatos => {
       if (!candidatos.length) throw Error('Sin informes originales')
       return {sondeos:candidatos.map((s: object)=>({...s,fuenteVerificada:'sw-pdf-v1',
@@ -150,6 +153,25 @@ describe('actualización de las dos fuentes del Congreso', () => {
     expect(parcial.file.sondeos.some((s:{empresa:string})=>s.empresa==='SW Demoscopia')).toBe(false)
     expect(parcial.file.avisosFuentes[0]).toContain('PDF original')
     expect(parcial.file.sondeos.some((s:{empresa:string})=>s.empresa==='Casa nueva')).toBe(true)
+  })
+
+  it('guarda el informe pendiente separado y conserva su comprobación si falla la consulta posterior', async () => {
+    const pendiente={empresa:'More in Common',url:'https://moreincommon.es/pdfs/pulso-electoral/pulso-electoral-noviembre-2026.pdf',publicacion:'2026-11-20',comprobado:'2026-11-20T12:00:00Z'}
+    informePendiente.mockResolvedValue({pendiente})
+    const buena=await pasada('2026-11-20',htmlES('Casa'),inglesa)
+    expect(buena.file.informesPendientes).toEqual([pendiente])
+    expect(buena.file.sondeos.some((s:{empresa:string})=>s.empresa==='More in Common')).toBe(false)
+    expect(buena.parte.revisiones[0].incidencias).toContain('More in Common: informe original del 2026-11-20 pendiente de incorporar')
+    informePendiente.mockResolvedValue({pendiente,error:'network timeout'})
+    const parcial=await pasada('2026-11-21',htmlES('Casa'),inglesa)
+    expect(informePendiente).toHaveBeenLastCalledWith(expect.any(Array),pendiente,expect.objectContaining({comprobado:'2026-11-21T12:00:00.000Z'}))
+    expect(parcial.file.informesPendientes).toEqual([pendiente])
+    expect(parcial.file.avisosFuentes).toContainEqual(expect.stringContaining('comprobación anterior'))
+    expect(parcial.parte.fallos).toContainEqual({id:'generales',parcial:true,motivo:'More in Common (informe original): network timeout'})
+    informePendiente.mockResolvedValue({pendiente:null})
+    const incorporada=await pasada('2026-11-22',htmlES('Casa'),inglesa)
+    expect(incorporada.file.informesPendientes).toBeUndefined()
+    expect(incorporada.file.avisosFuentes).toBeUndefined()
   })
 
   it('publica los originales válidos aunque otro PDF falle y conserva su aviso', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { parse } from 'node-html-parser'
 import { telefonosItv, mapsHref, enlaceOficialItv, type EstacionITV } from '../src/lib/itv'
-import { tarjetaItv, avisoDirectorio, buildItvMunicipioPage, buildItvPreciosPage, itvHeaders } from '../src/html/itv'
+import { tarjetaItv, avisoDirectorio, buildItvMunicipioPage, buildItvPreciosPage, bloquePrecioProvincia, itvHeaders } from '../src/html/itv'
 import { TARIFAS, desglosa } from '../src/lib/itv-tarifas'
 import type { EstadoTarifasItv } from '../src/lib/itv-tarifas-estado'
 
@@ -86,6 +86,30 @@ describe('fichas ITV con datos fiables', () => {
 })
 
 describe('comparación de precios', () => {
+  it('ofrece Barbastro sólo como consulta sin trasladar sus precios a Aragón', () => {
+    vi.useFakeTimers().setSystemTime(new Date('2026-11-20T12:00:00Z'))
+    const estado=estadoTarifas(),aragon=TARIFAS.find(t=>t.slug==='aragon')!
+    estado.tarifas.find(t=>t.slug==='aragon')!.estado='pendiente'
+    estado.fuentes.find(f=>f.id==='aragon')!.estado='no_disponible'
+    for (const combustible of ['gasolina','diesel'] as const) {
+      const root=parse(buildItvPreciosPage('n','https://example.com/itv/precios',combustible,estado))
+      const card=root.querySelectorAll('.precio-box').find(c=>c.querySelector('h3')?.text==='Aragón')!
+      expect(card.text).toContain('Pendiente de confirmar')
+      expect(card.querySelector('.precio-linea b')).toBeNull()
+      expect(card.querySelector('a[href="'+aragon.consultaAlternativa!.url+'"]')?.text).toBe('Consultar precios de ITV Barbastro')
+      expect(card.text).toContain('Sólo para la estación de Barbastro (Huesca)')
+      expect(card.querySelector('details a')?.getAttribute('href')).toBe(aragon.fuenteUrl)
+      const cifras=root.querySelectorAll('.precio-linea b').map(el=>Number(el.text.replace(' €','').replace(',','.')))
+      expect(cifras).toEqual([...cifras].sort((a,b)=>a-b))
+      expect(cifras).not.toContain(49.56);expect(cifras).not.toContain(60.76)
+    }
+    for (const provincia of ['Huesca','Teruel','Zaragoza']) {
+      const html=bloquePrecioProvincia(aragon,provincia,estado)
+      expect(html).toContain('No confirma las tarifas de otras estaciones de Aragón')
+      expect(html).not.toContain('49,56');expect(html).not.toContain('60,76')
+    }
+    expect(buildItvPreciosPage('n','https://example.com/itv/precios','gasolina',estadoTarifas())).not.toContain('Consultar precios de ITV Barbastro')
+  })
   it('la caché no conserva un precio al cambiar el día, también con horario de verano', () => {
     for (const ahora of ['2026-12-31T22:59:30Z', '2026-07-01T21:59:30Z']) {
       expect(itvHeaders('n', Date.parse(ahora))['Cache-Control']).toBe('public, max-age=30, s-maxage=30')

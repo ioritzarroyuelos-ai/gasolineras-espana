@@ -76,6 +76,53 @@ describe('datos deportivos verificables', () => {
     expect(final).not.toContain('Emisión publicada')
     expect(final).toContain('Sin retransmisión confirmada para España')
   })
+  it('pide confirmar el resultado desde la hora prevista, sin modificar la fecha ni inventar un marcador', () => {
+    const e = { ...competicion().agenda.eventos[0], inicio: '2026-11-07T13:00:00Z' }
+    const original = structuredClone(e)
+    expect(etiquetaEstadoDeporte(e, sello, 'madrid', ahora - 1)).toBe('Programado')
+    expect(etiquetaEstadoDeporte(e, sello, 'madrid', ahora)).toBe('Resultado por confirmar')
+    expect(etiquetaEstadoDeporte(e, sello, 'canarias', ahora + 1)).toBe('Resultado por confirmar')
+    expect(e).toEqual(original)
+    const reloj = vi.spyOn(Date, 'now').mockReturnValue(ahora)
+    try {
+      const html = tarjetaEvento({ ...e, competicion: 'Liga de pruebas', competicionId: 'liga-prueba', deporte: 'futbol', temporada: '2026-2027', conservado: false, verificadoEn: sello }, 'madrid')
+      expect(html).toContain('Resultado por confirmar')
+      expect(html).toContain('14:00')
+      expect(html.match(/class="score">—/g)).toHaveLength(2)
+      expect(html).not.toContain('Finalizado')
+    } finally { reloj.mockRestore() }
+  })
+  it('sin hora, conserva Programado todo el día local y respeta el final de los eventos de varios días', () => {
+    const evento = { id: 'fecha-sola', nombre: 'Encuentro', fecha: '2026-11-07', estado: 'programado' as const }
+    const medianochePeninsula = Date.parse('2026-11-07T23:00:00Z')
+    expect(etiquetaEstadoDeporte(evento, sello, 'madrid', medianochePeninsula - 1)).toBe('Programado')
+    expect(etiquetaEstadoDeporte(evento, sello, 'madrid', medianochePeninsula)).toBe('Resultado por confirmar')
+    expect(etiquetaEstadoDeporte(evento, sello, 'canarias', medianochePeninsula)).toBe('Programado')
+    expect(etiquetaEstadoDeporte(evento, sello, 'canarias', Date.parse('2026-11-08T00:00:00Z'))).toBe('Resultado por confirmar')
+    const finDeSemana = competicion().agenda.eventos[1]
+    expect(etiquetaEstadoDeporte(finDeSemana, sello, 'madrid', Date.parse('2026-11-08T22:59:59Z'))).toBe('Programado')
+    expect(etiquetaEstadoDeporte(finDeSemana, sello, 'madrid', Date.parse('2026-11-08T23:00:00Z'))).toBe('Resultado por confirmar')
+    expect(etiquetaEstadoDeporte({ ...evento, fecha: undefined }, sello, 'madrid', ahora)).toBe('Programado')
+  })
+  it('conserva los estados confirmados por la fuente aunque haya pasado la hora prevista', () => {
+    const evento = { ...competicion().agenda.eventos[0], inicio: '2026-11-06T13:00:00Z' }
+    for (const [estado, etiqueta] of Object.entries({ finalizado: 'Finalizado', aplazado: 'Aplazado', cancelado: 'Cancelado', por_confirmar: 'Por confirmar' })) {
+      expect(etiquetaEstadoDeporte({ ...evento, estado: estado as typeof evento.estado }, sello, 'madrid', ahora)).toBe(etiqueta)
+    }
+    expect(etiquetaEstadoDeporte({ ...evento, estado: 'en_juego' }, sello, 'madrid', ahora)).toContain('En juego al consultar')
+  })
+  it('un rango RFEDA con hora inicial espera al último día y no se trata como una sesión aislada', () => {
+    const evento = { id: 'rfeda-1', nombre: 'Fin de semana RFEDA', fecha: '2026-11-07', finFecha: '2026-11-08', inicio: '2026-11-07T09:00:00Z', estado: 'programado' as const }
+    const original = structuredClone(evento)
+    expect(etiquetaEstadoDeporte(evento, sello, 'madrid', ahora)).toBe('Programado')
+    const finEnPeninsula = Date.parse('2026-11-08T23:00:00Z')
+    expect(etiquetaEstadoDeporte(evento, sello, 'madrid', finEnPeninsula - 1)).toBe('Programado')
+    expect(etiquetaEstadoDeporte(evento, sello, 'madrid', finEnPeninsula)).toBe('Resultado por confirmar')
+    expect(etiquetaEstadoDeporte(evento, sello, 'canarias', finEnPeninsula)).toBe('Programado')
+    expect(etiquetaEstadoDeporte(evento, sello, 'canarias', Date.parse('2026-11-09T00:00:00Z'))).toBe('Resultado por confirmar')
+    expect(etiquetaEstadoDeporte({ ...evento, finFecha: evento.fecha }, sello, 'madrid', ahora)).toBe('Resultado por confirmar')
+    expect(evento).toEqual(original)
+  })
   it('escapa textos externos y no añade estilos en línea', () => {
     const c = competicion(); c.nombre = '<script>alert(1)</script>'
     const html = buildCompeticionDeportesPage(c, 'nonce', 'https://sitio.example/deportes/competicion/liga-prueba', new URL('https://sitio.example/deportes/competicion/liga-prueba'), 'madrid')

@@ -43,8 +43,19 @@ export function fechaConsultaDeporte(fecha?: string, zona = 'madrid'): string {
   if (!fecha || !Number.isFinite(Date.parse(fecha))) return 'Sin comprobación disponible'
   return new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ZONAS_DEPORTES[zona] || ZONAS_DEPORTES.madrid }).format(new Date(fecha))
 }
-export function etiquetaEstadoDeporte(e: EventoDeportivo, verificadoEn?: string, zona = 'madrid'): string {
+export function etiquetaEstadoDeporte(e: EventoDeportivo, verificadoEn?: string, zona = 'madrid', ahora = Date.now()): string {
   if (e.estado === 'en_juego') return 'En juego al consultar' + (verificadoEn ? ' · ' + fechaConsultaDeporte(verificadoEn, zona) : '')
+  if (e.estado === 'programado') {
+    // La hora prevista puede haber pasado sin que la fuente confirme el
+    // resultado. Un rango de varios días conserva su final aunque incluya hora
+    // de inicio; sin hora, también esperamos al día siguiente del último día.
+    const ultimoDia = e.finFecha || e.fecha
+    const variosDias = Boolean(e.fecha && e.finFecha && e.finFecha > e.fecha)
+    const pasado = variosDias || !e.inicio
+      ? Boolean(ultimoDia && ultimoDia < diaDeporte(ahora, zona))
+      : Date.parse(e.inicio) <= ahora
+    if (pasado) return 'Resultado por confirmar'
+  }
   return ({ programado: 'Programado', finalizado: 'Finalizado', aplazado: 'Aplazado', cancelado: 'Cancelado', por_confirmar: 'Por confirmar' })[e.estado]
 }
 export function bloqueAtrasado(b: { estado?: string; verificadoEn?: string }, ahora = Date.now()): boolean {

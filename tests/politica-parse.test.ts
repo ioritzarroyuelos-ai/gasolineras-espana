@@ -4,6 +4,7 @@ import generalesEs from './fixtures/politica/generales.es.html?raw'
 import europeasEs from './fixtures/politica/europeas.es.html?raw'
 import laRiojaEn from './fixtures/politica/la-rioja.en.html?raw'
 import asturias2026 from './fixtures/politica/asturias-20261110.html?raw'
+import aragon2026 from './fixtures/politica/aragon-20261120.html?raw'
 
 const FIXTURES: Record<string, string> = {
   'generales.es.html': generalesEs,
@@ -70,6 +71,23 @@ describe('parsePct / parseEscanos / parseFecha (unidades)', () => {
 })
 
 describe('parseSondeos (fixtures reales de Wikipedia)', () => {
+  it('Aragón incorpora el sondeo autonómico posterior al 8-F con la fecha del editor', () => {
+    const r = parseSondeos(aragon2026, {anioReferencia:2026})
+    expect(r.incidencias).toEqual([])
+    expect(r.sondeos).toHaveLength(1)
+    const s = r.sondeos[0]
+    expect(s).toMatchObject({empresa:'A+M', comitente:'Heraldo de Aragón', campoInicio:'2026-10-01', campoFin:'2026-10-06', publicacion:'2026-10-12', muestra:2200})
+    expect(s.fuenteUrl).toBe('https://www.heraldo.es/noticias/aragon/2026/10/12/derecha-revalidaria-gobierno-aragon-con-3-escanos-menos-para-azcon-izquierda-recortaria-2058621.html')
+    expect(s.datos).toEqual([
+      {candidaturaId:'pp',pct:32.1,escanos:23},{candidaturaId:'psoe',pct:24.3,escanos:19},
+      {candidaturaId:'vox',pct:20.8,escanos:15},{candidaturaId:'cha',pct:10.9,escanos:8},
+      {candidaturaId:'existe',pct:2.8,escanos:1},{candidaturaId:'iu',pct:3.6,escanos:1},
+    ])
+    expect(s.datos.reduce((n,d)=>n+Number(d.escanos),0)).toBe(67)
+    expect(r.referencia?.escanos.find(d=>d.candidaturaId==='pp')?.escanos).toBe(26)
+    expect(parseSondeos(aragon2026.replaceAll('www.heraldo.es','www.heraldo.es.ejemplo.com'), {anioReferencia:2026}).sondeos[0].fuenteUrl).toBeUndefined()
+  })
+
   it('GENERALES es: extrae sondeos con % y escaños, mapea partidos, y la referencia 2023', () => {
     const r = parseSondeos(fx('generales.es.html'), { anioReferencia: 2023 })
     expect(r.sondeos.length).toBeGreaterThan(20)

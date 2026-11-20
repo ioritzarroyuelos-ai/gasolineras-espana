@@ -49,9 +49,10 @@ describe('catálogo de elecciones', () => {
       expect(e.wikiResultados.articulo.length).toBeGreaterThan(0)
       if (e.wikiSondeos) expect(['es', 'en']).toContain(e.wikiSondeos.lang)
     }
-    // Sin artículo de sondeos de la próxima: europeas (2029) + anticipadas recientes
+    // Sin fuente identificada para el próximo ciclo (no implica que no existan sondeos).
     const sinSondeos = ELECCIONES.filter((e) => !e.wikiSondeos).map((e) => e.id).sort()
-    expect(sinSondeos).toEqual(['aragon', 'castilla-y-leon', 'europeas', 'extremadura'])
+    expect(sinSondeos).toEqual(['castilla-y-leon', 'europeas', 'extremadura'])
+    expect(eleccionPorId('aragon')?.wikiSondeos).toEqual({lang:'en', articulo:'Next Aragonese regional election'})
   })
 
   it('eleccionPorId encuentra y devuelve undefined si no existe', () => {

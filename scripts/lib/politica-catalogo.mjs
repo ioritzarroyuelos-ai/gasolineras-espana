@@ -6,8 +6,8 @@
 // - `proxima.confirmada` = false hasta que haya decreto oficial de convocatoria.
 //   Mientras sea false, NO hay veda (enVeda solo aplica a fechas confirmadas).
 // - `wikiSondeos` = artículo con la tabla de sondeos de la PRÓXIMA elección, o
-//   null si aún no existe (europeas 2029, y anticipadas recientes: Aragón y
-//   Extremadura). Preferimos es.wikipedia si el artículo existe en español.
+//   null si aún no se ha identificado una fuente para ese ciclo. Preferimos
+//   es.wikipedia si el artículo existe en español.
 // - Madrid: la Asamblea amplía de 135 a 143 escaños en 2027 (mayoría 72); se usa
 //   el tamaño de la próxima cámara para que la validación no rechace sondeos.
 
@@ -99,7 +99,7 @@ export const ELECCIONES = [
     id: 'aragon', tipo: 'autonomica', nombre: 'Elecciones a las Cortes de Aragón', comunidad: 'Aragón',
     camara: { nombre: 'Cortes de Aragón', escanos: 67, mayoria: 34 },
     ultimaFecha: '2026-02-08', proxima: { valor: null, confirmada: false },
-    wikiSondeos: null,
+    wikiSondeos: en('Next Aragonese regional election'),
     wikiResultados: es('Elecciones a las Cortes de Aragón de 2026'),
   },
   {

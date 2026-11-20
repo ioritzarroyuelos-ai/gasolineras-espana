@@ -23,6 +23,19 @@ function fileCon(empresa: string): EleccionFile {
 const base = { nonce: 'n1', cat, estado: 'ok', ahoraISO: '2026-09-23T00:00:00Z', canonical: 'https://x/politica/autonomicas/madrid' }
 
 describe('buildEleccionPage', () => {
+  it('ofrece el informe original pendiente separado de los sondeos y lo oculta en veda', () => {
+    const file = fileCon('Casa')
+    const url = 'https://moreincommon.es/pdfs/pulso-electoral/pulso-electoral-noviembre-2026.pdf'
+    file.informesPendientes = [{empresa:'More in Common',url,publicacion:'2026-11-20',comprobado:'2026-11-20T22:00:00Z'}]
+    const doc = parse(buildEleccionPage({...base,file,enVeda:false}))
+    expect(doc.querySelector('.informe-pendiente')?.text).toContain('20 nov 2026 que todavía está pendiente de incorporar')
+    expect(doc.querySelector('.informe-pendiente a')?.getAttribute('href')).toBe(url)
+    expect(doc.querySelectorAll('.pm-poll')).toHaveLength(2)
+    expect(doc.querySelector('#sondeos h2')?.text).toBe('Últimos sondeos incorporados')
+    expect(parse(buildEleccionPage({...base,file,enVeda:true})).querySelector('.informe-pendiente')).toBeNull()
+    file.informesPendientes[0].url = 'javascript:alert(1)'
+    expect(parse(buildEleccionPage({...base,file,enVeda:false})).querySelector('.informe-pendiente')).toBeNull()
+  })
   it('distingue la nota de la fuente y la referencia electoral en una ficha SW', () => {
     const file = fileCon('SW Demoscopia')
     file.sondeos[0].notaFuente = 'Escaños: reparto central del informe, distinto de las medianas y los rangos.'
@@ -149,7 +162,7 @@ describe('buildEleccionPage', () => {
     const doc = parse(buildEleccionPage({ ...base, file, enVeda: false }))
     const fichas = doc.querySelectorAll('.pm-poll')
     expect(doc.querySelector('.fechas-sondeos')?.text).toContain('Fin de las últimas entrevistas recopiladas · 12 jun 2026')
-    expect(doc.querySelector('.fechas-sondeos')?.text).toContain('Publicación más reciente con fecha conocida · 16 jun 2026')
+    expect(doc.querySelector('.fechas-sondeos')?.text).toContain('Publicación incorporada más reciente · 16 jun 2026')
     expect(doc.querySelector('.fechas-sondeos')?.text).toContain('Última comprobación de las fuentes · 21 jun 2026')
     expect(fichas[0].querySelector('summary')?.text).toContain('Publicación · 16 jun 2026')
     expect(fichas[0].querySelector('.pm-source a')?.getAttribute('href')).toBe('https://editor.example/encuesta')
@@ -289,7 +302,7 @@ describe('buildIndexPage', () => {
     const general = doc.querySelector('a.go[href="/politica/generales"]')!.closest('article')!
     expect(general.text).toContain('Prevista para agosto de 2027')
     expect(general.text).toContain('Fin de las últimas entrevistas recopiladas · 1 oct 2026')
-    expect(general.text).toContain('Publicación más reciente con fecha conocida · 2 oct 2026')
+    expect(general.text).toContain('Publicación incorporada más reciente · 2 oct 2026')
     expect(general.text).toContain('Última comprobación de las fuentes · 7 oct 2026')
     expect(doc.querySelector('a.go[href="/politica/europeas"]')?.closest('article')?.text).toContain('pendiente de fecha oficial')
     expect(doc.querySelector('select[name="comunidad"] option[value="madrid"]')?.text).toBe('Madrid')

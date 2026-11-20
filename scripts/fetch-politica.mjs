@@ -14,6 +14,7 @@ import { parseSondeos } from './lib/politica-parse.mjs'
 import { combinaSeguimiento, esSeguimientoSW, extraeSeguimientoGenerales } from './lib/politica-seguimiento.mjs'
 import { completaResultadosOficiales } from './lib/politica-resultados-oficiales.mjs'
 import { fetchGad3 } from './lib/politica-gad3.mjs'
+import { compruebaInformePendiente } from './lib/politica-informes-pendientes.mjs'
 import { fetchSeguimientoPdf, urlSeguimientoPdf } from './lib/politica-sw-pdf.mjs'
 import { validaEleccion } from './lib/politica-validacion.mjs'
 import { ELECCIONES } from './lib/politica-catalogo.mjs'
@@ -163,6 +164,19 @@ async function construyeEleccion(e, veda, anterior) {
       file.sondeos = [...file.sondeos.filter(s => s.empresa !== 'GAD3' || !originales.some(o => o.campoFin === s.campoFin)), ...originales]
       for (const c of anterior?.candidaturas ?? []) if (originales.some(s => s.datos.some(d => d.candidaturaId === c.id)) && !file.candidaturas.some(a => a.id === c.id)) file.candidaturas.push(c)
       if (procedencia) (file.procedenciasAdicionales ??= []).push(procedencia)
+    }
+  }
+  if (!veda && e.id === 'generales') {
+    const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
+    const anteriorPendiente = mismaEleccion ? anterior.informesPendientes?.find(p=>p.empresa==='More in Common') : undefined
+    const {pendiente,error} = await compruebaInformePendiente(file.sondeos,anteriorPendiente,{hoy:diaMadrid,comprobado:HOY.toISOString(),userAgent:UA})
+    if (error) {
+      falloParcial = [falloParcial,'More in Common (informe original): '+error].filter(Boolean).join('; ')
+      avisosFuentes.push('No se ha podido comprobar el último informe nacional de More in Common. El enlace pendiente, si aparece, conserva su fecha de comprobación anterior.')
+    }
+    if (pendiente) {
+      file.informesPendientes = [pendiente]
+      parsed.incidencias.push('More in Common: informe original del '+pendiente.publicacion+' pendiente de incorporar')
     }
   }
   if (avisosFuentes.length) file.avisosFuentes = avisosFuentes

@@ -1,6 +1,7 @@
 // Destinos cerrados del respaldo público. No recibe URLs ni credenciales del cliente.
 // Asturias usa el destino oficial canónico para no necesitar seguir redirecciones.
 export const ITV_PUBLIC_SOURCES: Readonly<Record<string, string>> = Object.freeze({
+  aragon: 'https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1429100330404',
   asturias: 'https://miprincipado.asturias.es/bopa/2025/12/26/2025-10695.pdf',
   cantabria: 'https://boc.cantabria.es/boces/verAnuncioAction.do?idAnuBlob=428844',
   'comunitat-valenciana': 'https://sitval.com/assets/pdf/tarifas.pdf',

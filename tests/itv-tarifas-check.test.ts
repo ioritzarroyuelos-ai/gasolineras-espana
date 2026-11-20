@@ -101,6 +101,17 @@ describe('verificación diaria de las tarifas',()=>{
     expect((await compruebaFuenteTarifa(fuente,ahora,async()=>{throw error},{respaldo})).estado).toBe('no_disponible')
     expect(respaldo).not.toHaveBeenCalled()
   })
+  it('comprueba las filas del BOA tras un reinicio de conexión de Aragón',async()=>{
+    const fuente={id:'aragon',url:ITV_PUBLIC_SOURCES.aragon}
+    const texto='ORDEN PEJ/1853/2025. 1.2 De turismo con motor de encendido por chispa 37,50 1.3 De remolque. 1.5 De turismo con motor de encendido por compresión 46,76 1.6 De tractocamión.'
+    const descargar=vi.fn().mockRejectedValue(Object.assign(Error('conexión'),{cause:{code:'ECONNRESET'}}))
+    const respaldo=vi.fn(async()=>new TextEncoder().encode(texto+' '.repeat(300)))
+    expect(await compruebaFuenteTarifa(fuente,ahora,descargar,{esperar:async()=>{},respaldo}))
+      .toMatchObject({estado:'verificada',via:'respaldo',codigoDirecto:'ECONNRESET',intentos:3})
+    expect(respaldo).toHaveBeenCalledExactlyOnceWith('aragon','https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1429100330404')
+    expect(await compruebaFuenteTarifa(fuente,ahora,descargar,{esperar:async()=>{},respaldo:async()=>new TextEncoder().encode(texto.replace('37,50','38,00')+' '.repeat(300))}))
+      .toMatchObject({estado:'cambiada',via:'respaldo'})
+  })
   it('no confirma sin revisión reciente de la tarifa y todos sus suplementos',()=>{
     const estado: EstadoTarifasItv = {v:1,checkedAt:ahora.toISOString(),estado:'verificada',
       fuentes:['asturias','tasa-dgt'].map(id=>({id,url:'https://example.com',checkedAt:ahora.toISOString(),estado:'verificada'})),

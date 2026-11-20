@@ -7,6 +7,7 @@ on:
       - 'scripts/check-fuel-history.mjs'
       - 'scripts/actualiza-historico-estatico.mjs'
       - 'scripts/lib/historico-estatico.*'
+      - 'scripts/lib/historico-descarga.*'
 permissions:
   contents: read
 concurrency:

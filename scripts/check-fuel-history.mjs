@@ -3,10 +3,11 @@
 import {mkdirSync,writeFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {fechaArchivoMinisterio,fechaSnapshot,filasSnapshot} from './lib/historico-estatico.mjs'
+import {HISTORICO_TIMEOUT_MS} from './lib/historico-descarga.mjs'
 const day=process.env.HISTORY_CHECK_DAY || new Date(Date.now()-86400000).toISOString().slice(0,10)
 const url=new URL('https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestresHist/'+fechaArchivoMinisterio(day))
 const started=performance.now()
-const result={checkedAt:new Date().toISOString(),day,timeoutMs:45000,estado:'pendiente'}
+const result={checkedAt:new Date().toISOString(),day,timeoutMs:HISTORICO_TIMEOUT_MS,estado:'pendiente'}
 let phase='conexion'
 try {
   const response=await fetch(url,{headers:{Accept:'application/json'},signal:AbortSignal.timeout(result.timeoutMs)})

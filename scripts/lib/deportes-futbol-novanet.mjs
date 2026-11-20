@@ -271,17 +271,21 @@ function jornadasCercanas(opciones, ahora, seleccionada) {
   return ordenadas.slice(Math.max(0, indice - 1), indice + 1)
 }
 
-function gruposVerificadosNovanet(fuenteId, estado, publicados) {
+function gruposVerificadosNovanet(fuenteId, estado, publicados, fechas = {}) {
   return (estado.catalogo?.categorias || []).flatMap((c, categoria) => categoriaDuplicadaNovanet(c, fuenteId) ? [] : (c.grupos || []).flatMap((g, grupo) => {
-    const clave = `${c.codigo}-${g.codigo}`, fecha = estado.verificados[clave], id = idGrupoNovanet(fuenteId, c, g)
+    const clave = `${c.codigo}-${g.codigo}`, id = idGrupoNovanet(fuenteId, c, g), publicada = fechas[id]
+    // Un checkpoint puede proceder de una lectura cuyo PR nunca se publicó.
+    // La prioridad sigue la copia visible; los intentos conservan su descanso.
+    const fecha = typeof publicada === 'string' && Number.isFinite(Date.parse(publicada))
+      ? new Date(publicada).toISOString() : estado.verificados[clave]
     return fecha && (!publicados || publicados.includes(id)) ? [{ categoria, grupo, clave, id, fecha, codigoGrupo: g.codigo }] : []
   }))
 }
 
 // Empezamos a renovar a las 18 h para dejar margen antes de un día entero.
 // El cursor de descubrimiento no se mueve cuando se atiende esta cola.
-export function eligeActualizacionNovanet(fuenteId, estado, ahora, { publicados, cubiertos = [], visitados = [] } = {}) {
-  const candidatos = gruposVerificadosNovanet(fuenteId, estado, publicados).filter(g => ahora - Date.parse(g.fecha) >= 18 * 3600000 &&
+export function eligeActualizacionNovanet(fuenteId, estado, ahora, { publicados, fechas = {}, cubiertos = [], visitados = [] } = {}) {
+  const candidatos = gruposVerificadosNovanet(fuenteId, estado, publicados, fechas).filter(g => ahora - Date.parse(g.fecha) >= 18 * 3600000 &&
     !cubiertos.includes(g.id) && !visitados.includes(g.clave) && (!estado.intentos?.[g.clave] || ahora - Date.parse(estado.intentos[g.clave].fecha) >= 3600000))
   const turno = g => Math.max(Date.parse(g.fecha), Date.parse(estado.intentos?.[g.clave]?.fecha || '') || 0)
   candidatos.sort((a, b) => turno(a) - turno(b) || a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
@@ -383,7 +387,8 @@ async function obtienePortalNovanet(fuente, opciones, maximoPasada) {
     let avanceNormal = false, prioridadesSeguidas = 0
     while (estado.catalogo && disponible()) {
       const prioridad = prioridadesSeguidas < 2 ? eligeActualizacionNovanet(fuente.id, estado, Date.now(), {
-        publicados: opciones.gruposPublicadosFutbol, cubiertos: opciones.gruposCubiertosFutbol, visitados: [...prioridadesVisitadas, ...gruposIntentados]
+        publicados: opciones.gruposPublicadosFutbol, fechas: opciones.fechasPublicadasFutbol,
+        cubiertos: opciones.gruposCubiertosFutbol, visitados: [...prioridadesVisitadas, ...gruposIntentados]
       }) : null
       const categoriaPendiente = pendienteAnterior && estado.catalogo.categorias[pendienteAnterior.categoria]
       const grupoPendiente = categoriaPendiente?.grupos?.[pendienteAnterior.grupo]

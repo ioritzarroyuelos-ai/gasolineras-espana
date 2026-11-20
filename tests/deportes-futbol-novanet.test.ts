@@ -368,23 +368,61 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
     expect(presupuestoPortalNovanet('madrid', semilla(1000))).toBe(120)
     expect(presupuestoPortalNovanet('madrid', semilla(1000), ['novanet-madrid-101'])).toBe(20)
   })
+  it('ordena por la copia publicada aunque un checkpoint posterior nunca llegase a publicarse', () => {
+    const estado = semilla(), hoy = Date.parse('2026-11-20T17:00:00Z')
+    estado.verificados['26738226-101'] = '2026-11-19T16:00:00Z'
+    estado.verificados['26738226-102'] = '2026-11-15T16:00:00Z'
+    estado.intentos = {
+      '26738226-101': { fecha: '2026-11-19T16:00:00Z', fallo: false },
+      '26738226-102': { fecha: '2026-11-15T16:00:00Z', fallo: false },
+    }
+    const fechas = { 'novanet-madrid-101': '2026-11-12T16:00:00Z', 'novanet-madrid-102': '2026-11-15T16:00:00Z' }
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, { publicados: Object.keys(fechas), fechas })).toMatchObject({ codigoGrupo: '101', fecha: '2026-11-12T16:00:00.000Z' })
+    expect(estado.verificados['26738226-101']).toBe('2026-11-19T16:00:00Z')
+  })
+  it('un checkpoint reciente no rejuvenece la copia visible y un intento reciente sí conserva su descanso', () => {
+    const estado = semilla(), hoy = Date.parse('2026-11-20T17:00:00Z'), id = 'novanet-madrid-101'
+    estado.verificados['26738226-101'] = '2026-11-20T16:00:00Z'
+    const opciones = { publicados: [id], fechas: { [id]: '2026-11-12T16:00:00Z' } }
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)?.codigoGrupo).toBe('101')
+    estado.intentos = { '26738226-101': { fecha: '2026-11-20T16:30:00Z', fallo: true } }
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)).toBeNull()
+    expect(eligeActualizacionNovanet('madrid', estado, hoy + 1800000, opciones)?.codigoGrupo).toBe('101')
+    estado.intentos['26738226-101'].fallo = false
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)).toBeNull()
+    expect(eligeActualizacionNovanet('madrid', estado, hoy + 1800000, opciones)?.codigoGrupo).toBe('101')
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, { ...opciones, cubiertos: [id] })).toBeNull()
+  })
+  it('una copia publicada reciente prevalece sobre un checkpoint antiguo; sin fecha válida conserva el comportamiento anterior', () => {
+    const estado = semilla(), id = 'novanet-madrid-101', publicados = [id]
+    expect(eligeActualizacionNovanet('madrid', estado, ahora, { publicados, fechas: { [id]: '2026-11-10T16:00:00Z' } })).toBeNull()
+    const incompletas: Array<Record<string, string>> = [{}, { [id]: 'sin fecha' }]
+    for (const fechas of incompletas) {
+      expect(eligeActualizacionNovanet('madrid', estado, ahora, { publicados, fechas })?.fecha).toBe(estado.verificados['26738226-101'])
+    }
+    delete estado.verificados['26738226-101']
+    expect(eligeActualizacionNovanet('madrid', estado, ahora, { publicados, fechas: { [id]: antigua } })?.codigoGrupo).toBe('101')
+  })
   it('un grupo antiguo que falla cada hora no deja detrás a los que todavía esperan su primera renovación', () => {
     const estado = semilla()
-    estado.verificados['26738226-101'] = '2026-11-01T10:00:00Z'
+    const fechas = Object.fromEntries(['101', '102', '103'].map(g => ['novanet-madrid-' + g, g === '101' ? '2026-11-01T10:00:00Z' : antigua]))
+    for (const clave of Object.keys(estado.verificados)) estado.verificados[clave] = '2026-11-10T16:00:00Z'
     const turnos: string[] = []
     for (let hora = 0; hora < 3; hora++) {
-      const elegido = eligeActualizacionNovanet('madrid', estado, ahora + hora * 3601000)!
+      const elegido = eligeActualizacionNovanet('madrid', estado, ahora + hora * 3601000, { fechas })!
       turnos.push(elegido.codigoGrupo)
       estado.intentos ||= {}
       estado.intentos[elegido.clave] = { fecha: new Date(ahora + hora * 3601000).toISOString(), fallo: true }
     }
     expect(turnos).toEqual(['101', '102', '103'])
-    expect(estado.verificados['26738226-101']).toBe('2026-11-01T10:00:00Z')
+    expect(estado.verificados['26738226-101']).toBe('2026-11-10T16:00:00Z')
+    expect(fechas['novanet-madrid-101']).toBe('2026-11-01T10:00:00Z')
   })
   it('renueva dos grupos antiguos y después descubre uno nuevo, sin consultar dos veces el mismo grupo', async () => {
     vi.useFakeTimers(); vi.setSystemTime(ahora)
     try {
-      const estado = semilla(), orden: string[] = []
+      const estado = semilla(), orden: string[] = [], fechasPublicadasFutbol = Object.fromEntries(['101', '102', '103'].map(g => ['novanet-madrid-' + g, antigua]))
+      for (const clave of Object.keys(estado.verificados)) estado.verificados[clave] = '2026-11-10T16:00:00Z'
       const fetcher = vi.fn(async (entrada: RequestInfo | URL) => {
         const url = new URL(String(entrada))
         if (url.pathname.includes('/api/group-rounds')) {
@@ -394,7 +432,7 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
         const grupo = url.searchParams.get('idGroup') || url.searchParams.get('grupo')!
         return new Response(fixture(url.pathname.includes('/api/results') ? 'madrid-agenda.json' : 'madrid-tabla.html').replaceAll('26738227', grupo))
       })
-      const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
+      const pendiente = obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fechasPublicadasFutbol, fetcher })
       await vi.runAllTimersAsync()
       const salida = await pendiente
       expect(orden).toEqual(['101', '102', '100', '103'])
@@ -407,15 +445,17 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
     vi.useFakeTimers(); vi.setSystemTime(ahora)
     try {
       const estado = semilla(), fetcher = vi.fn(async () => new Response('Descanso', { status: 429, headers: { 'Retry-After': '7200' } }))
+      const fechasPublicadasFutbol = { 'novanet-madrid-101': antigua }
+      estado.verificados['26738226-101'] = '2026-11-10T16:00:00Z'
       estado.ventana = { desde: new Date(ahora - 1000).toISOString(), peticiones: 118 }
-      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher })
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fechasPublicadasFutbol, fetcher })
       expect(fetcher).not.toHaveBeenCalled()
       estado.ventana = { desde: null, peticiones: 0 }
       let guardado = estado
-      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fetcher, guardarEstadoNovanet: (_id, e) => { guardado = e } })
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: estado }, fechasPublicadasFutbol, fetcher, guardarEstadoNovanet: (_id, e) => { guardado = e } })
       expect(fetcher).toHaveBeenCalledTimes(1)
       expect(guardado.noConsultarAntes).toBe('2026-11-10T19:00:00.000Z')
-      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: guardado }, fetcher })
+      await obtieneNovanet({ ahora, fuentesNovanet: ['madrid'], estadoNovanet: { madrid: guardado }, fechasPublicadasFutbol, fetcher })
       expect(fetcher).toHaveBeenCalledTimes(1)
     } finally { vi.useRealTimers() }
   })

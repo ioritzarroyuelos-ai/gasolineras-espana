@@ -1,64 +1,61 @@
 name: Dependabot auto-merge
 
-# Auto-mergea PRs de Dependabot cuando son de bajo riesgo:
-#   - update-type = patch o minor (semver garantiza compat hacia atras)
-#   - O dependency-type = direct:development (no llega a prod)
-#   - O dependency-type = indirect (transitivas; el resolver ya las escogio)
-#
-# Major updates siguen manual: cambian API, requieren revision humana.
-#
-# Flujo:
-#   1. Dependabot abre PR contra main (lunes 04:00 Madrid via dependabot.yml)
-#   2. CI corre (typecheck + tests + build + E2E + Lighthouse)
-#   3. Este workflow espera a que CI termine (via --auto) y mergea con squash
-#   4. Deploy workflow se dispara por workflow_run de CI -> prod actualizada
-#
-# `gh pr merge --auto` no hace el merge inmediatamente: registra la intencion
-# y GitHub espera a que todos los checks requeridos pasen antes de mergear.
-# Si un check falla, el PR queda abierto para revision.
-
+# Sólo actualizaciones patch/minor; las major siempre requieren revisión.
+# pull_request_target permite usar la App sin entregar secretos al código del PR:
+# sólo se descarga el commit BASE de main y se lee la metadata por la API.
+# No se instala ni ejecuta nada de la rama propuesta.
+# La App mantiene el flujo de push a main → CI → Deploy; GITHUB_TOKEN no dispara
+# ese nuevo workflow. --auto sigue esperando todos los checks de la protección.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write       # para crear el merge commit
-  pull-requests: write  # para --auto-merge
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
 
 jobs:
   auto-merge:
-    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    if: >-
+      github.repository == 'ioritzarroyuelos-ai/gasolineras-espana' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Leer metadata de Dependabot
+      - name: Leer únicamente el código de la base protegida
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Leer y validar metadata de Dependabot
         id: metadata
-        uses: dependabot/fetch-metadata@v2
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3, Node 24
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          skip-verification: false
+          skip-commit-verification: false
 
-      - name: Decidir si es auto-mergeable
-        id: decide
-        run: |
-          UPDATE="${{ steps.metadata.outputs.update-type }}"
-          DEPTYPE="${{ steps.metadata.outputs.dependency-type }}"
-          echo "update-type=$UPDATE dep-type=$DEPTYPE"
-          # Auto-merge si: patch, minor, o dev-only, o indirecta.
-          # Bloquea: major de prod-direct (cambios API potenciales).
-          if [ "$UPDATE" = "version-update:semver-patch" ] \
-             || [ "$UPDATE" = "version-update:semver-minor" ] \
-             || [ "$DEPTYPE" = "direct:development" ] \
-             || [ "$DEPTYPE" = "indirect" ]; then
-            echo "mergeable=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "mergeable=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::PR no auto-mergeable ($UPDATE / $DEPTYPE). Requiere revision manual."
-          fi
+      - name: Crear identidad temporal sólo para actualizaciones compatibles
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        id: dependency-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
 
-      - name: Activar auto-merge (squash) si es seguro
-        if: steps.decide.outputs.mergeable == 'true'
+      - name: Esperar las pruebas obligatorias y activar la incorporación automática
+        if: steps.dependency-token.outcome == 'success'
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge --auto --squash "$PR_URL"
-          echo "Auto-merge activado. GitHub mergeara cuando CI pase."
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ steps.dependency-token.outputs.token }}
+        run: gh pr merge --auto --squash --match-head-commit "$PR_SHA" "$PR_URL"

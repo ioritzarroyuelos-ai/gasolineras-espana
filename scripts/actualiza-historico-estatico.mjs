@@ -27,7 +27,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { aplicaSnapshot, construyeIndex, fechaSnapshot, fechaArchivoMinisterio, huecosRecientes, reparaSnapshotHistorico } from './lib/historico-estatico.mjs'
+import { aplicaSnapshot, construyeIndex, fechaSnapshot, huecosRecientes, reparaSnapshotHistorico } from './lib/historico-estatico.mjs'
+import { descargaSnapshotHistorico } from './lib/historico-descarga.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -35,7 +36,6 @@ const DATA_DIR = resolve(process.env.HISTORY_DATA_DIR || resolve(ROOT, 'public',
 const HIST_DIR = join(DATA_DIR, 'history')
 const MEDIAN_DIR = join(HIST_DIR, 'median')
 const NACIONAL_PATH = join(HIST_DIR, 'national.json')
-const BASE = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes'
 
 // Una foto normal trae ~33.000 precios (11.000 gasolineras x 3 combustibles de
 // media). Por debajo de esto la descarga vino truncada y NO debe entrar en el
@@ -107,26 +107,6 @@ function aplica(estado, snapshot, fecha, ahora) {
 }
 
 // ---- Modo 2: archivo del Ministerio ----
-async function fetchHist(iso, intentos = 4) {
-  const url = new URL(BASE + '/EstacionesTerrestresHist/' + fechaArchivoMinisterio(iso))
-  let ultimo
-  for (let i = 1; i <= intentos; i++) {
-    try {
-      const res = await fetch(url, { headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(25000) })
-      if (!res.ok) throw new Error('HTTP ' + res.status)
-      const json = await res.json()
-      if (!json.Fecha || !Array.isArray(json.ListaEESSPrecio) || json.ListaEESSPrecio.length === 0) return null
-      if (fechaSnapshot(json) !== iso) throw Error('Fecha oficial distinta del día solicitado')
-      return json
-    } catch (e) {
-      ultimo = e
-      console.error(`  ${iso}: intento ${i}/${intentos} fallo (${e.message})`)
-      if (i < intentos) await new Promise(r => setTimeout(r, i * 3000))
-    }
-  }
-  throw ultimo
-}
-
 function* diasEntre(desde, hasta) {
   const d = new Date(desde + 'T00:00:00Z')
   const fin = new Date(hasta + 'T00:00:00Z')
@@ -151,7 +131,7 @@ async function main() {
     for (const iso of diasEntre(args.desde, args.hasta)) {
       process.stdout.write(`[${iso}] `)
       const t0 = Date.now()
-      const snap = await fetchHist(iso)
+      const snap = await descargaSnapshotHistorico(iso,{anotar:console.error})
       if (!snap) { console.log('sin datos'); vacios++; continue }
       const r = reparaSnapshotHistorico(estado, snap, iso, ahora)
       if (r.resumen.filas < MIN_FILAS) throw Error('Archivo histórico incompleto: '+iso)
@@ -170,7 +150,7 @@ async function main() {
     // impide publicar el precio de hoy; la web distingue esos días sin captura.
     for (const iso of huecosRecientes(estado,fecha).slice(0,7)) {
       try {
-        const historica = await fetchHist(iso,2)
+        const historica = await descargaSnapshotHistorico(iso,{intentos:2,anotar:console.error})
         if (!historica) throw Error('Sin datos oficiales')
         const reparada = reparaSnapshotHistorico(estado,historica,iso,ahora)
         if (reparada.resumen.filas < MIN_FILAS || reparada.resumen.provincias < 50) throw Error('Archivo histórico incompleto')

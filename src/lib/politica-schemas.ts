@@ -49,6 +49,8 @@ export const SondeoSchema = z.object({
   muestra: z.number().int().positive().max(10_000_000).nullable().optional(),
   datos: z.array(SondeoDatoSchema).max(80),
   fuenteUrl: z.string().max(400).optional(),
+  fuenteVerificada: z.literal('sw-pdf-v1').optional(),
+  notaFuente: z.string().max(300).optional(),
 })
 
 export const ReferenciaSchema = z.object({

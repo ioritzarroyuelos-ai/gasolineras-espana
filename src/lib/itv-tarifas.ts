@@ -37,6 +37,7 @@ export interface Tarifa {
   vigenteHasta?: string
   alcancePrecio?: string
   condiciones?: string
+  consultaAlternativa?: { url: string; etiqueta: string; alcance: string }
   suplementos?: ReadonlyArray<{ concepto: string; importe: number; fuenteUrl?: string }>
   impuesto: Impuesto
   // Conceptos ya incluidos en la cifra guardada, que desglosa conserva al céntimo.
@@ -90,6 +91,11 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     vigenteHasta: '2026-12-31',
     alcancePrecio: 'Inspección periódica con emisiones',
     condiciones: 'Gasolina matriculada desde 1967 y diésel desde 1980. Otros vehículos y trámites tienen tarifas propias.',
+    consultaAlternativa: {
+      url: 'https://www.itvbarbastro.com/p/itvs/barbastro',
+      etiqueta: 'Consultar precios de ITV Barbastro',
+      alcance: 'Sólo para la estación de Barbastro (Huesca). No confirma las tarifas de otras estaciones de Aragón.',
+    },
   },
   {
     slug: 'asturias', nombre: 'Asturias',
@@ -97,7 +103,7 @@ export const TARIFAS: ReadonlyArray<Tarifa> = [
     regulada: true, impuesto: 'iva21', incluyeImpuesto: true, incluyeTasaDgt: true,
     gasolina: 45.32, diesel: 45.32,
     norma: 'Resolución de 19/12/2025 (BOPA nº 248, 26/12/2025). Operador público ITVASA',
-    fuenteUrl: 'https://sede.asturias.es/bopa/2025/12/26/2025-10695.pdf',
+    fuenteUrl: 'https://miprincipado.asturias.es/bopa/2025/12/26/2025-10695.pdf',
     vigencia: '2026',
     estado: 'verificada',
     revisada: TARIFAS_REVISADAS,

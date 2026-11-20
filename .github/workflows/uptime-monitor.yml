@@ -94,14 +94,17 @@ jobs:
           # ---- 3. /status HTML ----
           echo "::group::/status"
           STATUS_RESP=$(curl -sS -m 20 -o /tmp/status.html -w '%{http_code}' "$ORIGIN/status" || echo "000")
-          STATUS_HAS_LABEL=$(grep -c 'status-label' /tmp/status.html 2>/dev/null || echo 0)
-          echo "status=$STATUS_RESP  has_label=$STATUS_HAS_LABEL"
+          STATUS_HAS_MARKER=0
+          if grep -q 'data-service-status=' /tmp/status.html 2>/dev/null; then
+            STATUS_HAS_MARKER=1
+          fi
+          echo "status=$STATUS_RESP  has_marker=$STATUS_HAS_MARKER"
           echo "::endgroup::"
           # /status devuelve 503 cuando stale — lo contamos como FAIL solo
           # cuando health tambien fallo (ya capturado). Aqui solo validamos
           # que renderice HTML.
-          if [ "$STATUS_HAS_LABEL" -eq 0 ]; then
-            FAILURES+=("status: no renderiza (no contiene 'status-label')")
+          if [ "$STATUS_HAS_MARKER" -eq 0 ]; then
+            FAILURES+=("status: no renderiza el resumen del servicio")
           fi
 
           # ---- Notify Telegram ----

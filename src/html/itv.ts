@@ -247,6 +247,9 @@ function fichaTarifa(t: Tarifa, combustible?: Combustible, estado?: EstadoTarifa
       ? 'Fuente comprobada el ' + fechaHtml(estado!.checkedAt) + '. Esta consulta no cambia la fecha de la norma.'
       : 'Comprobación diaria pendiente: no podemos confirmar ahora el importe de la fuente. Consulta el precio completo al reservar.') + '</p>' : '')
     + (condiciones ? '<p class="precio-nota">' + esc(condiciones) + '</p>' : '')
+    + (t.consultaAlternativa && !tarifaComprobadaHoy(t.slug, estado)
+      ? '<p class="precio-nota">' + enlace(t.consultaAlternativa.url, t.consultaAlternativa.etiqueta) + '. '
+        + esc(t.consultaAlternativa.alcance) + '</p>' : '')
     + '<details class="precio-fuente"><summary>Fuente y revisión'
     + (fecha(t.revisada) ? ' · ' + esc(fecha(t.revisada)) : '') + '</summary>'
     + '<p>' + enlace(t.fuenteUrl, t.norma) + '. ' + esc(t.vigencia) + '.</p>'

@@ -78,7 +78,9 @@ for (const [deporte, obtiene] of [['futbol', obtieneFutbol], ['baloncesto', obti
   if (!fuentes.has(deporte)) continue
   try {
     const salida = await obtiene({ ahora, log: console.log, estadoNovanet, guardarEstadoNovanet, ...(deporte === 'futbol' ? { estadoFFCV, guardarEstadoFFCV,
-      gruposPublicadosFutbol: [...anteriores.values()].filter(c => c.deporte === 'futbol').map(c => c.id) } : {}) })
+      gruposPublicadosFutbol: [...anteriores.values()].filter(c => c.deporte === 'futbol').map(c => c.id),
+      fechasPublicadasFutbol: Object.fromEntries([...anteriores.values()].filter(c => c.deporte === 'futbol').map(c => [c.id,
+        [c.agenda.verificadoEn, c.clasificacion.verificadoEn].filter(Boolean).sort()[0]])) } : {}) })
     for (const id of [...(salida.seguimientoGrupos?.intentados || []), ...(salida.seguimientoGrupos?.revisados || []), ...salida.incidencias.map(i => i.id).filter(Boolean)]) gruposIntentados.add(id)
     incidencias.push(...conservaIncidenciasGrupos((indiceAnterior?.incidencias || []).filter(i => i.deporte === deporte), salida.incidencias, salida.seguimientoGrupos))
     for (const c of salida.competiciones) {

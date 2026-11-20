@@ -368,6 +368,19 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
     expect(presupuestoPortalNovanet('madrid', semilla(1000))).toBe(120)
     expect(presupuestoPortalNovanet('madrid', semilla(1000), ['novanet-madrid-101'])).toBe(20)
   })
+  it('un grupo antiguo que falla cada hora no deja detrás a los que todavía esperan su primera renovación', () => {
+    const estado = semilla()
+    estado.verificados['26738226-101'] = '2026-11-01T10:00:00Z'
+    const turnos: string[] = []
+    for (let hora = 0; hora < 3; hora++) {
+      const elegido = eligeActualizacionNovanet('madrid', estado, ahora + hora * 3601000)!
+      turnos.push(elegido.codigoGrupo)
+      estado.intentos ||= {}
+      estado.intentos[elegido.clave] = { fecha: new Date(ahora + hora * 3601000).toISOString(), fallo: true }
+    }
+    expect(turnos).toEqual(['101', '102', '103'])
+    expect(estado.verificados['26738226-101']).toBe('2026-11-01T10:00:00Z')
+  })
   it('renueva dos grupos antiguos y después descubre uno nuevo, sin consultar dos veces el mismo grupo', async () => {
     vi.useFakeTimers(); vi.setSystemTime(ahora)
     try {

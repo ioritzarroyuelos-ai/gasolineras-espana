@@ -50,6 +50,8 @@ npm run dev            # vite → http://127.0.0.1:5173
 
 `security.yml` ejecuta npm audit, gitleaks y OSV de forma obligatoria. OSV analiza el lockfile completo, incluidas las herramientas de desarrollo, y sube el informe SARIF aunque encuentre problemas. No se silencian sus errores.
 
+Dependabot revisa npm los siete días. Las actualizaciones patch/minor pueden incorporarse mediante la App existente tras pasar las protecciones; las major requieren revisión. El repositorio debe tener activadas las alertas, las correcciones de seguridad de Dependabot y `allow_auto_merge`. El trabajo de incorporación sólo ejecuta el código de la base protegida, nunca el de la propuesta. Una nueva alerta puede bloquear también los PR de datos hasta que se incorpore su corrección; el reintento de descargas no resuelve ese bloqueo.
+
 Las versiones mínimas de `overrides` cubren avisos pendientes en dependencias transitivas de desarrollo: el adaptador Hono, minimatch/glob, chrome-launcher y basic-ftp. Lighthouse CI 0.16 utiliza Lighthouse 13 y requiere Node 22.19 o posterior. Tras modificar estas versiones se deben comprobar también el servidor de desarrollo y los presupuestos Lighthouse, además de las pruebas de aplicación.
 
 ## Tests E2E
@@ -127,10 +129,13 @@ Las consultas y publicaciones periódicas se ejecutan en GitHub Actions. Si una 
 | Domingos 03:00 UTC | `cron-purge.yml` | `cron 0 3 * * 0` | `POST /api/cron/purge` -> borra filas >2 anos. |
 | Push o PR | `security.yml` | `push`, `pull_request` | npm audit (runtime, moderate+), gitleaks, OSV-Scanner. |
 | Push o PR | `codeql.yml` | `push`, `pull_request` | Analisis estatico de codigo (CodeQL). |
-| Lunes 04:00 Madrid | Dependabot | interno | PRs semanales agrupadas: deps npm + github-actions. |
-| PR de Dependabot | `dependabot-auto-merge.yml` | `pull_request` | Auto-merge squash si es patch/minor o dev-only. Majors quedan manual. |
+| Diario 04:00 Madrid | Dependabot npm | `cron 0 4 * * *` | Revisa versiones y propone correcciones; incluye fines de semana. |
+| Lunes 04:00 Madrid | Dependabot github-actions | interno | Revisa las versiones de las acciones. |
+| PR de Dependabot | `dependabot-auto-merge.yml` | `pull_request_target` | Activa auto-merge mediante la App sólo para patch/minor, con SHA exacto y pruebas obligatorias. Las major quedan para revisión. |
 
 Las horas de la tabla son la programación, no una garantía de ejecución puntual: GitHub puede retrasar trabajos y las fuentes pueden limitar consultas. `/status` muestra las fechas e incidencias de las copias realmente publicadas; una ejecución correcta no demuestra cobertura completa de una fuente.
+
+Los previews de PR que sólo modifican `public/data/` no crean un Worker regional adicional: reutilizan el respaldo publicado. Los cambios de código mantienen su Worker aislado, que se retira al cerrar el PR. Esto evita agotar la cuota gratuita con propuestas de datos pendientes.
 
 ### Hook pre-push local (opcional pero recomendado)
 

@@ -283,7 +283,8 @@ function gruposVerificadosNovanet(fuenteId, estado, publicados) {
 export function eligeActualizacionNovanet(fuenteId, estado, ahora, { publicados, cubiertos = [], visitados = [] } = {}) {
   const candidatos = gruposVerificadosNovanet(fuenteId, estado, publicados).filter(g => ahora - Date.parse(g.fecha) >= 18 * 3600000 &&
     !cubiertos.includes(g.id) && !visitados.includes(g.clave) && (!estado.intentos?.[g.clave] || ahora - Date.parse(estado.intentos[g.clave].fecha) >= 3600000))
-  candidatos.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
+  const turno = g => Math.max(Date.parse(g.fecha), Date.parse(estado.intentos?.[g.clave]?.fecha || '') || 0)
+  candidatos.sort((a, b) => turno(a) - turno(b) || a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
   return candidatos[0] || null
 }
 

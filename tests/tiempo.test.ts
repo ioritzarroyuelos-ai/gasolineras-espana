@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 // Lib .mjs con tipos en scripts/lib/tiempo.d.mts (mismo patron que historico-estatico).
 import {
   frescuraTiempo, TIEMPO_STALE_HORAS, normalizaAemet, normalizaOpenMeteo, resuelvePrediccion,
-  maestroAMunicipios, construyeIndiceMunicipios, prediccionVigente, normalizaHorasOpenMeteo, resuelveHoras, parteParaSnapshot,
+  maestroAMunicipios, construyeIndiceMunicipios, prediccionVigente, prediccionSnapshotAnterior, normalizaHorasOpenMeteo, resuelveHoras, parteParaSnapshot,
 } from '../scripts/lib/tiempo.mjs'
 import { PROVINCIAS_INE } from '../scripts/lib/provincias-ine.mjs'
 import rawAemet from './fixtures/tiempo/aemet-diaria-28079.json'
@@ -12,6 +12,24 @@ import maestroSample from './fixtures/tiempo/aemet-maestro-sample.json'
 const meta = { ine: '28079', nombre: 'Madrid', provincia: 'Madrid' }
 const fechaFixture = Date.parse('2026-09-06T13:00:00Z')
 afterEach(() => vi.unstubAllGlobals())
+
+describe('conservar el parte válido si falla la siguiente descarga', () => {
+  const parte = normalizaAemet(rawAemet, meta)
+  it('conserva el formato actual con su fecha real y su lluvia comprobada', () => {
+    const conservado = prediccionSnapshotAnterior(parte, meta.ine, fechaFixture)
+    expect(conservado?.elaborado).toBe(parte.elaborado)
+    expect(conservado?.versionPeriodos).toBe(3)
+    expect(conservado?.dias[0].probLluvia).toBe(0)
+  })
+  it('del formato antiguo conserva temperatura, sin rescatar resúmenes ambiguos', () => {
+    const conservado = prediccionSnapshotAnterior({...parte,versionPeriodos:2}, meta.ine, fechaFixture)
+    expect(conservado?.dias[0]).toMatchObject({tmin:24,tmax:36,probLluvia:null,cielo:''})
+  })
+  it('rechaza otra localidad y un parte caducado', () => {
+    expect(prediccionSnapshotAnterior(parte,'48027',fechaFixture)).toBeNull()
+    expect(prediccionSnapshotAnterior(parte,meta.ine,fechaFixture+86400000)).toBeNull()
+  })
+})
 
 describe('frescuraTiempo', () => {
   const ahora = Date.parse('2026-09-06T12:00:00Z')

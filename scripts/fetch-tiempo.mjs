@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { bajaAemet, parteParaSnapshot, prediccionVigente } from './lib/tiempo.mjs'
+import { bajaAemet, parteParaSnapshot, prediccionSnapshotAnterior } from './lib/tiempo.mjs'
 
 const KEY = process.env.AEMET_API_KEY
 if (!KEY) { console.error('Falta AEMET_API_KEY'); process.exit(1) }
@@ -57,8 +57,7 @@ function cargaPrevio(slug, provincia) {
     const prev = JSON.parse(readFileSync(resolve(OUT_DIR, slug + '.json'), 'utf8'))
     for (const ine in (prev.predicciones || {})) {
       const p = prev.predicciones[ine]
-      if (p?.ine !== ine || p.fuente !== 'AEMET' || p.versionPeriodos !== 2) continue
-      const vigente = prediccionVigente(p)
+      const vigente = prediccionSnapshotAnterior(p, ine)
       if (vigente) g.predicciones[ine] = vigente
     }
   } catch { /* sin snapshot previo */ }

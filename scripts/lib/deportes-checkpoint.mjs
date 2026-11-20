@@ -24,9 +24,14 @@ export function recuperaEstadoFFCV(candidatos, noAntes = '') {
   // A checkpoint containing only a pause must not discard an existing verified catalogue.
   if (!estado.catalogo) {
     const conCatalogo = [...copias].reverse().find(c => c.estado.catalogo)?.estado
-    if (conCatalogo) { estado.catalogo = conCatalogo.catalogo; estado.cursor = conCatalogo.cursor; estado.verificados = conCatalogo.verificados; estado.ultimoExito = conCatalogo.ultimoExito }
+    if (conCatalogo) { estado.catalogo = conCatalogo.catalogo; estado.cursor = conCatalogo.cursor; estado.verificados = conCatalogo.verificados; estado.intentos = conCatalogo.intentos; estado.ultimoExito = conCatalogo.ultimoExito }
   }
   estado.noConsultarAntes = masTarde([...copias.map(c => c.estado.noConsultarAntes), instante(noAntes)])
+  const pausasIguales = copias.filter(c => c.estado.noConsultarAntes === estado.noConsultarAntes)
+  // Una pausa manual, antigua sin origen, o de servidor nunca se convierte en
+  // espera breve de presupuesto al combinar checkpoint y publicación.
+  estado.motivoPausa = estado.noConsultarAntes && instante(noAntes) !== estado.noConsultarAntes && pausasIguales.length && pausasIguales.every(c => c.estado.motivoPausa === 'presupuesto') ? 'presupuesto' : estado.noConsultarAntes ? 'fuente' : null
+  for (const copia of copias) for (const [grupo, fecha] of Object.entries(copia.estado.intentos)) if (!estado.intentos[grupo] || fecha > estado.intentos[grupo]) estado.intentos[grupo] = fecha
   const ventanas = copias.map(c => c.estado.ventana).filter(v => v.desde).sort((a, b) => a.desde.localeCompare(b.desde))
   const ultima = ventanas.at(-1)
   if (ultima) estado.ventana = { desde: ultima.desde, peticiones: Math.max(...ventanas.filter(v => v.desde === ultima.desde).map(v => v.peticiones)) }

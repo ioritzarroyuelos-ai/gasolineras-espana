@@ -266,7 +266,7 @@ function barraResultado(ref: EleccionFile['referencia'], colores: ReturnType<typ
     + '<p class="cap">Elecciones del ' + fmtFecha(ref.fecha) + ' · ' + resumen + '</p>'
     + svg
     + '<div class="leyenda-res">' + leyenda + '</div>'
-    + (url ? '<p class="fuente"><a href="' + esc(url) + '">Consultar el resultado en el BOE</a></p>' : '')
+    + (url ? '<p class="fuente"><a href="' + esc(url) + '">Consultar el resultado oficial</a></p>' : '')
     + '</section>'
 }
 

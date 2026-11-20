@@ -9,12 +9,15 @@ export interface EstadoFFCV {
   cursor: number
   ultimoExito: string | null
   noConsultarAntes: string | null
+  motivoPausa: 'presupuesto' | 'fuente' | null
   ventana: { desde: string | null; peticiones: number }
   verificados: Record<string, string>
+  intentos: Record<string, string>
 }
 export interface OpcionesFutbol extends OpcionesDeportes {
   gruposCubiertosFutbol?: string[]
   gruposPublicadosFutbol?: string[]
+  fechasPublicadasFutbol?: Record<string, string>
   estadoFFCV?: unknown
   guardarEstadoFFCV?: (estado: EstadoFFCV) => void | Promise<void>
   relojFFCV?: () => number
@@ -27,6 +30,8 @@ export interface OpcionesFutbol extends OpcionesDeportes {
 }
 export function creaEstadoFFCV(categorias: unknown[], temporada: { cod_temporada: string; nombre: string }, verificadoEn: string): EstadoFFCV
 export function normalizaEstadoFFCV(estado: unknown): EstadoFFCV
+export function eligeActualizacionFFCV(estado: EstadoFFCV, ahora: number, opciones?: { publicados?: string[]; fechas?: Record<string, string>; visitados?: string[] }): { categoria: CategoriaFFCV; grupo: GrupoFFCV; id: string; fecha: string; intento?: string } | null
+export function capacidadActualizacionFFCV(publicados?: string[], catalogo?: EstadoFFCV['catalogo']): { grupos: number; renovacionesPorPasada: number; pasadasNecesarias: number; margenHoras: number }
 export function generoFFCV(categoria: { nombre?: string; nombre_grupo_categoria?: string }): 'masculino' | 'femenino' | 'mixto' | undefined
 export function obtieneFFCV(opciones?: OpcionesFutbol): Promise<ResultadoDeportes>
 export function obtieneFutbol(opciones?: OpcionesFutbol): Promise<ResultadoDeportes>

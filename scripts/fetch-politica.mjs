@@ -14,6 +14,7 @@ import { parseSondeos } from './lib/politica-parse.mjs'
 import { combinaSeguimiento, esSeguimientoSW, extraeSeguimientoGenerales } from './lib/politica-seguimiento.mjs'
 import { completaResultadosOficiales } from './lib/politica-resultados-oficiales.mjs'
 import { fetchGad3 } from './lib/politica-gad3.mjs'
+import { fetchSeguimientoPdf, urlSeguimientoPdf } from './lib/politica-sw-pdf.mjs'
 import { validaEleccion } from './lib/politica-validacion.mjs'
 import { ELECCIONES } from './lib/politica-catalogo.mjs'
 import { enVeda } from './lib/politica-veda.mjs'
@@ -118,26 +119,28 @@ async function construyeEleccion(e, veda, anterior) {
   let falloParcial
   const avisosFuentes = []
   if (!veda && e.id === 'generales' && e.proxima.valor === '2026-11-29') {
-    let seguimiento = []
+    const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
+    const previos = mismaEleccion ? anterior.sondeos.filter(s => esSeguimientoSW(s) && vigente(s)
+      && s.fuenteVerificada === 'sw-pdf-v1' && urlSeguimientoPdf(s.fuenteUrl)) : []
+    let seguimiento = previos
+    let procedencia = mismaEleccion && anterior.procedenciasAdicionales?.find(p => p.wiki === 'SW PDF')
     try {
       const articulo = await fetchArticulo(seguimiento29N)
       const extra = extraeSeguimientoGenerales(articulo.html, candidaturas)
-      seguimiento = extra.sondeos.filter(vigente)
-      if (!seguimiento.length) throw new Error('no se ha podido verificar ninguna proyección vigente')
-      file.procedenciasAdicionales = [{ ...procedenciaDe(seguimiento29N, articulo), camposFin: seguimiento.map(s => s.campoFin) }]
+      const original = await fetchSeguimientoPdf(extra.sondeos.filter(vigente), {hoy:diaMadrid,userAgent:UA})
+      seguimiento = [...previos.filter(s => !original.sondeos.some(n => n.campoFin === s.campoFin)), ...original.sondeos]
+      for (const c of original.candidaturas) if (!file.candidaturas.some(a => a.id === c.id)) file.candidaturas.push(c)
+      if (original.sondeos.length) procedencia = {wiki:'SW PDF',articulo:'Tracking electoral de SW Demoscopia para La Séptima',
+        url:original.sondeos[0].fuenteUrl,licencia:'Datos de SW Demoscopia para La Séptima',obtenido:HOY.toISOString(),camposFin:seguimiento.map(s=>s.campoFin)}
       parsed.incidencias.push(...extra.incidencias)
+      if (original.fallos.length || !original.sondeos.length) throw new Error('Informes originales pendientes: '+(original.fallos.join(', ') || 'ninguno verificable'))
     } catch (err) {
       falloParcial = 'Seguimiento del Congreso (fuente adicional): ' + String(err.message || err)
-      avisosFuentes.push('El seguimiento de SW Demoscopia para La Séptima no se ha podido verificar. Si hay una entrega anterior comprobada, se conserva con su fecha original.')
-      const mismaEleccion = anterior?.id === file.id && anterior.ciclo === file.ciclo && !anterior.veda
-      const fuente = mismaEleccion && anterior.procedenciasAdicionales?.find(p => p.wiki === seguimiento29N.lang && p.articulo === seguimiento29N.articulo)
-      if (fuente) {
-        // Las primeras copias carecían de la lista de días: en ellas el
-        // seguimiento se identifica por casa, cliente y publicación original.
-        seguimiento = anterior.sondeos.filter(s => esSeguimientoSW(s) && vigente(s)
-          && (fuente.camposFin ? fuente.camposFin.includes(s.campoFin) : Boolean(s.fuenteUrl)))
-        if (seguimiento.length) file.procedenciasAdicionales = [fuente]
-      }
+      avisosFuentes.push('Hay informes de SW Demoscopia para La Séptima pendientes de verificar. Solo se muestran entregas contrastadas con su PDF original, con sus fechas originales.')
+    }
+    if (seguimiento.length) {
+      for (const c of anterior?.candidaturas ?? []) if (seguimiento.some(s => s.datos.some(d => d.candidaturaId === c.id)) && !file.candidaturas.some(a => a.id === c.id)) file.candidaturas.push(c)
+      if (procedencia) (file.procedenciasAdicionales ??= []).push(procedencia)
     }
     file.sondeos = combinaSeguimiento(sondeos, seguimiento)
   }

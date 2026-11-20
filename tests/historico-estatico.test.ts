@@ -82,6 +82,30 @@ describe('recuperación de una captura oficial intermedia', () => {
     expect(huecosRecientes(reparado, '2026-11-10')).not.toContain('2026-11-09')
     expect(() => reparaSnapshotHistorico(e, snapshot, '2026-11-07', AHORA)).toThrow()
   })
+  it('recupera ocho días en dos pasadas de siete sin inventar el día pendiente', () => {
+    const ahora = new Date('2026-11-20T20:00:00Z')
+    let e = aplicaSnapshot(estadoVacio(), foto([estacion('1','28',{[G95]:1500})]), '2026-11-11', ahora).estado
+    const recuperar = () => {
+      for (const fecha of huecosRecientes(e,'2026-11-20').slice(0,7)) {
+        const dia = fecha.slice(8), precio = 1500 + Number(dia)
+        const snapshot = {...foto([estacion('1','28',{[G95]:precio})]),Fecha:dia+'/11/2026 0:00:00'}
+        e = reparaSnapshotHistorico(e,snapshot,fecha,ahora).estado
+      }
+      e = aplicaSnapshot(e,foto([estacion('1','28',{[G95]:1600})]),'2026-11-20',ahora).estado
+    }
+    expect(huecosRecientes(e,'2026-11-20')).toHaveLength(8)
+    recuperar()
+    expect(huecosRecientes(e,'2026-11-20')).toEqual(['2026-11-19'])
+    expect(e.nacional!.series['95'].some(p=>p[0]==='2026-11-19')).toBe(false)
+    recuperar()
+    expect(huecosRecientes(e,'2026-11-20')).toEqual([])
+    expect(e.nacional!.series['95'].map(p=>p.slice(0,2))).toEqual([
+      ['2026-11-11',1500], ...Array.from({length:8},(_,i)=>['2026-11-'+(12+i),1512+i]), ['2026-11-20',1600],
+    ])
+    expect(e.medianas.get('28')!.median['95']).toEqual(e.nacional!.series['95'].map(p=>p.slice(0,2)))
+    expect(e.provincias.get('28')!.to).toBe('2026-11-20')
+    expect(e.provincias.get('28')!.stations['1']['95'].at(-1)).toEqual(['2026-11-20',1600])
+  })
 })
 
 function estadoVacio(): EstadoHistorico {

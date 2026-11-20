@@ -31,7 +31,7 @@ export interface OpcionesFutbol extends OpcionesDeportes {
 export function creaEstadoFFCV(categorias: unknown[], temporada: { cod_temporada: string; nombre: string }, verificadoEn: string): EstadoFFCV
 export function normalizaEstadoFFCV(estado: unknown): EstadoFFCV
 export function eligeActualizacionFFCV(estado: EstadoFFCV, ahora: number, opciones?: { publicados?: string[]; fechas?: Record<string, string>; visitados?: string[] }): { categoria: CategoriaFFCV; grupo: GrupoFFCV; id: string; fecha: string; intento?: string } | null
-export function capacidadActualizacionFFCV(publicados?: string[]): { grupos: number; renovacionesPorPasada: number; pasadasNecesarias: number; margenHoras: number }
+export function capacidadActualizacionFFCV(publicados?: string[], catalogo?: EstadoFFCV['catalogo']): { grupos: number; renovacionesPorPasada: number; pasadasNecesarias: number; margenHoras: number }
 export function generoFFCV(categoria: { nombre?: string; nombre_grupo_categoria?: string }): 'masculino' | 'femenino' | 'mixto' | undefined
 export function obtieneFFCV(opciones?: OpcionesFutbol): Promise<ResultadoDeportes>
 export function obtieneFutbol(opciones?: OpcionesFutbol): Promise<ResultadoDeportes>

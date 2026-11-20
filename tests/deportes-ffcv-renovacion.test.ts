@@ -24,7 +24,7 @@ function respuesta(entrada: RequestInfo | URL) {
 }
 
 describe('renovación diaria de los grupos FFCV publicados', () => {
-  it('renueva cinco publicados antes del siguiente descubrimiento y conserva su cursor al consumir presupuesto', async () => {
+  it('reserva la última plaza para un descubrimiento y conserva su cursor al consumir presupuesto', async () => {
     let estado = semilla(), reloj = ahora
     estado.cursor = 7; estado.ventana = { desde: new Date(ahora).toISOString(), peticiones: 95 }
     const orden: string[] = []
@@ -66,27 +66,56 @@ describe('renovación diaria de los grupos FFCV publicados', () => {
     expect(eligeActualizacionFFCV(estado, ahora, { ...opciones, visitados: ['1001', '1002'] })?.grupo.codigo).toBe('1000')
   })
 
-  it('recorre los469 publicados en20pasadas útiles respetando120consultas, aunque el primer grupo falle siempre', async () => {
+  it.each([{ cantidad: 558, pasadas: 20 }, { cantidad: 667, pasadas: 23 }])('renueva $cantidad publicados en $pasadas pasadas útiles respetando120consultas, aunque el primero falle siempre', async ({ cantidad, pasadas }) => {
     let estado = semilla(667), reloj = ahora
-    estado.cursor = 500
-    const marcas = fechas(469), renovados = new Set<string>()
-    for (let pasada = 0; pasada < 20; pasada++) {
+    estado.cursor = 600
+    const marcas = fechas(cantidad), renovados = new Set<string>()
+    for (let pasada = 0; pasada < pasadas; pasada++) {
       reloj = ahora + pasada * 3601000
       const fetcher = vi.fn(async (u: RequestInfo | URL) => new URL(String(u)).searchParams.get('cod_grupo') === '1000' ? new Response('Fallo temporal', { status: 503 }) : respuesta(u))
-      const salida = await obtieneFFCV({ estadoFFCV: estado, gruposPublicadosFutbol: publicados(469), fechasPublicadasFutbol: marcas, ahora: reloj,
+      const salida = await obtieneFFCV({ estadoFFCV: estado, gruposPublicadosFutbol: publicados(cantidad), fechasPublicadasFutbol: marcas, ahora: reloj,
         relojFFCV: () => reloj, duermeFFCV: async ms => { reloj += ms }, guardarEstadoFFCV: e => { estado = e }, fetcher })
       expect(fetcher.mock.calls.length).toBeLessThanOrEqual(120)
+      const nuevos = fetcher.mock.calls.filter(([u]) => String(u).includes('jornadas_fetch') && !marcas['ffcv-' + new URL(String(u)).searchParams.get('cod_grupo')])
+      expect(nuevos.length).toBeLessThanOrEqual(cantidad === 667 ? 0 : 1)
       for (const c of salida.competiciones) if (marcas[c.id] && c.agenda.verificadoEn && c.clasificacion.verificadoEn) {
         marcas[c.id] = [c.agenda.verificadoEn, c.clasificacion.verificadoEn].sort()[0]; renovados.add(c.id)
       }
       estado = recuperaEstadoFFCV([checkpointFFCV(estado, reloj)])
     }
-    expect(renovados.size).toBe(468)
+    expect(renovados.size).toBe(cantidad - 1)
     expect(marcas['ffcv-1000']).toBe(antigua)
-    expect(estado.cursor).not.toBe(500)
-    expect(capacidadActualizacionFFCV(publicados(469))).toMatchObject({ pasadasNecesarias: 20, margenHoras: 4 })
-    expect(capacidadActualizacionFFCV(publicados(600)).margenHoras).toBeLessThan(0)
-  }, 20000) // Recorre veinte horas simuladas y miles de respuestas/checkpoints; no hay red ni esperas reales.
+    if (cantidad < 667) expect(estado.cursor).not.toBe(600)
+    expect(capacidadActualizacionFFCV(publicados(cantidad), estado.catalogo)).toMatchObject({ pasadasNecesarias: pasadas, margenHoras: 24 - pasadas })
+    expect(capacidadActualizacionFFCV(publicados(697), semilla(697).catalogo).margenHoras).toBeLessThan(0)
+  }, 20000) // Recorre una ronda diaria simulada; no hay red ni esperas reales.
+
+  it('no consulta otra vez grupos recién comprobados por el cursor cuando todo el catálogo está publicado', async () => {
+    let estado = semilla(35), reloj = ahora
+    const fetcher = vi.fn(async (u: RequestInfo | URL) => respuesta(u))
+    const salida = await obtieneFFCV({ estadoFFCV: estado, gruposPublicadosFutbol: publicados(35),
+      fechasPublicadasFutbol: Object.fromEntries(publicados(35).map(id => [id, new Date(ahora - 3600000).toISOString()])),
+      ahora, relojFFCV: () => reloj, duermeFFCV: async ms => { reloj += ms }, guardarEstadoFFCV: e => { estado = e }, fetcher })
+    expect(salida.competiciones).toEqual([])
+    expect(fetcher).toHaveBeenCalledOnce() // Sólo comprueba la sesión pública; ninguna jornada ni tabla repetida.
+    expect(estado.cursor).toBe(0)
+  })
+
+  it('una respuesta429 corta la renovación, conserva el cursor y respeta el Retry-After', async () => {
+    let estado = semilla(35), reloj = ahora
+    estado.cursor = 34
+    const fetcher = vi.fn(async (u: RequestInfo | URL) => String(u).includes('/api/') ? new Response('Esperar', { status: 429, headers: { 'Retry-After': '7200' } }) : respuesta(u))
+    const opciones = () => ({ estadoFFCV: estado, gruposPublicadosFutbol: publicados(34), fechasPublicadasFutbol: fechas(34), ahora: reloj,
+      relojFFCV: () => reloj, duermeFFCV: async (ms: number) => { reloj += ms }, guardarEstadoFFCV: (e: typeof estado) => { estado = e }, fetcher })
+    await obtieneFFCV(opciones())
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(estado.cursor).toBe(34)
+    expect(estado.motivoPausa).toBe('fuente')
+    expect(Date.parse(estado.noConsultarAntes!)).toBeGreaterThanOrEqual(ahora + 7200000)
+    reloj = ahora + 3601000
+    await obtieneFFCV(opciones())
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('espera breve y checkpoint sin ignorar las pausas de FFCV', () => {

@@ -60,11 +60,14 @@ export function eligeActualizacionFFCV(estado, ahora, { publicados, fechas = {},
   return candidatos[0] || null;
 }
 
-export function capacidadActualizacionFFCV(publicados = []) {
-  const grupos = new Set(publicados.filter(id => /^ffcv-\d+$/.test(id))).size;
-  // Caso conservador: 4 GET por grupo + sesión, cinco renovaciones por cada
-  // descubrimiento => 24 renovaciones por pasada sin superar 120 consultas.
-  return { grupos, renovacionesPorPasada: 24, pasadasNecesarias: Math.ceil(grupos / 24), margenHoras: 24 - Math.ceil(grupos / 24) };
+export function capacidadActualizacionFFCV(publicados = [], catalogo = null) {
+  const ids = new Set(publicados.filter(id => /^ffcv-\d+$/.test(id))), grupos = ids.size;
+  const conocidos = (catalogo?.categorias || []).flatMap(c => c.grupos || []);
+  const completo = catalogo?.completo && conocidos.length && conocidos.every(g => ids.has('ffcv-' + g.codigo));
+  // Caso conservador: 4 GET por grupo + sesión. Si quedan grupos por publicar,
+  // reservar como máximo un descubrimiento mientras haya datos antiguos.
+  const renovacionesPorPasada = completo ? 29 : 28, pasadasNecesarias = Math.ceil(grupos / renovacionesPorPasada);
+  return { grupos, renovacionesPorPasada, pasadasNecesarias, margenHoras: 24 - pasadasNecesarias };
 }
 
 export function creaConsultaFFCV(opciones) {

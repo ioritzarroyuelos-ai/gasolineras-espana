@@ -306,9 +306,9 @@ export async function obtieneFFCV(opciones = {}) {
     const total = estado.catalogo?.categorias.reduce((n, c) => n + (c.grupos?.length || 0), 0) || 0;
     const comprobados = Object.keys(estado.verificados).length;
     const descanso = estado.noConsultarAntes ? ` Próximo intento permitido a partir de ${estado.noConsultarAntes}.` : '';
-    incidencias.push(incidencia('Comunidad Valenciana · actualización por grupos', FFCV, `Catálogo: ${total} grupos${estado.catalogo?.completo ? '' : ' enumerados hasta ahora'}. Se han verificado datos de ${comprobados}; cada grupo conserva su propia fecha. En esta pasada se han intentado ${completados}. Las consultas se reparten para respetar el límite de la federación.${descanso}`, 'ffcv-progreso'));
+    incidencias.push(incidencia('Comunidad Valenciana · actualización por grupos', FFCV, `Catálogo: ${total} grupos${estado.catalogo?.completo ? '' : ' enumerados hasta ahora'}. Se han verificado datos de ${comprobados}; cada grupo conserva su propia fecha. En esta pasada se han intentado ${completados}. Las consultas se reparten para no sobrecargar la federación.${descanso}`, 'ffcv-progreso'));
     if (opciones.gruposPublicadosFutbol) {
-      const capacidad = capacidadActualizacionFFCV(opciones.gruposPublicadosFutbol);
+      const capacidad = capacidadActualizacionFFCV(opciones.gruposPublicadosFutbol, estado.catalogo);
       opciones.log?.(`FFCV: ${capacidad.grupos} grupos publicados; ronda estimada de ${capacidad.pasadasNecesarias} pasadas útiles con el presupuesto actual. Las pausas y fallos pueden prolongarla.`);
       if (capacidad.margenHoras < 4) incidencias.push(incidencia('Comunidad Valenciana · capacidad de actualización', FFCV, `Los ${capacidad.grupos} grupos publicados necesitan aproximadamente ${capacidad.pasadasNecesarias} pasadas útiles para renovarse. El margen diario es insuficiente ante pausas o fallos; no podemos garantizar una comprobación cada 24 horas. Consulta la fecha de cada ficha.`, 'ffcv-capacidad'));
     }
@@ -349,16 +349,29 @@ export async function obtieneFFCV(opciones = {}) {
     const temporada = estado.catalogo.temporada;
     const tareas = estado.catalogo.categorias.flatMap(categoria => categoria.grupos.map(grupo => ({ categoria, grupo })));
     opciones.log?.(`FFCV: catálogo conservado de ${tareas.length} grupos; continúa por el grupo ${estado.cursor + 1}, con ${conexion.restantes()} consultas disponibles en el presupuesto de esta hora.`);
-    let recorridos = 0, prioridadesSeguidas = 0;
-    const intentados = new Set();
-    while (recorridos < tareas.length && conexion.disponible()) {
-      const prioridad = prioridadesSeguidas < 5 ? eligeActualizacionFFCV(estado, opciones.relojFFCV?.() ?? Date.now(), {
-        publicados: opciones.gruposPublicadosFutbol, fechas: opciones.fechasPublicadasFutbol, visitados: [...intentados],
-      }) : null;
-      const { categoria, grupo } = prioridad || tareas[estado.cursor];
-      if (!prioridad && (intentados.has(grupo.codigo) || estado.intentos[grupo.codigo] && (opciones.relojFFCV?.() ?? Date.now()) - Date.parse(estado.intentos[grupo.codigo]) < 3600000)) {
-        estado.cursor = (estado.cursor + 1) % tareas.length; recorridos++; await conexion.guardar(); continue;
+    let descubrimientos = 0;
+    const intentados = new Set(), publicados = opciones.gruposPublicadosFutbol ? new Set(opciones.gruposPublicadosFutbol) : null;
+    const siguienteCursor = (ahora, soloNuevos) => {
+      for (let recorridos = 0; recorridos < tareas.length; recorridos++) {
+        const tarea = tareas[estado.cursor], codigo = tarea.grupo.codigo, id = 'ffcv-' + codigo;
+        const fecha = opciones.fechasPublicadasFutbol?.[id] || estado.verificados[codigo], edad = ahora - Date.parse(fecha || '');
+        const fresco = edad >= 0 && edad < 18 * 3600000;
+        const reciente = estado.intentos[codigo] && ahora - Date.parse(estado.intentos[codigo]) < 3600000;
+        if (!intentados.has(codigo) && !reciente && !fresco && (!soloNuevos || !publicados?.has(id))) return tarea;
+        estado.cursor = (estado.cursor + 1) % tareas.length;
       }
+      return null;
+    };
+    while (conexion.disponible()) {
+      const ahora = opciones.relojFFCV?.() ?? Date.now();
+      const prioridad = eligeActualizacionFFCV(estado, ahora, {
+        publicados: opciones.gruposPublicadosFutbol, fechas: opciones.fechasPublicadasFutbol, visitados: [...intentados],
+      });
+      // Con atraso, el descubrimiento usa sólo la última plaza disponible.
+      // Cuando todo el catálogo está publicado, esa plaza también renueva datos.
+      const normal = !prioridad || (!descubrimientos && conexion.restantes() <= 7) ? siguienteCursor(ahora, Boolean(prioridad)) : null;
+      if (!normal && !prioridad) { await conexion.guardar(); break; }
+      const { categoria, grupo } = normal || prioridad;
       const conTabla = String(grupo.ver_clasificacion) === '1' && String(categoria.visible_clasificacion) === '1';
       // Reserve enough room for both rounds and the table before starting a group.
       if (conexion.restantes() < (conTabla ? 4 : 3)) { await conexion.pausaPresupuesto(); break; }
@@ -367,7 +380,7 @@ export async function obtieneFFCV(opciones = {}) {
       const c = { id, deporte: 'futbol', nombre: texto(categoria.nombre), temporada: temporada.nombre, categoria: /sala|futsal/i.test(categoria.TipoJuego) ? 'Fútbol sala territorial' : 'Fútbol territorial y de base', zona: 'Comunidad Valenciana', ...(genero ? { genero } : {}), grupo: texto(grupo.nombre), fuente: { nombre: 'Federació de Futbol de la Comunitat Valenciana', url }, comprobadoEn: consultado, agenda: sinDatos(url, consultado, 'eventos'), clasificacion: sinDatos(`${url}&view=clasificaciones`, consultado, 'tablas') };
       intentados.add(grupo.codigo);
       estado.intentos[grupo.codigo] = new Date(opciones.relojFFCV?.() ?? Date.now()).toISOString();
-      prioridadesSeguidas = prioridad ? prioridadesSeguidas + 1 : 0;
+      if (normal && !publicados?.has(id)) descubrimientos++;
       await conexion.guardar();
       try {
         const jornadas = eligeJornadasFFCV((await lee(`api/filtros/jornadas_fetch.php?cod_grupo=${encodeURIComponent(grupo.codigo)}`)).jornadas || [], opciones.ahora);
@@ -401,7 +414,7 @@ export async function obtieneFFCV(opciones = {}) {
       completados++;
       // A 429 keeps this group's cursor: the following permitted run retries it.
       if (estado.noConsultarAntes) { await conexion.guardar(); break; }
-      if (!prioridad) { estado.cursor = (estado.cursor + 1) % tareas.length; recorridos++; }
+      if (normal) estado.cursor = (estado.cursor + 1) % tareas.length;
       await conexion.guardar();
     }
     if (!conexion.restantes()) await conexion.pausaPresupuesto();

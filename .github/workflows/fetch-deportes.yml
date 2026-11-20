@@ -1,8 +1,7 @@
 name: Actualizar deportes
 
 on:
-  schedule:
-    - cron: '23 * * * *'
+  # Cadencia horaria solicitada por data-recovery.yml.
   workflow_dispatch:
     inputs:
       fuentes:

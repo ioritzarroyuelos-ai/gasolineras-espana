@@ -80,14 +80,7 @@ name: Fetch guardias farmacias snapshot
 #   sobrescribir el JSON existente.
 
 on:
-  schedule:
-    # Todos los dias a las 05:45 UTC = 06:45/07:45 Madrid. Justo despues de los
-    # otros crons (prices 05:00, guardias algo mas tarde para no solapar).
-    # Diario, no semanal: muchos colegios rotan la guardia cada dia, asi que el
-    # turno solo es "de hoy" si se captura hoy. Los territorios que fallen se
-    # avisan por Telegram (guardias-monitor) y la web oculta su turno viejo
-    # (frescuraGuardia en src/lib/guardias.ts).
-    - cron: '45 5 * * *'
+  # Cadencia diaria solicitada por data-recovery.yml. La web oculta turnos viejos.
   workflow_dispatch:
     inputs:
       solo_avila:

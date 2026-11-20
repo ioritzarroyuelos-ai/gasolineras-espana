@@ -4,8 +4,7 @@ name: Fetch estaciones de ITV
 # Cada fuente conserva su copia anterior y su fecha si falla.
 
 on:
-  schedule:
-    - cron: '17 4 * * *'   # diario, 04:17 UTC
+  # Cadencia diaria solicitada por data-recovery.yml.
   workflow_dispatch:
 
 concurrency:

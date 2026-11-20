@@ -1,10 +1,7 @@
 name: Fetch political polls
 
 on:
-  schedule:
-    # 04:20 UTC (06:20 Madrid). Diario: los sondeos salen varios por semana; no
-    # hace falta más. La frescura la vigila además error-monitor.yml (cada 8 h).
-    - cron: '20 4 * * *'
+  # Cadencia diaria solicitada por data-recovery.yml.
   workflow_dispatch:
     inputs:
       force_deploy:

@@ -8,8 +8,7 @@ name: Fetch snapshot del tiempo
 # scripts/fetch-tiempo.mjs. El push dispara CI -> deploy (como fetch-itv).
 
 on:
-  schedule:
-    - cron: '11 */3 * * *'   # cada 3 h
+  # Cadencia de tres horas solicitada por data-recovery.yml.
   workflow_dispatch:
 
 concurrency:

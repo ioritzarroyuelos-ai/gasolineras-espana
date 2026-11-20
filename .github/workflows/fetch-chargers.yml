@@ -11,10 +11,7 @@ name: Fetch EV chargers snapshot
 # quedarnos con altas/bajas de estaciones desfasadas.
 
 on:
-  schedule:
-    # 05:15 UTC = 06:15/07:15 Madrid. Hora baja de trafico para no interferir
-    # con el cron de precios (07:00 y 19:00 UTC).
-    - cron: '15 5 * * *'
+  # Cadencia diaria solicitada por data-recovery.yml.
   workflow_dispatch:
     inputs:
       force_deploy:

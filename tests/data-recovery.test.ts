@@ -24,3 +24,69 @@ describe('recuperación diaria basada en producción', () => {
     expect(necesitaRecuperacion(electric,m,[run()],now).retry).toBe(true)
   })
 })
+
+describe('cadencia única entre dos relojes',()=>{
+  const lookup=(kind:string)=>DATA_JOBS.find((j:{kind:string})=>j.kind===kind)
+  const freshManifest=(j:any,at=now)=>({services:[{id:j.service,items:[{name:j.item||'fuente',updatedAt:new Date(at).toISOString()}]}]})
+  const completed=(hours:number,conclusion='success')=>({status:'completed',conclusion,event:'workflow_dispatch',run_started_at:new Date(now-hours*3600000).toISOString()})
+  it.each(['queued','in_progress','waiting','pending','requested'])('no despacha si existe un trabajo %s, aunque sea antiguo',status=>{
+    const j=lookup('deportes')
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(2),{status,created_at:'2026-01-01T00:00:00Z'}],now).retry).toBe(false)
+  })
+  it.each([['prices',12],['chargers',24],['guardias',24],['tiempo',3],['itv',24],['politica',24],['deportes',1]])('respeta %s cada%s horas',(kind,hours)=>{
+    const j=lookup(String(kind)),h=Number(hours)
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(h-0.02)],now).retry).toBe(false)
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(h)],now).retry).toBe(true)
+  })
+  it('cuenta desde inicio efectivo, sin sumar duración ni horas en cola',()=>{
+    const j=lookup('deportes'),r={...completed(1),created_at:new Date(now-6*3600000).toISOString(),updated_at:new Date(now-20*60000).toISOString()}
+    expect(necesitaRecuperacion(j,freshManifest(j),[r],now).retry).toBe(true)
+    expect(necesitaRecuperacion(j,freshManifest(j),[{...r,run_started_at:new Date(now-30*60000).toISOString()}],now).retry).toBe(false)
+  })
+  it.each(['prices','chargers','guardias','tiempo','itv','politica'])('limita reintentos de %s a4h',kind=>{
+    const j=lookup(kind)
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(3.99,'failure')],now).retry).toBe(false)
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(4,'failure')],now).retry).toBe(true)
+  })
+  it('mantiene deportes horario aun con una fuente pendiente',()=>{
+    const j=lookup('deportes')
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(1,'failure')],now).retry).toBe(true)
+  })
+  it('el vigilante de precios y los trabajos omitidos no aplazan descargas',()=>{
+    const j=lookup('prices')
+    expect(necesitaRecuperacion(j,freshManifest(j),[{...completed(0.1),event:'schedule'},completed(12)],now).retry).toBe(true)
+    expect(necesitaRecuperacion(j,freshManifest(j),[completed(0.1,'skipped'),completed(12)],now).retry).toBe(true)
+  })
+  it('un pulso duplicado ve el trabajo solicitado y no vuelve a lanzarlo',()=>{
+    const j=lookup('tiempo'),m=freshManifest(j),runs=[completed(4)]
+    expect(necesitaRecuperacion(j,m,runs,now).retry).toBe(true)
+    expect(necesitaRecuperacion(j,m,[{status:'queued'},...runs],now).retry).toBe(false)
+  })
+  it('no convierte fechas incomprobables en una descarga sin límite',()=>{
+    const j=lookup('guardias')
+    expect(necesitaRecuperacion(j,freshManifest(j),[{status:'completed',conclusion:'success',run_started_at:'bad'}],now).retry).toBe(false)
+  })
+  it('96pulsos diarios no multiplican los siete robots',()=>{
+    const counts:Record<string,number>={}
+    for(const j of DATA_JOBS){let runs:any[]=[];counts[j.kind]=0
+      for(let n=0;n<96;n++){const t=now+n*15*60000
+        if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){counts[j.kind]++;runs=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t).toISOString()}]}
+      }
+    }
+    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24})
+  })
+  it('mantiene24pasadas deportivas con colas20min y jitter de±15s',()=>{
+    const j=lookup('deportes');let previous:any,count=0
+    for(let n=0;n<96;n++){
+      const jitter=[-15000,5000,15000,-5000][n%4],t=now+n*15*60000+jitter
+      const runs=previous?[{...previous,status:t<Date.parse(previous.run_started_at)+20*60000?'in_progress':'completed'}]:[]
+      if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){count++;previous={status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t+15000).toISOString()}}
+    }
+    expect(count).toBe(24)
+  })
+  it('admite09:17:04 tras08:17:05 pero nunca dos pasadas en59min',()=>{
+    const j=lookup('deportes'),t=Date.parse('2026-11-20T09:17:04Z'),r={status:'completed',conclusion:'success',run_started_at:'2026-11-20T08:17:05Z'}
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],t).retry).toBe(true)
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],Date.parse('2026-11-20T09:16:04Z')).retry).toBe(false)
+  })
+})

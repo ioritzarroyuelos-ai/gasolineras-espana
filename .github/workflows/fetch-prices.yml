@@ -2,8 +2,6 @@ name: Fetch fuel prices snapshot
 
 on:
   schedule:
-    # 07:00 y 19:00 UTC = 08:00 y 20:00 Madrid (invierno) / 09:00 y 21:00 (verano)
-    - cron: '0 7,19 * * *'
     # Dead-man (12h): chequea que el ultimo commit de snapshot no sea demasiado
     # viejo. Es barato y nos avisa antes de que /api/health devuelva 503.
     - cron: '30 */12 * * *'
@@ -18,8 +16,7 @@ concurrency:
 
 jobs:
   fetch:
-    # El job "fetch" real solo corre en los cron de 07/19. El dead-man no lo
-    # dispara (seria duplicado de los dos fetchs principales).
+    # El coordinador lo solicita cada 12 h. El único cron propio es de vigilancia.
     if: github.event.schedule != '30 */12 * * *'
     runs-on: ubuntu-latest
     permissions:

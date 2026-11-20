@@ -33,10 +33,27 @@ describe('cadencia única entre dos relojes',()=>{
     const j=lookup('deportes')
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(2),{status,created_at:'2026-01-01T00:00:00Z'}],now).retry).toBe(false)
   })
-  it.each([['prices',12],['chargers',24],['guardias',24],['tiempo',3],['itv',24],['politica',24],['deportes',1]])('respeta %s cada%s horas',(kind,hours)=>{
+  it.each([['tiempo',3],['deportes',1]])('respeta %s cada%s horas',(kind,hours)=>{
     const j=lookup(String(kind)),h=Number(hours)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h-0.02)],now).retry).toBe(false)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h)],now).retry).toBe(true)
+  })
+  it.each([['prices','07:00'],['prices','19:00'],['chargers','05:15'],['guardias','05:45'],['itv','04:17'],['politica','04:20']])('respeta el horario UTC de %s a las %s',(kind,time)=>{
+    const j=lookup(kind),t=Date.parse('2026-11-21T'+time+':00Z'),last={status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:'2026-11-20T21:00:00Z'}
+    if(kind==='prices' && time==='19:00')last.run_started_at='2026-11-21T08:00:00Z'
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[last],t-1).retry).toBe(false)
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[last],t).retry).toBe(true)
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[{...last,run_started_at:new Date(t).toISOString()}],t+15000).retry).toBe(false)
+  })
+  it('la guardia manual del20nov a21UTC no aplaza la consulta del21nov a05:45UTC',()=>{
+    const j=lookup('guardias'),t=Date.parse('2026-11-21T05:45:00Z'),r={status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:'2026-11-20T21:00:00Z'}
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],t).retry).toBe(true)
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],Date.parse('2026-11-21T00:02:00Z')).retry).toBe(false)
+  })
+  it('un horario diario vencido respeta4h estrictas después de un fallo',()=>{
+    const j=lookup('guardias'),r={status:'completed',conclusion:'failure',event:'workflow_dispatch',run_started_at:'2026-11-21T03:00:00Z'},t=Date.parse('2026-11-21T05:47:00Z')
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],t).retry).toBe(false)
+    expect(necesitaRecuperacion(j,freshManifest(j,t),[r],Date.parse('2026-11-21T07:00:00Z')).retry).toBe(true)
   })
   it('cuenta desde inicio efectivo, sin sumar duración ni horas en cola',()=>{
     const j=lookup('deportes'),r={...completed(1),created_at:new Date(now-6*3600000).toISOString(),updated_at:new Date(now-20*60000).toISOString()}
@@ -68,8 +85,9 @@ describe('cadencia única entre dos relojes',()=>{
   })
   it('96pulsos diarios no multiplican los siete robots',()=>{
     const counts:Record<string,number>={}
-    for(const j of DATA_JOBS){let runs:any[]=[];counts[j.kind]=0
-      for(let n=0;n<96;n++){const t=now+n*15*60000
+    const midnight=Date.parse('2026-11-21T00:02:00Z')
+    for(const j of DATA_JOBS){let runs:any[]=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(j.scheduleUtc?midnight-4*3600000:midnight-j.intervalHours*3600000).toISOString()}];counts[j.kind]=0
+      for(let n=0;n<96;n++){const t=midnight+n*15*60000
         if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){counts[j.kind]++;runs=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t).toISOString()}]}
       }
     }

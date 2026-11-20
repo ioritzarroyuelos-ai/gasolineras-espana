@@ -66,7 +66,7 @@ npm run test:e2e -- --headed                  # con navegador visible
 
 ## Snapshot de datos del Ministerio
 
-El endpoint `/api/*` proxea al Ministerio en tiempo real, pero si la API está caída se sirve un snapshot estático de fallback desde `public/data/stations.json`. Ese fichero se actualiza automáticamente dos veces al día por [`.github/workflows/fetch-prices.yml`](.github/workflows/fetch-prices.yml) (07:00 y 19:00 UTC). Si falla 3 ejecuciones seguidas, el **watchdog de freshness** marca el dataset como obsoleto y la UI muestra un banner amarillo.
+El endpoint `/api/*` proxea al Ministerio en tiempo real, pero si la API está caída se sirve un snapshot estático de fallback desde `public/data/stations.json`. El coordinador solicita su actualización a partir de las 07:00 y 19:00 UTC mediante [`.github/workflows/fetch-prices.yml`](.github/workflows/fetch-prices.yml). Si falla 3 ejecuciones seguidas, el **watchdog de freshness** marca el dataset como obsoleto y la UI muestra un banner amarillo.
 
 Para actualizar datos manualmente, lanza el workflow correspondiente desde `main`. Los robots generan una rama de datos, abren un PR, ejecutan CI y Security, y solo fusionan el commit comprobado. No se escriben datos a mano ni se suben directamente a `main`.
 
@@ -110,20 +110,21 @@ Ver [`.env.example`](./.env.example).
 
 ## Automatizacion completa
 
-Las consultas y publicaciones periódicas se ejecutan en GitHub Actions. Si una fuente cambia o deja de responder, se conserva su última copia válida con fecha y aviso; un cambio de formato puede necesitar mantenimiento.
+Las consultas y publicaciones periódicas se ejecutan en GitHub Actions. Un coordinador único recibe el reloj de GitHub y, cuando se activa `DATA_CLOCK_ENABLED`, los pulsos independientes de Cloudflare. Comprueba las cadencias y los trabajos pendientes antes de solicitar robots. [Diseño, permisos, activación y comprobaciones](docs/data-clock.md). Si una fuente cambia o deja de responder, se conserva su última copia válida con fecha y aviso; un cambio de formato puede necesitar mantenimiento.
 
 | Evento | Workflow | Trigger | Resultado |
 |---|---|---|---|
 | Push a `main` | `ci.yml` | `push` | Typecheck, tests, build, E2E, Lighthouse. Sube `dist` como artefacto. |
 | CI verde en `main` | `deploy.yml` | `workflow_run(CI)` | Aplica migraciones D1, publica el artefacto validado y comprueba su revisión, datos y seis secciones en producción. |
-| Dos veces al dia | `fetch-prices.yml` | `cron 0 7,19 * * *` | Snapshot del Ministerio → PR con pruebas → CI de main → Deploy si cambia. |
-| Diario 05:15 UTC | `fetch-chargers.yml` | `cron 15 5 * * *` | Comprueba el directorio oficial de recarga eléctrica. |
-| Diario 05:45 UTC | `fetch-guardias.yml` | `cron 45 5 * * *` | Consulta las fuentes de guardias y señala los fallos parciales después de publicar las lecturas válidas. |
-| Cada 3 horas | `fetch-tiempo.yml` | `cron 11 */3 * * *` | Renueva la precarga meteorológica; las fichas también consultan la fuente bajo demanda. |
-| Diario 04:17 UTC | `fetch-itv.yml` | `cron 17 4 * * *` | Revisa directorios, canales de cita y documentos de tarifas. |
-| Diario 04:20 UTC | `fetch-politica.yml` | `cron 20 4 * * *` | Comprueba las fuentes integradas de sondeos y fechas. |
-| Cada hora | `fetch-deportes.yml` | `cron 23 * * * *` | Intenta renovar fútbol, baloncesto y motor, respetando el progreso y los descansos de las fuentes. |
-| Cada 4 horas | `data-recovery.yml` | `cron 43 */4 * * *` | Reintenta trabajos fallidos o datos publicados atrasados, sin duplicar procesos activos ni reintentar antes de cuatro horas. |
+| 07:00 y 19:00 UTC | `fetch-prices.yml` | Coordinador o manual | Snapshot del Ministerio → PR con pruebas → CI de main → Deploy si cambia. |
+| Diario 05:15 UTC | `fetch-chargers.yml` | Coordinador o manual | Comprueba el directorio oficial de recarga eléctrica. |
+| Diario 05:45 UTC | `fetch-guardias.yml` | Coordinador o manual | Consulta las fuentes de guardias y señala los fallos parciales después de publicar las lecturas válidas. |
+| Cada 3 horas | `fetch-tiempo.yml` | Coordinador o manual | Renueva la precarga meteorológica; las fichas también consultan la fuente bajo demanda. |
+| Diario 04:17 UTC | `fetch-itv.yml` | Coordinador o manual | Revisa directorios, canales de cita y documentos de tarifas. |
+| Diario 04:20 UTC | `fetch-politica.yml` | Coordinador o manual | Comprueba las fuentes integradas de sondeos y fechas. |
+| Cada hora | `fetch-deportes.yml` | Coordinador o manual | Intenta renovar fútbol, baloncesto y motor, respetando el progreso y los descansos de las fuentes. |
+| Cada 15 minutos cuando se activa | Worker `espana-util-data-clock` | Cloudflare `2,17,32,47 * * * *` | Envía un pulso autenticado; no descarga fuentes ni modifica datos. |
+| Pulso o respaldo cada 30 minutos | `data-recovery.yml` | `repository_dispatch` o `cron 7,37 * * * *` | Decide qué robots necesitan ejecutar. Reintentos limitados a 4 horas, salvo deportes horario. |
 | Cada 12h | `fetch-prices.yml` (dead-man) | `cron 30 */12 * * *` | Falla el workflow si el snapshot lleva >26h sin actualizar. |
 | Diario 20:00 UTC | `cron-ingest.yml` | `cron 0 20 * * *` | `POST /api/cron/ingest` -> upsertea precios del dia a D1. |
 | Domingos 03:00 UTC | `cron-purge.yml` | `cron 0 3 * * 0` | `POST /api/cron/purge` -> borra filas >2 anos. |

@@ -2,18 +2,21 @@
 
 Los robots conservan sus fuentes, validaciones, permisos y publicación mediante PR con CI obligatorio. El calendario se decide en un único coordinador (`data-recovery.yml`), para que dos relojes no lancen dos descargas del mismo servicio.
 
-| Servicio | Intervalo habitual desde el inicio efectivo |
+| Servicio | Programación habitual UTC |
 | --- | --- |
-| Precios | 12 horas |
-| Electrolineras, farmacias, ITV y política | 24 horas |
-| Tiempo | 3 horas |
-| Deportes | 1 hora |
+| Precios | 07:00 y 19:00 |
+| Electrolineras | 05:15 cada día |
+| Farmacias | 05:45 cada día |
+| ITV | 04:17 cada día |
+| Política | 04:20 cada día |
+| Tiempo | 3 horas desde el inicio efectivo |
+| Deportes | 1 hora desde el inicio efectivo |
 
 Cloudflare envía un pulso los minutos 2, 17, 32 y 47 de cada hora UTC. GitHub conserva un reloj de respaldo los minutos 7 y 37. Ambos llegan al mismo workflow con exclusión mutua. Las siete descargas mantienen su botón manual; sus antiguos crons directos desaparecen. En precios sólo permanece el vigilante que comprueba cada 12 horas el límite de 26 horas sin captura: esas ejecuciones no cuentan como descarga reciente.
 
 Antes de pedir cada robot, el coordinador consulta la publicación y las ejecuciones de GitHub. Cualquier trabajo en cola, en curso o esperando bloquea otro automático del mismo servicio, incluso si ya no está entre los 20 más recientes. Los estados pendientes se consultan por separado y se paginan. Se limita a 10 páginas por estado; si no puede verificar el inventario, no inicia trabajos a ciegas.
 
-La cadencia usa el inicio efectivo del robot: no suma la duración de la descarga. Un margen máximo de 60 segundos evita perder un pulso de 15 minutos por pequeñas diferencias de cola. Tras fallo o datos publicados caducados, el resto de servicios espera 4 horas estrictas; deportes mantiene su pasada horaria para rotar grupos, conservando los límites y pausas de cada fuente. Un pulso retrasado más de 2 horas se descarta. Un pulso repetido vuelve a comprobar las ejecuciones antes de actuar.
+Los horarios diarios mantienen sus horas UTC anteriores: se cubre el último horario vencido si existe una descarga iniciada a partir de ese momento. Una actualización manual de farmacias a las 21:00 no retrasa la consulta de las 05:45 del día siguiente. Tiempo y deportes cuentan desde el inicio efectivo del robot, sin sumar la duración de la descarga; un margen máximo de 60 segundos evita perder un pulso de 15 minutos por pequeñas diferencias de cola. Tras fallo o datos publicados caducados, el resto de servicios espera 4 horas estrictas, incluso al cruzar un horario diario; deportes mantiene su pasada horaria para rotar grupos, conservando los límites y pausas de cada fuente. Un pulso retrasado más de 2 horas se descarta. Un pulso repetido vuelve a comprobar las ejecuciones antes de actuar.
 
 No se promete una hora exacta: puede haber retrasos del proveedor, colas de GitHub o una fuente inaccesible. Los botones manuales siguen permitiendo una consulta expresamente solicitada. Los monitores, fechas reales y avisos de datos caducados siguen siendo necesarios.
 

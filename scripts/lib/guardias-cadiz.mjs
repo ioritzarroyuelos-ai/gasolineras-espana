@@ -18,5 +18,8 @@ export function turnosCadiz(horarios, fecha) {
       turnos.push({ horario: intervalo, nota })
     }
   }
-  return turnos.length ? turnos : [{ horario:'', nota:'Horario por confirmar' }]
+  // El colegio puede repetir el mismo turno en una farmacia. Se conserva
+  // cualquier diferencia de horario o aviso; sólo se quita la copia exacta.
+  const unicos = [...new Map(turnos.map(turno => [JSON.stringify(turno), turno])).values()]
+  return unicos.length ? unicos : [{ horario:'', nota:'Horario por confirmar' }]
 }

@@ -70,3 +70,17 @@ it('Paterna de Rivera mantiene la guardia diurna y la noche localizada sin inven
   expect(noche.nota).toMatch(/nocturna localizada.*fin por confirmar/)
   expect(turnosCadiz([{...h,hora_apertura:'00:00:00'}],fecha)[0].horario).toBe('')
 })
+
+it('Cádiz elimina sólo turnos exactamente repetidos y conserva otras horas o avisos', () => {
+  const dia = { tipo:'SERVICIO DIURNO (De 9,00 a 22,00 h)', hora_apertura:'09:00:00', hora_cierre:'22:00:00', cierre_dia_siguiente:false }
+  const noche = { tipo:'SERVICIO NOCTURNO', hora_apertura:'22:00:00', hora_cierre:'09:00:00', cierre_dia_siguiente:true }
+  const aviso = { ...dia, tipo:'Guardia localizada: llamar antes de acudir' }
+  const resultado = turnosCadiz([dia, {...dia}, noche, aviso], fecha)
+  expect(resultado).toHaveLength(3)
+  expect(resultado.map(t => t.horario)).toEqual([
+    '2026-11-06 09:00-2026-11-06 22:00',
+    '2026-11-06 22:00-2026-11-07 09:00',
+    '2026-11-06 09:00-2026-11-06 22:00',
+  ])
+  expect(resultado[2].nota).toBe(aviso.tipo)
+})

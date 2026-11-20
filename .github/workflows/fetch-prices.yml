@@ -70,6 +70,9 @@ jobs:
         run: exit 1
 
   dead-man:
+    # Esta vigilancia mira la copia anterior; no debe marcar como fallida una
+    # descarga manual que acaba de recuperarla en el trabajo paralelo.
+    if: github.event_name == 'schedule' && github.event.schedule == '30 */12 * * *'
     runs-on: ubuntu-latest
     permissions:
       contents: read

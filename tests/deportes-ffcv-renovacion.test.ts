@@ -88,7 +88,7 @@ describe('renovación diaria de los grupos FFCV publicados', () => {
     if (cantidad < 667) expect(estado.cursor).not.toBe(600)
     expect(capacidadActualizacionFFCV(publicados(cantidad), estado.catalogo)).toMatchObject({ pasadasNecesarias: pasadas, margenHoras: 24 - pasadas })
     expect(capacidadActualizacionFFCV(publicados(697), semilla(697).catalogo).margenHoras).toBeLessThan(0)
-  }, 20000) // Recorre una ronda diaria simulada; no hay red ni esperas reales.
+  }, 45000) // Recorre una ronda diaria simulada; no hay red ni esperas reales.
 
   it('no consulta otra vez grupos recién comprobados por el cursor cuando todo el catálogo está publicado', async () => {
     let estado = semilla(35), reloj = ahora

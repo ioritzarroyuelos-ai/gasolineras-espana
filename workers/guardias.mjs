@@ -2,6 +2,22 @@
 // Ubicación fijada en wrangler.guardias.jsonc; sin secretos ni URLs arbitrarias.
 import { publicGuardiasSource, GUARDIAS_PUBLIC_SOURCES } from '../src/lib/guardias-relay.ts'
 import { publicItvSource, ITV_PUBLIC_SOURCES, ItvSourceError } from '../src/lib/itv-relay.ts'
+import { publicOwDiagnostic, OW_DIAGNOSTIC_SOURCES } from '../src/lib/deportes-ow-relay-diagnostico.ts'
+
+async function owDiagnostic(request, url, ctx) {
+  const id = url.pathname.slice('/deportes/diagnostico/ow/'.length)
+  if (request.method !== 'GET' || url.href.includes('?') || !url.pathname.startsWith('/deportes/diagnostico/ow/') || !Object.hasOwn(OW_DIAGNOSTIC_SOURCES, id)) {
+    return new Response('No encontrado', { status: 404, headers: { 'Cache-Control': 'no-store' } })
+  }
+  const cacheKey = new Request(url.origin + url.pathname)
+  try { const cached = await caches.default.match(cacheKey); if (cached) return cached } catch { /* La comprobación sigue siendo posible sin caché. */ }
+  const data = await publicOwDiagnostic(id)
+  const response = Response.json(data, { status: data.correcto ? 200 : 502, headers: {
+    'Cache-Control': data.correcto ? 'public, max-age=300' : 'no-store', 'X-Robots-Tag': 'noindex', 'X-Content-Type-Options': 'nosniff',
+  } })
+  if (data.correcto) ctx.waitUntil(caches.default.put(cacheKey, response.clone()).catch(() => {}))
+  return response
+}
 
 async function itvSource(request, url, ctx) {
   const id = url.pathname.slice('/itv/fuentes/'.length)
@@ -36,6 +52,7 @@ async function itvSource(request, url, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url), territorio = url.pathname.slice(1)
+    if (url.pathname.startsWith('/deportes/')) return owDiagnostic(request, url, ctx)
     if (url.pathname.startsWith('/itv/')) return itvSource(request, url, ctx)
     if (request.method !== 'GET' || !Object.hasOwn(GUARDIAS_PUBLIC_SOURCES, territorio)) return new Response('No encontrado', { status: 404 })
     // Almería se consulta por día: una entrada de ayer no sirve tras medianoche.

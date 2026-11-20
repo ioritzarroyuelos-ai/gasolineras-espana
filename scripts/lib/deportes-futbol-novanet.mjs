@@ -287,7 +287,9 @@ function gruposVerificadosNovanet(fuenteId, estado, publicados, fechas = {}) {
 export function eligeActualizacionNovanet(fuenteId, estado, ahora, { publicados, fechas = {}, cubiertos = [], visitados = [] } = {}) {
   const candidatos = gruposVerificadosNovanet(fuenteId, estado, publicados, fechas).filter(g => ahora - Date.parse(g.fecha) >= 18 * 3600000 &&
     !cubiertos.includes(g.id) && !visitados.includes(g.clave) && (!estado.intentos?.[g.clave] || ahora - Date.parse(estado.intentos[g.clave].fecha) >= 3600000))
-  const turno = g => Math.max(Date.parse(g.fecha), Date.parse(estado.intentos?.[g.clave]?.fecha || '') || 0)
+  // Un fallo cede turno para no bloquear otros grupos; un éxito sin publicar
+  // conserva la prioridad de la copia visible tras el descanso de una hora.
+  const turno = g => Math.max(Date.parse(g.fecha), estado.intentos?.[g.clave]?.fallo ? Date.parse(estado.intentos[g.clave].fecha) || 0 : 0)
   candidatos.sort((a, b) => turno(a) - turno(b) || a.fecha.localeCompare(b.fecha) || a.categoria - b.categoria || a.grupo - b.grupo)
   return candidatos[0] || null
 }

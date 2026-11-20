@@ -372,6 +372,10 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
     const estado = semilla(), hoy = Date.parse('2026-11-20T17:00:00Z')
     estado.verificados['26738226-101'] = '2026-11-19T16:00:00Z'
     estado.verificados['26738226-102'] = '2026-11-15T16:00:00Z'
+    estado.intentos = {
+      '26738226-101': { fecha: '2026-11-19T16:00:00Z', fallo: false },
+      '26738226-102': { fecha: '2026-11-15T16:00:00Z', fallo: false },
+    }
     const fechas = { 'novanet-madrid-101': '2026-11-12T16:00:00Z', 'novanet-madrid-102': '2026-11-15T16:00:00Z' }
     expect(eligeActualizacionNovanet('madrid', estado, hoy, { publicados: Object.keys(fechas), fechas })).toMatchObject({ codigoGrupo: '101', fecha: '2026-11-12T16:00:00.000Z' })
     expect(estado.verificados['26738226-101']).toBe('2026-11-19T16:00:00Z')
@@ -382,6 +386,9 @@ describe('renovación de grupos publicados antes de agotar un catálogo grande',
     const opciones = { publicados: [id], fechas: { [id]: '2026-11-12T16:00:00Z' } }
     expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)?.codigoGrupo).toBe('101')
     estado.intentos = { '26738226-101': { fecha: '2026-11-20T16:30:00Z', fallo: true } }
+    expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)).toBeNull()
+    expect(eligeActualizacionNovanet('madrid', estado, hoy + 1800000, opciones)?.codigoGrupo).toBe('101')
+    estado.intentos['26738226-101'].fallo = false
     expect(eligeActualizacionNovanet('madrid', estado, hoy, opciones)).toBeNull()
     expect(eligeActualizacionNovanet('madrid', estado, hoy + 1800000, opciones)?.codigoGrupo).toBe('101')
     expect(eligeActualizacionNovanet('madrid', estado, hoy, { ...opciones, cubiertos: [id] })).toBeNull()

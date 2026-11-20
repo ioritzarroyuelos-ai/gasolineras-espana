@@ -5,17 +5,33 @@ import { parse } from 'node-html-parser'
 import { parseFecha } from './politica-parse.mjs'
 
 export const GAD3_LISTADO = 'https://www.gad3.com/politica/'
+export const GAD3_RSS = 'https://www.gad3.com/feed/'
 const limpia = s => (s || '').replace(/\p{Cf}/gu, '').replace(/\s+/gu, ' ').trim()
 const clave = s => limpia(s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]/g, '')
 
-export function descubreGad3(html) {
-  const urls = parse(html).querySelectorAll('a[href]').map(a => a.getAttribute('href'))
-  return [...new Set(urls)].filter(s => {
+function urlNacionalGad3(s) {
     try {
       const u = new URL(s)
-      return u.origin === 'https://www.gad3.com' && /^\/barometro-[a-z0-9-]*estimacion-de-voto-nacional-[a-z0-9-]+\/$/.test(u.pathname) && !u.search
+      return u.origin === 'https://www.gad3.com' && /^\/barometro-[a-z0-9-]*estimacion-de-voto-nacional-[a-z0-9-]+\/$/.test(u.pathname)
+        && !u.search && !u.hash && !u.username && !u.password
     } catch { return false }
+}
+
+export function descubreGad3(html) {
+  const urls = parse(html).querySelectorAll('a[href]').map(a => a.getAttribute('href'))
+  return [...new Set(urls)].filter(urlNacionalGad3)
+}
+
+export function descubreGad3Rss(xml) {
+  // RSS público enlazado por GAD3. Sólo usamos enlaces simples de sus entradas:
+  // no se ejecuta HTML, no se expanden entidades y las cifras vienen del artículo.
+  if (xml.length > 1000000 || !/<rss\b[^>]*version=["']2\.0["']/i.test(xml)
+    || !/<channel\b/i.test(xml) || /<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('GAD3: RSS no reconocido')
+  const urls = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)].slice(0, 100).flatMap(([, item]) => {
+    const links = [...item.matchAll(/<link>\s*(https:\/\/[^<\s]+)\s*<\/link>/gi)]
+    return links.length === 1 ? [links[0][1]] : []
   })
+  return [...new Set(urls)].filter(urlNacionalGad3)
 }
 
 export function fichaGad3(html, url, hoy) {
@@ -97,7 +113,10 @@ export async function fetchGad3({ fetchImpl = fetch, hoy, userAgent }) {
     if (!r.ok) throw new Error('GAD3: HTTP ' + r.status)
     return r.text()
   }
-  const urls = descubreGad3(await leer(GAD3_LISTADO)).slice(0, 3)
+  let urls = descubreGad3(await leer(GAD3_LISTADO)).slice(0, 3)
+  // Un listado HTTP200 puede omitir sus entradas. No se usa el RSS si la
+  // petición falla (incluidos403/429/TLS), ni para reemplazar cifras inválidas.
+  if (!urls.length) urls = descubreGad3Rss(await leer(GAD3_RSS)).slice(0, 3)
   if (!urls.length) throw new Error('GAD3: no se encuentra la publicación nacional')
   const articulos = await Promise.all(urls.map(async url => ({ url, html: await leer(url) })))
   const fechados = articulos.map(a => ({ ...a, fecha: parse(a.html).querySelector('meta[property="article:published_time"]')?.getAttribute('content') || '' }))

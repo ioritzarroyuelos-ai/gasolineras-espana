@@ -1,0 +1,27 @@
+Elecciones Generales
+29 de noviembre de 2026
+Jornadas del 26 de octubre al 18 de noviembre · 10.500 entrevistas
+Un estudio de SW Demoscopia para La Séptima
+Entregado el 19 de noviembre de 2026
+Voto y escaños por candidatura
+Candidatura 	% voto Escaños (central) Mediana P25P75 P10P90 2023 23J Dif.
+PSOE 	31,8 	133 	131 128133 125136 	121 	12
+PP 	29,2 	120 	120 117123 114126 	136 	16
+Vox 	16,4 	53 	54 	5058 4761 	33 	20
+Frente Amplio 	7,3 	11 	12 	1013 	914 	31 	20
+ERC 	2,8 	11 	12 	1113 	1013 	7 	4
+EH Bildu 	1,3 	7 	7 	77 	67 	6 	1
+Junts 	1,3 	4 	4 	34 	35 	7 	3
+EAJPNV 	0,8 	3 	3 	33 	33 	5 	2
+Adelante Andalucía 	1,6 	3 	3 	33 	33 	0 	3
+BNG 	1,0 	2 	2 	22 	22 	1 	1
+Coalición Canaria 	0,4 	1 	1 	11 	11 	1 	0
+PPUPN Navarra) 	0,2 	2 	2 	22 	22 	2 	0
+Podemos 	1,6 	0 	0 	01 	01 	0 	0
+SALF 	2,0 	0 	0 	00 	00 	0 	0
+Teruel Existe 	0,0 	0 	0 	00 	00 	0 	0
+Otras candidaturas 	2,3 	0 	0 	00 	00 	0 	0
+Total 	100,0 	350 	350 	350
+Bloques y mayorías
+
+Navarra: PP y UPN en lista única, presentada como candidatura propia (PP–UPN) fuera del total del PP.

@@ -26,7 +26,7 @@ describe('seguimiento nacional adicional de La Séptima', () => {
     expect(sondeos).toHaveLength(1)
     expect(sondeos[0]).toMatchObject({ empresa: 'SW Demoscopia', comitente: 'La Séptima', campoFin: '2026-11-04', publicacion: '2026-11-05', fuenteUrl: url, muestra: 3500 })
     expect(sondeos[0].datos).toEqual([
-      { candidaturaId: 'pp', pct: 29.1, escanos: null },
+      { candidaturaId: 'pp', pct: 29.1, escanos: 118 },
       { candidaturaId: 'psoe', pct: 29.8, escanos: 126 },
       { candidaturaId: 'vox', pct: 16, escanos: { min: 61, max: 63 } },
       { candidaturaId: 'aa', pct: null, escanos: 3 },
@@ -61,6 +61,10 @@ const archivos = vi.hoisted(() => new Map<string, string>())
 // GAD3 (incluidas sus correcciones de Datawrapper) tiene fixtures propios.
 const gad3 = vi.hoisted(() => vi.fn())
 vi.mock('../scripts/lib/politica-gad3.mjs', () => ({ fetchGad3: gad3 }))
+const swPdf = vi.hoisted(() => vi.fn())
+vi.mock('../scripts/lib/politica-sw-pdf.mjs', async importar => ({
+  ...await importar<Record<string,unknown>>(), fetchSeguimientoPdf: swPdf,
+}))
 vi.mock('node:fs', async importar => {
   const fs = await importar<Record<string, unknown>>()
   const nombre = (ruta: string) => ruta.split(/[\\/]/).at(-1)!
@@ -78,6 +82,11 @@ describe('actualización de las dos fuentes del Congreso', () => {
   beforeEach(() => {
     archivos.clear()
     gad3.mockReset().mockResolvedValue({ sondeos: [], candidaturas: [], procedencia: undefined })
+    swPdf.mockReset().mockImplementation(async candidatos => {
+      if (!candidatos.length) throw Error('Sin informes originales')
+      return {sondeos:candidatos.map((s: object)=>({...s,fuenteVerificada:'sw-pdf-v1',
+        fuenteUrl:'https://laseptima.com/wp-content/uploads/2026/11/barometro-n1-4nov2026.pdf'})),candidaturas:[],fallos:[]}
+    })
     process.argv = [...argv.slice(0, 2), '--solo', 'generales']
     vi.useFakeTimers({ toFake: ['Date'] })
   })
@@ -103,7 +112,7 @@ describe('actualización de las dos fuentes del Congreso', () => {
     const buena = await pasada('2026-11-06', htmlES('Casa antigua'), inglesa)
     expect(buena.file.sondeos).toHaveLength(2)
     const sw = buena.file.sondeos.find((s: { empresa: string }) => s.empresa === 'SW Demoscopia')
-    expect(sw.datos[0]).toMatchObject({ candidaturaId: 'pp', pct: 29.1, escanos: null })
+    expect(sw.datos[0]).toMatchObject({ candidaturaId: 'pp', pct: 29.1, escanos: 118 })
     expect(sw.publicacion).toBe('2026-11-05')
     expect(buena.entrada.estado).toBe('ok')
     expect(buena.parte.fallos).toHaveLength(0)
@@ -131,6 +140,29 @@ describe('actualización de las dos fuentes del Congreso', () => {
     expect(despues.file.procedenciasAdicionales).toBeUndefined()
     expect(despues.file.ultimaComprobacionOk).toBe('2026-11-30T12:00:00.000Z')
     expect(despues.parte.fallos[0].parcial).toBe(true)
+  })
+
+  it('no conserva ni reintroduce una antigua fila SW de Wikipedia que carece de comprobación PDF', async () => {
+    const buena = await pasada('2026-11-06', htmlES('Casa antigua'), inglesa)
+    const legado = {...buena.file,sondeos:buena.file.sondeos.map((s: Record<string,unknown>)=>({...s,fuenteVerificada:undefined}))}
+    archivos.set('generales.json',JSON.stringify(legado))
+    const parcial = await pasada('2026-11-07', htmlES('Casa nueva'), '<p>Sin tabla</p>')
+    expect(parcial.file.sondeos.some((s:{empresa:string})=>s.empresa==='SW Demoscopia')).toBe(false)
+    expect(parcial.file.avisosFuentes[0]).toContain('PDF original')
+    expect(parcial.file.sondeos.some((s:{empresa:string})=>s.empresa==='Casa nueva')).toBe(true)
+  })
+
+  it('publica los originales válidos aunque otro PDF falle y conserva su aviso', async () => {
+    await pasada('2026-11-06', htmlES('Casa antigua'), inglesa)
+    const original={empresa:'SW Demoscopia',comitente:'La Séptima',campoFin:'2026-11-06',publicacion:'2026-11-07',
+      fuenteUrl:'https://laseptima.com/wp-content/uploads/2026/11/barometro-n3-6nov2026.pdf',fuenteVerificada:'sw-pdf-v1',
+      datos:[{candidaturaId:'pp-sin-navarra',pct:29.2,escanos:120}]}
+    swPdf.mockResolvedValue({sondeos:[original],candidaturas:[{id:'pp-sin-navarra',siglas:'PP (sin Navarra)',nombre:'PP (sin Navarra)'}],fallos:['2026-11-05']})
+    const parcial=await pasada('2026-11-07',htmlES('Casa nueva'),inglesa)
+    expect(parcial.file.sondeos).toContainEqual(original)
+    expect(parcial.file.sondeos.filter((s:{empresa:string})=>s.empresa==='SW Demoscopia')).toHaveLength(2)
+    expect(parcial.file.avisosFuentes[0]).toContain('pendientes de verificar')
+    expect(parcial.file.candidaturas).toContainEqual({id:'pp-sin-navarra',siglas:'PP (sin Navarra)',nombre:'PP (sin Navarra)'})
   })
 
   it('conserva la publicación GAD3 y sus candidaturas si mañana falla; la fecha de la encuesta no se rejuvenece', async () => {

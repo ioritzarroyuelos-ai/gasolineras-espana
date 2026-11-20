@@ -142,6 +142,7 @@ export function renderSondeos(file: EleccionFile, muestra: readonly Sondeo[], re
       + (!publicada || fuente ? '<p class="pm-source">' + (publicada ? '' : 'Fecha de publicación desconocida.')
         + (fuente ? ' <a href="' + esc(fuente) + '" rel="nofollow noreferrer">Ver la fuente de esta encuesta</a>' : '') + '</p>' : '')
       + '<p class="pm-ref">' + referenciaFicha(sondeo, anterior, file, referencia) + '</p>'
+      + (sondeo.notaFuente ? '<p class="pm-ref">' + esc(sondeo.notaFuente) + '</p>' : '')
       + '<ul class="pm-rows">' + detalle.slice(0, 3).join('') + '</ul>'
       + (detalle.length > 3 ? '<details class="pm-extra"><summary>Ver los demás partidos</summary><ul class="pm-rows">' + detalle.slice(3).join('') + '</ul></details>' : '')
       + '</div></details>'

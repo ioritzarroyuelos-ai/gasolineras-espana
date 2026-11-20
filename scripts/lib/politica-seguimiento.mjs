@@ -12,17 +12,11 @@ export function esSeguimientoSW(s) {
   return normaliza(s.empresa) === 'sw demoscopia' && normaliza(s.comitente) === 'la septima'
 }
 
-function corrigeDiscrepancia(s) {
-  if (s.campoFin !== '2026-11-04' || !esSeguimientoSW(s)) return s
-  // Se han difundido 117 del PP o 118 incluyendo UPN; no imputar al PP la
-  // cifra conjunta, aunque mañana aparezca también en la tabla española.
-  return { ...s, datos: s.datos.map(d => d.candidaturaId === 'pp' ? { ...d, escanos: null } : d)
-    .filter(d => d.pct != null || d.escanos != null) }
-}
-
 export function combinaSeguimiento(principales, seguimiento) {
   const confirmadas = new Map(seguimiento.map(s => [s.campoFin, s]))
-  return [...principales.filter(s => !esSeguimientoSW(s) || !confirmadas.has(s.campoFin)), ...confirmadas.values()].map(corrigeDiscrepancia)
+  // Una fila de la recopilación no sustituye un informe original comprobado.
+  // El PP que incluye Navarra y el PP separado de PP–UPN son series distintas.
+  return [...principales.filter(s => !esSeguimientoSW(s)), ...confirmadas.values()]
 }
 
 export function extraeSeguimientoGenerales(htmlIngles, candidaturas) {
@@ -82,7 +76,9 @@ export function extraeSeguimientoGenerales(htmlIngles, candidaturas) {
         if (!conocidos.has(id)) continue
         datos.push({ ...d, candidaturaId: id })
       }
-      if (datos.length) porFecha.set(s.campoFin, corrigeDiscrepancia({ ...s, ...fuentes.get(s.campoFin), datos }))
+      // Son candidatos para localizar el PDF; estos valores no se publican sin
+      // contrastar el original mediante fetchSeguimientoPdf.
+      if (datos.length) porFecha.set(s.campoFin, { ...s, ...fuentes.get(s.campoFin), datos })
     }
   }
   if (!tablas) incidencias.push('No se reconoce la tabla nacional inglesa de estimaciones por año')

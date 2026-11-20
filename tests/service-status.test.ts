@@ -12,6 +12,7 @@ describe('estado de los servicios', () => {
     expect(s.ok).toBe(false); expect(s.services[0].ok).toBe(true)
     expect(s.services[1].issues[0].problem).toBe('Actualización atrasada')
     expect(serviceStatusHtml(s, 'nonce')).toContain('Farmacias: con incidencias')
+    expect(serviceStatusHtml(s, 'nonce')).toContain('data-service-status="degraded"')
     expect(monitorMessage([], s, 'hoy', 'https://example.test')).toContain('⚠ Farmacias: 1 incidencias')
   })
   it('usa umbrales por servicio y no acepta fechas futuras, inválidas, vacíos o fuentes ausentes', () => {
@@ -24,6 +25,7 @@ describe('estado de los servicios', () => {
     expect(evaluateServices(m, now).services.every(s => !s.ok)).toBe(true)
     expect(evaluateServices(null, now).ok).toBe(false)
     expect(evaluateServices(fixture(), now).ok).toBe(true)
+    expect(serviceStatusHtml(evaluateServices(fixture(), now), 'nonce')).toContain('data-service-status="ok"')
   })
   it('conserva avisos parciales y escapa los textos de fuentes externas', () => {
     const m = fixture(); m.services[1].items[0].issue = '<script>malo()</script>'

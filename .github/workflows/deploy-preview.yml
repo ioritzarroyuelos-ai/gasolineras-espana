@@ -55,6 +55,33 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Comprobar si el PR modifica únicamente copias de datos
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process'
+          import { appendFileSync } from 'node:fs'
+          const { GITHUB_REPOSITORY, GITHUB_OUTPUT, GITHUB_STEP_SUMMARY, PR_BASE_SHA, PR_HEAD_SHA } = process.env
+          if (!/^[\w.-]+\/[\w.-]+$/.test(GITHUB_REPOSITORY || '') || ![PR_BASE_SHA, PR_HEAD_SHA].every(s => /^[a-f0-9]{40}$/.test(s || ''))) throw Error('Contexto de preview inválido')
+          // El listado REST de archivos se corta a 3.000; un PR deportivo puede
+          // superarlo. Git compara los árboles completos desde su base común.
+          const base = execFileSync('gh', ['api', `repos/${GITHUB_REPOSITORY}/compare/${PR_BASE_SHA}...${PR_HEAD_SHA}`, '--jq', '.merge_base_commit.sha'], { encoding:'utf8' }).trim()
+          if (!/^[a-f0-9]{40}$/.test(base)) throw Error('GitHub no confirmó la base común del PR')
+          execFileSync('git', ['fetch', '--no-tags', '--depth=1', 'origin', base], { stdio:'inherit' })
+          // Sin detección de renombrados: mover código a public/data también
+          // debe contar la eliminación del archivo de código original.
+          const files = execFileSync('git', ['diff', '--no-renames', '--name-only', '-z', base, PR_HEAD_SHA], { encoding:'utf8', maxBuffer:16*1024*1024 }).split('\0').filter(Boolean)
+          const dataOnly = files.length > 0 && files.every(f => f.startsWith('public/data/'))
+          appendFileSync(GITHUB_OUTPUT, `data_only=${dataOnly}\n`)
+          const detail = dataOnly ? 'Sólo datos: el preview de Pages reutiliza el respaldo regional publicado; no crea otro Worker.' : 'Cambios de código: se publica el respaldo regional aislado de este PR.'
+          console.log(`${files.length} archivos comprobados. ${detail}`)
+          appendFileSync(GITHUB_STEP_SUMMARY, `- ${detail}\n`)
+          NODE
+
       - name: Install
         run: npm ci --no-audit --no-fund
 
@@ -81,6 +108,7 @@ jobs:
           echo "artefacto OK ($(du -sh dist | cut -f1))"
 
       - name: Desplegar respaldo regional de guardias (preview)
+        if: steps.scope.outputs.data_only != 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

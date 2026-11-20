@@ -1,4 +1,4 @@
-# Dependabot: parches de seguridad y upgrades semanales automaticos.
+# Dependabot: parches de seguridad y revisión diaria de dependencias npm.
 #
 # Dos ecosistemas:
 #   - npm              → deps de la app (Hono, Leaflet, Vite, zod, etc.)
@@ -6,7 +6,7 @@
 #                        (vulnerabilities tipo supply-chain en setup-node, etc.)
 #
 # Policy:
-#   - Agrupamos upgrades menor/patch en un solo PR por semana para bajar ruido.
+#   - Agrupamos upgrades menor/patch en un PR para bajar ruido; se revisan a diario.
 #   - Major upgrades quedan en PRs individuales — cambian API, requieren revision.
 #   - Labels explicitas para poder filtrar en el listado de PRs.
 #   - open-pull-requests-limit alto porque preferimos velocidad sobre backlog:
@@ -18,9 +18,9 @@ updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "04:00"
+      # daily sólo cubre lunes-viernes; cron incluye también el fin de semana.
+      interval: "cron"
+      cronjob: "0 4 * * *"
       timezone: "Europe/Madrid"
     open-pull-requests-limit: 10
     labels:
@@ -31,14 +31,14 @@ updates:
       prefix-development: "deps-dev"
       include: "scope"
     groups:
-      # Agrupacion "sana": todo lo que no sea major en un solo PR semanal.
+      # Todo lo que no sea major se agrupa; los parches de seguridad van aparte.
       # Reduce ruido y facilita revisiones bulk.
       non-major:
         applies-to: version-updates
         update-types:
           - "minor"
           - "patch"
-      # Parches de seguridad aparte y en cualquier momento (override del weekly).
+      # Parches de seguridad aparte y en cualquier momento.
       security:
         applies-to: security-updates
         patterns:

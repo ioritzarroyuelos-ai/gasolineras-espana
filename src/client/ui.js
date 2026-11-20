@@ -243,11 +243,13 @@ window.addEventListener('resize', function() {
     queued = true;
     requestAnimationFrame(measure);
   }
-  // La franja puede llegar con los filtros abiertos. Ajustar el mapa en el
-  // mismo cambio evita que el foco desplace la página antes del siguiente frame.
-  var trendStrip = document.getElementById('trend-strip');
-  if (trendStrip && typeof MutationObserver !== 'undefined') {
-    new MutationObserver(measure).observe(trendStrip, { attributes: true, attributeFilter: ['hidden'] });
+  // Los avisos y las tendencias pueden llegar con los filtros o la ficha
+  // abiertos. Ajustar en el mismo cambio evita desbordar el primer fotograma.
+  if (typeof MutationObserver !== 'undefined') {
+    var visibilityObserver = new MutationObserver(measure);
+    document.querySelectorAll('#offline-banner, #stale-banner, #trend-strip').forEach(function(node) {
+      visibilityObserver.observe(node, { attributes: true, attributeFilter: ['hidden', 'class'] });
+    });
   }
   if (typeof ResizeObserver !== 'undefined') {
     // ResizeObserver llega antes de pintar: actualizar aquí evita un fotograma

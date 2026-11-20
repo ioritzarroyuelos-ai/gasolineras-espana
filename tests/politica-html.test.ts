@@ -23,6 +23,45 @@ function fileCon(empresa: string): EleccionFile {
 const base = { nonce: 'n1', cat, estado: 'ok', ahoraISO: '2026-09-23T00:00:00Z', canonical: 'https://x/politica/autonomicas/madrid' }
 
 describe('buildEleccionPage', () => {
+  it('distingue la nota de la fuente y la referencia electoral en una ficha SW', () => {
+    const file = fileCon('SW Demoscopia')
+    file.sondeos[0].notaFuente = 'Escaños: reparto central del informe, distinto de las medianas y los rangos.'
+    const doc = parse(buildEleccionPage({ ...base, file, enVeda: false, referencia: 'elecciones' }))
+    const ficha = doc.querySelector('.pm-poll')!
+    expect(ficha.querySelectorAll('.pm-ref')).toHaveLength(1)
+    expect(ficha.querySelector('.pm-ref')?.text).toContain('Elecciones del')
+    expect(ficha.querySelector('.pm-source-note')?.text).toBe(file.sondeos[0].notaFuente)
+  })
+  it.each([
+    ['aragon', 'https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1437358090606'],
+    ['castilla-y-leon', 'https://bocyl.jcyl.es/boletines/2026/04/29/pdf/BOCYL-D-29042026-80-13.pdf'],
+    ['extremadura', 'https://www.juntaelectoralcentral.es/cs/jec/documentos/extremadura_2025_resultados.pdf'],
+  ])('permite consultar el documento oficial de %s junto al reparto', (id, url) => {
+    const file = fileCon('Casa')
+    file.id = id
+    file.sondeos = []
+    file.referencia.url = url
+    const doc = parse(buildEleccionPage({ ...base, file, cat: eleccionPorId(id)!, enVeda: false }))
+    expect(doc.querySelector('.resultado a')?.getAttribute('href')).toBe(url)
+    expect(doc.querySelector('.resultado a')?.text).toBe('Consultar el resultado oficial')
+    expect(doc.text).not.toContain('Fuente del reparto electoral:')
+  })
+  it.each([
+    'javascript:alert(1)',
+    'http://www.juntaelectoralcentral.es/cs/jec/documentos/extremadura_2025_resultados.pdf',
+    'https://www.juntaelectoralcentral.es.ejemplo.org/cs/jec/documentos/extremadura_2025_resultados.pdf',
+    'https://usuario:clave@bocyl.jcyl.es/boletines/2026/04/29/pdf/BOCYL-D-29042026-80-13.pdf',
+    'https://bocyl.jcyl.es/otro-documento.pdf',
+    'https://www.boa.aragon.es/cgi-bin/EBOA/BRSCGI?CMD=VEROBJ&MLKOB=1437358090606&redirect=https://ejemplo.org',
+    'https://www.juntaelectoralcentral.es/cs/jec/documentos/extremadura_2025_resultados.pdf#<script>alert(1)</script>',
+  ])('omite destinos de resultados no autorizados: %s', url => {
+    const file = fileCon('Casa')
+    file.referencia.url = url
+    const doc = parse(buildEleccionPage({ ...base, file, enVeda: false }))
+    expect(doc.querySelector('.resultado a')).toBeNull()
+    expect(doc.text).toContain('Fuente del reparto electoral: Ministerio del Interior')
+    expect(doc.querySelectorAll('a').some(a => a.getAttribute('href') === url)).toBe(false)
+  })
   it('hace visible una coalición nueva con muchos escaños sin confundirla con sus integrantes de 2023', () => {
     const file = fileCon('GAD3')
     file.camara = { nombre: 'Congreso', escanos: 350, mayoria: 176 }

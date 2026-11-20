@@ -32,6 +32,8 @@ export async function githubDataRequest(path, {token,method='GET',body} = {}, io
       if (delay<=30000) { await sleep(Math.max(1000,delay)); continue }
     }
     const error=Error('GitHub rechazó la petición (HTTP '+response.status+')')
-    error.code=limited?'GITHUB_RETRY_LATER':'GITHUB_HTTP_ERROR'; error.status=response.status; throw error
+    error.code=limited?'GITHUB_RETRY_LATER':'GITHUB_HTTP_ERROR'; error.status=response.status
+    if (limited) error.retryAt=now()+esperaGitHub(response.headers,now())
+    throw error
   }
 }

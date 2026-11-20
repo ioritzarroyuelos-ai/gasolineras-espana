@@ -6,6 +6,7 @@
   "workers_dev": false,
   "preview_urls": false,
   "secrets": { "required": ["DATA_APP_CLIENT_ID", "DATA_APP_PRIVATE_KEY"] },
+  "kv_namespaces": [{ "binding": "CLOCK_STATE", "id": "8c2b4b797347450984def55bc0d1c2ac" }],
   "triggers": { "crons": ["2,17,32,47 * * * *"] },
   "observability": {
     "enabled": true,

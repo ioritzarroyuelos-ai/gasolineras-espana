@@ -21,6 +21,14 @@ on:
         description: 'Ampliar pausas de portales: objeto JSON {"portal-id":"fecha ISO con zona"}; dejar vacío normalmente'
         type: string
         required: false
+      recuperar_prs:
+        description: 'Recuperar JSON del robot sin consultar fuentes: 1–4 pares PR:SHA completos separados por comas; vacío normalmente'
+        type: string
+        required: false
+      recuperar_desde:
+        description: 'Fecha mínima UTC de los datos recuperados (AAAA-MM-DD), obligatoria solo al recuperar PR'
+        type: string
+        required: false
 
 concurrency:
   group: fetch-deportes
@@ -33,6 +41,7 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -43,12 +52,14 @@ jobs:
         with:
           node-version: '22'
       - name: Recuperar el último punto de continuación de FFCV
+        if: inputs.recuperar_prs == ''
         uses: actions/cache/restore@v5
         with:
           path: .tmp/deportes-ffcv-checkpoint.json
           key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: deportes-ffcv-v1-
       - name: Recuperar el progreso de los demás portales federativos
+        if: inputs.recuperar_prs == ''
         uses: actions/cache/restore@v5
         with:
           path: .tmp/deportes-novanet
@@ -64,15 +75,23 @@ jobs:
           DEPORTES_PROGRAMACION: ${{ github.event.schedule }}
           DEPORTES_FFCV_NO_ANTES: ${{ inputs.ffcv_no_antes }}
           DEPORTES_PORTALES_NO_ANTES: ${{ inputs.portales_no_antes }}
-        run: node scripts/fetch-deportes.mjs
+          DEPORTES_RECUPERAR_PRS: ${{ inputs.recuperar_prs }}
+          DEPORTES_RECUPERAR_DESDE: ${{ inputs.recuperar_desde }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$DEPORTES_RECUPERAR_PRS" ]; then
+            node scripts/recover-deportes.mjs
+          else
+            node scripts/fetch-deportes.mjs
+          fi
       - name: Conservar progreso y descansos aunque falle la actualización
-        if: always() && hashFiles('.tmp/deportes-ffcv-checkpoint.json') != ''
+        if: always() && inputs.recuperar_prs == '' && hashFiles('.tmp/deportes-ffcv-checkpoint.json') != ''
         uses: actions/cache/save@v5
         with:
           path: .tmp/deportes-ffcv-checkpoint.json
           key: deportes-ffcv-v1-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Conservar el progreso de los demás portales aunque falle la actualización
-        if: always() && hashFiles('.tmp/deportes-novanet/*.json') != ''
+        if: always() && inputs.recuperar_prs == '' && hashFiles('.tmp/deportes-novanet/*.json') != ''
         uses: actions/cache/save@v5
         with:
           path: .tmp/deportes-novanet

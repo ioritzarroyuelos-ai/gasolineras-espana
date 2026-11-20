@@ -21,8 +21,16 @@ export async function githubDataRequest(path, {token,method='GET',body} = {}, io
   const now = io.now || Date.now
   for (let attempt=0; attempt<3; attempt++) {
     let response
-    try { response = await fetcher(API+path, {method,redirect:'error',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'espana-util-data-clock','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)}) }
+    // Workers no admite redirect:'error'. manual impide enviar la credencial
+    // al destino de una redirección; cualquier 3xx se rechaza sin repetir.
+    try { response = await fetcher(API+path, {method,redirect:'manual',headers:{Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2026-03-10','User-Agent':'espana-util-data-clock','Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(15000)}) }
     catch { const error=Error('GitHub no confirmó la petición'); error.code='GITHUB_UNCONFIRMED'; throw error }
+    if (response.status>=300 && response.status<400) {
+      await response.body?.cancel()
+      const error=Error('GitHub devolvió una redirección no permitida')
+      error.code='GITHUB_REDIRECT_REJECTED'; error.status=response.status
+      throw error
+    }
     const text = await response.text()
     if (response.ok) return text ? JSON.parse(text) : null
     const limited = response.status===429 || (response.status===403 && (response.headers.has('retry-after') || response.headers.get('x-ratelimit-remaining')==='0'))

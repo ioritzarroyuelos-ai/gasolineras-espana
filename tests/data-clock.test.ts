@@ -103,6 +103,23 @@ describe('pulso autenticado y limitado al repositorio',()=>{
 })
 
 describe('límites de API y reintentos',()=>{
+  it('envía la petición con el modo compatible con Workers y lee la respuesta',async()=>{
+    const fetcher=vi.fn(async(_url:string,init:RequestInit)=>{
+      if(init.redirect==='error')throw new TypeError('Unsupported redirect mode: error')
+      return Response.json({id:123})
+    })
+    await expect(githubDataRequest('/app',{token:'test'},{fetch:fetcher})).resolves.toEqual({id:123})
+    expect(fetcher).toHaveBeenCalledWith('https://api.github.com/app',expect.objectContaining({redirect:'manual'}))
+  })
+  it.each([301,302,303,307,308])('rechaza HTTP%s sin seguir el destino ni reenviar credenciales',async status=>{
+    const sleep=vi.fn(),response=new Response('redirect',{status,headers:{Location:'https://otro.example/token','Retry-After':'1'}})
+    const fetcher=vi.fn().mockResolvedValue(response)
+    await expect(githubDataRequest('/app',{token:'test'},{fetch:fetcher,sleep})).rejects.toMatchObject({code:'GITHUB_REDIRECT_REJECTED',status})
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher).toHaveBeenCalledWith('https://api.github.com/app',expect.objectContaining({redirect:'manual'}))
+    expect(sleep).not.toHaveBeenCalled()
+    expect(response.bodyUsed).toBe(true)
+  })
   it('espera todo Retry-After y conserva el destino',async()=>{
     const sleep=vi.fn(async()=>{}),fetcher=vi.fn().mockResolvedValueOnce(new Response('{}',{status:429,headers:{'Retry-After':'7'}})).mockResolvedValueOnce(new Response('{}',{status:200}))
     await githubDataRequest('/test',{token:'test'},{fetch:fetcher,sleep,now:()=>now})

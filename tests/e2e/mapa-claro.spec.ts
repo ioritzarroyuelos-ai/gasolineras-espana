@@ -247,6 +247,8 @@ for (const width of [390, 320]) {
     // filtros. La comprobación en producción conserva las respuestas oficiales.
     const tendencia = width === 390 && !info.config.metadata.live ? Promise.withResolvers<Route>() : undefined
     if (tendencia) await page.route('**/data/trends.json', route => tendencia.resolve(route))
+    const salud = width === 320 && !info.config.metadata.live ? Promise.withResolvers<Route>() : undefined
+    if (salud) await page.route('**/api/health', route => salud.resolve(route))
     await page.goto('/gasolineras/madrid/madrid')
     await expect(page.locator('#btn-sheet-toggle')).toBeVisible()
     const card = page.locator('.station-card').first()
@@ -312,7 +314,30 @@ for (const width of [390, 320]) {
     const detail = page.locator('#station-detail')
     await expect(detail).toBeVisible()
     await expect(page.locator('#sidebar')).not.toHaveClass(/\bopen\b/)
-    const panelBox = await detail.boundingBox(), mapBox = await page.locator('#map-container').boundingBox()
+    if (salud) {
+      // El aviso puede llegar con la ficha abierta: su primera geometría debe
+      // caber ya en pantalla, incluso antes del siguiente ResizeObserver.
+      const primerEncuadre = await page.evaluateHandle(() => ({
+        margen: new Promise<number>(resolve => {
+          const observador = new MutationObserver(() => {
+            observador.disconnect()
+            const mapa = document.querySelector('#app-body')!.getBoundingClientRect()
+            resolve(Math.round(mapa.bottom + window.scrollY - window.innerHeight))
+          })
+          observador.observe(document.querySelector('#stale-banner')!, { attributes: true, attributeFilter: ['class'] })
+        }),
+      }))
+      await (await salud.promise).fulfill({ status: 503, json: { status: 'stale' } })
+      await expect(page.locator('#stale-banner')).toBeVisible()
+      expect(await primerEncuadre.evaluate(encuadre => encuadre.margen)).toBe(0)
+      await primerEncuadre.dispose()
+    }
+    // Ambos tamaños pertenecen al mismo fotograma; un aviso asíncrono puede
+    // reducir el mapa entre dos consultas separadas de boundingBox().
+    const { panelBox, mapBox } = await page.evaluate(() => ({
+      panelBox: document.querySelector('#station-detail')!.getBoundingClientRect().toJSON(),
+      mapBox: document.querySelector('#map-container')!.getBoundingClientRect().toJSON(),
+    }))
     expect(panelBox).not.toBeNull()
     expect(mapBox).not.toBeNull()
     expect(panelBox!.height).toBeLessThanOrEqual(mapBox!.height * 0.76)
@@ -325,6 +350,7 @@ for (const width of [390, 320]) {
     await expectUncovered(page.locator('#map-navigation .leaflet-control-zoom-out'))
     const accessible = await new AxeBuilder({ page }).include('#station-detail').include('#map-navigation').withTags(['wcag2a', 'wcag2aa']).analyze()
     expect(accessible.violations.filter(item => item.impact === 'serious' || item.impact === 'critical')).toEqual([])
+    await page.screenshot({ path: info.outputPath('ficha-mapa-' + width + '.png') })
     await tocarVisible(page.locator('#btn-station-detail-close'))
     await expect(detail).toBeHidden()
     await expect(page.locator('#btn-sheet-toggle')).toBeVisible()

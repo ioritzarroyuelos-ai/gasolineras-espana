@@ -1,5 +1,23 @@
 import { desplazaFecha } from './guardias-fetch.mjs'
 
+export function validaCartelTarragona(doc, fecha, municipio, url) {
+  const [year, month, day] = fecha.split('-').map(Number)
+  const impresion = doc.querySelector('a[href*=guaimp]')
+  if (impresion) {
+    const params = new URL(impresion.getAttribute('href'), url).searchParams
+    if (+params.get('ANY') !== year || +params.get('MES') !== month || +params.get('DIA') !== day || params.get('CODIPOBLE') !== municipio) throw Error('COFT: cartel de otro día o población')
+    return { sinTurnos: false }
+  }
+  const selected = name => doc.querySelector(`select[name=${name}] option[selected]`)?.getAttribute('value')
+  const absent = doc.querySelectorAll('a[href*=ampliat]').some(link => link.text.replace(/\s+/g, ' ').trim() === "No s'han trobat Servei d'Urgències")
+  const dated = selected('CODI') === municipio && Number(selected('MES')) === month && Number(selected('DIA')) === day
+  const shiftHeadings = doc.querySelectorAll('h1').some(node => /Servei d.Urgències (?:Diürn|Nocturn)/i.test(node.text))
+  // COFT muestra debajo el directorio ordinario del área, con el mismo ID de
+  // tabla. Su ausencia de cartel no convierte esas farmacias en guardias.
+  if (absent && dated && !shiftHeadings) return { sinTurnos: true }
+  throw Error('COFT: no se puede verificar el cartel de la consulta')
+}
+
 export function turnoTarragona(tramo, notas) {
   const fecha = tramo.slice(0,10)
   const instrucciones = notas.normalize('NFD').replace(/\p{M}/gu,'').toLowerCase()

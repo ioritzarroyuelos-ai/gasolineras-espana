@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { avisosDelMunicipio, buildGuardiaMunicipioPage } from '../src/html/guardia-municipio'
 import { parseGuardias, tipoAtencionGuardia } from '../src/lib/guardias'
+import { paginaSinTurno } from '../src/html/guardia-consulta'
+import { provinciaBySlug } from '../src/lib/provincias'
 
 const fecha = '2026-11-06'
 const ts = fecha + 'T07:00:00Z'
@@ -8,6 +10,13 @@ const tarde = new Date(fecha + 'T18:00:00Z')
 const fila = (municipio: string, horario: string, nota = '') => [0, 0, 'Farmacia de prueba', municipio, '', '', horario, nota]
 
 describe('guardias municipales contrastadas', () => {
+  it('el aviso de un pueblo sin turno conserva la equivalencia oficial del artículo, sin llegar a otro pueblo', () => {
+    const now = new Date(), fecha = now.toLocaleDateString('en-CA', { timeZone: 'Europe/Madrid' })
+    const data = { ts: now.toISOString(), fecha, guardiasVerificadas: true, avisosMunicipales: { 'la-morera-de-montsant': ['No hay turno de urgencias confirmado en esta consulta.'] } }
+    const provincia = provinciaBySlug('tarragona')!
+    expect(paginaSinTurno('n', 'https://example.org/', provincia, 'Morera de Montsant, La', data)).toContain('No hay turno de urgencias confirmado')
+    expect(paginaSinTurno('n', 'https://example.org/', provincia, 'Reus', data)).not.toContain('No hay turno de urgencias confirmado')
+  })
   it('retira los archivos antiguos que mezclaron aperturas o fechas aunque el robot los haya descargado hoy', () => {
     for (const territorio of ['ourense', 'tarragona', 'cordoba', 'baleares', 'malaga', 'valladolid']) {
       const datos = { territorio, fecha, ts, guardias: [fila('Pueblo', '09:00-21:00')] }

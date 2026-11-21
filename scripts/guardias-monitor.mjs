@@ -4,9 +4,9 @@
 //
 // Lo invoca .github/workflows/fetch-guardias.yml JUSTO despues de los 47
 // scrapers y del commit, leyendo los ficheros ya actualizados en el runner.
-// Un scraper que falla NO reescribe su fichero, asi que su `ts` se queda con la
-// fecha de un pase anterior. Regla: si la fecha (UTC) de `ts` no es la de hoy,
-// ese territorio no se refresco en este pase -> se lista en el aviso.
+// Un scraper puede conservar su copia anterior o publicar cobertura parcial.
+// Se avisa tanto de antigüedad excesiva como de incidencias pendientes: una
+// consulta reciente no prueba que se haya recuperado toda la provincia.
 //
 // Es la contrapartida de la "red de seguridad" del sitio (src/lib/guardias.ts:
 // frescuraGuardia): la pagina deja de mostrar el turno viejo como valido, y este
@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { evaluaGuardiaMonitor, GUARDIAS_MONITOR_HORAS } from './lib/guardias-monitor.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = resolve(__dirname, '..', 'public', 'data')
@@ -29,7 +30,7 @@ const DATA_DIR = resolve(__dirname, '..', 'public', 'data')
 // diario). Se mide por HORAS, no por fecha de calendario: si un pase cruza la
 // medianoche UTC (scrapea a las 23:xx y el monitor corre a las 00:xx del dia
 // siguiente), la fecha ya no coincide y daria un falso aviso de "todo viejo".
-const STALE_HORAS = 30
+const STALE_HORAS = GUARDIAS_MONITOR_HORAS
 
 // Lee todos los guardias-*.json y devuelve [{territorio, ts, fecha, dias, stale}].
 function escanea() {
@@ -37,13 +38,9 @@ function escanea() {
   for (const f of readdirSync(DATA_DIR)) {
     const m = /^guardias-(.+)\.json$/.exec(f)
     if (!m) continue
-    let ts = null
-    try { ts = JSON.parse(readFileSync(join(DATA_DIR, f), 'utf8')).ts || null } catch { /* fichero corrupto */ }
-    const t = ts ? Date.parse(ts) : NaN
-    const fecha = Number.isFinite(t) ? new Date(t).toISOString().slice(0, 10) : null
-    const horas = Number.isFinite(t) ? (Date.now() - t) / 3600000 : Infinity
-    const dias = Number.isFinite(t) ? Math.floor((Date.now() - t) / 86400000) : null
-    out.push({ territorio: m[1], ts, fecha, dias, stale: horas > STALE_HORAS })
+    let data = null
+    try { data = JSON.parse(readFileSync(join(DATA_DIR, f), 'utf8')) } catch { /* fichero corrupto */ }
+    out.push({ territorio: m[1], ...evaluaGuardiaMonitor(data) })
   }
   return out
 }
@@ -80,23 +77,25 @@ async function main() {
   const total = files.length
   const viejos = files.filter(f => f.stale)
     .sort((a, b) => (b.dias ?? 1e9) - (a.dias ?? 1e9))
+  const parciales = files.filter(f => f.parcial)
+  const pendientes = [...viejos, ...parciales.filter(f => !f.stale)]
 
-  if (viejos.length === 0) {
-    console.log(`[guardias-monitor] ${total}/${total} territorios actualizados (<${STALE_HORAS} h). Sin aviso.`)
+  if (pendientes.length === 0) {
+    console.log(`[guardias-monitor] ${total}/${total} territorios recientes (<${STALE_HORAS} h), sin incidencias declaradas. Sin aviso.`)
     return
   }
 
   const ts = new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
   const TOP = 25
-  const lineas = viejos.slice(0, TOP).map(f =>
-    `• ${f.territorio} — ${fmtFecha(f.fecha)}${f.dias != null ? ` (${f.dias} d)` : ''}`
+  const lineas = pendientes.slice(0, TOP).map(f =>
+    `• ${f.territorio} — ${fmtFecha(f.fecha)}${f.stale ? ' · sin actualizar' : ''}${f.parcial ? ' · cobertura parcial o incidencia pendiente' : ''}`
   ).join('\n')
-  const extra = viejos.length > TOP ? `\n(+${viejos.length - TOP} mas)` : ''
+  const extra = pendientes.length > TOP ? `\n(+${pendientes.length - TOP} mas)` : ''
   const texto =
     `⚠️ ${ts}\n` +
-    `Guardias sin actualizar (>${STALE_HORAS} h): ${viejos.length}/${total}\n\n` +
+    `Guardias pendientes: ${pendientes.length}/${total}. Sin actualizar: ${viejos.length}; con incidencias: ${parciales.length}.\n\n` +
     `${lineas}${extra}\n\n` +
-    `La pagina ya oculta estos turnos (aviso de caducado). Revisar los scrapers en fetch-guardias.yml.`
+    `Una consulta reciente no garantiza cobertura completa. Revisar los avisos de cada fuente y los scrapers en fetch-guardias.yml.`
 
   console.log('[guardias-monitor]\n' + texto)
   await enviaTelegram(texto)

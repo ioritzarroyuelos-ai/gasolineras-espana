@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { parse } from 'node-html-parser'
 import { descargar, fechaMadrid, guardarGuardias, rangoGuardia, texto } from './lib/guardias-fetch.mjs'
-import { turnoTarragona } from './lib/guardias-tarragona.mjs'
+import { turnoTarragona, validaCartelTarragona } from './lib/guardias-tarragona.mjs'
 
 const fuente = 'https://coft.cat/font/guardies.php'
 const fecha = fechaMadrid()
 const [anyo, mes, dia] = fecha.split('-').map(Number)
 const portal = parse(await (await descargar(fuente)).text())
 const pueblos = portal.querySelectorAll('select[name=CODI] option').map(opcion => opcion.getAttribute('value'))
+const nombres = new Map(portal.querySelectorAll('select[name=CODI] option').map(opcion => [opcion.getAttribute('value'), texto(opcion.text)]))
 if (pueblos.length < 100 || pueblos.some(id => !/^\d+$/.test(id))) throw new Error('COFT: índice municipal incompleto')
 
 const turnos = new Map()
@@ -19,9 +20,10 @@ for (const id of pueblos) {
   if (!doc.querySelector('h1')?.text.includes('Farmàcies de Guàrdia')) throw new Error('COFT: respuesta inesperada')
   const impresion = doc.querySelector('a[href*=guaimp]')
   if (!impresion && !doc.querySelector('table#tablaverde')) continue
-  const cartel = new URL(impresion?.getAttribute('href'), url).searchParams
-  if (+cartel.get('ANY') !== anyo || +cartel.get('MES') !== mes || +cartel.get('DIA') !== dia || cartel.get('CODIPOBLE') !== id) {
-    throw new Error('COFT: cartel de otro día o población')
+  if (validaCartelTarragona(doc, fecha, id, url).sinTurnos) {
+    const slug = nombres.get(id).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    avisosMunicipales[slug] = ['La consulta del colegio no ofrece un turno de urgencias confirmado para esta población. Consulta la fuente oficial; las fichas de horario normal no son guardias.']
+    continue
   }
   let tramo = ''
   for (const elemento of doc.querySelectorAll('h1, table#tablaverde')) {

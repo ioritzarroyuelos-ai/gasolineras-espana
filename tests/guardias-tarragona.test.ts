@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest'
-import { turnoTarragona } from '../scripts/lib/guardias-tarragona.mjs'
+import { turnoTarragona, validaCartelTarragona } from '../scripts/lib/guardias-tarragona.mjs'
+import { parse } from 'node-html-parser'
+import albarca from './fixtures/guardias/tarragona-albarca-sin-turno.html?raw'
 
 const notaFlix = 'La guardia comença dissabte a les 14 h. i acabarà dilluns a les 9 h Horarí sense recepta: Dissabte 17,30h a 20,30h'
+const url = new URL('https://www.coft.cat/font/gpobles.php?CODI=190&DIA=21&MES=11&ANY=2026')
+describe('COFT: directorio ordinario no equivale a guardia', () => {
+  it('reconoce la respuesta real sin turno publicado aunque incluya tablas de farmacias', () => {
+    expect(parse(albarca).querySelectorAll('table#tablaverde').length).toBeGreaterThan(0)
+    expect(validaCartelTarragona(parse(albarca), '2026-11-21', '190', url)).toEqual({ sinTurnos: true })
+  })
+  it('sigue rechazando otra fecha, población o una tabla sin explicación', () => {
+    expect(() => validaCartelTarragona(parse(albarca), '2026-11-20', '190', url)).toThrow()
+    expect(() => validaCartelTarragona(parse(albarca), '2026-11-21', '191', url)).toThrow()
+    expect(() => validaCartelTarragona(parse(albarca.replace("No s'han trobat", 'Texto distinto')), '2026-11-21', '190', url)).toThrow()
+  })
+  it('el cartel sólo acredita la fecha y población que contiene', () => {
+    const good = parse('<a href="impressio/guaimp.php?CODIPOBLE=190&DIA=21&MES=11&ANY=2026">Imprimir</a>')
+    expect(validaCartelTarragona(good, '2026-11-21', '190', url)).toEqual({ sinTurnos: false })
+    expect(() => validaCartelTarragona(good, '2026-11-20', '190', url)).toThrow('otro día')
+    expect(() => validaCartelTarragona(good, '2026-11-21', '191', url)).toThrow('otro día')
+  })
+})
 describe('COFT · las instrucciones de la ficha prevalecen sobre la cabecera', () => {
   it('en Flix descarta el viernes y sólo publica la parte del sábado posterior a las dos', () => {
     expect(turnoTarragona('2026-11-06 09:00-2026-11-06 22:00',notaFlix)).toEqual({omitido:true})

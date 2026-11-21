@@ -14,13 +14,14 @@ nacional ni que cada establecimiento haya sido comprobado personalmente.
 | B | Publicado, cambio `3329c4bc`. | Mapa unificado, directorio OSM, ITV, Bizi, SCT, cámaras, guardias y base de cuenta. Conserva el mapa de gasolineras. |
 | C | Publicado; comprobado en producción `3ca53885` el 21 de noviembre. | Metro Bilbao: 42 estaciones y llegadas vigentes; favoritos de estaciones/cámaras. Recordatorio ITV comprobado sin envío. |
 | D | Código y primer ciclo de datos publicados; comprobados en producción `efea19bd` el 21 de noviembre. | 2.730 refugios de Cataluña y 68 salas de Madrid; páginas completas, búsqueda y mapa, también en móvil. |
-| E | Consumidor y opciones del visitante preparados; publicación separada del productor de comparación de precios. | Resumen diario o sólo bajadas, con consentimiento y dos capturas oficiales recientes. |
-| F | Preparado y comprobado; no se da por publicado en este documento. | Aparcamientos oficiales de Madrid/Vigo, plazas vigentes y favoritos estables. |
+| E | Publicado y comprobado en producción `a56f20b8`; ensayo de Telegram sin envíos correcto el 21 de noviembre. | Resumen diario o sólo bajadas, con consentimiento y dos capturas oficiales recientes. |
+| F | Integrado en `c0aaed56` (PR580), primeros ciclos automáticos en comprobación. | Aparcamientos oficiales de Madrid/Vigo, plazas vigentes y favoritos estables. |
 | G | Código y primer ciclo de datos publicados; comprobados en producción `efea19bd`. | 14 puntos de recogida explícita de paquetes, 1.418 de pilas y 1.291 de aceite de cocina en la copia consultada el 21 de noviembre a las 10:04 UTC. |
-| H | Integrado con F, J y K; pendiente de publicación conjunta. | Accesos visibles a fuentes implementadas y separación de sus coberturas respecto de OSM. |
-| J | Integrado con F; pendiente de publicación conjunta. | Filtros de plazas libres vigentes y existencia de capacidad PMR publicada. |
-| K | Integrado con F; pendiente de publicación y primer ciclo del nuevo índice. | Favoritos de refugios y salas con identidad actual verificada. |
-| I | Integrado con F/H/J/K; pendiente de vista previa remota, publicación y primeros ciclos automáticos. | Servicios a 5 km del punto de referencia municipal de AEMET, hasta 12 fichas cercanas y recuentos por categoría; no se atribuyen al término municipal. |
+| H | Integrado en PR580, comprobado en preview real. | Accesos visibles a fuentes implementadas y separación de sus coberturas respecto de OSM. |
+| J | Integrado en PR580, comprobado en preview real. | Filtros de plazas libres vigentes y existencia de capacidad PMR publicada. |
+| K | Integrado en PR580; primer ciclo del nuevo índice en comprobación. | Favoritos de refugios y salas con identidad actual verificada. |
+| I | Integrado en PR580; diseño y CPU de la preview real verificados; primeros ciclos automáticos en comprobación. | Servicios a 5 km del punto de referencia municipal de AEMET, hasta 12 fichas cercanas y recuentos por categoría; no se atribuyen al término municipal. |
+| M | Implementado y validado localmente, pendiente de despliegue y activación. | Aviso diario o temporal de una hora para Madrid/Vigo y Bizi Zaragoza; consentimiento y cancelación separados. |
 
 Este estado es una fotografía de la revisión, no un monitor de despliegues.
 Para dar por publicada una entrega hay que registrar su versión y comprobar la
@@ -95,6 +96,8 @@ consulta no garantiza que el proveedor publique datos nuevos con esa frecuencia.
 | E: precios Telegram | Revisión diaria **08:00–11:59 Europe/Madrid**, sin cambiar el modo de los suscriptores existentes. | Resumen o bajada elegida con umbral. Fechas y parejas oficiales válidas, preparación acotada, recibos y reintentos. Dry-run no envía ni modifica datos; entregas inciertas no se repiten a ciegas. |
 | C: ITV Telegram | Comprobación cada hora dentro de **08:00–11:59 Europe/Madrid**, independiente de otras fuentes. | Fecha del visitante y permiso específico; avisos 7/1 días antes. Sin inventar aviso el día de caducidad ni prometer una franja ya pasada. Dry-run sin envío/escritura. |
 | G: categorías nuevas | Reutiliza el robot OSM y su huella de productor tras publicar G. | No retoca ni rejuvenece snapshots antiguos. No permite anunciar cobertura hasta que la extracción completa se haya validado. |
+| I: municipios y proximidad | Maestro AEMET diario **08:07 UTC**, derivación independiente **09:27 UTC**. | Última copia válida y reintento; distingue consulta, extracto y punto de referencia. Las fichas permanecen sin indexar. |
+| M: disponibilidad Telegram | Alarmas privadas: a la hora diaria elegida o cada cinco minutos durante una hora; máximo doce comprobaciones temporales. | Cifras individuales vigentes, cancelación y recibos duraderos. Sin mensajes duplicados ante entrega incierta, sin ampliar la vigencia por reintentos ni desajustes de reloj. |
 
 Los relojes de las cifras usan fecha de fuente, evaluación del servidor y tiempo
 transcurrido desde antes de la petición. Esperar la red, atrasar el reloj o
@@ -137,6 +140,8 @@ Contratos, ensayos reales fechados, escenarios simulados y límites:
 - [Filtros J](aparcamientos-filtros.md).
 - [Favoritos públicos K](servicios-publicos-favoritos.md).
 - [Paquetería y reciclaje G](servicios-paquetes-reciclaje.md).
+- [Proximidad municipal I](servicios-municipales.md).
+- [Disponibilidad Telegram M](disponibilidad-telegram.md).
 
 No se suman pruebas repetidas ni ensayos de fases distintas para fabricar un
 total de cobertura. Las comprobaciones de producción D del 21 de noviembre a
@@ -145,9 +150,10 @@ las 10:43 UTC recorrieron las 55 y 2 páginas de sus catálogos y las vistas de
 axe en el contenido revisado. La fecha original de Cataluña sigue siendo el
 16 de octubre: consultar hoy no la convierte en una actualización de hoy.
 
-Cortes posteriores: páginas útiles «cerca de» un municipio con radio y centro
-explícitos, y avisos de disponibilidad con los dos modos elegidos por el titular
-(resumen diario y búsqueda temporal de una hora). Todavía no están activados.
+Los cortes I y M ya tienen implementación comprobada: páginas «cerca de» un
+municipio con radio y centro explícitos, y avisos con los dos modos elegidos por
+el titular (resumen diario y búsqueda temporal de una hora). Esta revisión no
+los da por activados hasta verificar su despliegue y los primeros ciclos.
 Una consulta radial no autoriza a decir «en el municipio» ni a crear páginas
 vacías. Otras redes, ZBE y banderas requieren verificar primero la fuente. La
 monetización depende de decisiones y datos del titular, no de fabricar interfaz.
@@ -176,5 +182,6 @@ ensayo real de Madrid, Durango y Ceuta pasan; los cuatro recorridos del
 directorio se repitieron para comprobar el nuevo acceso municipal. La salida
 del productor de prueba tiene 8.107 fichas y 15 centros sin resultados, sin
 editar los datos públicos. La medición local completa incluye infraestructura
-de desarrollo y no acredita el límite gratuito: se exige comprobar la vista
-previa remota antes de publicar. Véase [servicios-municipales.md](servicios-municipales.md).
+de desarrollo y no acredita el límite gratuito. La comprobación remota posterior
+registró 24 peticiones, cero errores y CPU P99 de 6,781 ms en Cloudflare,
+por debajo del límite de 10 ms en esa muestra. Véase [servicios-municipales.md](servicios-municipales.md).

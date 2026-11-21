@@ -37,6 +37,8 @@ La configuración versionada arranca con envíos desactivados. La publicación d
 
 La bandera operativa de GitHub permite publicar el Worker apagado conservando salud y cancelación. La configuración de Pages de producción, por sí sola, no activa avisos: también se exige que el Worker esté habilitado. El helper de CI prepara preview sin Service Binding, con activación deshabilitada y sin token ni secreto de webhook de Telegram.
 
+Antes de cualquier creación, secreto o despliegue de Cloudflare con activación habilitada, CI consulta el método oficial [getMe de Telegram](https://core.telegram.org/bots/api#getme) y compara su username, sin distinguir mayúsculas, con la configuración pública del bot de la web. Exige también un ID entero positivo seguro y `is_bot: true`; no presupone que el secreto de notificaciones de GitHub sea el de la web. Son dos GET acotados, sin seguir redirecciones, sin chats ni mensajes y con errores genéricos que no incluyen la clave ni su URL. Un fallo detiene el despliegue antes de tocar recursos. Publicar una pausa no requiere consultar ni entregar la clave del bot.
+
 ## Presupuesto gratuito y comprobaciones
 
 El 21 de noviembre de 2026 se comprobó en la cuenta que el plan activo es Gratuito y no había namespaces DO. Cloudflare incluye DO SQLite: 100.000 solicitudes/día, 13.000 GB-s/día, cinco millones de filas leídas/día, cien mil escritas/día y cinco GB de almacenamiento. Son límites compartidos; agotarlos hace fallar operaciones en Free. No se activa una ampliación de pago.

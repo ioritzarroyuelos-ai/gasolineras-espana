@@ -4,7 +4,7 @@ import { readFileSync, existsSync } from 'node:fs'
 // @ts-expect-error El proyecto de navegador no incluye tipos Node globales.
 import { createRequire } from 'node:module'
 // @ts-expect-error Script de publicación exclusivo de Node.
-import { deployDisponibilidad, disponibilidadExiste, disponibilidadVersion, verificaDisponibilidad } from '../scripts/deploy-disponibilidad.mjs'
+import { deployDisponibilidad, disponibilidadExiste, disponibilidadVersion, verificaDisponibilidad, verificaBotDisponibilidad } from '../scripts/deploy-disponibilidad.mjs'
 
 const sha = 'a'.repeat(40), repo = 'ioritzarroyuelos-ai/gasolineras-espana', versionId = '10000000-0000-4000-8000-000000000001'
 const botFixture = '123456:' + 'prueba_sin_credencial'.repeat(2)
@@ -20,12 +20,14 @@ function fixture(exists = false, afterMain = Infinity) {
     calls.push({ executable, args, options, config: config(args[args.indexOf('--config') + 1]) })
     return { status: 0, stdout: '', stderr: '' }
   })
-  return { calls, request, run, checkout: () => ({ sha, origin: 'https://github.com/' + repo + '.git' }), exists: vi.fn(async () => exists), version: vi.fn(async () => versionId) }
+  return { calls, request, run, bot: vi.fn(async () => true), checkout: () => ({ sha, origin: 'https://github.com/' + repo + '.git' }), exists: vi.fn(async () => exists), version: vi.fn(async () => versionId) }
 }
 describe('CI de disponibilidad: publicar sólo código validado', () => {
   it('instala apagado, transmite sólo por stdin y activa después del segundo control de main', async () => {
     const io = fixture()
     expect(await deployDisponibilidad(env(), io)).toMatchObject({ enabled: true, versionId, revision: sha })
+    expect(io.bot).toHaveBeenCalledOnce()
+    expect(io.bot.mock.invocationCallOrder[0]).toBeLessThan(io.exists.mock.invocationCallOrder[0])
     expect(io.calls.map(call => call.args[1])).toEqual(['deploy', 'secret', 'deploy'])
     expect(io.calls.map(call => call.config.vars.DISPONIBILIDAD_ENABLED)).toEqual(['false', 'false', 'true'])
     expect(JSON.parse(io.calls[1].options.input)).toEqual({ TELEGRAM_BOT_TOKEN: botFixture })
@@ -50,6 +52,7 @@ describe('CI de disponibilidad: publicar sólo código validado', () => {
     expect(io.calls).toHaveLength(1); expect(io.calls[0].args[1]).toBe('deploy')
     expect(io.calls[0].config.vars.DISPONIBILIDAD_ENABLED).toBe('false')
     expect(io.calls[0].options.input).toBeUndefined()
+    expect(io.bot).not.toHaveBeenCalled()
   })
   it.each(['', 'yes', 'undefined'])('una bandera inválida %s no deja que Pages enlace un Worker ausente', async value => {
     const io = fixture()
@@ -88,6 +91,64 @@ describe('CI de disponibilidad: publicar sólo código validado', () => {
     expect(io.version).not.toHaveBeenCalled()
   })
 })
+describe('Identidad del bot antes de cualquier cambio en Cloudflare', () => {
+  const publicConfig = () => Response.json({ ok: true, username: 'Espana_Util_Bot' })
+  const identity = (changes: Record<string, unknown> = {}) => Response.json({ ok: true, result: { id: 123456, is_bot: true, username: 'espana_util_bot', ...changes } })
+  const mocked = (response: () => Response) => vi.fn(async (url: string, _options: RequestInit) => url === 'https://webapp-3ft.pages.dev/api/telegram/config' ? publicConfig() : response())
+  const message = 'No se pudo confirmar que la credencial de CI pertenece al bot de la web'
+
+  it('compara username sin distinguir mayúsculas con dos GET de sólo lectura', async () => {
+    const fetcher = mocked(() => identity())
+    expect(await verificaBotDisponibilidad(env(), { fetch: fetcher })).toBe(true)
+    expect(fetcher.mock.calls.map(call => call[0])).toEqual([
+      'https://webapp-3ft.pages.dev/api/telegram/config',
+      'https://api.telegram.org/bot' + botFixture + '/getMe',
+    ])
+    for (const [, options] of fetcher.mock.calls) {
+      expect(options).toMatchObject({ method: 'GET', redirect: 'manual', cache: 'no-store' })
+      expect(options).not.toHaveProperty('body'); expect(options).not.toHaveProperty('headers')
+    }
+  })
+  it.each([
+    { username: 'Otro_Bot' }, { username: '' }, { is_bot: false },
+    { id: 0 }, { id: -1 }, { id: Number.MAX_SAFE_INTEGER + 1 }, { id: '123456' },
+  ])('rechaza una identidad distinta o inválida sin crear ni actualizar recursos: %j', async changes => {
+    const io = fixture(), fetcher = mocked(() => identity(changes))
+    await expect(deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher })).rejects.toThrow(message)
+    expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled(); expect(io.version).not.toHaveBeenCalled()
+  })
+  it.each([401, 302])('rechaza HTTP %s del bot sin reenviar credenciales ni reflejar respuesta', async status => {
+    const io = fixture(), fetcher = mocked(() => new Response(botFixture, { status, headers: { location: 'https://example.invalid/' } }))
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
+    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled()
+  })
+  it.each(['redireccion', 'sin-configurar', 'username-invalido'])('no consulta la clave si la web devuelve %s', async mode => {
+    const fetcher = vi.fn(async () => mode === 'redireccion' ? new Response(null, { status: 302, headers: { location: 'https://example.invalid/' } })
+      : Response.json(mode === 'sin-configurar' ? { ok: false } : { ok: true, username: '../otro' }))
+    await expect(verificaBotDisponibilidad(env(), { fetch: fetcher })).rejects.toThrow(message)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it('acota la espera y transforma excepciones que contengan la URL secreta', async () => {
+    const fetcher = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      options.signal!.addEventListener('abort', () => reject(Error('https://api.telegram.org/bot' + botFixture + '/getMe')), { once: true })
+    }))
+    const error = await verificaBotDisponibilidad(env(), { fetch: fetcher, timeoutMs: 20 }).catch((caught: Error) => caught)
+    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+    expect(fetcher.mock.calls[0][1].signal!.aborted).toBe(true)
+    expect(fetcher).toHaveBeenCalledOnce()
+  })
+  it.each(['cabecera', 'cuerpo', 'json', 'ok-false'])('rechaza una respuesta %s no verificable y acotada', async mode => {
+    const fetcher = mocked(() => mode === 'cabecera' ? new Response('{}', { headers: { 'content-length': '999999999' } })
+      : mode === 'cuerpo' ? new Response(' '.repeat(16385))
+        : mode === 'json' ? new Response(botFixture)
+          : Response.json({ ok: false, description: botFixture }))
+    const error = await verificaBotDisponibilidad(env(), { fetch: fetcher }).catch((caught: Error) => caught)
+    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+  })
+})
+
 describe('Comprobaciones remotas acotadas, sin invocar objetos de usuario', () => {
   it('distingue un servicio ausente de error o inventario incompleto', async () => {
     for (const present of [false, true]) expect(await disponibilidadExiste(env(), async () => Response.json({ success: true, result: present ? [{ id: 'espana-util-disponibilidad' }] : [] }))).toBe(present)

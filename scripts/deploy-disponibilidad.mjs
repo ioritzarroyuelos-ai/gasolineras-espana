@@ -33,6 +33,23 @@ async function readJson(response, max, signal) {
     return JSON.parse(text + decoder.decode())
   } finally { signal.removeEventListener('abort', abort); reader.releaseLock() }
 }
+export async function verificaBotDisponibilidad(env, io = {}) {
+  const fetcher = io.fetch || fetch, signal = AbortSignal.timeout(io.timeoutMs ?? 10000)
+  const username = value => typeof value === 'string' && /^[A-Za-z0-9_]{5,32}$/.test(value)
+  try {
+    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN || '')) throw Error('Credencial no válida')
+    const options = { method: 'GET', cache: 'no-store', redirect: 'manual', signal }
+    const config = await readJson(await fetcher(ORIGIN + '/api/telegram/config', options), 8192, signal)
+    if (config.ok !== true || !username(config.username)) throw Error('Configuración no válida')
+    // getMe sólo identifica la credencial. No consulta chats ni envía mensajes.
+    // El token va en la URL exigida por Telegram; nunca se imprime ni se propaga
+    // a redirecciones, a excepciones o a un proceso hijo.
+    const bot = await readJson(await fetcher('https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/getMe', options), 16384, signal)
+    if (bot.ok !== true || bot.result?.is_bot !== true || !Number.isSafeInteger(bot.result?.id) || bot.result.id <= 0 ||
+      !username(bot.result.username) || bot.result.username.toLowerCase() !== config.username.toLowerCase()) throw Error('Identidad no válida')
+    return true
+  } catch { throw Error('No se pudo confirmar que la credencial de CI pertenece al bot de la web') }
+}
 async function cloudflare(env, path, fetcher) {
   if (!/^[a-f0-9]{32}$/.test(env.CLOUDFLARE_ACCOUNT_ID || '') || !env.CLOUDFLARE_API_TOKEN) throw Error('Cuenta de despliegue no válida')
   const signal = AbortSignal.timeout(15000)
@@ -81,6 +98,7 @@ export async function deployDisponibilidad(env = process.env, io = {}) {
   await assertMain()
   const ci = await api('/repos/' + DATA_REPOSITORY + '/actions/workflows/ci.yml/runs?branch=main&status=success&head_sha=' + env.VALIDATED_SHA + '&per_page=10', { token: env.GH_TOKEN })
   if (!ci.workflow_runs?.some(run => run.head_sha === env.VALIDATED_SHA && run.head_branch === 'main' && run.conclusion === 'success' && ['push', 'workflow_run', 'workflow_dispatch'].includes(run.event))) throw Error('Falta CI verde del commit exacto')
+  if (enabled) await (io.bot || verificaBotDisponibilidad)(env, { fetch: io.fetch })
   const exists = await (io.exists || disponibilidadExiste)(env)
   const cli = resolve(dirname(createRequire(import.meta.url).resolve('wrangler/package.json')), 'bin/wrangler.js')
   const childEnv = { ...env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG: 'warn', WRANGLER_WRITE_LOGS: 'false' }

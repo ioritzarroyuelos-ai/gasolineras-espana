@@ -131,6 +131,26 @@ describe('shared account favorites', () => {
     }
     expect(c.remote.A[serviceStorageName]).toBeUndefined()
   })
+  it('recuerda refugios y salas oficiales en preferencias e historial, sin habilitar favoritos', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const categorias = ['refugios-cataluna', 'salas-estudio-madrid']
+    await c.window.EUCuenta.servicios.guardarPreferencias({ categorias: [...categorias, categorias[0]], municipios: ['08019', '28079'], lat: 40.4123, busqueda: 'Mi dirección' })
+    expect(c.remote.A[prefsStorageName]).toEqual({ version: 1, categorias, municipios: ['08019', '28079'] })
+    await c.window.EUCuenta.servicios.registrarConsulta({ municipio: '28079', categorias })
+    expect(c.window.EUCuenta.servicios.historial()).toEqual([])
+    await c.window.EUCuenta.servicios.activarHistorial(true)
+    await c.window.EUCuenta.servicios.registrarConsulta({ municipio: '28079', categorias, lat: 40.4123, busqueda: 'Mi dirección' })
+    expect(c.window.EUCuenta.servicios.historial()).toEqual([{ municipio: '28079', categorias, fecha: expect.any(Number) }])
+    expect(Object.keys(c.remote.A).some(key => key.includes('historial'))).toBe(false)
+    for (const categoria of categorias) for (const id of ['osm-node-123', 'refugio-cat-' + 'a'.repeat(64), 'estudio-madrid-123']) {
+      const unsupported = { ...place, id, categoria }
+      expect(c.window.EUCuenta.servicios.urlFavorito(unsupported)).toBe(null)
+      await expect(c.window.EUCuenta.servicios.alternarFavorito(unsupported)).rejects.toThrow()
+    }
+    expect(c.remote.A[serviceStorageName]).toBeUndefined()
+    await c.window.EUCuenta.servicios.activarHistorial(false)
+    expect(c.window.EUCuenta.servicios.historial()).toEqual([])
+  })
   it('guarda estaciones Metro y cámaras como lugares estables sin copiar llegadas ni imágenes', async () => {
     const c = client(); await c.window.EUCuenta.ready
     const places = [

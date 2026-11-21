@@ -1,0 +1,45 @@
+name: Fetch servicios públicos snapshot
+
+on:
+  # El reloj autenticado solicita la revisión diaria a las 08:57 UTC.
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-servicios-publicos
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Comprobar por separado los directorios oficiales
+        id: fuentes
+        continue-on-error: true
+        run: node scripts/fetch-servicios-publicos.mjs
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar datos e incidencias mediante PR validado
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+        run: |
+          git add public/data/servicios-publicos
+          node scripts/publish-data.mjs servicios-publicos
+      - name: Mantener el reintento cuando alguna fuente falla
+        if: steps.fuentes.outcome != 'success'
+        run: |
+          echo 'Hay fuentes pendientes. Se conserva cada copia válida y el reloj volverá a comprobarlas.'
+          exit 1

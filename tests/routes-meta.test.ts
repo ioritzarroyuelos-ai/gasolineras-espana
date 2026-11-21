@@ -92,6 +92,16 @@ describe('rutas META/SEO tras extraer a src/routes/meta.ts (B1)', () => {
     expect(body).toMatch(/\/servicios\/<\/loc><changefreq>/)
     expect(body).not.toContain('/cerca</loc>')
   })
+  it('los catálogos oficiales tienen enlaces de fuentes y sitemap sin una fecha inventada', async () => {
+    const sitemap = await (await app.request('/sitemap.xml', {}, { ASSETS: assets404() })).text()
+    const about = await (await app.request('/acerca', {}, { ASSETS: assets404() })).text()
+    for (const id of ['refugios-cataluna', 'salas-estudio-madrid']) {
+      expect(sitemap).toContain('/servicios/' + id + '</loc><changefreq>daily')
+      expect(about).toContain('href="/servicios/' + id + '"')
+    }
+    expect(about).toContain('no confirma que estén activados ni abiertos')
+    expect(about).toContain('No informa de plazas libres')
+  })
 
   it('sitemap-tiempo: municipios con changefreq weekly y sin lastmod global', async () => {
     const res = await app.request('/sitemap-tiempo.xml', {}, { ASSETS: assets404() })

@@ -127,6 +127,7 @@ app.get('/sitemap.xml', async c => {
   // omitirlo aqui y dejarlo solo donde tenemos fecha real (gasolineras, ITV, guardias).
   entries.push(`  <url><loc>${base}/farmacias/</loc><changefreq>daily</changefreq><priority>0.9</priority></url>`)
   entries.push(`  <url><loc>${base}/servicios/</loc><changefreq>daily</changefreq><priority>0.8</priority></url>`)
+  for (const id of ['refugios-cataluna', 'salas-estudio-madrid']) entries.push(`  <url><loc>${base}/servicios/${id}</loc><changefreq>daily</changefreq><priority>0.7</priority></url>`)
   entries.push(`  <url><loc>${base}/trafico/cataluna</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>`)
 
   // Indice y provincias de guardia: son el camino de enlaces hasta las 1.289
@@ -370,6 +371,8 @@ veces al día.</p>
   <li><strong>Direcciones y códigos postales</strong>: <a href="https://www.scne.es/productos.html#CartoCiudad" rel="noopener">CartoCiudad, CC BY 4.0 SCNE</a>. El visitante elige la coincidencia; un código postal representa una zona aproximada.</li>
   <li><strong>Bicicletas</strong>: <a href="https://bizi.zaragoza.es/es/mapa-de-disponibilidad" rel="noopener">Bizi Zaragoza</a>, con datos de disponibilidad que caducan por estación. No equivale a cobertura de todas las redes españolas.</li>
   <li><strong>Tráfico y cámaras de Cataluña</strong>: Servei Català de Trànsit. <a href="/trafico/cataluna">Parte, fechas, condiciones de reutilización y límites</a>. Las cámaras enlazan a la fuente original; no copiamos sus imágenes ni atribuimos una hora que la fuente no publica.</li>
+  <li><strong>Refugios climáticos de Cataluña</strong>: catálogo municipal publicado por la Generalitat. <a href="/servicios/refugios-cataluna">Fichas, fechas, fuente y condiciones de reutilización</a>. Identifica equipamientos; no confirma que estén activados ni abiertos.</li>
+  <li><strong>Salas de estudio de Madrid</strong>: catálogo del Ayuntamiento de Madrid, CC BY 4.0. <a href="/servicios/salas-estudio-madrid">Listado completo, horarios publicados y excepciones</a>. No informa de plazas libres. Ambos directorios se comprueban diariamente y conservan las fechas originales.</li>
 </ul>
 
 <h2>Límites y avisos</h2>

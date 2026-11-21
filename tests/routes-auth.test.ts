@@ -116,6 +116,7 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['bicis-zaragoza'], municipios: ['50297'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['trafico-cataluna', 'camaras-cataluna'], municipios: ['08019'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['farmacias-guardia', 'metro-bilbao'], municipios: ['48020'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['refugios-cataluna', 'salas-estudio-madrid'], municipios: ['08019', '28079'] }],
     ['eu-itv-recordatorio-v1', { version: 1, recordatorio: { id: '11111111-1111-4111-8111-111111111111', fecha: '2028-02-29', nombre: 'Mi coche' } }],
     ['eu-itv-recordatorio-v1', { version: 1, recordatorio: null }],
   ])('guarda %s con su formato del cliente', async (key, value) => {
@@ -146,6 +147,8 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
       ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 41.65, lon: -0.88 }]] as [string, unknown])),
     ...['farmacias-guardia', 'metro-bilbao'].flatMap(categoria => ['osm-node-123', 'guardia-prueba-123', 'metro-bilbao-prueba'].map(id =>
       ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 43.26, lon: -2.93 }]] as [string, unknown])),
+    ...['refugios-cataluna', 'salas-estudio-madrid'].flatMap(categoria => ['osm-node-123', 'refugio-cat-' + 'a'.repeat(64), 'estudio-madrid-123'].map(id =>
+      ['eu-servicios-favoritos-v1', [{ id, nombre: 'Directorio sin favoritos', categoria, lat: 40.4, lon: -3.7 }]] as [string, unknown])),
     ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 40.4, lon: -3.7 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88, bicis: 3 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 90, lon: -3.7 }]],

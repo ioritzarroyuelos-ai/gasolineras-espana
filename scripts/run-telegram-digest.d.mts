@@ -1,1 +1,1 @@
-export function runTelegramDigest(env: {CRON_TOKEN?: string; DRY_RUN?: string}, fetcher?: typeof fetch): Promise<Record<string, unknown>>
+export function runTelegramDigest(env: {CRON_TOKEN?: string; DRY_RUN?: string}, fetcher?: typeof fetch, options?: {pause?:(ms:number)=>Promise<unknown>;maxBatches?:number}): Promise<Record<string, unknown>>

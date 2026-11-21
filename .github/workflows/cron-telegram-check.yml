@@ -1,4 +1,4 @@
-name: Telegram cron — resumen diario de precios (8:00 España)
+name: Telegram cron — avisos de precios elegidos (mañana España)
 run-name: "Telegram · ${{ inputs.dry_run && 'comprobación sin envío' || 'resumen diario' }}"
 
 # El coordinador independiente dispara dentro de 08:00–11:59 Europe/Madrid.
@@ -22,7 +22,7 @@ concurrency:
 jobs:
   telegram-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -32,7 +32,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
-      - name: Comprobar o enviar el resumen sin forzar duplicados
+      - name: Comprobar o enviar los avisos elegidos sin forzar duplicados
         env:
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
           DRY_RUN: ${{ inputs.dry_run }}

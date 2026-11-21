@@ -458,11 +458,27 @@ escríbenos (ver <em>Contacto</em>).</p>
 <p>Si activas las alertas, vinculas tu chat de Telegram con la web. Para ello
 guardamos, en nuestra base de datos (Cloudflare D1), tu <strong>identificador de
 chat de Telegram</strong> junto con las gasolineras y combustibles que quieres
-vigilar y el umbral de aviso. Con eso te enviamos el resumen diario y el listado
-cuando escribes <code>/precios</code>.</p>
+vigilar. Con eso te enviamos el aviso de precios que hayas elegido y el listado
+cuando escribes <code>/precios</code>. El resumen diario se mantiene para quienes
+ya lo tenían. Sólo cambiamos a avisos de bajadas cuando eliges ese modo, su bajada
+mínima y pulsas «Guardar elección».</p>
+<p>Si guardas esa elección, conservamos en Cloudflare Workers KV el modo, el
+umbral, el identificador de chat y la versión y fecha del consentimiento. Las
+bajadas se calculan con dos capturas oficiales recientes; no usamos un precio
+aportado por tu navegador como referencia. Guardamos durante un máximo de tres
+días marcas técnicas de entrega y continuación, con un identificador derivado
+del chat, para reducir mensajes duplicados y reintentar rechazos confirmados.
+La preparación temporal de cada aviso guarda durante un máximo de 24 horas
+los precios oficiales de las gasolineras elegidas, vinculados mediante ese
+identificador derivado; se comprueba de nuevo el permiso antes de enviar.
+Estas marcas no contienen el texto del mensaje ni el chat en claro. No son
+datos anónimos: pueden relacionarse con tu suscripción.</p>
 <p><strong>Base legal:</strong> tu consentimiento (lo activas tú).</p>
 <p><strong>Cómo darte de baja:</strong> escribe <code>/stop</code> al bot y
-borramos tus suscripciones. Una entrega que ya haya empezado puede llegar todavía. Si bloqueas el bot, también dejamos de
+borramos tus suscripciones y tu elección de precios; desde la web puedes cancelar
+sólo precios, sin cancelar ITV. Una entrega que ya haya empezado puede llegar
+todavía y los cambios pueden tardar en propagarse entre servidores. Las marcas
+técnicas caducan en el plazo indicado. Si bloqueas el bot, también dejamos de
 enviarte mensajes y limpiamos tu suscripción.</p>
 
 <h2>Reportar un precio incorrecto (opcional)</h2>

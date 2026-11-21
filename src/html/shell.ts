@@ -696,6 +696,18 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${opts.servicesTool ? 'Servicios cerca d
         </div>
         <button id="btn-tg-toggle" class="btn-primary tg-alerts-btn">Activar avisos de precios</button>
       </div>
+      <section id="tg-price-preferences" class="tg-price-preferences" aria-labelledby="tg-price-preferences-title" hidden>
+        <h3 id="tg-price-preferences-title">Elige cuándo recibir los precios</h3>
+        <label for="tg-price-mode">Tipo de aviso</label>
+        <select id="tg-price-mode"><option value="resumen">Resumen diario</option><option value="bajadas">Sólo cuando baje el precio</option></select>
+        <div id="tg-price-threshold-wrap" hidden><label for="tg-price-threshold">Bajada mínima por litro</label>
+          <select id="tg-price-threshold"><option value="10">1 céntimo</option><option value="20">2 céntimos</option><option value="50">5 céntimos</option><option value="100">10 céntimos</option></select>
+        </div>
+        <p>Comprobamos las gasolineras con la campana activada por la mañana, entre las 8:00 y las 11:59, hora peninsular. Las bajadas se comparan entre las dos últimas capturas oficiales disponibles. Si no podemos comprobarlas, no enviamos una bajada supuesta.</p>
+        <p>La elección sólo cambia al pulsar «Guardar elección». No envía un mensaje al guardarla y no cambia tus recordatorios de ITV.</p>
+        <button id="tg-price-save" class="btn-primary" type="button" disabled>Guardar elección</button>
+        <p id="tg-price-feedback" role="status" aria-live="polite"></p>
+      </section>
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">
         <div id="favs-empty" class="favs-empty">

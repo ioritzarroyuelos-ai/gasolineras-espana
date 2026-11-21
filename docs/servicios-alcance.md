@@ -12,12 +12,14 @@ nacional ni que cada establecimiento haya sido comprobado personalmente.
 | Entrega | Estado consignado | Alcance |
 | --- | --- | --- |
 | B | Publicado, cambio `3329c4bc`. | Mapa unificado, directorio OSM, ITV, Bizi, SCT, cámaras, guardias y base de cuenta. Conserva el mapa de gasolineras. |
-| C | Preparado y comprobado; no se da por publicado en este documento. | Metro Bilbao, favoritos de estaciones/cámaras y recordatorios ITV por Telegram. |
-| D | Preparado y comprobado; no se da por publicado en este documento. | Catálogos oficiales de refugios de Cataluña y salas de estudio de Madrid, listados y mapa. |
+| C | Publicado; comprobado en producción `3ca53885` el 21 de noviembre. | Metro Bilbao: 42 estaciones y llegadas vigentes; favoritos de estaciones/cámaras. Recordatorio ITV comprobado sin envío. |
+| D | Código y primer ciclo de datos publicados; comprobados en producción `efea19bd` el 21 de noviembre. | 2.730 refugios de Cataluña y 68 salas de Madrid; páginas completas, búsqueda y mapa, también en móvil. |
 | E | Consumidor y opciones del visitante preparados; publicación separada del productor de comparación de precios. | Resumen diario o sólo bajadas, con consentimiento y dos capturas oficiales recientes. |
 | F | Preparado y comprobado; no se da por publicado en este documento. | Aparcamientos oficiales de Madrid/Vigo, plazas vigentes y favoritos estables. |
-| G | Preparado en una rama independiente; **no está incorporado a la base F de esta revisión**. | Recogida explícita de paquetes y filtros de reciclaje de pilas/aceite de cocina. Requiere publicar código y regenerar el directorio con el robot. |
-| H | Ajuste de descubrimiento y documentación sobre F, pendiente de publicación. | Accesos visibles a fuentes implementadas y separación de sus coberturas respecto de OSM. No añade una fuente ni habilita G. |
+| G | Código y primer ciclo de datos publicados; comprobados en producción `efea19bd`. | 14 puntos de recogida explícita de paquetes, 1.418 de pilas y 1.291 de aceite de cocina en la copia consultada el 21 de noviembre a las 10:04 UTC. |
+| H | Integrado con F, J y K; pendiente de publicación conjunta. | Accesos visibles a fuentes implementadas y separación de sus coberturas respecto de OSM. |
+| J | Integrado con F; pendiente de publicación conjunta. | Filtros de plazas libres vigentes y existencia de capacidad PMR publicada. |
+| K | Integrado con F; pendiente de publicación y primer ciclo del nuevo índice. | Favoritos de refugios y salas con identidad actual verificada. |
 
 Este estado es una fotografía de la revisión, no un monitor de despliegues.
 Para dar por publicada una entrega hay que registrar su versión y comprobar la
@@ -60,15 +62,15 @@ enlazados más abajo. No son cifras para planificar un desplazamiento hoy.
 | Bloque acordado | Función implementada o preparada | Limitación o pendiente real |
 | --- | --- | --- |
 | **1. Mapa único — parcial** | B: mapa conservado, GPS con permiso, municipio/categoría y dirección/CP con elección explícita, agrupación, distancia en línea recta, contacto, Google/Apple/Waze, favoritos y fechas. Filtros de horario, gratis y accesibilidad con datos explícitos. C–F añaden sus capas propias; H hace visible la cobertura de cada una. | No hay disponibilidad o alertas universales. Sólo se interpreta un subconjunto de horarios; las excepciones ambiguas quedan sin confirmar. No se calculan rutas propias ni tarifas inexistentes. Cada capa mantiene su estado aunque falle otra. |
-| **2. Movilidad — parcial** | B: precios de combustible, directorio de recarga, ITV con coordenadas justificadas y enlaces oficiales; OSM para talleres, neumáticos, lavado, asistencia, autocaravanas, parking, peajes, descanso y gas; tráfico SCT y cámaras SCT/Terrassa. F: plazas libres vigentes en Madrid/Vigo. | No hay huecos ITV, reservas de parking, recarga libre en directo, tarifas generales de peajes, ZBE ni tráfico nacional completo. F no confirma gratuidad, apertura, P+R ni plazas PMR libres: PMR es capacidad total. Falta ampliar fuentes y filtros específicos. Cámaras no equivale a vídeo en directo ni cobertura DGT. |
+| **2. Movilidad — parcial** | B: precios de combustible, directorio de recarga, ITV con coordenadas justificadas y enlaces oficiales; OSM para talleres, neumáticos, lavado, asistencia, autocaravanas, parking, peajes, descanso y gas; tráfico SCT y cámaras SCT/Terrassa. F: plazas libres vigentes en Madrid/Vigo. J: filtros combinables de plazas libres y capacidad PMR publicada. | No hay huecos ITV, reservas de parking, recarga libre en directo, tarifas generales de peajes, ZBE ni tráfico nacional completo. F y J no confirman gratuidad, apertura, P+R ni plazas PMR libres: PMR es capacidad total. Falta ampliar fuentes verificadas. Cámaras no equivale a vídeo en directo ni cobertura DGT. |
 | **3. Transporte — parcial** | B: paradas, estaciones, taxis y servicios de bicicletas; Bizi Zaragoza con bicicletas/anclajes y caducidad individual. C: Metro Bilbao con llegadas estimadas y destinos. | Otras redes siguen siendo directorios. Las llegadas estimadas no son salidas, andenes ni horarios completos de viaje. Cero bicicletas o anclajes no significa estación cerrada; ausencia de llegadas no significa que no haya trenes. |
 | **4. Salud — parcial** | B: guardias oficiales separadas de farmacias OSM; hospitales, centros, urgencias etiquetadas, veterinarios, DEA, donación y ascensores. D: catálogo municipal de refugios de Cataluña, con fichas también sin coordenadas. | No se confirman veterinarios/centros 24 h por un horario genérico. Faltan Puntos Violeta y ampliar fuentes verificadas. D no acredita refugios activados ni abiertos. Ascensor no acredita funcionamiento o acceso público. Guardias antiguas/ambiguas y coordenadas no fiables conservan avisos, sin pines ni apertura inventados. |
 | **5. Baños, agua y cajeros — parcial** | B: directorio cercano, acceso y gratuidad/accesibilidad cuando constan; exclusión de privados/prohibidos o cerrados explícitos. | Cobertura incompleta, sin clasificación exhaustiva de baños por recinto ni importe si sólo consta que es de pago. Un punto del recinto puede no ser la entrada. Agua potable procede de la etiqueta, no de un análisis de la web. |
-| **6. Compras y reciclaje — parcial** | B: supermercados, mercados/mercadillos, correos, taquillas, puntos limpios, reciclaje y ropa. G preparado: recogida de paquetes explícita y filtros de pilas/aceite de cocina. | G no es visible hasta publicar y regenerar con el robot. La cobertura y los horarios dependen de lo registrado; no se atribuye cualquier material a un punto de reciclaje, ni aceite de motor a aceite de cocina. No se inventan calendarios de mercadillos. |
+| **6. Compras y reciclaje — parcial** | B: supermercados, mercados/mercadillos, correos, taquillas, puntos limpios, reciclaje y ropa. G publicado: recogida de paquetes explícita y filtros de pilas/aceite de cocina. | La cobertura y los horarios dependen de lo registrado; no se atribuye cualquier material a un punto de reciclaje, ni aceite de motor a aceite de cocina. No se inventan calendarios de mercadillos. |
 | **7. Servicios públicos — parcial** | B: policía, Guardia Civil, bomberos, oficinas etiquetadas, atención ciudadana, bibliotecas, cultura y wifi explícito. D: salas de estudio y lectura de Madrid con condiciones publicadas. | Falta confirmar oficinas por organismo/trámite (incluido DNI/pasaporte), ampliar territorios y fuentes. Capacidad de una sala no es plaza libre; no hay citas administrativas integradas. Una etiqueta no acredita titularidad municipal. |
 | **8. Parques y espacios — directorio básico implementado** | B: parques, infantiles, caninos y áreas de descanso, con acceso/horario/accesibilidad si constan. | Cobertura cartográfica parcial. No se infiere autorización canina de cualquier parque. Estado de juegos, cierres o inventario de equipamiento serían ampliaciones, no requisitos básicos ya acreditados por estas fichas. |
 | **9. Turismo, ocio y deporte — parcial** | B: camping, consignas, playas, piscinas y polideportivos; sección deportiva previa conservada. | Faltan banderas, condiciones de baño, socorristas/horarios de vigilancia y disponibilidad comprobable de instalaciones. No se inventan reservas, plazas ni titularidad pública. |
-| **11. Personalización — parcial** | B: Google/local, sincronización, municipios/categorías, historial opcional, exportación/vaciado y favoritos OSM/ITV/Bizi. C: favoritos Metro/cámaras y recordatorio ITV Telegram con permiso separado. E: elección entre resumen y sólo bajadas. F: favoritos de aparcamientos. | Faltan favoritos de fichas oficiales D y alertas de disponibilidad. E comprueba por la mañana, no en cada cambio de precio. No se guardan incidencias o turnos temporales. Vaciar ajustes no elimina Google ni revoca todas las sesiones; el calendario requiere importación y Telegram su propio permiso. |
+| **11. Personalización — parcial** | B: Google/local, sincronización, municipios/categorías, historial opcional, exportación/vaciado y favoritos OSM/ITV/Bizi. C: favoritos Metro/cámaras y recordatorio ITV Telegram con permiso separado. E: elección entre resumen y sólo bajadas. F: favoritos de aparcamientos. K: favoritos de fichas oficiales D, sujetos al nuevo índice. | Faltan activar y comprobar las alertas de disponibilidad. E comprueba por la mañana, no en cada cambio de precio. No se guardan incidencias o turnos temporales. Vaciar ajustes no elimina Google ni revoca todas las sesiones; el calendario requiere importación y Telegram su propio permiso. |
 | **12. Monetización — requisitos externos pendientes** | Aportación existente mediante `SUPPORT_URL` sólo si la configura el titular. Funciones útiles independientes de anuncios. | Sin cuentas AdSense ni acuerdos. Publicidad, patrocinio, afiliación, conversiones e ingresos/gastos/rentabilidad requieren alta/acuerdos, datos reales y decisión de medición/privacidad. No hay enlaces comerciales, reservas, rastreadores ni ingresos ficticios. |
 | **13. Calidad — parcial** | Móvil, listado accesible, partición, agrupación, fechas, SHA-256, límites, fuentes, robots/reintentos, minimización de datos y pruebas. H distingue cobertura y da accesos a las capas. | Publicación y primer ciclo real de cada entrega; SEO útil por municipio, reporte general de errores y seguimiento de costes/cuotas. Deduplicar IDs no fusiona automáticamente dos objetos del mismo negocio. No se garantiza cuota gratis ilimitada. Los datos legales del titular requieren información real. |
 
@@ -111,8 +113,9 @@ partición OSM puede devolver 409 y pedir reabrir; un traslado fuera de la zona
 o desaparición puede devolver 404. No hay búsqueda global de IDs trasladados.
 
 Cada proveedor admite sólo su namespace y categoría. Incidencias y turnos de
-guardia no son favoritos estables; D admite preferencias de capa, todavía no
-favoritos de sus fichas. Guardar un municipio no guarda domicilio o GPS.
+guardia no son favoritos estables. K incorpora favoritos de fichas D con
+coordenadas verificadas y consulta global por identidad: siguen ocultos hasta
+que el robot publique el nuevo índice. Guardar un municipio no guarda domicilio o GPS.
 
 El historial es local, opcional, separado por cuenta y limitado a 20 consultas
 de 30 días; desactivarlo borra sus entradas. Exportar/vaciar ajustes no cancela
@@ -130,18 +133,22 @@ Contratos, ensayos reales fechados, escenarios simulados y límites:
 - [Directorios públicos D](servicios-publicos.md).
 - [Comparación y avisos de precios E](telegram-precios.md).
 - [Aparcamientos F](aparcamientos-oficiales.md).
+- [Filtros J](aparcamientos-filtros.md).
+- [Favoritos públicos K](servicios-publicos-favoritos.md).
+- [Paquetería y reciclaje G](servicios-paquetes-reciclaje.md).
 
-G se revisó en su rama independiente mediante
-`docs/servicios-paquetes-reciclaje.md`; ese archivo y su código no forman parte
-de esta base F. No se suman pruebas repetidas ni ensayos de fases distintas para
-fabricar un total de cobertura.
+No se suman pruebas repetidas ni ensayos de fases distintas para fabricar un
+total de cobertura. Las comprobaciones de producción D del 21 de noviembre a
+las 10:43 UTC recorrieron las 55 y 2 páginas de sus catálogos y las vistas de
+390 y 1280 píxeles, sin desbordamientos, errores JavaScript ni incidencias de
+axe en el contenido revisado. La fecha original de Cataluña sigue siendo el
+16 de octubre: consultar hoy no la convierte en una actualización de hoy.
 
-Cortes posteriores implementables sin nuevas cuentas: filtros de plazas libres
-vigentes y existencia de capacidad PMR publicada (sin llamarla PMR libre),
-favoritos D con identidad comprobada y páginas útiles «cerca de» un municipio
-con radio/centro explícitos. Una consulta radial no autoriza a decir «en el
-municipio» ni a crear páginas vacías. Otras redes, ZBE, banderas o alertas de
-disponibilidad requieren verificar primero la fuente y su cadencia. La
+Cortes posteriores: páginas útiles «cerca de» un municipio con radio y centro
+explícitos, y avisos de disponibilidad con los dos modos elegidos por el titular
+(resumen diario y búsqueda temporal de una hora). Todavía no están activados.
+Una consulta radial no autoriza a decir «en el municipio» ni a crear páginas
+vacías. Otras redes, ZBE y banderas requieren verificar primero la fuente. La
 monetización depende de decisiones y datos del titular, no de fabricar interfaz.
 
 H se comprobó sobre su compilación local: seis pruebas dirigidas, TypeScript y

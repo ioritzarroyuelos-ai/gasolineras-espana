@@ -118,8 +118,11 @@ instantánea de un mensaje ya iniciado.
   generan anuncios, enlaces comerciales inventados ni un panel de ingresos
   con cifras falsas. La aportación existente sólo aparece si `SUPPORT_URL` está
   configurada. El contacto legal del titular requiere información real del dueño.
-- Las fichas oficiales D todavía no son favoritas, aunque sus capas sí puedan
-  recordarse. No hay alertas de disponibilidad de plazas, bicicletas o citas.
+- K incorpora favoritos de refugios y salas oficiales con coordenadas e
+  identidad verificadas. Los catálogos anteriores siguen funcionando y ocultan
+  esa opción hasta que el robot publique el nuevo índice de identidades.
+  Véase [servicios-publicos-favoritos.md](servicios-publicos-favoritos.md).
+  No hay todavía alertas de disponibilidad de plazas, bicicletas o citas.
   Tener una API de ocupación no activa un permiso para enviar avisos.
 
 ## Comprobaciones

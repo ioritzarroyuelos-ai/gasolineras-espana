@@ -31,7 +31,7 @@ describe('resumen diario seguro y comprobación sin mensajes reales', () => {
     })
     const env = { CRON_TOKEN: 'test-cron', TELEGRAM_BOT_TOKEN: 'fake-test-only', TELEGRAM_BOT_USERNAME: 'test', TELEGRAM_WEBHOOK_SECRET: 'fake-webhook-test', DB: { prepare } }
     const request = (query = '') => app.request('/api/cron/telegram-check' + query, { method: 'POST', headers: { Authorization: 'Bearer test-cron' } }, env)
-    return { request, run, all, prepare, fetcher, telegramCalls: () => fetcher.mock.calls.filter(([url]) => String(url).includes('api.telegram.org')) }
+    return { request, run, all, prepare, fetcher, telegramCalls: () => fetcher.mock.calls.filter(([url]) => new URL(url instanceof Request ? url.url : String(url)).origin === 'https://api.telegram.org') }
   }
   it('dry-run calcula elegibles fuera de ventana, sin enviar ni escribir D1', async () => {
     const f = fixture(); vi.mocked(Date.now).mockReturnValue(now + 10 * 3600000)

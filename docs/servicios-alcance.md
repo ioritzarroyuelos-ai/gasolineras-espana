@@ -160,3 +160,11 @@ enlaces con las rutas de la base F y las cadencias con el coordinador. No se
 consultaron proveedores adicionales para decorar las tarjetas ni se enviaron
 mensajes. Esta evidencia no sustituye el despliegue de C–F: H debe publicarse
 después de las entregas de las que dependen sus accesos.
+
+La integración F/H/J/K, con los cambios de farmacias y la corrección de precios,
+superó 2.672 pruebas en 168 archivos, TypeScript y compilación. Pasaron 53
+recorridos de navegador: filtros y caducidad de aparcamientos, favoritos de
+equipamientos, listados completos, cuentas, navegación y respuestas tardías.
+Incluyen vistas de 320, 390 y 1.280 píxeles. El análisis local de secretos del
+cambio no detectó filtraciones. Estas pruebas no sustituyen el primer ciclo
+real de aparcamientos ni la regeneración de identidades tras publicar.

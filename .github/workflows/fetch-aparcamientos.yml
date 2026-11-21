@@ -1,0 +1,47 @@
+name: Fetch aparcamientos snapshot
+
+on:
+  # El reloj autenticado solicita la revisión diaria a las 09:07 UTC.
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-aparcamientos
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Comprobar cada catálogo oficial y sus servicios
+        id: fuentes
+        continue-on-error: true
+        run: node scripts/fetch-aparcamientos.mjs
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar catálogos e incidencias mediante PR validado
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+        run: |
+          git add public/data/aparcamientos
+          node scripts/publish-data.mjs aparcamientos
+      - name: Mantener el reintento si alguna comprobación falla
+        if: steps.fuentes.outcome != 'success'
+        run: |
+          echo 'Se conserva cada catálogo válido; el reloj volverá a comprobar las fuentes pendientes.'
+          exit 1

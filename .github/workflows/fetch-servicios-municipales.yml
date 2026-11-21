@@ -1,0 +1,38 @@
+name: Fetch servicios municipales snapshot
+
+on:
+  # Derivación diaria a las09:27UTC; independiente de la descarga OSM.
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-servicios-municipales
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Derivar resúmenes desde copias verificadas
+        run: node scripts/gen-servicios-municipales.mjs
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar los resúmenes mediante PR validado
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+        run: |
+          git add public/data/servicios-municipales
+          node scripts/publish-data.mjs servicios-municipales

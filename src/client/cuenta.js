@@ -274,17 +274,25 @@
   const array = key => { try { const value = JSON.parse(read(key) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } };
   const category = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,59}$/.test(value);
   function serviceFavorite(value) {
-    if (!record(value) || typeof value.id !== 'string' || !(/^(?:osm-(?:node|way|relation)-[1-9]\d{0,15}|itv-(?:0[1-9]|[1-4]\d|5[0-2])-(?!0000)\d{4}|gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}|metro-bilbao-\d{1,6}|camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2})$/.test(value.id)) ||
+    if (!record(value) || typeof value.id !== 'string' || !(/^(?:osm-(?:node|way|relation)-[1-9]\d{0,15}|itv-(?:0[1-9]|[1-4]\d|5[0-2])-(?!0000)\d{4}|gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}|metro-bilbao-\d{1,6}|camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2}|parking-(?:madrid|vigo)-[1-9]\d{0,8}|refugio-cat-[a-f0-9]{64}|estudio-madrid-[1-9]\d{0,15})$/.test(value.id)) ||
       typeof value.nombre !== 'string' || !value.nombre.trim() || value.nombre.length > 250 || /[\u0000-\u001f\u007f]/.test(value.nombre) || !category(value.categoria) ||
       !Number.isFinite(value.lat) || value.lat < 27 || value.lat > 44 || !Number.isFinite(value.lon) || value.lon < -19 || value.lon > 5) return null;
     if ((value.id.startsWith('itv-')) !== (value.categoria === 'itv')) return null;
     if ((value.id.startsWith('gbfs-zaragoza-')) !== (value.categoria === 'bicis-zaragoza')) return null;
     if ((value.id.startsWith('metro-bilbao-')) !== (value.categoria === 'metro-bilbao')) return null;
     if ((value.id.startsWith('camara-')) !== (value.categoria === 'camaras-cataluna')) return null;
-    if (['trafico-cataluna', 'farmacias-guardia', 'refugios-cataluna', 'salas-estudio-madrid'].includes(value.categoria)) return null;
+    if ((value.id.startsWith('parking-madrid-')) !== (value.categoria === 'aparcamientos-madrid')) return null;
+    if ((value.id.startsWith('parking-vigo-')) !== (value.categoria === 'aparcamientos-vigo')) return null;
+    if ((value.id.startsWith('refugio-cat-')) !== (value.categoria === 'refugios-cataluna')) return null;
+    if ((value.id.startsWith('estudio-madrid-')) !== (value.categoria === 'salas-estudio-madrid')) return null;
+    if (['trafico-cataluna', 'farmacias-guardia'].includes(value.categoria)) return null;
     if (value.categoria === 'bicis-zaragoza' && (value.lat < 41.4 || value.lat > 41.9 || value.lon < -1.2 || value.lon > -0.6)) return null;
     if (value.categoria === 'metro-bilbao' && (value.lat < 43.1 || value.lat > 43.5 || value.lon < -3.2 || value.lon > -2.7)) return null;
     if (value.categoria === 'camaras-cataluna' && (value.lat < 40.4 || value.lat > 42.9 || value.lon < 0.1 || value.lon > 3.4)) return null;
+    if (value.categoria === 'aparcamientos-madrid' && (value.lat < 40.2 || value.lat > 40.7 || value.lon < -3.9 || value.lon > -3.4)) return null;
+    if (value.categoria === 'aparcamientos-vigo' && (value.lat < 42.1 || value.lat > 42.4 || value.lon < -8.9 || value.lon > -8.5)) return null;
+    if (value.categoria === 'refugios-cataluna' && (value.lat < 40.4 || value.lat > 43 || value.lon < 0 || value.lon > 3.5)) return null;
+    if (value.categoria === 'salas-estudio-madrid' && (value.lat < 40.3 || value.lat > 40.7 || value.lon < -3.9 || value.lon > -3.5)) return null;
     // Sólo coordenadas públicas del lugar elegido; nunca incorporamos GPS, URLs,
     // precios u horarios del visitante a una copia sincronizada.
     return { id: value.id, nombre: value.nombre.trim(), categoria: value.categoria, lat: value.lat, lon: value.lon };

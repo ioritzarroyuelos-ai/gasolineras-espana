@@ -18,6 +18,7 @@ import { registerAuthRoutes } from './routes/auth'
 import { registerHomeRoutes } from './routes/home'
 import { registerCercaRoutes } from './routes/cerca'
 import { registerServiciosRoutes } from './routes/servicios'
+import { registerServiciosMunicipalesRoutes } from './routes/servicios-municipales'
 import { registerServiciosItvRoutes } from './routes/servicios-itv'
 import { registerServiciosGuardiasRoutes } from './routes/servicios-guardias'
 import { registerBicisRoutes } from './routes/bicis'
@@ -25,6 +26,7 @@ import { registerTraficoRoutes } from './routes/trafico'
 import { registerCamarasRoutes } from './routes/camaras'
 import { registerTransporteRoutes } from './routes/transporte'
 import { registerServiciosPublicosRoutes } from './routes/servicios-publicos'
+import { registerAparcamientosRoutes } from './routes/aparcamientos'
 import { registerTelegramItvRoutes } from './routes/telegram-itv'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
@@ -160,6 +162,7 @@ app.use('/api/*', async (c, next) => {
 // hay shadowing con las rutas namespaced de los verticales.
 registerHomeRoutes(app)
 registerServiciosRoutes(app)
+registerServiciosMunicipalesRoutes(app)
 registerServiciosItvRoutes(app)
 registerServiciosGuardiasRoutes(app)
 registerBicisRoutes(app)
@@ -167,6 +170,7 @@ registerTraficoRoutes(app)
 registerCamarasRoutes(app)
 registerTransporteRoutes(app)
 registerServiciosPublicosRoutes(app)
+registerAparcamientosRoutes(app)
 registerCercaRoutes(app)
 
 // ---- Gasolineras (precios del Ministerio) ----

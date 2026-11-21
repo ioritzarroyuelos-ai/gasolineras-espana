@@ -11,6 +11,7 @@
 import { SERVICIOS_IDS } from '../../scripts/lib/servicios-catalogo.mjs'
 import { recordatorioItvValido } from './itv-recordatorio'
 import { SERVICIO_ITV_ID } from './servicios-itv'
+import { identidadPublicaValida, coordenadasPublicas } from '../../scripts/lib/servicios-publicos.mjs'
 
 export const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 export const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com'])
@@ -359,7 +360,7 @@ export function isSyncableKey(key: string): boolean {
 const HOME_MODULES = new Set(['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'])
 // Recordar una capa oficial no habilita sus favoritos: estos requieren un
 // identificador estable y un proveedor admitido por serviceFavoriteProvider.
-const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao', 'refugios-cataluna', 'salas-estudio-madrid'])
+const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao', 'refugios-cataluna', 'salas-estudio-madrid', 'aparcamientos-madrid', 'aparcamientos-vigo'])
 function serviceFavoriteProvider(item: Record<string, unknown>): boolean {
   const { id, categoria, lat, lon } = item
   if (typeof id !== 'string' || typeof categoria !== 'string') return false
@@ -370,6 +371,10 @@ function serviceFavoriteProvider(item: Record<string, unknown>): boolean {
   // and temporary guard shifts are not locations that can be synchronized.
   if (/^metro-bilbao-\d{1,6}$/.test(id)) return categoria === 'metro-bilbao' && inBounds(43.1, 43.5, -3.2, -2.7)
   if (/^(?:camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2})$/.test(id)) return categoria === 'camaras-cataluna' && inBounds(40.4, 42.9, 0.1, 3.4)
+  if (/^parking-madrid-[1-9]\d{0,8}$/.test(id)) return categoria === 'aparcamientos-madrid' && inBounds(40.2, 40.7, -3.9, -3.4)
+  if (/^parking-vigo-[1-9]\d{0,8}$/.test(id)) return categoria === 'aparcamientos-vigo' && inBounds(42.1, 42.4, -8.9, -8.5)
+  if (identidadPublicaValida(id, 'refugios-cataluna')) return categoria === 'refugios-cataluna' && coordenadasPublicas('refugios-cataluna', lat, lon)
+  if (identidadPublicaValida(id, 'salas-estudio-madrid')) return categoria === 'salas-estudio-madrid' && coordenadasPublicas('salas-estudio-madrid', lat, lon)
   return /^osm-(?:node|way|relation)-[1-9]\d{0,15}$/.test(id) && SERVICIOS_IDS.has(categoria)
 }
 function record(value: unknown): value is Record<string, unknown> {

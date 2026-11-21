@@ -100,6 +100,20 @@ jobs:
       - name: Build (Cloudflare Pages)
         run: npm run build
 
+      - name: Preparar la primera vista previa municipal desde copias verificadas
+        run: |
+          # Sólo rellena el artefacto de preview antes del primer ciclo del robot.
+          # No escribe public/data, no publica una PR de datos y no usa AEMET.
+          if [ -f scripts/gen-servicios-municipales.mjs ] && [ ! -f public/data/servicios-municipales/index.json ]; then
+            node scripts/gen-servicios-municipales.mjs \
+              --source public/data/servicios \
+              --municipios public/data/tiempo/municipios.json \
+              --output .tmp/preview-servicios-municipales
+            mkdir -p dist/data/servicios-municipales
+            cp -a .tmp/preview-servicios-municipales/. dist/data/servicios-municipales/
+            echo '- Directorio municipal de preview generado desde las copias verificadas del repositorio; producción sigue dependiendo del robot.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Sanity check del artefacto
         run: |
           test -f dist/_worker.js || { echo "::error::dist/_worker.js no existe"; exit 1; }

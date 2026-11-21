@@ -10,7 +10,9 @@ export interface ServicioPublico {
 export interface FuentePublica { schema: 1; id: FuentePublicaId; nombre: string; consultado: string; fechaDatos: string; fuenteUrl: string; datosUrl: string; licenciaUrl: string; atribucion: string; total: number; conCoordenadas: number; sinCoordenadas: number; avisos: string[]; items: ServicioPublico[] }
 export interface EstadoFuentePublica { id: FuentePublicaId; nombre: string; estado: 'actual' | 'conservada' | 'error'; ultimoExito: string | null; fechaDatos: string | null; total: number; bytes: number; sha256: string | null; manifestBytes: number; manifestSha256: string | null; error?: string }
 export interface DescriptorPublico { archivo: string; total: number; bytes: number; sha256: string }
-export interface ManifestPublicos extends Omit<FuentePublica, 'items'> { version: string; listas: DescriptorPublico[]; mapa: Record<string, DescriptorPublico[]>; busqueda: DescriptorPublico }
+export interface DescriptorIdentidadesPublicas extends DescriptorPublico { desde: string; hasta: string }
+export type ReferenciaPublica = [id: string, pagina: number, posicion: number]
+export interface ManifestPublicos extends Omit<FuentePublica, 'items'> { version: string; listas: DescriptorPublico[]; mapa: Record<string, DescriptorPublico[]>; busqueda: DescriptorPublico; identidades?: DescriptorIdentidadesPublicas[] }
 /** Texto normalizado. Su posición corresponde al listado concatenado usando descriptor.total de cada página. */
 export type FilaBusquedaPublica = string
 export interface IndicePublicos { schema: 1; consultado: string; fuentes: EstadoFuentePublica[] }
@@ -21,6 +23,10 @@ export const SERVICIOS_PUBLICOS_MAX_SHARD_BYTES: number
 export const SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES: number
 export const SERVICIOS_PUBLICOS_LISTA_FILAS: number
 export const SERVICIOS_PUBLICOS_MAPA_FILAS: number
+export const SERVICIOS_PUBLICOS_IDENTIDADES_FILAS: number
+export const SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES: number
+export function identidadPublicaValida(id: unknown, fuenteId: FuentePublicaId): boolean
+export function validaIdentidadesPublicas(rows: unknown, manifest: ManifestPublicos, descriptor: DescriptorIdentidadesPublicas): ReferenciaPublica[]
 export function coordenadasPublicas(id: string, lat: unknown, lon: unknown): boolean
 export function normalizaRefugios(rows: unknown, fechaDatos: string, now?: number): Promise<FuentePublica>
 export function normalizaSalasMadrid(data: unknown, fechaDatos: string, now?: number): FuentePublica

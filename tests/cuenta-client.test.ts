@@ -66,6 +66,17 @@ function client(initial: Record<string, string> = {}, account: any = a, cloud: R
 describe('shared account favorites', () => {
   const serviceStorageName = 'eu-servicios-favoritos-v1', prefsStorageName = 'eu-servicios-preferencias-v1'
   const place = { id: 'osm-node-123', nombre: 'Fuente pública', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }
+  it('sincroniza aparcamientos sin guardar plazas y mantiene su proveedor y ciudad', async () => {
+    const c = client({}, a); await c.window.EUCuenta.ready
+    const madrid = { id: 'parking-madrid-72', nombre: 'Aparcamiento de prueba', categoria: 'aparcamientos-madrid', lat: 40.4, lon: -3.6 }
+    const vigo = { id: 'parking-vigo-4763', nombre: 'Aparcamiento de prueba Vigo', categoria: 'aparcamientos-vigo', lat: 42.22, lon: -8.73 }
+    for (const item of [madrid, vigo]) await c.window.EUCuenta.servicios.alternarFavorito({ ...item, plazasLibres: 0, fechaOcupacion: '2026-11-21T12:00:00Z' })
+    expect(c.remote.A[serviceStorageName]).toEqual([madrid, vigo])
+    for (const item of [{ ...madrid, id: 'osm-node-72' }, { ...madrid, categoria: vigo.categoria }, { ...madrid, lat: vigo.lat }, { ...vigo, categoria: 'aparcamientos' }]) expect(c.window.EUCuenta.servicios.urlFavorito(item)).toBeNull()
+    expect(c.window.EUCuenta.servicios.urlFavorito(vigo)).toBe('/cerca?lat=42.22&lon=-8.73&servicio=parking-vigo-4763&categorias=aparcamientos-vigo')
+    c.setUser(b); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([])
+    c.setUser(a); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([madrid, vigo])
+  })
   it('sincroniza lugares por separado, conserva gasolineras y construye enlaces internos', async () => {
     const c = client({}, a, { [fav]: [station('saved')] }); await c.window.EUCuenta.ready
     await c.window.EUCuenta.servicios.alternarFavorito({ ...place, url: 'https://evil.test', gps: { lat: 1, lon: 2 } })
@@ -131,7 +142,7 @@ describe('shared account favorites', () => {
     }
     expect(c.remote.A[serviceStorageName]).toBeUndefined()
   })
-  it('recuerda refugios y salas oficiales en preferencias e historial, sin habilitar favoritos', async () => {
+  it('recuerda refugios y salas oficiales sin guardar datos privados de la consulta', async () => {
     const c = client(); await c.window.EUCuenta.ready
     const categorias = ['refugios-cataluna', 'salas-estudio-madrid']
     await c.window.EUCuenta.servicios.guardarPreferencias({ categorias: [...categorias, categorias[0]], municipios: ['08019', '28079'], lat: 40.4123, busqueda: 'Mi dirección' })
@@ -143,6 +154,7 @@ describe('shared account favorites', () => {
     expect(c.window.EUCuenta.servicios.historial()).toEqual([{ municipio: '28079', categorias, fecha: expect.any(Number) }])
     expect(Object.keys(c.remote.A).some(key => key.includes('historial'))).toBe(false)
     for (const categoria of categorias) for (const id of ['osm-node-123', 'refugio-cat-' + 'a'.repeat(64), 'estudio-madrid-123']) {
+      if (categoria === 'salas-estudio-madrid' && id === 'estudio-madrid-123') continue;
       const unsupported = { ...place, id, categoria }
       expect(c.window.EUCuenta.servicios.urlFavorito(unsupported)).toBe(null)
       await expect(c.window.EUCuenta.servicios.alternarFavorito(unsupported)).rejects.toThrow()
@@ -150,6 +162,20 @@ describe('shared account favorites', () => {
     expect(c.remote.A[serviceStorageName]).toBeUndefined()
     await c.window.EUCuenta.servicios.activarHistorial(false)
     expect(c.window.EUCuenta.servicios.historial()).toEqual([])
+  })
+  it('guarda fichas públicas en su cuenta sin copiar horarios, activación, plazas ni GPS', async () => {
+    const c = client({}, a); await c.window.EUCuenta.ready
+    const refuge = { id: 'refugio-cat-' + 'a'.repeat(64), nombre: 'Refugio registrado', categoria: 'refugios-cataluna', lat: 41.4, lon: 2.1 }
+    const room = { id: 'estudio-madrid-123', nombre: 'Sala registrada', categoria: 'salas-estudio-madrid', lat: 40.4, lon: -3.7 }
+    for (const item of [refuge, room]) await c.window.EUCuenta.servicios.alternarFavorito({ ...item, activado: true, horarioTexto: '24/7', plazasLibres: 8, gps: { lat: 40.44444, lon: -3.77777 } })
+    expect(c.remote.A[serviceStorageName]).toEqual([refuge, room])
+    expect(c.window.EUCuenta.servicios.urlFavorito(refuge)).toBe('/cerca?lat=41.4&lon=2.1&servicio=' + refuge.id + '&categorias=refugios-cataluna')
+    for (const item of [{ ...refuge, categoria: 'salas-estudio-madrid' }, { ...refuge, id: 'osm-node-1' }, { ...refuge, lat: null }, { ...room, lon: 2.1 }, { ...room, id: 'estudio-madrid-001' }]) expect(c.window.EUCuenta.servicios.urlFavorito(item)).toBeNull()
+    c.setUser(b); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([])
+    c.setUser(a); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([refuge, room])
+    c.failPut('network'); await c.window.EUCuenta.servicios.quitarFavorito(refuge.id)
+    expect(c.window.EUCuenta.servicios.favoritos()).toEqual([room])
+    c.failPut(0); await c.window.EUCuenta.refresh(); expect(c.remote.A[serviceStorageName]).toEqual([room])
   })
   it('guarda estaciones Metro y cámaras como lugares estables sin copiar llegadas ni imágenes', async () => {
     const c = client(); await c.window.EUCuenta.ready

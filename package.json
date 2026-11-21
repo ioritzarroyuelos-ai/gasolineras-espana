@@ -22,11 +22,12 @@
     "postinstall": "node scripts/setup-hooks.mjs"
   },
   "dependencies": {
+    "gtfs-realtime-bindings": "2.2.0",
     "hono": "^4.13.19",
     "node-html-parser": "^9.0.7",
+    "pdf-parse": "^2.4.5",
     "read-excel-file": "^9.3.17",
-    "zod": "^4.6.7",
-    "pdf-parse": "^2.4.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.14.0",

@@ -1,0 +1,1 @@
+export function runTelegramItv(env: { CRON_TOKEN?: string; DRY_RUN?: string }, fetcher?: typeof fetch, maxBatches?: number): Promise<{dryRun: boolean; batches: number; processed: number; eligible: number; sent: number; skipped: number; errors: number; uncertain: number}>

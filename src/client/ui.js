@@ -1485,12 +1485,12 @@ function hideTelegramLinkPromptDialog() {
     var active = telegramAlertsActive();
     if (active) {
       panel.classList.add('active');
-      btn.textContent = 'Desactivar';
-      if (statusEl) statusEl.textContent = 'Alertas activas en Telegram. Cada manana a las 8:00 te mandamos el precio de tus gasolineras (o pidelo cuando quieras con /precios).';
+      btn.textContent = 'Desactivar avisos de precios';
+      if (statusEl) statusEl.textContent = 'Telegram vinculado. Activa la campana de las gasolineras que quieras incluir en el resumen de cada mañana, o consulta /precios. El recordatorio de ITV se gestiona por separado en ITV.';
     } else {
       panel.classList.remove('active');
-      btn.textContent = 'Activar alertas en Telegram';
-      if (statusEl) statusEl.textContent = 'Cada manana a las 8:00 recibe por Telegram el precio de las gasolineras que actives. Funciona tambien con la app cerrada.';
+      btn.textContent = 'Activar avisos de precios';
+      if (statusEl) statusEl.textContent = 'Recibe cada mañana el resumen de precios de las gasolineras que actives, también con la web cerrada. El recordatorio de ITV tiene su propio permiso en ITV.';
     }
   }
 
@@ -1504,7 +1504,7 @@ function hideTelegramLinkPromptDialog() {
     try {
       if (wasActive) {
         var res1 = await disableTelegramAlerts();
-        if (res1.ok) showToast('Alertas de Telegram desactivadas', 'info');
+        if (res1.ok) showToast('Avisos de precios desactivados. El recordatorio de ITV se gestiona en ITV.', 'info');
         else showToast('No se pudieron desactivar del todo', 'warning');
       } else {
         // Feedback inmediato: "abriendo Telegram..."
@@ -1516,7 +1516,7 @@ function hideTelegramLinkPromptDialog() {
           try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
         });
         if (res2.ok) {
-          showToast('✅ Alertas Telegram activas — resumen diario a las 8:00', 'success');
+          showToast('Avisos de precios activados: resumen cada mañana por Telegram.', 'success');
         } else if (res2.error === 'combustible_no_disponible') {
           showToast('Las alertas están disponibles para gasolina 95/98 y diésel', 'info');
         } else if (res2.error === 'sin_favoritos') {

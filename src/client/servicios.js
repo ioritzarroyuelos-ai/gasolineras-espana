@@ -1,5 +1,6 @@
 import { abiertoServicio, distanciaServicio, enlacesServicio, zonasServicios, biciServicioActual, plazoServicio, vigenteServicio, restanteServicio } from '../../scripts/lib/servicios-ui.mjs';
 import { servicioTileId } from '../../scripts/lib/servicios.mjs';
+import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMetro } from '../../scripts/lib/metro-ui.mjs';
 
 // El motor cartográfico y las gasolineras siguen siendo los del mapa original.
 // Las consultas públicas llevan cuadrículas; nunca la posición GPS del visitante.
@@ -28,15 +29,18 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
   let servicesView = null;
   let layer = null, markerById = new Map(), focusedId = url.searchParams.get('servicio') || '', services, navigation = 0, chargingEnabled = false;
   let catalogPromise, lastCatalogCheck = 0;
+  let favoriteLookupMessage = null;
   let biciSource = null, biciPromise, biciError = false, biciExpiryTimer;
   let trafficSource = null, trafficPromise, trafficError = false, trafficExpiryTimer;
   let cameraSource = null, cameraPromise, cameraError = false;
+  let metroSource = null, metroPromise, metroError = false, metroExpiryTimer, metroCheckedAt = -Infinity;
   let guardiaRound = 0, guardiaExpiryTimer, guardiaRefreshPromise;
   const guardiaSources = new Map(), guardiaRequests = new Map();
   const GUARDIA_CATEGORY = { id: 'farmacias-guardia', nombre: 'Farmacias de guardia · fuentes oficiales', grupo: 'salud', grupoNombre: 'Salud', disponibilidad: true };
   const BICI_CATEGORY = { id: 'bicis-zaragoza', nombre: 'Bizi Zaragoza · bicis y anclajes disponibles', grupo: 'transporte', grupoNombre: 'Transporte público', disponibilidad: true };
   const TRAFFIC_CATEGORY = { id: 'trafico-cataluna', nombre: 'Tráfico en Cataluña · incidencias publicadas', grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true };
   const CAMERA_CATEGORY = { id: 'camaras-cataluna', nombre: 'Cámaras de tráfico · Cataluña', grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true };
+  const METRO_CATEGORY = { id: 'metro-bilbao', nombre: 'Metro Bilbao · próximas llegadas', grupo: 'transporte', grupoNombre: 'Transporte público', disponibilidad: true };
   const townCache = new Map();
   function townInfo(ine) {
     if (!townCache.has(ine)) townCache.set(ine, json('/api/localidad/' + ine).catch(error => { townCache.delete(ine); throw error; }));
@@ -50,11 +54,13 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
   const notice = text => { $('sv-status').textContent = text; };
   const coords = poi => enlacesServicio(poi) !== null;
   const chosen = () => [...selected].sort();
-  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia'].includes(id));
+  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(id));
   const guardiaTurno = () => $('sv-guardias-turno')?.value || 'todas';
   const guardiaCurrent = poi => Number.isFinite(poi._guardiaDeadline) && poi._guardiaDeadline > Date.now() && !guardiaSources.get(poi._guardiaZona)?.failed;
   const trafficCurrent = () => !trafficError && trafficSource?.estado === 'actual' && vigenteServicio(trafficSource._plazo);
   const biciCurrent = poi => !biciError && poi._estadoComprobado === true && vigenteServicio(poi._plazo);
+  const metroNow = (data = metroSource) => ahoraParteMetro(data?.evaluadoEn, data?._inicioMono);
+  const metroCurrent = () => !metroError && metroParteActual(metroSource, metroNow());
   function osmStale() {
     return !source || source.desactualizado || !Number.isFinite(Date.parse(source.consultado)) || !Number.isFinite(Date.parse(source.fechaDatos)) || Date.now() - Date.parse(source.consultado) > 30 * 3600000 || Date.now() - Date.parse(source.fechaDatos) > 72 * 3600000;
   }
@@ -111,6 +117,15 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       box.append(el('p', 'Las imágenes se abren en la fuente original. El catálogo no publica su hora: no podemos confirmar que sean imágenes en directo. Los filtros de horario, gratuidad y accesibilidad no se aplican a las cámaras.'));
       if (cameraError) box.append(el('p', 'No se ha podido revisar el directorio. Consulta la fuente oficial.', 'sv-warning'));
     }
+    if (selected.has(METRO_CATEGORY.id)) {
+      box.append(link('Ver todas las estaciones y llegadas de Metro Bilbao', '/transporte/metro-bilbao'));
+      box.append(el('p', 'Fuente: Consorcio de Transportes de Bizkaia · Metro Bilbao. Son llegadas estimadas, no salidas ni el horario completo. Se comprueban cada 30 segundos mientras consultas esta capa.'));
+      if (metroSource) box.append(el('p', metroSource.total + ' estaciones en el catálogo del ' + date(metroSource.fechaDirectorio) + '. Parte de llegadas del ' + new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', dateStyle: 'medium', timeStyle: 'medium' }).format(new Date(metroSource.fechaDatos)) + '.'));
+      if (!metroCurrent()) box.append(el('p', 'No hay un parte reciente comprobable. Una lista vacía no confirma que no haya trenes.', 'sv-warning'));
+      else if (metroSource.estado === 'parcial') box.append(el('p', 'Parte incompleto: sólo se muestran las llegadas comprobadas.', 'sv-warning'));
+      box.append(el('p', 'Los filtros de horario, gratuidad y accesibilidad no se aplican a estas llegadas. La fuente no confirma esos datos.'));
+      box.append(link('Fuente oficial de llegadas · CTB', 'https://data.ctb.eus/dataset/metro-bilbao-online'), link('Licencia CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'));
+    }
   }
   function updateUrl() {
     const current = new URL(location.href);
@@ -137,6 +152,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
         input.checked ? selected.add(category.id) : selected.delete(category.id);
         navigation++; favoritesOnly = false; focusedId = ''; updateUrl(); syncControls(); saveCategories(); load(true);
         if (input.checked && category.id === 'bicis-zaragoza') chooseTown('50297');
+        if (input.checked && category.id === METRO_CATEGORY.id) chooseTown('48020');
         if (input.checked && ['trafico-cataluna', 'camaras-cataluna'].includes(category.id)) showCataluna();
         remember();
       });
@@ -176,7 +192,8 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       if (!services) { notice('No se han podido cargar tus preferencias. Recarga la página para guardar este lugar.'); return; }
       b.disabled = true;
       try {
-        await services.alternarFavorito({ id: poi.id, nombre: poi.nombre, categoria: poi.categorias?.[0] || poi.categoria, lat: poi.lat, lon: poi.lon });
+        const name = poi.nombre.length > 250 ? poi.nombre.slice(0, 249) + '…' : poi.nombre;
+        await services.alternarFavorito({ id: poi.id, nombre: name, categoria: poi.categorias?.[0] || poi.categoria, lat: poi.lat, lon: poi.lon });
         const saved = services.esFavorito(poi.id); b.textContent = saved ? '★ Guardado' : '☆ Guardar'; b.setAttribute('aria-pressed', String(saved));
         if (favoritesOnly) render();
       } catch { notice('No se pudo guardar el cambio. Comprueba la conexión y vuelve a intentarlo.'); }
@@ -189,6 +206,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     if (poi.proveedor === 'guardias-oficiales') return guardiaDetails(poi, popup);
     if (poi.proveedor === 'sct') return trafficDetails(poi, popup);
     if (poi.proveedor === 'camara-sct') return cameraDetails(poi, popup);
+    if (poi.proveedor === 'metro-bilbao') return metroDetails(poi, popup);
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
     card.append(el('p', (poi.categorias || [poi.categoria]).map(catalogName).join(' · '), 'sv-kind'), el('h3', poi.nombre));
     const distance = distanciaServicio(reference(), poi);
@@ -249,7 +267,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     if (favoritesOnly) return (services?.favoritos() || []).filter(coords);
     return [...records.values()].filter(p => p.categorias?.some(id => selected.has(id)) && inView(p)
       && (p.proveedor !== 'guardias-oficiales' || guardiaTurno() === 'todas' || guardiaCurrent(p) && p.estado === 'activa' && (guardiaTurno() !== '24h' || p.todoElDia))
-      && (p.proveedor === 'sct' ? trafficCurrent() : p.proveedor === 'camara-sct' || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
+      && (p.proveedor === 'sct' ? trafficCurrent() : ['camara-sct', 'metro-bilbao'].includes(p.proveedor) || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
   }
   function render() {
     const items = filteredRecords(), ref = reference();
@@ -261,6 +279,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     if (favoritesOnly) notice(items.length ? items.length + ' lugares guardados. Abre una ficha para comprobar su información actual.' : 'Todavía no tienes lugares guardados. Pulsa la estrella de una ficha para añadirla aquí.');
     else if (loadKey) notice((items.length ? items.length + ' lugares cargados dentro del mapa' : 'No hay coincidencias entre los lugares cargados') + (partial || nextPages.size ? '. La lista está incompleta: carga más o acerca el mapa.' : '. El directorio puede no recoger todos los lugares.') + (loading ? ' Cargando…' : ''));
     if (items.length > shown) box.append(el('p', 'Mostrando ' + shown + ' de ' + items.length + ' lugares cargados.', 'sv-meta'));
+    if (favoriteLookupMessage?.navigation === navigation) notice(favoriteLookupMessage.text);
     const m = mapInstance();
     if (!m || !window.L || fuelMode) return;
     if (!layer) {
@@ -278,7 +297,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
         continue;
       }
       const category = poi.categorias?.[0] || poi.categoria;
-      const marker = window.L.marker([poi.lat, poi.lon], { title: poi.nombre, icon: window.L.divIcon({ className: 'sv-pin' + (poi.proveedor === 'sct' ? ' sv-pin-traffic' : ''), html: poi.proveedor === 'sct' ? '!' : glyphs[category] || '•', iconSize: [38, 38], iconAnchor: [19, 19] }) });
+      const marker = window.L.marker([poi.lat, poi.lon], { title: poi.nombre, icon: window.L.divIcon({ className: 'sv-pin' + (poi.proveedor === 'sct' ? ' sv-pin-traffic' : poi.proveedor === 'metro-bilbao' ? ' sv-pin-metro' : ''), html: poi.proveedor === 'sct' ? '!' : poi.proveedor === 'metro-bilbao' ? 'M' : glyphs[category] || '•', iconSize: [38, 38], iconAnchor: [19, 19] }) });
       marker.bindPopup(() => details(records.get(poi.id) || poi, true)); layer.addLayer(marker); markerById.set(poi.id, marker);
     }
     if (focusedId && markerById.has(focusedId)) { const marker = markerById.get(focusedId); layer.zoomToShowLayer(marker, () => marker.openPopup()); focusedId = ''; }
@@ -293,8 +312,9 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
           const bike = zone === 'gbfs:zaragoza';
           const traffic = zone === 'sct:cataluna';
           const camera = zone === 'camaras:cataluna';
+          const metro = zone === 'metro:bilbao';
           const guardia = zone.startsWith('guardias:');
-          const data = guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
+          const data = guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : metro ? await fetchMetro() : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
           if (serial !== revision) return;
           if (guardia && round !== guardiaRound) continue;
           if (!Array.isArray(data.items)) throw Error('invalid');
@@ -309,11 +329,11 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
               }
             }
           }
-          if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else data.items.filter(coords).forEach(p => records.set(p.id, p));
-          if (itv) itvSource = data; else if (!guardia && !bike && !traffic && !camera) source = data;
+          if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else if (metro) acceptMetro(data); else data.items.filter(coords).forEach(p => records.set(p.id, p));
+          if (itv) itvSource = data; else if (!guardia && !bike && !traffic && !camera && !metro) source = data;
           if (data.siguientePagina != null) nextPages.set(zone, data.siguientePagina); else nextPages.delete(zone);
           if (guardia && data._failed) { failed++; nextPages.set(zone, page); }
-        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); } }
+        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone === 'metro:bilbao') metroError = true; if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); } }
       }
     }
     await Promise.all([worker(), worker(), worker()]);
@@ -340,6 +360,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     if (selected.has('bicis-zaragoza')) pages.push(['gbfs:zaragoza', 0]);
     if (selected.has('trafico-cataluna')) pages.push(['sct:cataluna', 0]);
     if (selected.has('camaras-cataluna')) pages.push(['camaras:cataluna', 0]);
+    if (selected.has(METRO_CATEGORY.id)) pages.push(['metro:bilbao', 0]);
     fetchPages(pages, controller.signal, serial);
   }
   function setCenter(p, name) {
@@ -365,15 +386,25 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       const currentNavigation = navigation, currentRevision = revision;
       try {
         const zone = poi.categoria === 'itv' ? servicioTileId(poi.lat, poi.lon) : pointZone(poi);
-        const bike = poi.categoria === 'bicis-zaragoza';
-        const data = bike ? await fetchBicis() : await json('/api/servicios/' + (poi.categoria === 'itv' ? 'itv/' : 'lugar/') + encodeURIComponent(poi.id) + '?zona=' + zone);
+        const bike = poi.categoria === 'bicis-zaragoza', metro = poi.categoria === METRO_CATEGORY.id, camera = poi.categoria === CAMERA_CATEGORY.id;
+        const data = bike ? await fetchBicis() : metro ? await fetchMetro() : camera ? await fetchCameras() : await json('/api/servicios/' + (poi.categoria === 'itv' ? 'itv/' : 'lugar/') + encodeURIComponent(poi.id) + '?zona=' + zone);
         if (currentNavigation !== navigation || currentRevision !== revision) return;
-        if (bike) { acceptBicis(data); render(); sourceText(); }
+        if (metro || camera) {
+          metro ? acceptMetro(data) : acceptCameras(data);
+          const found = records.get(poi.id);
+          if (!found || !coords(found)) {
+            favoriteLookupMessage = { navigation, text: 'Este lugar guardado ya no aparece con ubicación comprobable en el catálogo actual. Puedes conservarlo o quitarlo desde Favoritos.' };
+            focusedId = ''; render(); sourceText(); return;
+          }
+          origin = { lat: found.lat, lon: found.lon }; originLabel = 'desde el lugar elegido';
+          mapInstance()?.setView([found.lat, found.lon], 16); render(); sourceText();
+        }
+        else if (bike) { acceptBicis(data); render(); sourceText(); }
         else if (data.item && coords(data.item)) { if (poi.categoria === 'itv') itvSource = data; else source = data; records.set(data.item.id, data.item); render(); sourceText(); }
       } catch (error) {
         if (currentNavigation !== navigation || currentRevision !== revision) return;
         if (error.status === 409) { await refreshCatalogs(); notice('El directorio acaba de cambiar de zona. Vuelve a abrir este favorito para consultar su ficha.'); }
-        else notice('No se ha encontrado la ficha actual de este favorito. Puedes conservarlo o quitarlo de tus lugares guardados.');
+        else { favoriteLookupMessage = { navigation, text: 'No se ha encontrado la ficha actual de este favorito. Puedes conservarlo o quitarlo de tus lugares guardados.' }; notice(favoriteLookupMessage.text); }
       }
     } else { focusedId = poi.id; const m = mapInstance(); if (m) { m.setView([poi.lat, poi.lon], Math.max(m.getZoom(), 16)); render(); } }
     if (window.isMobile?.()) window.closeMobileSidebar?.();
@@ -402,7 +433,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     const box = $('sv-suggestions'); box.replaceChildren(); if (text.length < 2) return;
     const foundCategories = categories.filter(c => (c.total > 0 || c.disponibilidad) && fold(c.nombre).includes(fold(text))).slice(0, 6);
     for (const category of foundCategories) {
-      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else load(true); })); box.append(row);
+      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else if (category.id === METRO_CATEGORY.id) chooseTown('48020'); else load(true); })); box.append(row);
     }
     try {
       const towns = await json('/api/localidades?q=' + encodeURIComponent(text), pending.signal);
@@ -457,7 +488,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     document.body.classList.toggle('sv-fuel-mode', show);
     $('sv-view-fuel').setAttribute('aria-pressed', String(show)); $('sv-view-services').setAttribute('aria-pressed', String(!show));
     $('sv-results').hidden = show;
-    if (!show) { $('loading')?.classList.remove('show'); window.closeStationDetail?.(); }
+    if (!show) { $('loading')?.classList.remove('show'); window.closeStationDetail?.(); refreshMetro(true); }
     if (m && layer) show ? m.removeLayer(layer) : m.addLayer(layer);
     if (m && window.clusterGroup) show ? m.addLayer(window.clusterGroup) : m.removeLayer(window.clusterGroup);
     if (show) {
@@ -608,6 +639,63 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     guardiaRefreshPromise = fetchPages(zones.map(zone => ['guardias:' + zone, 0]), controller.signal, revision, round).finally(() => { guardiaRefreshPromise = null; scheduleGuardiasExpiry(); });
     return guardiaRefreshPromise;
   }
+  function metroDetails(poi, popup) {
+    const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
+    card.append(el('p', 'Metro Bilbao · CTB', 'sv-kind'), el('h3', poi.nombre));
+    const distance = distanciaServicio(reference(), poi);
+    if (distance !== null) card.append(el('p', (distance < 1 ? Math.round(distance * 1000) + ' m' : distance.toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' km') + ' ' + originLabel + ' · en línea recta', 'sv-meta'));
+    const arrivals = metroCurrent() ? metroLlegadasActuales(poi, metroSource, metroNow()) : [];
+    if (arrivals.length) {
+      card.append(el('p', 'Próximas llegadas estimadas · hora local', 'sv-badge'));
+      const hours = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit' });
+      for (const a of arrivals) {
+        const row = el('p', null, 'sv-metro-arrival'), time = el('time', hours.format(new Date(a.llegada))); time.dateTime = a.llegada;
+        row.append(time, document.createTextNode(' · Hacia ' + a.destino), el('small', ' · Parte de las ' + hours.format(new Date(a.fechaParte)), 'sv-meta')); card.append(row);
+      }
+      if (poi.limitado) card.append(el('p', 'Se muestran las cinco primeras llegadas del parte.', 'sv-meta'));
+    } else card.append(el('p', 'Sin próximas llegadas comprobadas. Esto no confirma que no haya trenes.', 'sv-warning'));
+    if (metroCurrent()) for (const a of poi.avisos || []) card.append(el('p', 'La fuente indica que un tren hacia ' + a.destino + ' no para aquí.', 'sv-warning'));
+    const actions = el('div', null, 'sv-actions'), directions = enlacesServicio(poi);
+    if (directions) actions.append(link('Google Maps', directions.google), link('Apple Maps', directions.apple), link('Waze', directions.waze));
+    actions.append(link('Todas las estaciones y fuente oficial', '/transporte/metro-bilbao'), favoriteButton(poi));
+    if (!popup) actions.append(button('Ver en el mapa', () => focusPoi(poi)));
+    card.append(actions); return card;
+  }
+  function fetchMetro() {
+    if (document.hidden || fuelMode) return Promise.reject(new DOMException('Capa no visible', 'AbortError'));
+    if (!metroPromise) {
+      const _inicioMono = performance.now(), pending = new AbortController(), timeout = setTimeout(() => pending.abort(), 15000);
+      metroPromise = json('/api/transporte/metro-bilbao', pending.signal).then(data => ({ ...data, _inicioMono })).catch(error => { if (error.name === 'AbortError') throw Error('timeout_metro'); throw error; }).finally(() => { clearTimeout(timeout); metroPromise = null; metroCheckedAt = performance.now(); });
+    }
+    return metroPromise;
+  }
+  function acceptMetro(data) {
+    if (!Number.isFinite(metroNow(data)) || !validaParteMetro(data, metroNow(data))) throw Error('invalid_metro');
+    metroSource = data; metroError = false;
+    for (const [id, poi] of records) if (poi.proveedor === 'metro-bilbao') records.delete(id);
+    for (const item of data.items) records.set(item.id, { ...item, proveedor: 'metro-bilbao', categorias: [METRO_CATEGORY.id], guardable: false });
+    scheduleMetroExpiry();
+  }
+  function scheduleMetroExpiry() {
+    clearTimeout(metroExpiryTimer);
+    if (!selected.has(METRO_CATEGORY.id) || favoritesOnly || !metroCurrent()) return;
+    const now = metroNow(), times = [Date.parse(metroSource.caduca)];
+    for (const poi of records.values()) if (poi.proveedor === 'metro-bilbao') for (const a of metroLlegadasActuales(poi, metroSource, now)) times.push(Date.parse(a.llegada));
+    metroExpiryTimer = setTimeout(() => {
+      // Recalcula también el popup abierto, sin esperar una respuesta nueva.
+      if (selected.has(METRO_CATEGORY.id) && !favoritesOnly) { render(); sourceText(); }
+      scheduleMetroExpiry();
+    }, Math.max(1, Math.min(...times) - metroNow() + 1));
+  }
+  async function refreshMetro(force = false) {
+    if (document.hidden || fuelMode || !selected.has(METRO_CATEGORY.id) || favoritesOnly || !force && performance.now() - metroCheckedAt < 29000) return;
+    const serial = revision;
+    try {
+      const data = await fetchMetro();
+      if (serial !== revision || document.hidden || fuelMode || !selected.has(METRO_CATEGORY.id) || favoritesOnly) return;
+      acceptMetro(data); render(); sourceText();
+    } catch { if (serial === revision && selected.has(METRO_CATEGORY.id)) { metroError = true; render(); sourceText(); } }
+  }
   function trafficDetails(poi, popup) {
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
     card.append(el('p', 'Tráfico en Cataluña · SCT', 'sv-kind'), el('h3', poi.nombre));
@@ -626,6 +714,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     card.append(el('p', 'Ubicación publicada en el directorio del ' + date(cameraSource?.fechaDirectorio) + '.', 'sv-meta'));
     if (cameraError || cameraSource?.estado !== 'actual' || Date.parse(cameraSource?.caduca) <= Date.now()) card.append(el('p', 'Directorio pendiente de actualizar. Confirma la ubicación en la fuente.', 'sv-warning'));
     if (safeWeb(poi.urlCamara)) card.append(link('Ver cámara oficial', poi.urlCamara));
+    card.append(favoriteButton(poi));
     if (!popup) card.append(button('Ver el punto publicado', () => focusPoi(poi)));
     return card;
   }
@@ -713,8 +802,8 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       if (results[0].status === 'fulfilled') {
         source = results[0].value; categories = [...(source.categorias || [])]; availableZones = source.zonas || []; ok = true;
       }
-      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id].includes(c.id));
-      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY);
+      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id, METRO_CATEGORY.id].includes(c.id));
+      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY, METRO_CATEGORY);
       if (results[1].status === 'fulfilled') {
         itvSource = results[1].value; ok = true;
         categories = categories.filter(c => c.id !== 'itv');
@@ -735,7 +824,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       if (await refreshCatalogs()) { renderCategories(); sourceText(); if (!favoritesOnly) load(true); }
     }
     render(); sourceText();
-    await Promise.all([refreshBicis(), refreshTraffic(), refreshCameras(), guardias]);
+    await Promise.all([refreshBicis(), refreshTraffic(), refreshCameras(), refreshMetro(true), guardias]);
   }
   async function init() {
     if (!$('sv-results')) return;
@@ -769,6 +858,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     window.addEventListener('eu:servicios-historial', renderHistory);
     document.addEventListener('visibilitychange', refreshVisible);
     setInterval(refreshVisible, 60000);
+    setInterval(refreshMetro, 30000);
     const m = mapInstance();
     if (m) {
       m.on('moveend', () => { clearTimeout(mapTimer); mapTimer = setTimeout(() => load(), 400); });
@@ -790,6 +880,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
       if (focusedId && coords(target)) await focusPoi({ id: focusedId, ...target, categoria: chosen()[0] });
       else if (near) setCenter({ lat: near.lat, lon: near.lng }, 'desde tu ubicación guardada en este enlace');
       else if (selected.size === 1 && selected.has('bicis-zaragoza')) await chooseTown('50297');
+      else if (selected.size === 1 && selected.has(METRO_CATEGORY.id)) await chooseTown('48020');
       else if (selected.size && chosen().every(id => ['trafico-cataluna', 'camaras-cataluna'].includes(id))) showCataluna();
       else load();
     }

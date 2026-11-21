@@ -38,7 +38,7 @@ describe('cadencia única entre dos relojes',()=>{
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h-0.02)],now).retry).toBe(false)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h)],now).retry).toBe(true)
   })
-  it.each([['prices','07:00'],['prices','19:00'],['chargers','05:15'],['guardias','05:45'],['itv','04:17'],['politica','04:20'],['servicios','08:17']])('respeta el horario UTC de %s a las %s',(kind,time)=>{
+  it.each([['prices','07:00'],['prices','19:00'],['chargers','05:15'],['guardias','05:45'],['itv','04:17'],['politica','04:20'],['servicios','08:17'],['transporte','08:47']])('respeta el horario UTC de %s a las %s',(kind,time)=>{
     const j=lookup(kind),t=Date.parse('2026-11-21T'+time+':00Z'),last={status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:'2026-11-20T21:00:00Z'}
     if(kind==='prices' && time==='19:00')last.run_started_at='2026-11-21T08:00:00Z'
     expect(necesitaRecuperacion(j,freshManifest(j,t),[last],t-1).retry).toBe(false)
@@ -60,7 +60,7 @@ describe('cadencia única entre dos relojes',()=>{
     expect(necesitaRecuperacion(j,freshManifest(j),[r],now).retry).toBe(true)
     expect(necesitaRecuperacion(j,freshManifest(j),[{...r,run_started_at:new Date(now-30*60000).toISOString()}],now).retry).toBe(false)
   })
-  it.each(['prices','chargers','guardias','tiempo','itv','politica','servicios'])('limita reintentos de %s a4h',kind=>{
+  it.each(['prices','chargers','guardias','tiempo','itv','politica','servicios','transporte'])('limita reintentos de %s a4h',kind=>{
     const j=lookup(kind)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(3.99,'failure')],now).retry).toBe(false)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(4,'failure')],now).retry).toBe(true)
@@ -91,7 +91,7 @@ describe('cadencia única entre dos relojes',()=>{
         if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){counts[j.kind]++;runs=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t).toISOString()}]}
       }
     }
-    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24,servicios:1})
+    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24,servicios:1,transporte:1})
   })
   it('mantiene24pasadas deportivas con colas20min y jitter de±15s',()=>{
     const j=lookup('deportes');let previous:any,count=0

@@ -51,7 +51,9 @@ test('ITV móvil: cabecera compacta, precios legibles y sin desbordar', async ({
         await expect(page.locator('#itv-recordatorio-calendario')).toBeVisible()
         await expect(page.locator('#itv-recordatorio-borrar')).toBeVisible()
       }
-      for (const boton of await page.locator('main .btn').all()) expect((await boton.boundingBox())!.height).toBeGreaterThanOrEqual(44)
+      // Sólo tienen superficie táctil los controles del estado visible. El
+      // recorrido de vincular/activar/cancelar Telegram se mide en su prueba.
+      for (const boton of await page.locator('main .btn:visible').all()) expect((await boton.boundingBox())!.height).toBeGreaterThanOrEqual(44)
       if (width === 390 && route === '/itv/precios') await page.screenshot({ path: test.info().outputPath('itv-precios-movil.png') })
     }
   }

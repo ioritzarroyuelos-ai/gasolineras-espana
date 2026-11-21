@@ -108,6 +108,9 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'itv-28-2801', nombre: 'ITV Madrid', categoria: 'itv', lat: 40.4, lon: -3.7 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi Zaragoza', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'camara-sct-N340_1', nombre: 'Cámara SCT', categoria: 'camaras-cataluna', lat: 41.4, lon: 2.1 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'camara-terrassa-cam14', nombre: 'Cámara Terrassa', categoria: 'camaras-cataluna', lat: 41.56, lon: 2.01 }]],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable'], municipios: ['28079'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable', 'itv'], municipios: ['28079'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['bicis-zaragoza'], municipios: ['50297'] }],
@@ -179,6 +182,27 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     const res = await app.request('/api/sync', { headers }, env)
     expect(res.status).toBe(503)
     expect(await res.json()).toEqual({ error: 'sync_unavailable' })
+  })
+  it('los favoritos de estaciones y cámaras siguen aislados entre cuentas', async () => {
+    const { env, headers, saved } = await setup()
+    const storageName = 'eu-servicios-favoritos-v1', item = { id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 }
+    expect((await app.request('/api/sync/' + storageName, { method: 'PUT', headers, body: JSON.stringify([item]) }, env)).status).toBe(200)
+    const otherToken = await signSessionJWT({ sub: 'account-b', email: 'account-b@example.test' }, secret)
+    const otherHeaders = { ...headers, cookie: 'gs_session=' + otherToken, 'X-Account-Id': 'account-b' }
+    expect(await (await app.request('/api/sync', { headers: otherHeaders }, env)).json()).toEqual({ data: {} })
+    expect((await app.request('/api/sync/' + storageName, { method: 'DELETE', headers: otherHeaders }, env)).status).toBe(200)
+    expect(saved.get('u:account-a:' + storageName)).toBe(JSON.stringify([item]))
+    expect((await app.request('/api/sync/' + storageName, { method: 'DELETE', headers: { ...otherHeaders, 'X-Account-Id': 'account-a' } }, env)).status).toBe(409)
+  })
+  it('rechaza identidades, regiones y estados efímeros de Metro y cámaras', () => {
+    const storageName = 'eu-servicios-favoritos-v1'
+    const metro = { id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 }
+    const camera = { id: 'camara-sct-N340_1', nombre: 'Cámara', categoria: 'camaras-cataluna', lat: 41.4, lon: 2.1 }
+    for (const id of ['metro-bilbao-7.1', 'metro-bilbao-1234567', 'metro-bilbao-prueba', 'metro-madrid-7', 'osm-node-7', 'camara-sct-7']) expect(isValidSyncValue(storageName, [{ ...metro, id }])).toBe(false)
+    for (const id of ['camara-sct-x.gif', 'camara-sct-' + 'a'.repeat(41), 'camara-sct-../1', 'camara-terrassa-cam1', 'camara-terrassa-cam123', 'camara-terrassa-cam14.jpeg', 'camara-madrid-1', 'sct-123', 'osm-node-123']) expect(isValidSyncValue(storageName, [{ ...camera, id }])).toBe(false)
+    for (const item of [{ ...metro, categoria: 'metro' }, { ...camera, categoria: 'trafico-cataluna' }, { ...metro, lat: 41.4 }, { ...camera, lon: -2.9 }, { ...camera, lat: null }, { ...metro, llegadas: [] }, { ...camera, horaImagen: null }, { ...camera, urlCamara: 'https://mct.gencat.cat/' }, { ...camera, caduca: '2026-11-21T20:00:00Z' }]) expect(isValidSyncValue(storageName, [item])).toBe(false)
+    expect(isValidSyncValue(storageName, [metro, metro])).toBe(false)
+    for (const categoria of ['farmacias-guardia', 'trafico-cataluna']) for (const id of [metro.id, camera.id, 'guardia-prueba-123']) expect(isValidSyncValue(storageName, [{ ...metro, id, categoria }])).toBe(false)
   })
 
   it('rechaza cuerpos excesivos y errores de sesión sin caché', async () => {

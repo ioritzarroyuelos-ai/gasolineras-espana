@@ -690,11 +690,11 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${opts.servicesTool ? 'Servicios cerca d
         <div class="tg-alerts-info">
           <span class="tg-alerts-icon" aria-hidden="true">&#x2708;&#xFE0F;</span>
           <div class="tg-alerts-text">
-            <strong>Alertas por Telegram</strong>
-            <small id="tg-alerts-status">Cada manana a las 8:00 recibe por Telegram el precio de las gasolineras que actives. Funciona tambien con la app cerrada.</small>
+            <strong>Avisos de precios por Telegram</strong>
+            <small id="tg-alerts-status">Recibe cada mañana el resumen de precios de las gasolineras que actives. El recordatorio de ITV se gestiona por separado en ITV.</small>
           </div>
         </div>
-        <button id="btn-tg-toggle" class="btn-primary tg-alerts-btn">Activar alertas en Telegram</button>
+        <button id="btn-tg-toggle" class="btn-primary tg-alerts-btn">Activar avisos de precios</button>
       </div>
       <!-- Lista de favoritas -->
       <div id="favs-list-wrap">

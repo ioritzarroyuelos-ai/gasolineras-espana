@@ -36,7 +36,7 @@ for (const job of DATA_JOBS) {
   if (decision.retry) {
     // Destinos internos fijos y siempre main. Un POST ambiguo no se repite;
     // el siguiente pulso volverá a consultar los trabajos antes de decidir.
-    const result=await request(prefix+'workflows/'+workflow+'/dispatches',{method:'POST',body:{ref:'main',...(job.kind==='telegram'?{inputs:{automatic:'true',dry_run:'false'}}:{})}})
+    const result=await request(prefix+'workflows/'+workflow+'/dispatches',{method:'POST',body:{ref:'main',...(job.scheduleLocal?{inputs:{automatic:'true',dry_run:'false'}}:{})}})
     line+=' → solicitado'+(result?.workflow_run_id?' (run '+result.workflow_run_id+')':'')
     await new Promise(r=>setTimeout(r,1000))
   }

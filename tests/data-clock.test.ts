@@ -182,7 +182,7 @@ describe('publicación protegida del reloj',()=>{
   })
   it('deja un solo calendario, conserva manuales y el vigilante26h',()=>{
     const yaml=createRequire(import.meta.url)('js-yaml')
-    for(const name of ['prices','chargers','guardias','tiempo','itv','politica','deportes','servicios']){
+    for(const name of ['prices','chargers','guardias','tiempo','itv','politica','deportes','servicios','transporte']){
       const config=yaml.load(readFileSync('.github/workflows/fetch-'+name+'.yml','utf8'))
       expect(Object.hasOwn(config.on,'workflow_dispatch')).toBe(true)
       expect(config.on.schedule).toEqual(name==='prices'?[{cron:'30 */12 * * *'}]:undefined)

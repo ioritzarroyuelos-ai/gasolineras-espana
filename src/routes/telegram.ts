@@ -7,6 +7,7 @@ import type { Env } from '../index'
 import { slog, authorizeCron, jsonBodyLimit } from '../lib/runtime'
 import { tokensEqualConstTime } from '../lib/pure'
 import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
+import { borrarItvTelegram } from '../lib/telegram-itv'
 import { instanteLocal } from '../../scripts/lib/fechas.mjs'
 
 export function registerTelegramRoutes(app: Hono<{ Bindings: Env }>): void {
@@ -25,20 +26,18 @@ export function registerTelegramRoutes(app: Hono<{ Bindings: Env }>): void {
 //      (a) actualiza telegram_pending_tokens SET chat_id = .../confirmed_at = now
 //      (b) lee favs_json + threshold_cents de la misma fila
 //      (c) inserta las filas en telegram_subscriptions (chat_id + cada fav)
-//      (d) borra el pending_token
+//      (d) conserva el pending_token hasta que expire para el polling
 //      (e) manda sendMessage al user listando las gasolineras ya vigiladas.
 //   4. La web hace polling a GET /api/telegram/confirm?token=... cada 2s.
-//      Cuando el endpoint devuelve confirmed=true, guarda chat_id en
-//      localStorage y marca el panel como activo. No hay /subscribe adicional.
+//      Devuelve un Bearer firmado; chat_id es sólo informativo y no autoriza.
 //
 // Flow de alertas:
-//   - Cron GHA (.github/workflows/cron-telegram-check.yml) invoca cada 2h
+//   - El reloj GHA (.github/workflows/cron-telegram-check.yml) invoca cada mañana
 //     POST /api/cron/telegram-check con Authorization Bearer CRON_TOKEN.
 //   - El worker lee el snapshot /data/stations.json una vez, indexa por
 //     station_id, y itera todas las filas de telegram_subscriptions.
-//   - Si precio actual < baseline_cents - threshold_cents y ha pasado el
-//     cooldown de 12h, envia sendMessage al chat_id con el detalle y
-//     actualiza baseline_cents + last_notified_at.
+//   - Envía un resumen diario de precios vigentes, con deduplicación por chat.
+//     No es una alerta de bajada. ITV tiene consentimiento y cron separados.
 //
 // Si TELEGRAM_BOT_TOKEN no esta configurado los endpoints responden 503 y
 // el panel del UI se oculta — el resto de la app funciona igual.
@@ -255,8 +254,8 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
         `📅 Cada manana a las 8:00 te mando su precio actual.\n` +
         `⚡ Escribe /precios cuando quieras el listado al momento.\n\n` +
         `<i>Para pararlas en cualquier momento: /stop</i>`
-      : `✅ <b>Vinculado</b>, pero no llego ninguna gasolinera.\n\n` +
-        `Vuelve a la web, toca una gasolinera en el mapa y pulsa "Activar alerta" de nuevo.`
+      : `✅ <b>Telegram vinculado</b>.\n\n` +
+        `Vuelve a la página donde empezaste y elige los avisos que quieres activar. Vincular el bot no activa recordatorios de ITV por sí solo.`
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
     slog('info', 'telegram_bind', { ok: true, chat_id: chatId, subscribed: inserted })
     return c.json({ ok: true }, 200)
@@ -268,7 +267,9 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       `1. Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}\n` +
       `2. Toca una gasolinera en el mapa\n` +
       `3. Pulsa "Activar alerta"\n\n` +
-      `Cada dia a las 8:00 te llega el precio actual. Escribe /precios para pedirlo cuando quieras.`,
+      `Cada mañana intentamos enviar el precio actual. Escribe /precios para pedirlo cuando quieras.\n\n` +
+      `📅 También puedes activar un recordatorio de ITV en https://webapp-3ft.pages.dev/itv/ con tu fecha y un permiso separado. No se activa al vincular el bot.\n` +
+      `/stop cancela tanto los avisos de precios como el recordatorio de ITV.`,
     )
     return c.json({ ok: true }, 200)
   }
@@ -321,8 +322,9 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       `<b>Comandos:</b>\n` +
       `/precios — el precio de ahora de tus gasolineras\n` +
       `/start — volver a empezar\n` +
-      `/stop — darte de baja (borra todas tus alertas)\n` +
-      `/help — esta ayuda`,
+      `/stop — cancelar avisos de precios y de ITV\n` +
+      `/help — esta ayuda\n\n` +
+      `📅 ITV: elige tu fecha y activa su permiso independiente en https://webapp-3ft.pages.dev/itv/. Vincular el bot no activa esos avisos.`,
     )
     return c.json({ ok: true }, 200)
   }
@@ -331,12 +333,18 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       'DELETE FROM telegram_subscriptions WHERE chat_id = ?'
     ).bind(chatId).run()
     const n = r.meta?.changes ?? 0
+    let itv = false
+    try { itv = await borrarItvTelegram(c.env, chatId) }
+    catch {
+      slog('warn', 'telegram_stop_itv_pending', {})
+      return c.json({ ok: false, error: 'itv_cancel_pending' }, 503)
+    }
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
-      n > 0
-        ? `🗑️ Borradas <b>${n}</b> alerta(s). Si cambias de opinion, vuelve a la web y pulsa "Activar alertas" de nuevo.`
+      n > 0 || itv
+        ? `🗑️ Cancelados tus avisos de precios y tu recordatorio de ITV. Para volver a activarlos, elígelos expresamente en la web.`
         : `No tenias alertas activas. Nada que borrar.`,
     )
-    slog('info', 'telegram_stop', { chat_id: chatId, removed: n })
+    slog('info', 'telegram_stop', { removed: n, itvRemoved: itv })
     return c.json({ ok: true }, 200)
   }
   // Cualquier otro texto — ayuda breve.
@@ -403,7 +411,8 @@ app.get('/api/telegram/confirm', async c => {
 // y el polling /api/telegram/confirm solo notifica al UI que ya esta listo.
 
 // POST /api/telegram/unsubscribe — borra alertas de un chat.
-// Body: { chat_id, station_id?, fuel_code? }  (si no pasas station+fuel, borra todas)
+// Body: { station_id?, fuel_code? }; el Bearer aporta el chat. Sin estación,
+// borra las suscripciones de gasolina de ese chat, no el permiso separado ITV.
 app.post('/api/telegram/unsubscribe', jsonBodyLimit(4 * 1024), async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const chatId = await tgChatFromAuth(c)
@@ -431,11 +440,8 @@ app.post('/api/telegram/unsubscribe', jsonBodyLimit(4 * 1024), async c => {
   }
 })
 
-// GET /api/telegram/subscriptions?chat_id=X — lista las alertas activas de
-// un chat. La UI lo consulta al abrir el modal de favoritas para renderizar
-// el estado ON/OFF de la campana de cada favorita. Sin auth: igual que el
-// resto de endpoints /api/telegram/*, el chat_id del localStorage es la
-// unica "credencial" (modelo establecido desde Ship 25).
+// GET /api/telegram/subscriptions — lista las suscripciones de gasolina del
+// chat autorizado por Bearer firmado. Un chat_id del cliente no autoriza nada.
 app.get('/api/telegram/subscriptions', async c => {
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const chatId = await tgChatFromAuth(c)
@@ -452,7 +458,7 @@ app.get('/api/telegram/subscriptions', async c => {
 })
 
 // POST /api/telegram/toggle-fav — activa o pausa la alerta de UNA favorita.
-// Body: { chat_id, station_id, fuel_code, enabled }
+// Body: { station_id, fuel_code, enabled }; chat sólo desde el Bearer.
 // - enabled=true:  inserta en telegram_subscriptions (threshold copiado del
 //                  primer sub del mismo chat; default 15 si el chat no tiene
 //                  subs) y manda al bot "🔔 Alerta añadida". Idempotente:

@@ -23,6 +23,8 @@ import { registerServiciosGuardiasRoutes } from './routes/servicios-guardias'
 import { registerBicisRoutes } from './routes/bicis'
 import { registerTraficoRoutes } from './routes/trafico'
 import { registerCamarasRoutes } from './routes/camaras'
+import { registerTransporteRoutes } from './routes/transporte'
+import { registerTelegramItvRoutes } from './routes/telegram-itv'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
 import { registerDataRoutes } from './routes/data'
@@ -162,6 +164,7 @@ registerServiciosGuardiasRoutes(app)
 registerBicisRoutes(app)
 registerTraficoRoutes(app)
 registerCamarasRoutes(app)
+registerTransporteRoutes(app)
 registerCercaRoutes(app)
 
 // ---- Gasolineras (precios del Ministerio) ----
@@ -252,6 +255,7 @@ app.post('/api/cron/purge', async c => {
 // ---- Alertas Telegram (Ship 25) ----
 // Rutas en src/routes/telegram.ts: /api/telegram/* (8) + /api/cron/telegram-check.
 registerTelegramRoutes(app)
+registerTelegramItvRoutes(app)
 
 // ---- Telemetría / Admin ----
 // Rutas en src/routes/admin.ts (csp-report, client-error, admin/*, reports/price,

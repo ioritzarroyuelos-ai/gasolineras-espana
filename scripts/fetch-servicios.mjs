@@ -76,10 +76,14 @@ export function extractosRecientesDelIndice(html,source,now=Date.now()) {
   const base=new URL('./index.html',SOURCE_PREFIX[source.id]),today=new Date(now),midnight=Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())
   const recent=new Map(Array.from({length:3},(_,age)=>[new Date(midnight-age*86400000).toISOString().slice(2,10).replaceAll('-',''),age]))
   const candidates=new Map();let links=0
-  const markup=html.replace(/<!--[\s\S]*?-->/g,'').replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,'')
-  for(const match of markup.matchAll(/<a\b[^>]{0,4096}?\shref\s*=\s*(?:"([^"]{1,2048})"|'([^']{1,2048})'|([^\s"'<>]{1,2048}))/gi)){
+  // Read tokens without rewriting markup. Comments and raw script/style
+  // bodies are consumed as whole tokens, never interpreted as download links.
+  const tokens=/<!--[\s\S]*?(?:-->|$)|<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)|<a\b[^>]{0,4096}?\shref\s*=\s*(?:"([^"]{1,2048})"|'([^']{1,2048})'|([^\s"'<>]{1,2048}))/gi
+  for(const match of html.matchAll(tokens)){
+    const href=match[2]||match[3]||match[4]
+    if(!href)continue
     if(++links>10000)throw Error('Índice oficial con demasiados enlaces')
-    let url;try{url=new URL(match[1]||match[2]||match[3],base).href}catch{continue}
+    let url;try{url=new URL(href,base).href}catch{continue}
     if(!urlExtractoPermitida(url,source.id))continue
     const date=/-(\d{6})\.osm\.pbf$/.exec(url)?.[1]
     if(recent.has(date))candidates.set(url,recent.get(date))

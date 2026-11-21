@@ -11,6 +11,7 @@ export function serviciosPanelHtml(): string {
     <details id="sv-category-box"><summary>Elegir servicios <span id="sv-category-count"></span></summary><div id="sv-categories"><p>Cargando categorías…</p></div></details>
     <div class="sv-filters" role="group" aria-label="Filtrar servicios"><label><input type="checkbox" id="sv-open"> Abierto según horario</label><label><input type="checkbox" id="sv-free"> Gratis</label><label><input type="checkbox" id="sv-accessible"> Accesible</label></div>
     <p class="sv-help">Los filtros sólo incluyen datos publicados. Un horario desconocido no cuenta como abierto.</p>
+    <fieldset id="sv-parking-controls" hidden><legend>Aparcamientos oficiales</legend><label><input type="checkbox" id="sv-parking-free"> Con plazas libres confirmadas</label><label><input type="checkbox" id="sv-parking-pmr"> Con plazas reservadas PMR</label><p class="sv-help">Estos filtros sólo afectan a los aparcamientos oficiales. PMR indica que existen plazas reservadas para movilidad reducida, no que estén libres. Las cifras pueden cambiar durante el trayecto.</p></fieldset>
     <div id="sv-guardias-control" hidden><label for="sv-guardias-turno">Farmacias de guardia</label><select id="sv-guardias-turno"><option value="todas">Todos los turnos publicados</option><option value="ahora">De guardia ahora · horario confirmado</option><option value="24h">Guardias de 24 horas activas ahora</option></select><p class="sv-help">Las guardias localizadas y los horarios por confirmar se muestran en «Todos los turnos», pero no cuentan como abiertas.</p></div>
     <div class="sv-mode"><button type="button" id="sv-view-services" aria-pressed="true">Servicios</button><button type="button" id="sv-view-fuel" aria-pressed="false">Comparar carburantes</button></div>
     <p id="sv-status" role="status" aria-live="polite">Busca un municipio o usa tu ubicación para ver los servicios cercanos.</p>
@@ -32,6 +33,7 @@ export function serviciosMapStyles(nonce: string): string {
   .services-map-page:not(.sv-fuel-mode) #stale-banner{display:none!important}
   .sv-pin-traffic{background:#8d4514}
   .sv-parking-availability{font-size:20px;font-weight:750;color:#285738}
+  #sv-parking-controls{border:1px solid #cbd7cd;border-radius:12px;padding:8px 12px;margin:12px 0}#sv-parking-controls legend{font-weight:700}#sv-parking-controls label{display:flex;align-items:center;min-height:44px}
   #sv-guardias-control select{width:100%;min-height:44px;margin-top:6px;padding:9px;border:1px solid #a6b7ab;border-radius:10px;background:#fff;color:#24332b;font:inherit}#sv-guardias-sources summary{line-height:1.45;padding:5px 0}#sv-guardias-sources .sv-action{margin:4px 4px 0 0}
   @media(max-width:1023px){.services-map-page #sidebar{width:100%}.sv-panel{padding:14px}.sv-panel h2{font-size:22px}.services-map-page #sidebar.collapsed{width:100%}.sv-heading{gap:6px}.sv-heading button{font-size:12px}.services-map-page #sidebar-content{max-height:100%}.sv-popup{max-width:235px}}
   </style>`

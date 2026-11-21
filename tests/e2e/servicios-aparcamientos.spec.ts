@@ -86,6 +86,47 @@ test('Vigo guarda sólo el lugar y al volver desde Inicio hidrata la cifra actua
   await page.goto('/'); const favorite = page.locator('[data-dia-service-favs] a').filter({ hasText: item.nombre }); await expect(favorite).toHaveAttribute('href', /servicio=parking-vigo-4763&categorias=aparcamientos-vigo/)
   await favorite.click(); await expect(popup(page)).toContainText('7 plazas libres'); await expect(popup(page)).not.toContainText('0 plazas libres'); expect(state.errors).toEqual([])
 })
+
+for (const width of [390, 1280]) test('filtros de plazas y PMR mantienen su significado a ' + width + 'px', async ({ page }, info) => {
+  await page.clock.setFixedTime(new Date(NOW)); await page.setViewportSize({ width, height: 900 })
+  const state = await fixture(page)
+  state.items = [row('madrid', 72, { plazasLibres: 5 }), row('madrid', 73, { plazasLibres: 0 }), row('madrid', 74, { plazasLibres: 8, plazasPmr: null })]
+  await ready(page)
+  const controls = page.locator('#sv-parking-controls')
+  await expect(controls).toBeVisible(); await expect(controls).toContainText('no que estén libres')
+  await page.getByLabel('Con plazas libres confirmadas', { exact: true }).check()
+  await expect(page.locator('.sv-card')).toHaveCount(2); await expect(card(page, 'parking-madrid-73')).toHaveCount(0)
+  await page.getByLabel('Con plazas reservadas PMR', { exact: true }).check()
+  await expect(page.locator('.sv-card')).toHaveCount(1); await expect(card(page, 'parking-madrid-72')).toContainText('5 plazas libres')
+  await page.getByLabel('Con plazas libres confirmadas', { exact: true }).uncheck()
+  await expect(page.locator('.sv-card')).toHaveCount(2); await expect(card(page, 'parking-madrid-73')).toContainText('0 plazas libres')
+  await controls.scrollIntoViewIfNeeded()
+  expect((await new AxeBuilder({ page }).include('#sv-parking-controls').analyze()).violations).toEqual([])
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  await page.screenshot({ path: info.outputPath('filtros-parking-' + width + '.png') })
+  expect(state.errors).toEqual([])
+})
+
+test('el filtro de plazas elimina partes vencidos y no filtra otras categorías ni favoritos', async ({ page }) => {
+  await page.clock.install({ time: new Date(NOW) }); const state = await fixture(page)
+  state.items = [row('madrid', 72, { plazasLibres: 5, fechaOcupacion: iso(-270000), caduca: iso(30000) })]
+  await ready(page)
+  await card(page, 'parking-madrid-72').getByRole('button', { name: 'Guardar favorito: Aparcamiento de prueba 72', exact: true }).click()
+  await page.getByLabel('Con plazas libres confirmadas', { exact: true }).check()
+  await page.locator('#sv-category-box > summary').click()
+  await page.locator('#sv-categories details').filter({ has: page.locator('input[value="banos"]') }).locator('summary').click()
+  await page.locator('#sv-categories input[value="banos"]').check()
+  await expect(card(page, 'osm-node-99001')).toBeVisible()
+  await page.clock.fastForward(31000)
+  await expect(card(page, 'parking-madrid-72')).toHaveCount(0)
+  await expect(card(page, 'osm-node-99001')).toBeVisible()
+  await page.getByLabel('Con plazas libres confirmadas', { exact: true }).uncheck()
+  await expect(card(page, 'parking-madrid-72')).toContainText('Plazas libres sin confirmar')
+  await page.locator('#sv-favorites').click()
+  await expect(page.locator('#sv-parking-controls')).toBeHidden()
+  await expect(card(page, 'parking-madrid-72')).toContainText('Lugar guardado')
+  expect(state.errors).toEqual([])
+})
 test('cada lugar caduca por separado en lista y popup', async ({ page }) => {
   await page.clock.install({ time: new Date(NOW) }); const state = await fixture(page)
   state.items = [row('madrid', 72, { plazasLibres: 3, fechaOcupacion: iso(-270000), caduca: iso(30000) }), row('madrid', 73, { lat: towns.madrid.lat + .001, plazasLibres: 9 })]

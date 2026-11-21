@@ -40,3 +40,8 @@ export function preparaParteAparcamientos(data, ciudad, inicioWall, inicioMono) 
 export function aparcamientoActual(item, failed = false, nowWall = Date.now(), nowMono = performance.now()) {
   return !failed && item?._estadoComprobado === true && vigenteServicio(item._plazo, nowWall, nowMono)
 }
+// PMR es capacidad reservada publicada, nunca disponibilidad de esas plazas.
+export function cumpleFiltrosAparcamiento(item, filtros, actual) {
+  return (!filtros.libres || actual && count(item?.plazasLibres) && item.plazasLibres > 0)
+    && (!filtros.pmr || count(item?.plazasPmr) && item.plazasPmr > 0)
+}

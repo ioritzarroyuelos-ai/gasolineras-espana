@@ -206,6 +206,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
       ? 'Estos catálogos no confirman apertura ni gratuidad: esos filtros están desactivados. Accesible sólo incluye fichas que lo indican expresamente.'
       : 'Los filtros sólo incluyen datos publicados. Un horario desconocido no cuenta como abierto.';
     $('sv-guardias-control').hidden = !selected.has(GUARDIA_CATEGORY.id) || favoritesOnly;
+    $('sv-parking-controls').hidden = favoritesOnly || !chosen().some(id => fuenteAparcamiento(id));
   }
   function openLabel(poi) {
     if (poi.proveedor === 'guardias-oficiales') {
@@ -301,6 +302,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
   function filteredRecords() {
     if (favoritesOnly) return (services?.favoritos() || []).filter(coords);
     return [...records.values()].filter(p => p.categorias?.some(id => selected.has(id)) && (p.proveedor === 'aparcamientos-oficiales' && p.lat === null || inView(p))
+      && (p.proveedor !== 'aparcamientos-oficiales' || parking.matches(p, { libres: $('sv-parking-free').checked, pmr: $('sv-parking-pmr').checked }))
       && (p.proveedor !== 'guardias-oficiales' || guardiaTurno() === 'todas' || guardiaCurrent(p) && p.estado === 'activa' && (guardiaTurno() !== '24h' || p.todoElDia))
       && (p.proveedor === 'sct' ? trafficCurrent() : p.proveedor === 'servicios-publicos' ? !$('sv-accessible').checked || p.accesibilidad === 'si' : ['camara-sct', 'metro-bilbao'].includes(p.proveedor) || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
   }
@@ -923,7 +925,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
     $('sv-address-form').addEventListener('submit', findAddress);
     $('sv-query').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 300); });
     $('sv-favorites').addEventListener('click', () => { navigation++; favoritesOnly = !favoritesOnly; focusedId = ''; syncControls(); updateUrl(); load(true); });
-    ['sv-open', 'sv-free', 'sv-accessible'].forEach(id => $(id).addEventListener('change', () => { shown = 60; render(); }));
+    ['sv-open', 'sv-free', 'sv-accessible', 'sv-parking-free', 'sv-parking-pmr'].forEach(id => $(id).addEventListener('change', () => { shown = 60; render(); }));
     $('sv-guardias-turno').addEventListener('change', () => { navigation++; focusedId = ''; load(true); });
     $('sv-view-fuel').addEventListener('click', () => showFuel(true)); $('sv-view-services').addEventListener('click', () => showFuel(false));
     $('sv-more').addEventListener('click', () => {

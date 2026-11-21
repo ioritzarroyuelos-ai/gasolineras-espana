@@ -1,4 +1,4 @@
-import { APARCAMIENTOS_MAPA, preparaParteAparcamientos, aparcamientoActual, formateaHorarioAparcamiento } from '../../scripts/lib/aparcamientos-ui.mjs';
+import { APARCAMIENTOS_MAPA, preparaParteAparcamientos, aparcamientoActual, formateaHorarioAparcamiento, cumpleFiltrosAparcamiento } from '../../scripts/lib/aparcamientos-ui.mjs';
 import { enlacesServicio, distanciaServicio, restanteServicio } from '../../scripts/lib/servicios-ui.mjs';
 
 export function crearAparcamientosMapa({ el, link, button, favoriteButton, focusPoi, reference, originLabel, changed, active }) {
@@ -78,5 +78,7 @@ export function crearAparcamientosMapa({ el, link, button, favoriteButton, focus
     card.append(actions);
     return card;
   }
-  return { fetch: fetchCity, accept, fail, appendSources, details, schedule };
+  return { fetch: fetchCity, accept, fail, appendSources, details, schedule,
+    matches: (poi, filtros) => cumpleFiltrosAparcamiento(poi, filtros, current(poi)),
+  };
 }

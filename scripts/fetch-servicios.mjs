@@ -14,8 +14,46 @@ const ROOT=resolve(dirname(fileURLToPath(import.meta.url)),'..')
 const SOURCE_PREFIX={espana:'https://download.geofabrik.de/europe/spain/spain-',canarias:'https://download.geofabrik.de/africa/canary-islands/canary-islands-'}
 export const SERVICIOS_FUENTES=Object.entries(SOURCE_PREFIX).map(([id,prefix])=>({id,url:prefix+'latest.osm.pbf',minCount:id==='espana'?5000:1000,maxBytes:id==='espana'?2500000000:150000000}))
 const hash=text=>createHash('sha256').update(text).digest('hex')
-export function urlExtractoPermitida(url,id) {return typeof url==='string'&&url.startsWith(SOURCE_PREFIX[id]||'!')&&/^(?:latest|\d{6})\.osm\.pbf$/.test(url.slice((SOURCE_PREFIX[id]||'').length))}
+// Explicit source files only: no environment, credentials, generated data or
+// repository-wide scan. The workflow pins the Node/Python reader dependencies.
+export const SERVICIOS_PRODUCTOR_ARCHIVOS=Object.freeze([
+  'scripts/fetch-servicios.mjs','scripts/lib/servicios.mjs',
+  'scripts/lib/servicios-catalogo.mjs','scripts/osm-servicios.py',
+  '.github/workflows/fetch-servicios.yml',
+])
+export function productorServiciosValido(value) {
+  return Boolean(value&&value.version===1&&typeof value.sha256==='string'&&/^[a-f0-9]{64}$/.test(value.sha256))
+}
+export async function huellaProductorServicios(root=ROOT,io={}) {
+  const files=await Promise.all(SERVICIOS_PRODUCTOR_ARCHIVOS.map(async name=>{
+    const source=await (io.readFile||readFile)(resolve(root,name),'utf8')
+    if(typeof source!=='string')throw Error('No se pudo leer un archivo del productor')
+    return [name,source.replace(/\r\n/g,'\n')]
+  }))
+  return {version:1,sha256:hash(JSON.stringify({version:1,files}))}
+}
+export function urlExtractoPermitida(url,id) {return Object.hasOwn(SOURCE_PREFIX,id)&&typeof url==='string'&&url.startsWith(SOURCE_PREFIX[id])&&/^(?:latest|\d{6})\.osm\.pbf$/.test(url.slice(SOURCE_PREFIX[id].length))}
+// A dated name is a publisher-version identity, not a cryptographic guarantee
+// that a remote PBF can never be replaced. This optimization trusts Geofabrik's
+// dated downloads (technical.html recommends them for resumable downloads).
+// A same-size "latest" file is deliberately never treated as the same extract.
 export function mismoExtractoPublicado(anterior,actual) {return Boolean(anterior&&actual&&urlExtractoPermitida(actual.url,actual.id)&&/\d{6}\.osm\.pbf$/.test(actual.url)&&anterior.id===actual.id&&anterior.url===actual.url&&anterior.bytes===actual.bytes)}
+export function consultaSnapshotSinCambios(previous,fuentesActuales,productor,ts=new Date().toISOString()) {
+  const now=Date.parse(ts)
+  if(!Number.isFinite(now)||!productorServiciosValido(productor)||!productorServiciosValido(previous?.productor)||previous.productor.sha256!==productor.sha256)return null
+  const boundaryAge=now-Date.parse(previous.limiteTerritorial?.consultado)
+  if(!Number.isFinite(boundaryAge)||boundaryAge < -300000||boundaryAge>=30*86400000)return null
+  if(!Array.isArray(previous.fuentes)||!Array.isArray(fuentesActuales)||fuentesActuales.length!==SERVICIOS_FUENTES.length||previous.fuentes.length!==SERVICIOS_FUENTES.length)return null
+  if(new Set(fuentesActuales.map(f=>f.id)).size!==SERVICIOS_FUENTES.length)return null
+  for(const source of fuentesActuales){
+    const old=previous.fuentes.find(f=>mismoExtractoPublicado(f,source))
+    const age=now-Date.parse(old?.fechaDatos)
+    if(!old||!Number.isFinite(age)||age < -300000||age>72*3600000)return null
+  }
+  const index={...previous,ts,fuentes:previous.fuentes.map(f=>({...f,consultado:ts}))}
+  validaServiciosIndex(index,now)
+  return index
+}
 export async function peticionExtracto(source,method='GET',io={}) {
   const fetcher=io.fetch||fetch;let url=source.url
   for(let n=0;n<4;n++){
@@ -26,15 +64,69 @@ export async function peticionExtracto(source,method='GET',io={}) {
       if(!location)throw Error('Redirección del extracto sin destino')
       url=new URL(location,url).href;continue
     }
-    if(!r.ok){await r.body?.cancel();throw Error('Geofabrik HTTP '+r.status)}
+    if(!r.ok){await r.body?.cancel();const error=Error('Geofabrik HTTP '+r.status);error.status=r.status;error.url=url;throw error}
     const bytes=Number(r.headers.get('content-length'))
     if(!Number.isSafeInteger(bytes)||bytes<1000||bytes>source.maxBytes){await r.body?.cancel();throw Error('Tamaño de extracto no válido')}
     return {response:r,url,bytes}
   }
   throw Error('Demasiadas redirecciones del extracto')
 }
-export async function descargaExtracto(source,file,io={}) {
+export function extractosRecientesDelIndice(html,source,now=Date.now()) {
+  if(typeof html!=='string'||Buffer.byteLength(html)>2*1024*1024||!Object.hasOwn(SOURCE_PREFIX,source.id)||!Number.isFinite(now))throw Error('Índice oficial de extractos no válido')
+  const base=new URL('./index.html',SOURCE_PREFIX[source.id]),today=new Date(now),midnight=Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate())
+  const recent=new Map(Array.from({length:3},(_,age)=>[new Date(midnight-age*86400000).toISOString().slice(2,10).replaceAll('-',''),age]))
+  const candidates=new Map();let links=0
+  // Read tokens without rewriting markup. Comments and raw script/style
+  // bodies are consumed as whole tokens, never interpreted as download links.
+  const tokens=/<!--[\s\S]*?(?:-->|$)|<(script|style)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)|<a\b[^>]{0,4096}?\shref\s*=\s*(?:"([^"]{1,2048})"|'([^']{1,2048})'|([^\s"'<>]{1,2048}))/gi
+  for(const match of html.matchAll(tokens)){
+    const href=match[2]||match[3]||match[4]
+    if(!href)continue
+    if(++links>10000)throw Error('Índice oficial con demasiados enlaces')
+    let url;try{url=new URL(href,base).href}catch{continue}
+    if(!urlExtractoPermitida(url,source.id))continue
+    const date=/-(\d{6})\.osm\.pbf$/.exec(url)?.[1]
+    if(recent.has(date))candidates.set(url,recent.get(date))
+  }
+  return [...candidates].sort((a,b)=>a[1]-b[1]).slice(0,3).map(([url])=>url)
+}
+async function leeIndiceOficialExtractos(source,io) {
+  const url=new URL('./index.html',SOURCE_PREFIX[source.id]).href
+  const response=await (io.fetch||fetch)(url,{redirect:'error',headers:{'Accept':'text/html','User-Agent':'EspanaUtil/servicios (+https://webapp-3ft.pages.dev)'},signal:AbortSignal.timeout(30000)})
+  const declared=response.headers.get('content-length')
+  if(!response.ok||!response.body||!/^text\/html\b/i.test(response.headers.get('content-type')||'')||declared!==null&&(!/^\d+$/.test(declared)||Number(declared)>2*1024*1024)){
+    await response.body?.cancel();throw Error('No se pudo comprobar el índice oficial de Geofabrik')
+  }
+  const reader=response.body.getReader(),decoder=new TextDecoder('utf8',{fatal:true});let size=0,html=''
+  try{
+    while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2*1024*1024){await reader.cancel();throw Error('Índice oficial de Geofabrik demasiado grande')}html+=decoder.decode(value,{stream:true})}
+    return html+decoder.decode()
+  }finally{reader.releaseLock()}
+}
+export async function compruebaExtracto(source,io={}) {
+  let missing
+  try{return await peticionExtracto(source,'HEAD',io)}catch(error){
+    // A publication race may leave latest pointing at an absent dated file.
+    // Authentication, server errors and unsafe redirects are not fallback cases.
+    if(error.status!==404||source.url!==SOURCE_PREFIX[source.id]+'latest.osm.pbf')throw error
+    missing=error.url
+  }
+  const html=await leeIndiceOficialExtractos(source,io)
+  for(const url of extractosRecientesDelIndice(html,source,io.now??Date.now())){
+    if(url===missing)continue
+    try{
+      const checked=await peticionExtracto({...source,url},'HEAD',io)
+      if(checked.url!==url)throw Error('El extracto fechado cambió de destino')
+      console.log('Geofabrik '+source.id+': latest no disponible; se comprobará la fecha original de la copia publicada '+url.split('/').at(-1)+'.')
+      return checked
+    }catch(error){if(error.status!==404)throw error}
+  }
+  throw Error('Geofabrik no ofrece un extracto publicado comprobable de los últimos tres días')
+}
+export async function descargaExtracto(source,file,io={},checked) {
+  if(checked&&(source.url!==checked.url||!urlExtractoPermitida(checked.url,source.id)||!Number.isSafeInteger(checked.bytes)))throw Error('Comprobación de extracto no válida')
   const result=await peticionExtracto(source,'GET',io)
+  if(checked&&(result.url!==checked.url||result.bytes!==checked.bytes)){await result.response.body?.cancel();throw Error('El extracto cambió desde la comprobación; no se utiliza otra versión')}
   if(!result.response.body)throw Error('Extracto vacío')
   let received=0
   const guard=new Transform({transform(chunk,_encoding,done){received+=chunk.length;done(received>source.maxBytes?Error('Extracto supera el límite'):null,chunk)}})
@@ -76,7 +168,8 @@ export async function leePois(file,now=Date.now()) {
   }
   return {pois:[...rows.values()],rejected,lines}
 }
-export function preparaSnapshot(pois,fuentes,ts=new Date().toISOString(),limiteTerritorial) {
+export function preparaSnapshot(pois,fuentes,ts=new Date().toISOString(),limiteTerritorial,productor) {
+  if(productor!==undefined&&!productorServiciosValido(productor))throw Error('Huella del productor inválida')
   const unique=new Map(),now=Date.parse(ts)
   for(const p of pois){validaServicio(p,now);const old=unique.get(p.id);if(!old||Date.parse(p.fechaEdicion||'1970-01-01')>=Date.parse(old.fechaEdicion||'1970-01-01'))unique.set(p.id,p)}
   const groups=new Map(),counts={}
@@ -101,19 +194,53 @@ export function preparaSnapshot(pois,fuentes,ts=new Date().toISOString(),limiteT
     files.set(id,content);tiles.push({id,bbox:servicioTileBbox(id),count:points.length,bytes,sha256:hash(content)})
   }
   for(const [id,points] of [...groups.entries()].sort(([a],[b])=>a.localeCompare(b)))partition(id,points)
-  const index={schema:1,ts,fechaDatos:new Date(Math.min(...fuentes.map(f=>Date.parse(f.fechaDatos)))).toISOString(),licencia:'ODbL-1.0',atribucion:'© OpenStreetMap contributors',total:unique.size,categorias:Object.fromEntries(Object.entries(counts).sort(([a],[b])=>a.localeCompare(b))),tileSize:SERVICIOS_TILE_SIZE,fuentes,...(limiteTerritorial?{limiteTerritorial}:{}),tiles}
+  const index={schema:1,ts,fechaDatos:new Date(Math.min(...fuentes.map(f=>Date.parse(f.fechaDatos)))).toISOString(),licencia:'ODbL-1.0',atribucion:'© OpenStreetMap contributors',total:unique.size,categorias:Object.fromEntries(Object.entries(counts).sort(([a],[b])=>a.localeCompare(b))),tileSize:SERVICIOS_TILE_SIZE,fuentes,...(limiteTerritorial?{limiteTerritorial}:{}),...(productor?{productor:{version:1,sha256:productor.sha256}}:{}),tiles}
   validaServiciosIndex(index,now)
   return {index,files}
 }
-export async function leeSnapshot(dir,now=Date.now()) {
+// Compatibility reader used ONLY to establish continuity during a rebuild.
+// It validates schema-1 metadata and checksums, without interpreting old POI
+// fields against the current catalog/normalizer. It never serves or republishes
+// those old POI. Normal readers and guardaSnapshot retain full validation.
+function validaIndiceProductorAnterior(index,now) {
+  const fail=()=>{throw Error('Copia anterior con estructura inválida')}
+  const iso=value=>typeof value==='string'&&/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?Z$/.test(value)&&Number.isFinite(Date.parse(value))
+  if(!index||index.schema!==1||index.tileSize!==0.25||index.licencia!=='ODbL-1.0'||index.atribucion!=='© OpenStreetMap contributors')fail()
+  if(!iso(index.ts)||!iso(index.fechaDatos)||Date.parse(index.ts)>now+300000||Date.parse(index.fechaDatos)>Date.parse(index.ts)+300000)fail()
+  if(!Number.isSafeInteger(index.total)||index.total<1||index.total>SERVICIOS_MAX_POIS||!Array.isArray(index.tiles)||index.tiles.length<1||index.tiles.length>5000)fail()
+  if(!index.categorias||Array.isArray(index.categorias)||Object.entries(index.categorias).some(([key,n])=>!/^[-a-z0-9]{1,80}$/.test(key)||!Number.isSafeInteger(n)||n<1||n>index.total)||Object.values(index.categorias).reduce((a,b)=>a+b,0)<index.total)fail()
+  if(!Array.isArray(index.fuentes)||index.fuentes.length<1||index.fuentes.length>2)fail()
+  const sourceIds=new Set()
+  for(const source of index.fuentes){
+    if(!source||sourceIds.has(source.id)||!urlExtractoPermitida(source.url,source.id)||!iso(source.fechaDatos)||!iso(source.consultado)||Date.parse(source.fechaDatos)>Date.parse(source.consultado)+300000||Date.parse(source.consultado)>Date.parse(index.ts)+300000||!Number.isSafeInteger(source.bytes)||source.bytes<1000||source.bytes>3e9)fail()
+    sourceIds.add(source.id)
+  }
+  if(Date.parse(index.fechaDatos)!==Math.min(...index.fuentes.map(source=>Date.parse(source.fechaDatos))))fail()
+  if(index.limiteTerritorial!==undefined){
+    const limit=index.limiteTerritorial
+    if(!limit||typeof limit.fuenteUrl!=='string'||!limit.fuenteUrl.startsWith('https://api-features.ign.es/')||typeof limit.atribucion!=='string'||!limit.atribucion||limit.licencia!=='CC-BY-4.0'||!iso(limit.consultado)||Date.parse(limit.consultado)>Date.parse(index.ts)+300000||!Number.isSafeInteger(limit.bytes)||limit.bytes<1000||limit.bytes>200*1024*1024||!/^[a-f0-9]{64}$/.test(limit.sha256)||limit.administraciones!==19)fail()
+  }
+  const seen=new Set();let count=0,bytes=0
+  for(const tile of index.tiles){
+    if(!tile||typeof tile.id!=='string'||seen.has(tile.id)||!Number.isSafeInteger(tile.count)||tile.count<1||tile.count>10000||!Number.isSafeInteger(tile.bytes)||tile.bytes<1||tile.bytes>SERVICIOS_MAX_TILE_BYTES||!/^[a-f0-9]{64}$/.test(tile.sha256)||JSON.stringify(tile.bbox)!==JSON.stringify(servicioTileBbox(tile.id)))fail()
+    seen.add(tile.id);count+=tile.count;bytes+=tile.bytes
+  }
+  for(const id of seen){let ancestor=id;while(ancestor.includes('.')){ancestor=ancestor.slice(0,ancestor.lastIndexOf('.'));if(seen.has(ancestor))fail()}}
+  if(count!==index.total||bytes>SERVICIOS_MAX_TOTAL_BYTES)fail()
+}
+export async function leeSnapshot(dir,now=Date.now(),options={}) {
   let index
   try{index=JSON.parse(await readFile(join(dir,'index.json'),'utf8'))}catch(error){if(error.code==='ENOENT')return null;throw error}
-  validaServiciosIndex(index,now)
+  if(index.productor!==undefined&&!productorServiciosValido(index.productor))throw Error('Huella del productor anterior inválida')
+  if(options.allowOldProducer!==undefined&&!productorServiciosValido(options.allowOldProducer))throw Error('Huella del productor actual inválida')
+  const rebuilding=Boolean(options.allowOldProducer&&(!index.productor||index.productor.sha256!==options.allowOldProducer.sha256))
+  if(rebuilding)validaIndiceProductorAnterior(index,now)
+  else validaServiciosIndex(index,now)
   for(const entry of index.tiles){
     const content=await readFile(join(dir,'tiles',entry.id+'.json'))
     if(content.length!==entry.bytes||hash(content)!==entry.sha256)throw Error('Copia anterior corrupta: '+entry.id)
-    const tile=validaServiciosTile(JSON.parse(content),now)
-    if(tile.id!==entry.id||tile.pois.length!==entry.count)throw Error('Índice anterior incoherente')
+    const tile=rebuilding?JSON.parse(content):validaServiciosTile(JSON.parse(content),now)
+    if(!tile||tile.schema!==1||tile.id!==entry.id||!Array.isArray(tile.pois)||tile.pois.length!==entry.count)throw Error('Índice anterior incoherente')
   }
   return index
 }
@@ -159,7 +286,9 @@ export function validaContinuidadServicios(previous,next) {
 }
 export async function main() {
   const out=resolve(process.env.SERVICIOS_OUTPUT_DIR||join(ROOT,'public/data/servicios'))
-  const now=Date.now(),ts=new Date(now).toISOString(),previous=await leeSnapshot(out,now)
+  const now=Date.now(),ts=new Date(now).toISOString()
+  const productor=await huellaProductorServicios()
+  const previous=await leeSnapshot(out,now,{allowOldProducer:productor})
   const workRoot=join(ROOT,'.tmp');await mkdir(workRoot,{recursive:true})
   const temporary=await mkdtemp(join(workRoot,'servicios-fetch-')),filters=join(temporary,'filters.json')
   await writeFile(filters,JSON.stringify(OSM_TAG_FILTERS))
@@ -168,26 +297,22 @@ export async function main() {
     for(const source of SERVICIOS_FUENTES){
       const file=join(temporary,source.id+'.osm.pbf'),rows=join(temporary,source.id+'.ndjson')
       console.log('Consultando extracto '+source.id+'…')
-      const checked=await peticionExtracto(source,'HEAD')
-      // Sólo una URL fechada identifica un extracto inmutable. «latest» puede
-      // cambiar de contenido conservando tamaño y no permite esta caché.
-      const old=previous?.fuentes.find(f=>mismoExtractoPublicado(f,{id:source.id,url:checked.url,bytes:checked.bytes}))
+      const checked=await compruebaExtracto(source)
       // Sólo omitimos ambas descargas si todo el snapshot validado corresponde
-      // a los mismos extractos. Una fuente cambiada requiere regenerar el conjunto.
-      sources.push({source,checked,old,file,rows})
+      // a las mismas versiones publicadas y al mismo código del productor.
+      sources.push({source,checked,file,rows})
     }
-    if(previous?.limiteTerritorial&&now-Date.parse(previous.limiteTerritorial.consultado)<30*86400000&&sources.every(s=>s.old)&&now-Math.min(...sources.map(s=>Date.parse(s.old.fechaDatos)))<=72*3600000){
-      const index={...previous,ts,fuentes:previous.fuentes.map(f=>({...f,consultado:ts}))}
-      validaServiciosIndex(index,now)
+    const index=consultaSnapshotSinCambios(previous,sources.map(s=>({id:s.source.id,url:s.checked.url,bytes:s.checked.bytes})),productor,ts)
+    if(index){
       await writeFile(join(out,'index.json.tmp'),JSON.stringify(index));await rename(join(out,'index.json.tmp'),join(out,'index.json'))
-      console.log('Extractos sin cambios: se conserva cada fecha de datos y sólo se registra la consulta.')
+      console.log('Extractos y productor sin cambios: se conserva cada fecha de datos y sólo se registra la consulta.')
       return
     }
     const boundary=join(temporary,'limite-territorial.geojson')
     const limiteTerritorial=await descargaLimiteTerritorial(boundary,ts)
     const provenance=[]
-    for(const {source,file,rows} of sources){
-      const downloaded=await descargaExtracto(source,file)
+    for(const {source,checked,file,rows} of sources){
+      const downloaded=await descargaExtracto({...source,url:checked.url},file,{},checked)
       const result=spawnSync(process.env.SERVICIOS_PYTHON||'python',['scripts/osm-servicios.py','--input',file,'--output',rows,'--filters',filters,'--boundary',boundary],{cwd:ROOT,encoding:'utf8',timeout:20*60000,maxBuffer:1024*1024})
       if(result.status!==0)throw Error('No se pudo procesar '+source.id+': '+String(result.stderr||result.error||'').slice(0,500))
       const meta=JSON.parse(result.stdout.trim()),fecha=Date.parse(meta.fechaDatos)
@@ -200,7 +325,7 @@ export async function main() {
       console.log(JSON.stringify({fuente:source.id,fechaDatos:meta.fechaDatos,servicios:parsed.pois.length,descartados:parsed.rejected,sinGeometria:meta.sinGeometria,fueraTerritorio:meta.fueraTerritorio}))
       await rm(file);await rm(rows)
     }
-    const snapshot=preparaSnapshot(all,provenance,ts,limiteTerritorial)
+    const snapshot=preparaSnapshot(all,provenance,ts,limiteTerritorial,productor)
     validaContinuidadServicios(previous,snapshot.index)
     await guardaSnapshot(snapshot,out)
     console.log('Servicios: '+snapshot.index.total+' puntos en '+snapshot.index.tiles.length+' zonas. Fuente: OpenStreetMap, ODbL-1.0.')

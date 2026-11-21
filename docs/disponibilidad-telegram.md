@@ -43,6 +43,8 @@ El diagnóstico identifica la etapa `WEB_CONFIG` o `BOT_GETME` y una causa cerra
 
 El workflow manual `check-disponibilidad-bot.yml` ejecuta únicamente `node scripts/deploy-disponibilidad.mjs --check-bot` sobre el commit de main solicitado, en el repositorio previsto. Tiene lectura del repositorio y sólo recibe el secreto del bot: no tiene credenciales de Cloudflare, chats ni secretos administrativos. No instala herramientas de despliegue, no modifica la bandera, no crea objetos ni envía mensajes. Permite diagnosticar mientras disponibilidad permanece pausada; un éxito sólo confirma identidad, nunca activa avisos.
 
+Sólo ese modo explícito imprime un registro `public-bot-identity` con `expectedUsername` (nombre público configurado en la web) y `credentialUsername` (nombre público de la credencial). Antes valida que ambos tengan 5–32 caracteres de letras ASCII, dígitos o guion bajo y que getMe identifique un bot con ID válido. Nunca imprime el ID ni otros campos; ante campos inválidos no emite el registro. Si los nombres difieren, permite identificarlos pero sigue terminando con `BOT_GETME_IDENTITY_MISMATCH`. El despliegue normal mantiene exclusivamente sus errores cerrados, sin estos metadatos.
+
 ## Presupuesto gratuito y comprobaciones
 
 El 21 de noviembre de 2026 se comprobó en la cuenta que el plan activo es Gratuito y no había namespaces DO. Cloudflare incluye DO SQLite: 100.000 solicitudes/día, 13.000 GB-s/día, cinco millones de filas leídas/día, cien mil escritas/día y cinco GB de almacenamiento. Son límites compartidos; agotarlos hace fallar operaciones en Free. No se activa una ampliación de pago.

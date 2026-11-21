@@ -62,6 +62,9 @@ export async function verificaBotDisponibilidad(env, io = {}) {
     const bot = await consult('BOT_GETME', 'https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/getMe', 16384)
     if (bot.ok !== true || bot.result?.is_bot !== true || !Number.isSafeInteger(bot.result?.id) || bot.result.id <= 0 ||
       !username(bot.result.username)) throw Error('Identidad no válida')
+    // Sólo el diagnóstico explícito recibe estos dos nombres públicos validados.
+    // El despliegue normal no pasa este callback ni imprime metadatos del bot.
+    io.publicIdentity?.({ expectedUsername: config.username, credentialUsername: bot.result.username })
     if (bot.result.username.toLowerCase() !== config.username.toLowerCase()) { reason = 'IDENTITY_MISMATCH'; throw Error('Identidad distinta') }
     return true
   } catch {
@@ -166,7 +169,7 @@ export async function verificaDisponibilidad(env = process.env, versionId, io = 
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === '--check-bot' && process.argv.length === 3) {
-    await verificaBotDisponibilidad(process.env)
+    await verificaBotDisponibilidad(process.env, { publicIdentity: identity => console.log(JSON.stringify({ event: 'public-bot-identity', ...identity })) })
     console.log(JSON.stringify({ event: 'disponibilidad-bot-check', ok: true }))
   } else if (process.argv[2] === '--verify' && process.argv.length === 4) {
     const result = await verificaDisponibilidad(process.env, process.argv[3])

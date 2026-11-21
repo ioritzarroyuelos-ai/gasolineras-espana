@@ -125,6 +125,36 @@ describe('Identidad del bot antes de cualquier cambio en Cloudflare', () => {
     expect(await verificaBotDisponibilidad(env(), { fetch: fetcher })).toBe(true)
     expect(fetcher).toHaveBeenCalledTimes(2)
   })
+  it.each([false, true])('el diagnóstico explícito entrega sólo dos nombres validados y sigue rechazando otra identidad: %s', different => {
+    const publicIdentity = vi.fn(), username = different ? 'Otro_Bot' : 'espana_util_bot'
+    const fetcher = mocked(() => identity({ username, first_name: botFixture, description: botFixture }))
+    return verificaBotDisponibilidad(env(), { fetch: fetcher, publicIdentity }).then((result: boolean) => {
+      expect(different).toBe(false); expect(result).toBe(true)
+    }, (error: Error) => {
+      expect(different).toBe(true); safeError(error, 'BOT_GETME_IDENTITY_MISMATCH')
+    }).then(() => {
+      expect(publicIdentity).toHaveBeenCalledExactlyOnceWith({ expectedUsername: 'Espana_Util_Bot', credentialUsername: username })
+      expect(JSON.stringify(publicIdentity.mock.calls)).not.toContain(botFixture)
+    })
+  })
+  it.each([
+    ['web', { username: '../invalido' }], ['web', { username: 'a'.repeat(33) }],
+    ['bot', { username: '../invalido' }], ['bot', { username: 'a'.repeat(33) }],
+    ['bot', { username: 'Bot\nInyectado' }], ['bot', { is_bot: false }], ['bot', { id: '123456' }],
+  ])('no entrega nombres públicos si %s contiene campos inválidos: %j', async (stage, changes) => {
+    const publicIdentity = vi.fn(), fetcher = vi.fn(async (url: string) => url === 'https://webapp-3ft.pages.dev/api/telegram/config'
+      ? stage === 'web' ? Response.json({ ok: true, ...changes as object }) : publicConfig()
+      : identity(changes as Record<string, unknown>))
+    await expect(verificaBotDisponibilidad(env(), { fetch: fetcher, publicIdentity })).rejects.toThrow(message)
+    expect(publicIdentity).not.toHaveBeenCalled()
+  })
+  it('el despliegue no comunica nombres ni siquiera si recibe accidentalmente el callback del diagnóstico', async () => {
+    const io = fixture(), publicIdentity = vi.fn(), fetcher = mocked(() => identity({ username: 'Otro_Bot' }))
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher, publicIdentity }).catch((caught: Error) => caught)
+    safeError(error, 'BOT_GETME_IDENTITY_MISMATCH')
+    expect(error.stack).not.toContain('Otro_Bot'); expect(error.stack).not.toContain('Espana_Util_Bot')
+    expect(publicIdentity).not.toHaveBeenCalled(); expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled()
+  })
   it.each([
     { username: 'Otro_Bot' }, { username: '' }, { is_bot: false },
     { id: 0 }, { id: -1 }, { id: Number.MAX_SAFE_INTEGER + 1 }, { id: '123456' },
@@ -233,16 +263,19 @@ describe('Comprobaciones remotas acotadas, sin invocar objetos de usuario', () =
   })
 })
 describe('Aislamiento de configuración y orden del despliegue', () => {
-  it.each([{ valid: true, accidental: false }, { valid: true, accidental: true }, { valid: false, accidental: true }])('el CLI sólo consulta identidad sin usar configuración de despliegue: %j', ({ valid, accidental }) => {
+  it.each([
+    { mode: 'match', accidental: false }, { mode: 'match', accidental: true },
+    { mode: 'unauthorized', accidental: true }, { mode: 'mismatch', accidental: true },
+  ])('el CLI sólo consulta identidad sin usar configuración de despliegue: %j', ({ mode, accidental }) => {
     const require = createRequire(import.meta.url), { spawnSync } = require('node:child_process'), runtime = require('node:process')
     const preload = `
       let calls = 0;
       globalThis.fetch = async (url, options) => {
         if (++calls > 2 || options.method !== 'GET') throw Error('Consulta no prevista');
         if (url === 'https://webapp-3ft.pages.dev/api/telegram/config') return Response.json({ok:true,username:'GasolinerasAlertasBot'});
-        if (url === 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/getMe') return ${valid
-          ? "Response.json({ok:true,result:{id:123456,is_bot:true,username:'GasolinerasAlertasBot'}})"
-          : "new Response(process.env.TELEGRAM_BOT_TOKEN,{status:401})"};
+        if (url === 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/getMe') return ${mode === 'unauthorized'
+          ? "new Response(process.env.TELEGRAM_BOT_TOKEN,{status:401})"
+          : "Response.json({ok:true,result:{id:123456,is_bot:true,username:'" + (mode === 'mismatch' ? 'OtroBot' : 'GasolinerasAlertasBot') + "'}})"};
         throw Error('Origen no previsto');
       };
       process.on('exit', () => { if(calls !== 2) process.exitCode = 90; });
@@ -253,9 +286,17 @@ describe('Aislamiento de configuración y orden del despliegue', () => {
       env: { ...(accidental ? env() : {}), SystemRoot: runtime.env.SystemRoot, TELEGRAM_BOT_TOKEN: botFixture },
     })
     expect(result.error).toBeUndefined()
-    expect(result.status).toBe(valid ? 0 : 1)
-    if (valid) expect(JSON.parse(result.stdout)).toEqual({ event: 'disponibilidad-bot-check', ok: true })
-    else expect(result.stderr).toContain('[BOT_GETME_HTTP_401]')
+    expect(result.status).toBe(mode === 'match' ? 0 : 1)
+    const rows = result.stdout.trim() ? result.stdout.trim().split(/\r?\n/).map((line: string) => JSON.parse(line)) : []
+    if (mode === 'unauthorized') {
+      expect(rows).toEqual([]); expect(result.stderr).toContain('[BOT_GETME_HTTP_401]')
+    } else {
+      expect(rows[0]).toEqual({ event: 'public-bot-identity', expectedUsername: 'GasolinerasAlertasBot',
+        credentialUsername: mode === 'mismatch' ? 'OtroBot' : 'GasolinerasAlertasBot' })
+      if (mode === 'match') expect(rows[1]).toEqual({ event: 'disponibilidad-bot-check', ok: true })
+      else expect(result.stderr).toContain('[BOT_GETME_IDENTITY_MISMATCH]')
+      expect(rows).toHaveLength(mode === 'match' ? 2 : 1)
+    }
     expect(result.stdout + result.stderr).not.toContain(botFixture)
     expect(result.stdout + result.stderr).not.toContain('api.telegram.org')
     expect(result.stdout + result.stderr).not.toMatch(/wrangler|cloudflare\.com|GitHub no confirmó/)

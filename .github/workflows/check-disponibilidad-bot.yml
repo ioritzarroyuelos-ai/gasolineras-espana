@@ -1,0 +1,41 @@
+name: Disponibilidad · comprobar identidad del bot
+
+# Diagnóstico manual de sólo lectura. No publica ni habilita avisos y no
+# recibe credenciales de Cloudflare, chats ni secretos de otros servicios.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-disponibilidad-bot
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.repository == 'ioritzarroyuelos-ai/gasolineras-espana' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Leer el commit de main solicitado
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Usar Node.js 22
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Confirmar repositorio, rama y commit del diagnóstico
+        run: |
+          test "$GITHUB_REPOSITORY" = "ioritzarroyuelos-ai/gasolineras-espana"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Comprobar identidad sin activar ni enviar mensajes
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: node scripts/deploy-disponibilidad.mjs --check-bot

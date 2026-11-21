@@ -36,19 +36,42 @@ async function readJson(response, max, signal) {
 export async function verificaBotDisponibilidad(env, io = {}) {
   const fetcher = io.fetch || fetch, signal = AbortSignal.timeout(io.timeoutMs ?? 10000)
   const username = value => typeof value === 'string' && /^[A-Za-z0-9_]{5,32}$/.test(value)
+  let phase = 'CREDENTIAL', reason = 'INVALID'
+  const consult = async (stage, url, max) => {
+    phase = stage; reason = 'NETWORK'
+    const response = await fetcher(url, { method: 'GET', cache: 'no-store', redirect: 'manual', signal })
+    if (!response.ok) {
+      const status = response.status
+      reason = status >= 300 && status < 400 ? 'REDIRECT'
+        : [400, 401, 403, 404, 429].includes(status) ? 'HTTP_' + status
+          : status >= 500 && status < 600 ? 'HTTP_5XX' : 'HTTP_OTHER'
+      await response.body?.cancel()
+      throw Error('Consulta rechazada')
+    }
+    reason = 'RESPONSE_INVALID'
+    try { return await readJson(response, max, signal) }
+    catch (error) { if (error instanceof SyntaxError) reason = 'JSON_INVALID'; throw error }
+  }
   try {
     if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN || '')) throw Error('Credencial no válida')
-    const options = { method: 'GET', cache: 'no-store', redirect: 'manual', signal }
-    const config = await readJson(await fetcher(ORIGIN + '/api/telegram/config', options), 8192, signal)
+    const config = await consult('WEB_CONFIG', ORIGIN + '/api/telegram/config', 8192)
     if (config.ok !== true || !username(config.username)) throw Error('Configuración no válida')
     // getMe sólo identifica la credencial. No consulta chats ni envía mensajes.
     // El token va en la URL exigida por Telegram; nunca se imprime ni se propaga
     // a redirecciones, a excepciones o a un proceso hijo.
-    const bot = await readJson(await fetcher('https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/getMe', options), 16384, signal)
+    const bot = await consult('BOT_GETME', 'https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/getMe', 16384)
     if (bot.ok !== true || bot.result?.is_bot !== true || !Number.isSafeInteger(bot.result?.id) || bot.result.id <= 0 ||
-      !username(bot.result.username) || bot.result.username.toLowerCase() !== config.username.toLowerCase()) throw Error('Identidad no válida')
+      !username(bot.result.username)) throw Error('Identidad no válida')
+    // Sólo el diagnóstico explícito recibe estos dos nombres públicos validados.
+    // El despliegue normal no pasa este callback ni imprime metadatos del bot.
+    io.publicIdentity?.({ expectedUsername: config.username, credentialUsername: bot.result.username })
+    if (bot.result.username.toLowerCase() !== config.username.toLowerCase()) { reason = 'IDENTITY_MISMATCH'; throw Error('Identidad distinta') }
     return true
-  } catch { throw Error('No se pudo confirmar que la credencial de CI pertenece al bot de la web') }
+  } catch {
+    // Sólo se incluyen códigos elegidos aquí: ninguna excepción, URL, respuesta
+    // o identidad recibida se incorpora al mensaje, al stack ni a cause.
+    throw Error('No se pudo confirmar que la credencial de CI pertenece al bot de la web [' + phase + '_' + (signal.aborted ? 'TIMEOUT' : reason) + ']')
+  }
 }
 async function cloudflare(env, path, fetcher) {
   if (!/^[a-f0-9]{32}$/.test(env.CLOUDFLARE_ACCOUNT_ID || '') || !env.CLOUDFLARE_API_TOKEN) throw Error('Cuenta de despliegue no válida')
@@ -145,7 +168,10 @@ export async function verificaDisponibilidad(env = process.env, versionId, io = 
   throw Error('Pages no confirma la versión y el estado esperados de disponibilidad')
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv[2] === '--verify' && process.argv.length === 4) {
+  if (process.argv[2] === '--check-bot' && process.argv.length === 3) {
+    await verificaBotDisponibilidad(process.env, { publicIdentity: identity => console.log(JSON.stringify({ event: 'public-bot-identity', ...identity })) })
+    console.log(JSON.stringify({ event: 'disponibilidad-bot-check', ok: true }))
+  } else if (process.argv[2] === '--verify' && process.argv.length === 4) {
     const result = await verificaDisponibilidad(process.env, process.argv[3])
     console.log(JSON.stringify({ event: 'disponibilidad-health', ...result }))
   } else if (process.argv.length === 2) {

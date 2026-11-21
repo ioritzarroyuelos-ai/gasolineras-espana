@@ -3,7 +3,9 @@ import { build } from 'esbuild'
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 const root = resolve(import.meta.dirname, '..')
-await build({ entryPoints: ['cuenta', 'municipio', 'mi-dia'].map(name => resolve(root, 'src/client/' + name + '.js')), outdir: resolve(root, 'public/static'), minify: true, target: 'es2020' })
+await build({ entryPoints: ['cuenta', 'municipio', 'mi-dia', 'trafico'].map(name => resolve(root, 'src/client/' + name + '.js')), outdir: resolve(root, 'public/static'), minify: true, target: 'es2020' })
+await build({ entryPoints: [resolve(root, 'src/client/itv-recordatorio.js')], bundle: true, outdir: resolve(root, 'public/static'), minify: true, target: 'es2020' })
+await build({ entryPoints: [resolve(root, 'src/client/servicios.js')], outdir: resolve(root, 'public/static'), bundle: true, format: 'iife', minify: true, target: 'es2020' })
 const compiled = await build({
   stdin: { contents: "export { construyeLocalidades } from './src/lib/localidades'; export { catalogoTiempo, preparaBuscadorTiempo } from './src/lib/tiempo-municipios'", resolveDir: root, loader: 'ts' },
   bundle: true, write: false, platform: 'node', format: 'esm', target: 'node22',

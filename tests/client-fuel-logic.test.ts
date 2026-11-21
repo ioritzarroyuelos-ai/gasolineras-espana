@@ -15,7 +15,7 @@ function client() {
   const storage = new Map<string, string>()
   const nodes: Record<string, any> = {}
   function node(id: string) {
-    return nodes[id] ||= { value: '', style: {}, classList: { add() {}, remove() {} }, appendChild() {}, setAttribute() {} }
+    return nodes[id] ||= { value: '', style: {}, classList: { add() {}, remove() {}, contains() { return false } }, appendChild() {}, setAttribute() {} }
   }
   node('sel-provincia').value = '28'
   node('sel-municipio').value = '28079'
@@ -23,7 +23,7 @@ function client() {
   node('in-radius').value = '10'
   const context: any = createContext({
     console: { error: vi.fn(), warn: vi.fn() },
-    document: { getElementById: node, createElement: () => node('created'), createTextNode: (s: string) => ({ textContent: s }) },
+    document: { body: node('body'), getElementById: node, createElement: () => node('created'), createTextNode: (s: string) => ({ textContent: s }) },
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     syncPush: vi.fn(), allStations: [], filteredStations: [],
     parsePrice: (p: any) => p ? Number(String(p).replace(',', '.')) : null,

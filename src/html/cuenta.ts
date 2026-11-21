@@ -17,6 +17,8 @@ export function cuentaHtml(): string {
         <a class="user-dropdown-item" href="/mi-dia">Mi día</a>
         <p id="user-dropdown-sync" class="user-dropdown-sync" role="status" aria-live="polite">Sesión iniciada</p>
         <button id="cuenta-importar" class="user-dropdown-item cuenta-importar" type="button" hidden>Añadir favoritos de este navegador</button>
+        <button id="cuenta-exportar" class="user-dropdown-item" type="button">Descargar mis favoritos y ajustes</button>
+        <button id="cuenta-vaciar" class="user-dropdown-item" type="button">Vaciar favoritos y ajustes</button>
         <button id="btn-logout" class="user-dropdown-item" type="button">Cerrar sesión</button>
       </div>
     </div>
@@ -49,6 +51,7 @@ export const CUENTA_CSS = `
 .masthead .user-save-status{font-size:10px;font-weight:500;color:var(--mh-muted);overflow:hidden;text-overflow:ellipsis;max-width:145px}
 .masthead .user-chip-arrow{color:var(--mh-muted);flex:none}
 .masthead .user-dropdown{position:absolute;top:calc(100% + 8px);right:0;width:280px;max-width:calc(100vw - 24px);border:1px solid var(--mh-rule);border-radius:16px;background:var(--eu-surface);color:var(--mh-ink);box-shadow:0 12px 35px #142a1f24;padding:8px;z-index:2500;white-space:normal}
+.masthead .user-dropdown{max-height:calc(100dvh - 100px);overflow-y:auto;overscroll-behavior:contain}
 .masthead .user-dropdown-head{padding:10px 10px 12px;border-bottom:1px solid var(--mh-rule);margin-bottom:4px}
 .masthead .user-dropdown-name{font-size:14px;font-weight:750;overflow-wrap:anywhere}
 .masthead .user-dropdown-email{font-size:12px;color:var(--mh-muted);overflow-wrap:anywhere;margin-top:3px}

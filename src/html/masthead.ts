@@ -4,7 +4,7 @@ import { PORTAL_TOKENS } from './ui-theme'
 import { APP_VERSION } from '../lib/version'
 import { cuentaHtml, cuentaModalHtml, CUENTA_CSS } from './cuenta'
 
-export type SeccionActiva = 'inicio' | 'mi-dia' | 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
+export type SeccionActiva = 'inicio' | 'cerca' | 'mi-dia' | 'tiempo' | 'gasolineras' | 'farmacias' | 'itv' | 'politica' | 'deportes' | null
 
 export function mastheadHtml(active: SeccionActiva = null, opts: { hideMunicipioSearch?: boolean; compact?: boolean } = {}): string {
   const item = (href: string, key: SeccionActiva, label: string): string =>
@@ -17,7 +17,7 @@ export function mastheadHtml(active: SeccionActiva = null, opts: { hideMunicipio
     + '<a id="municipio-elegido" class="mh-location" hidden></a>'
     + cuentaHtml() + '</div></div>'
     + '<nav class="mh-nav" aria-label="Secciones">'
-    + item('/', 'inicio', 'Inicio') + item('/tiempo/', 'tiempo', 'El tiempo')
+    + item('/', 'inicio', 'Inicio') + item('/cerca', 'cerca', 'Cerca de ti') + item('/tiempo/', 'tiempo', 'El tiempo')
     + item('/gasolineras/', 'gasolineras', 'Gasolineras') + item('/farmacias/', 'farmacias', 'Farmacias')
     + item('/itv/', 'itv', 'ITV') + item('/politica/', 'politica', 'Política') + item('/deportes/', 'deportes', 'Deportes') + item('/mi-dia', 'mi-dia', 'Mi día') + '</nav>'
     + (opts.hideMunicipioSearch ? '' : '<' + municipioTag + ' class="mh-local">'

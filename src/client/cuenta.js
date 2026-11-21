@@ -1,8 +1,10 @@
 // Una sesión para todo el portal. Las copias locales pertenecen a su cuenta;
 // solo una acción explícita del usuario genera una escritura en el servidor.
 (() => {
-  const keys = ['gs_favs_v1', 'gs_profile_v1', 'eu-deportes-favoritos-v1', 'eu-mi-dia-v1', 'espana-util-municipio'];
-  const lists = ['gs_favs_v1', 'eu-deportes-favoritos-v1'];
+  const serviceStorageName = 'eu-servicios-favoritos-v1', servicePrefsStorageName = 'eu-servicios-preferencias-v1';
+  const itvKey = 'eu-itv-recordatorio-v1';
+  const keys = ['gs_favs_v1', 'gs_profile_v1', 'eu-deportes-favoritos-v1', 'eu-mi-dia-v1', 'espana-util-municipio', serviceStorageName, servicePrefsStorageName, itvKey];
+  const lists = ['gs_favs_v1', 'eu-deportes-favoritos-v1', serviceStorageName];
   const ownerKey = 'eu-cuenta-owner-v1', guestKey = 'eu-cuenta-invitado-v1';
   const cacheKey = id => 'eu-cuenta-cache-v1:' + id;
   const pendingKey = id => 'eu-cuenta-pendientes-v1:' + id;
@@ -269,7 +271,108 @@
   const previousOwner = read(ownerKey);
   if (previousOwner) { write(cacheKey(previousOwner), JSON.stringify(snapshot())); apply(guest()); write(ownerKey, null); }
   else write(guestKey, JSON.stringify(snapshot()));
-  window.EUCuenta = { ready, get user() { return user; }, get status() { return status; }, changed, refresh };
+  const array = key => { try { const value = JSON.parse(read(key) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } };
+  const category = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,59}$/.test(value);
+  function serviceFavorite(value) {
+    if (!record(value) || typeof value.id !== 'string' || !(/^(?:osm-(?:node|way|relation)-[1-9]\d{0,15}|itv-(?:0[1-9]|[1-4]\d|5[0-2])-(?!0000)\d{4}|gbfs-zaragoza-[a-zA-Z0-9_-]{1,100})$/.test(value.id)) ||
+      typeof value.nombre !== 'string' || !value.nombre.trim() || value.nombre.length > 250 || /[\u0000-\u001f\u007f]/.test(value.nombre) || !category(value.categoria) ||
+      !Number.isFinite(value.lat) || value.lat < 27 || value.lat > 44 || !Number.isFinite(value.lon) || value.lon < -19 || value.lon > 5) return null;
+    if ((value.id.startsWith('itv-')) !== (value.categoria === 'itv')) return null;
+    if ((value.id.startsWith('gbfs-zaragoza-')) !== (value.categoria === 'bicis-zaragoza')) return null;
+    if (['trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(value.categoria)) return null;
+    if (value.categoria === 'bicis-zaragoza' && (value.lat < 41.4 || value.lat > 41.9 || value.lon < -1.2 || value.lon > -0.6)) return null;
+    // Sólo coordenadas públicas del lugar elegido; nunca incorporamos GPS, URLs,
+    // precios u horarios del visitante a una copia sincronizada.
+    return { id: value.id, nombre: value.nombre.trim(), categoria: value.categoria, lat: value.lat, lon: value.lon };
+  }
+  function serviceFavorites() { return array(serviceStorageName).map(serviceFavorite).filter(Boolean).slice(0, 100); }
+  function servicePreferences(value = json(servicePrefsStorageName)) {
+    return { version: 1,
+      categorias: [...new Set((Array.isArray(value.categorias) ? value.categorias : []).filter(category))].slice(0, 80),
+      municipios: [...new Set((Array.isArray(value.municipios) ? value.municipios : []).filter(id => typeof id === 'string' && /^\d{5}$/.test(id)))].slice(0, 12) };
+  }
+  async function prepareServiceChange() {
+    await ready;
+    if (read(ownerKey) !== (user?.sub || null)) await refresh();
+  }
+  async function storeService(key, value) {
+    if (!write(key, JSON.stringify(value))) throw new Error('El navegador no permite guardar estos datos.');
+    await changed(key);
+  }
+  const historyKey = () => 'eu-servicios-historial-v1:' + (user?.sub || 'invitado');
+  function localHistory() {
+    const value = json(historyKey()), now = Date.now();
+    const items = (value.enabled === true && Array.isArray(value.items) ? value.items : []).filter(item => record(item) &&
+      typeof item.municipio === 'string' && /^\d{5}$/.test(item.municipio) && Array.isArray(item.categorias) && item.categorias.length <= 80 && item.categorias.every(category) &&
+      Number.isFinite(item.fecha) && item.fecha <= now && item.fecha > now - 30 * 86400000).slice(0, 20)
+      .map(item => ({ municipio: item.municipio, categorias: [...new Set(item.categorias)], fecha: item.fecha }));
+    const clean = { enabled: value.enabled === true, items };
+    if (read(historyKey()) !== null && !equal(value, clean)) write(historyKey(), JSON.stringify(clean));
+    return clean;
+  }
+  function saveHistory(value) {
+    if (!write(historyKey(), JSON.stringify(value))) throw new Error('El navegador no permite guardar el historial.');
+    window.dispatchEvent(new CustomEvent('eu:servicios-historial', { detail: { enabled: value.enabled } }));
+  }
+  const servicios = {
+    favoritos: serviceFavorites,
+    esFavorito: id => serviceFavorites().some(item => item.id === id),
+    urlFavorito(value) { const item = serviceFavorite(value); return item ? '/cerca?' + new URLSearchParams({ lat: String(item.lat), lon: String(item.lon), servicio: item.id, categorias: item.categoria }) : null; },
+    async alternarFavorito(value) {
+      await prepareServiceChange();
+      const item = serviceFavorite(value); if (!item) throw new Error('Este lugar no tiene datos válidos para guardarlo.');
+      const previous = serviceFavorites(), exists = previous.some(entry => entry.id === item.id);
+      if (!exists && previous.length >= 100) throw new Error('Puedes guardar hasta 100 lugares. Quita alguno antes de añadir otro.');
+      await storeService(serviceStorageName, exists ? previous.filter(entry => entry.id !== item.id) : [...previous, item]);
+      return !exists;
+    },
+    async quitarFavorito(id) { await prepareServiceChange(); await storeService(serviceStorageName, serviceFavorites().filter(item => item.id !== id)); },
+    preferencias: servicePreferences,
+    async guardarPreferencias(value) { await prepareServiceChange(); const next = servicePreferences(record(value) ? value : {}); await storeService(servicePrefsStorageName, next); return next; },
+    historialActivo: () => localHistory().enabled,
+    historial: () => localHistory().items,
+    async activarHistorial(enabled) { await prepareServiceChange(); const value = localHistory(); saveHistory({ enabled: enabled === true, items: enabled === true ? value.items : [] }); },
+    async registrarConsulta(value) {
+      await prepareServiceChange(); const history = localHistory();
+      if (!history.enabled || !record(value) || typeof value.municipio !== 'string' || !/^\d{5}$/.test(value.municipio)) return;
+      const item = { municipio: value.municipio, categorias: servicePreferences(value).categorias, fecha: Date.now() };
+      saveHistory({ enabled: true, items: [item, ...history.items.filter(old => old.municipio !== item.municipio || !equal(old.categorias, item.categorias))].slice(0, 20) });
+    },
+    async borrarHistorial() { await prepareServiceChange(); saveHistory({ enabled: localHistory().enabled, items: [] }); },
+  };
+  async function exportarDatos() {
+    await prepareServiceChange();
+    return { version: 1, exportado: new Date().toISOString(), cuenta: user ? { correo: user.email } : null,
+      estadoSincronizacion: status, datos: snapshot(), historialLocalServicios: localHistory() };
+  }
+  function recordatorioItv(value = json(itvKey).recordatorio) {
+    if (!record(value) || typeof value.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.id) ||
+      typeof value.fecha !== 'string' || !/^20\d{2}-\d{2}-\d{2}$/.test(value.fecha) || !Number.isFinite(Date.parse(value.fecha + 'T00:00:00Z')) ||
+      new Date(value.fecha + 'T00:00:00Z').toISOString().slice(0, 10) !== value.fecha ||
+      typeof value.nombre !== 'string' || !value.nombre.trim() || value.nombre.length > 60 || /[\u0000-\u001f\u007f]/.test(value.nombre)) return null;
+    return { id: value.id, fecha: value.fecha, nombre: value.nombre.trim() };
+  }
+  const itv = {
+    recordatorio: recordatorioItv,
+    async guardarRecordatorio(value) {
+      await prepareServiceChange();
+      const item = recordatorioItv({ id: recordatorioItv()?.id || crypto.randomUUID(), fecha: value?.fecha, nombre: value?.nombre?.trim() || 'Mi vehículo' });
+      if (!item) throw new Error('Indica una fecha válida y un nombre de hasta 60 caracteres.');
+      await storeService(itvKey, { version: 1, recordatorio: item }); return item;
+    },
+    async borrarRecordatorio() { await prepareServiceChange(); await storeService(itvKey, { version: 1, recordatorio: null }); },
+  };
+  async function vaciarPreferencias() {
+    await prepareServiceChange();
+    if (!window.confirm('¿Vaciar los favoritos y ajustes de esta cuenta en España Útil? Se enviará el cambio cuando haya conexión. No cierra la sesión de Google ni cancela las suscripciones de Telegram. El historial de servicios de este navegador también se borrará.')) return false;
+    const empty = { gs_favs_v1: [], gs_profile_v1: {}, 'eu-deportes-favoritos-v1': [],
+      'eu-mi-dia-v1': { version: 1, visible: [], order: ['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'] },
+      'espana-util-municipio': null, [serviceStorageName]: [], [servicePrefsStorageName]: { version: 1, categorias: [], municipios: [] }, [itvKey]: { version: 1, recordatorio: null } };
+    apply(empty); saveHistory({ enabled: false, items: [] });
+    await Promise.all(keys.map(changed));
+    return true;
+  }
+  window.EUCuenta = { ready, get user() { return user; }, get status() { return status; }, changed, refresh, servicios, itv, exportarDatos, vaciarPreferencias };
 
   function closeMenu() { if ($('user-dropdown')) $('user-dropdown').hidden = true; $('btn-user')?.setAttribute('aria-expanded', 'false'); }
   $('btn-user')?.addEventListener('click', () => {
@@ -277,6 +380,19 @@
     menu.hidden = !menu.hidden; $('btn-user').setAttribute('aria-expanded', String(!menu.hidden));
   });
   document.addEventListener('click', event => { if (!$('user-menu')?.contains(event.target)) closeMenu(); });
+  $('cuenta-exportar')?.addEventListener('click', async () => {
+    try {
+      const data = await exportarDatos(), url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a'); link.href = url; link.download = 'espana-util-mis-datos.json'; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { if ($('user-dropdown-sync')) $('user-dropdown-sync').textContent = 'No se pudo descargar la copia. Vuelve a intentarlo.'; }
+  });
+  $('cuenta-vaciar')?.addEventListener('click', async () => {
+    $('cuenta-vaciar').disabled = true;
+    try { await vaciarPreferencias(); }
+    catch { if ($('user-dropdown-sync')) $('user-dropdown-sync').textContent = 'No se pudieron vaciar todos los datos. Comprueba la conexión y vuelve a intentarlo.'; }
+    finally { $('cuenta-vaciar').disabled = false; }
+  });
   $('btn-logout')?.addEventListener('click', async () => {
     $('btn-logout').disabled = true;
     try {

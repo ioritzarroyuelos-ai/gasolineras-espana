@@ -128,6 +128,10 @@ function ajustes(): string {
   return `<section class="eu-adjust" id="mi-dia-ajustes" aria-labelledby="mi-dia-ajustes-titulo" hidden><h2 id="mi-dia-ajustes-titulo">Pon Mi día a tu gusto</h2><p>Elige tus bloques y usa las flechas para decidir qué aparece primero.</p><ul class="eu-settings">${MODULOS.map(m => `<li class="eu-setting" data-dia-setting="${m.id}"><label><input type="checkbox" data-dia-visible="${m.id}"${PREDETERMINADOS.includes(m.id) ? ' checked' : ''}>${m.nombre}</label><span class="eu-setting-arrows"><button type="button" data-dia-up="${m.id}" aria-label="Subir ${m.nombre}">↑</button><button type="button" data-dia-down="${m.id}" aria-label="Bajar ${m.nombre}">↓</button></span></li>`).join('')}</ul><p>Tu municipio se elige en la cabecera. Tus gasolineras, equipos y competiciones se guardan con la estrella de su sección.</p><button class="eu-button" id="mi-dia-listo" type="button">Listo</button></section>`
 }
 
+function favoritosLugares(): string {
+  return `<article class="eu-favorite-card"><h3>${icono('guardar')} Tus lugares</h3><div class="eu-favorites" data-dia-service-favs></div><a class="eu-link" href="/cerca?favoritos=1">Ver todos mis lugares →</a></article>`
+}
+
 function favoritosInicio(): string {
   return `<section id="mis-favoritos" class="eu-home-favorites" aria-labelledby="home-favorites-title" hidden>
     <div class="eu-section-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h2 id="home-favorites-title">Tus favoritos, a mano.</h2><p id="home-favorites-note">Con Google se guardan en tu cuenta; sin sesión, en este navegador.</p></div><a class="eu-link" href="/mi-dia">Organizar Mi día →</a></div>
@@ -135,6 +139,7 @@ function favoritosInicio(): string {
       <article class="eu-favorite-card"><h3>${icono('guardar')} Tus bloques</h3><div class="eu-favorites" data-home-module-favs></div><a class="eu-link" href="#cerca-servicios">Elegir bloques →</a></article>
       <article class="eu-favorite-card"><h3>${icono('gasolineras')} Tus gasolineras</h3><div class="eu-favorites" data-dia-gas-favs></div><a class="eu-link" href="/gasolineras/mapa?action=favs">Ver favoritas en el mapa →</a></article>
       <article class="eu-favorite-card"><h3>${icono('deportes')} Lo que sigues</h3><div class="eu-favorites" data-dia-sport-favs></div><a class="eu-link" href="/deportes/#favoritos">Ver favoritos de Deportes →</a></article>
+      ${favoritosLugares()}
     </div>
   </section>`
 }
@@ -155,8 +160,9 @@ export function buildLandingPage(nonce = '', reqUrl = 'https://webapp-3ft.pages.
   <main class="eu-main"${day ? ' data-mi-dia' : ''}>
     ${day ? '' : favoritosInicio()}
     ${day ? `<a class="eu-link" href="/${query}">← Volver a Cerca de ti</a><div class="eu-day-head"><div><p class="eu-eyebrow">Tu espacio personal</p><h1>Tu día. <span>A tu manera.</span></h1><p>Lo que te interesa, en el orden que tú eliges. Con Google se guarda en tu cuenta; sin sesión, en este navegador.</p></div><button hidden id="mi-dia-personalizar" class="eu-button secondary" type="button" aria-expanded="false" aria-controls="mi-dia-ajustes">${icono('ajustes')} Personalizar Mi día</button></div>${ajustes()}`
-      : `<section class="eu-hero" aria-labelledby="portada-titulo"><div class="eu-intro"><p class="eu-eyebrow">Tu zona. Tus planes. Tu día.</p><h1 id="portada-titulo">Hoy lo tienes <span>más cerca.</span></h1><p>El tiempo, gasolineras, farmacias, ITV, política y deportes. Todo a mano para que sigas con tu día.</p><div class="eu-actions"><a class="eu-button" href="/mi-dia${query}">Organizar Mi día →</a><a class="eu-link" href="#cerca-servicios">Explorar los servicios ↓</a></div></div>${tarjetaTiempo(data, false)}</section>`}
+      : `<section class="eu-hero" aria-labelledby="portada-titulo"><div class="eu-intro"><p class="eu-eyebrow">Tu zona. Tus planes. Tu día.</p><h1 id="portada-titulo">Hoy lo tienes <span>más cerca.</span></h1><p>El tiempo, gasolineras, farmacias, ITV, política y deportes. Todo a mano para que sigas con tu día.</p><div class="eu-actions"><a class="eu-button" href="/cerca${query}">Ver qué tengo cerca →</a><a class="eu-link" href="/mi-dia${query}">Organizar Mi día</a><a class="eu-link" href="#cerca-servicios">Explorar los servicios ↓</a></div></div>${tarjetaTiempo(data, false)}</section>`}
     ${localidadHtml(data.localidad, data.encontrados, data.query, day ? '/mi-dia' : '/')}
+    ${day ? '<section class="eu-home-favorites" aria-label="Lugares favoritos">' + favoritosLugares() + '</section>' : ''}
     ${day ? '<noscript><p class="eu-muted">Puedes consultar estos servicios sin JavaScript. Para personalizar los bloques y recordar tus preferencias, activa JavaScript en tu navegador.</p></noscript><section id="mi-dia-vacio" class="eu-empty" hidden><h2>Tu día empieza aquí</h2><p>Añade los bloques que quieras ver, o vuelve a la selección inicial.</p><button type="button" class="eu-button" data-dia-reset>Restaurar mis bloques</button></section>' : '<div class="eu-section-head" id="cerca-servicios"><h2>Lo que necesitas, a un toque.</h2><p>Guarda tus bloques y aparecerán en tus favoritos y en Mi día.</p></div>'}
     <div class="eu-grid${day ? '' : ' eu-home-grid'}"${day ? ' id="mi-dia-modulos"' : ''}>${(day ? MODULOS.map(m => m.id) : ['gasolineras', 'farmacias', 'deportes', 'itv', 'politica'] as Modulo[]).map(id => tarjeta(id, data, day)).join('')}</div>
     <p class="sr-only" id="mi-dia-estado" role="status" aria-live="polite"></p>

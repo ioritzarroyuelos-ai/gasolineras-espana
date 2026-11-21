@@ -14,6 +14,8 @@ const favoriteA = { id: '900001', rotulo: 'Gasolinera de Ana', municipio: 'Madri
 const favoriteB = { ...favoriteA, id: '900002', rotulo: 'Gasolinera de Bea' }
 const favoriteGuest = { ...favoriteA, id: '900003', rotulo: 'Gasolinera del navegador' }
 const favoriteSport = { id: 'competicion:laliga-easports', nombre: 'LaLiga EA Sports', url: '/deportes/competicion/laliga-easports' }
+const serviceStorageName = 'eu-servicios-favoritos-v1'
+const favoritePlace = { id: 'osm-node-123', nombre: 'Fuente pública de prueba', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }
 function cloud(): Cloud {
   return {
     'cuenta-a': { [gasKey]: [favoriteA], [sportKey]: [favoriteSport], [dayKey]: { version: 1, visible: ['tiempo'], order: ['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'] } },
@@ -81,6 +83,78 @@ async function openAccount(page: Page) {
 
 test.beforeEach(async ({}, info) => {
   test.skip(info.config.metadata.live === true, 'Cuenta y Google simulados: no usar esta prueba como evidencia de OAuth real en producción.')
+})
+
+test('los lugares guardados aparecen en Inicio y Mi día, en móvil y escritorio', async ({ page, context }, info) => {
+  const remote = cloud(); remote['cuenta-a'][serviceStorageName] = [favoritePlace]
+  await accountServer(context, remote, 'cuenta-a')
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 844 })
+    for (const path of ['/', '/mi-dia']) {
+      await page.goto(path); await ready(page)
+      const link = page.locator('[data-dia-service-favs] a')
+      await expect(link).toHaveText(favoritePlace.nombre)
+      await expect(link).toHaveAttribute('href', '/cerca?lat=40.4&lon=-3.7&servicio=osm-node-123&categorias=agua-potable')
+      await expect(page.locator('[data-dia-gas-favs]')).toHaveCount(1)
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+      await link.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: info.outputPath('lugares-' + width + (path === '/' ? '-inicio' : '-mi-dia') + '.png') })
+    }
+  }
+})
+
+test('la copia se descarga y vaciar favoritos exige confirmar sin cerrar la cuenta', async ({ page, context }) => {
+  const remote = cloud(); remote['cuenta-a'][serviceStorageName] = [favoritePlace]
+  await accountServer(context, remote, 'cuenta-a')
+  await page.goto('/'); await ready(page); await openAccount(page)
+  const downloadEvent = page.waitForEvent('download')
+  await page.locator('#cuenta-exportar').click()
+  expect((await downloadEvent).suggestedFilename()).toBe('espana-util-mis-datos.json')
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.locator('#cuenta-vaciar').click()
+  await expect(page.locator('[data-dia-service-favs]')).toContainText(favoritePlace.nombre)
+  expect(remote['cuenta-a'][serviceStorageName]).toEqual([favoritePlace])
+  page.once('dialog', dialog => dialog.accept())
+  await page.locator('#cuenta-vaciar').click()
+  await expect.poll(() => remote['cuenta-a'][serviceStorageName]).toEqual([])
+  await expect.poll(() => remote['cuenta-a'][gasKey]).toEqual([])
+  await expect(page.locator('[data-dia-service-favs] a')).toHaveCount(0)
+  await expect(page.locator('#user-name')).toHaveText('Ana Prueba')
+  await expect(page.locator('#user-dropdown-sync')).toContainText(/guardad/i)
+})
+
+test('el recordatorio de ITV guarda la fecha elegida y descarga avisos para importar al calendario', async ({ page, context }, info) => {
+  const remote = cloud(), key = 'eu-itv-recordatorio-v1'
+  await accountServer(context, remote, 'cuenta-a')
+  await page.goto('/itv/'); await ready(page)
+  const panel = page.locator('#itv-recordatorio')
+  await expect(page.locator('#itv-recordatorio-controles')).toBeVisible()
+  await expect(panel).toContainText('no la calculamos ni reservamos una cita')
+  await page.locator('#itv-recordatorio-fecha').fill('2028-02-29')
+  await page.locator('#itv-recordatorio-nombre').fill('Mi coche')
+  await panel.getByRole('button', { name: 'Guardar fecha', exact: true }).click()
+  await expect.poll(() => (remote['cuenta-a'][key] as any)?.recordatorio?.fecha).toBe('2028-02-29')
+  await expect(page.locator('#itv-recordatorio-estado')).toHaveText('Guardado en tu cuenta.')
+  const event = page.waitForEvent('download')
+  await page.locator('#itv-recordatorio-calendario').click()
+  const download = await event
+  expect(download.suggestedFilename()).toBe('recordatorio-itv.ics')
+  const stream = await download.createReadStream(); let calendar = ''
+  if (stream) for await (const chunk of stream) calendar += chunk.toString('utf8')
+  expect(calendar).toContain('DTSTART;VALUE=DATE:20280229')
+  expect(calendar).toContain('TRIGGER:-P7D'); expect(calendar).toContain('TRIGGER:-P1D')
+  await expect(page.locator('#itv-recordatorio-estado')).toContainText('Impórtalo en tu calendario')
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 844 })
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+    await panel.screenshot({ path: info.outputPath('itv-recordatorio-' + width + '.png') })
+  }
+  await page.reload(); await ready(page)
+  await expect(page.locator('#itv-recordatorio-fecha')).toHaveValue('2028-02-29')
+  page.once('dialog', dialog => dialog.accept())
+  await page.locator('#itv-recordatorio-borrar').click()
+  await expect.poll(() => (remote['cuenta-a'][key] as any)?.recordatorio).toBe(null)
+  await expect(page.locator('#itv-recordatorio-calendario')).toBeHidden()
 })
 
 test('entra por el botón Google, recupera la portada y conserva cambios en otra sesión limpia', async ({ page, context, browser, baseURL }) => {

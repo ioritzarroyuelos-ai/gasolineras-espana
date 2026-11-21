@@ -3,6 +3,7 @@
 (async () => {
   const key = 'eu-mi-dia-v1';
   const gasKey = 'gs_favs_v1', sportKey = 'eu-deportes-favoritos-v1';
+  const serviceStorageName = 'eu-servicios-favoritos-v1';
   const modules = ['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'];
   const names = { tiempo: 'El tiempo', gasolineras: 'Gasolineras', deportes: 'Deportes', farmacias: 'Farmacias de guardia', itv: 'ITV', politica: 'Política' };
   const defaults = () => ({ version: 1, visible: modules.slice(0, 3), order: [...modules] });
@@ -175,13 +176,15 @@
   }
   function refreshFavorites() {
     const gas = gasFavorites(), sport = sportFavorites();
+    const places = (window.EUCuenta?.servicios?.favoritos() || []).map(item => ({ nombre: item.nombre, url: window.EUCuenta.servicios.urlFavorito(item) })).filter(item => item.url);
     drawFavorites('[data-dia-gas-favs]', gas, 'Guarda una gasolinera con la estrella del mapa y aparecerá aquí.');
     drawFavorites('[data-dia-sport-favs]', sport, 'Pulsa Seguir en un equipo, piloto o competición de Deportes para tenerlo aquí.');
+    drawFavorites('[data-dia-service-favs]', places, 'Guarda lugares con la estrella de Servicios cerca de ti y aparecerán aquí.');
     if (!homeFavorites) return;
     const selected = configured ? state.order.filter(id => state.visible.includes(id)) : [];
     const urls = { tiempo: '/tiempo/', gasolineras: '/gasolineras/mapa', deportes: '/deportes/', farmacias: '/farmacias/guardia', itv: '/itv/', politica: '/politica/' };
     drawFavorites('[data-home-module-favs]', selected.map(id => ({ nombre: names[id], url: urls[id] })), 'Pulsa Guardar en los bloques de esta página para tenerlos a mano.');
-    homeFavorites.hidden = !window.EUCuenta?.user && !gas.length && !sport.length && !selected.length;
+    homeFavorites.hidden = !window.EUCuenta?.user && !gas.length && !sport.length && !places.length && !selected.length;
     if (!homeFavorites.hidden && !favoriteAnchorRestored && location.hash === '#mis-favoritos') {
       favoriteAnchorRestored = true;
       homeFavorites.scrollIntoView({ block: 'start' });
@@ -193,13 +196,13 @@
   }
   window.addEventListener('storage', event => {
     if (event.key === key || event.key === null) { state = readState(); configured = hasSavedState(); draw(); }
-    if ([gasKey, sportKey, null].includes(event.key)) refreshFavorites();
+    if ([gasKey, sportKey, serviceStorageName, null].includes(event.key)) refreshFavorites();
   });
   window.addEventListener('eu:cuenta', event => {
     const detail = event.detail || {};
     if (['account', 'pull', 'import', 'ready'].includes(detail.reason) || detail.keys?.includes(key)) {
       state = readState(); configured = hasSavedState(); unsaved = false; draw();
-    } else if (detail.keys?.some(value => [gasKey, sportKey].includes(value))) refreshFavorites();
+    } else if (detail.keys?.some(value => [gasKey, sportKey, serviceStorageName].includes(value))) refreshFavorites();
   });
   window.addEventListener('pageshow', () => { if (!unsaved) { state = readState(); configured = hasSavedState(); } draw(); });
   window.addEventListener('focus', refreshFavorites);

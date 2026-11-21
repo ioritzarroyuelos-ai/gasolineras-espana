@@ -837,7 +837,8 @@ async function loadStations(options) {
   var idProv = document.getElementById('sel-provincia').value;
   var idMunSel = document.getElementById('sel-municipio').value;
   var nearby = !!searchOrigin || (!!idMunSel && getSearchArea() === 'cerca');
-  function isCurrent() { return request === stationRequest && selection === stationSelectionKey(); }
+  function isCurrent() { return request === stationRequest && selection === stationSelectionKey()
+    && (!document.body.classList.contains('services-map-page') || document.body.classList.contains('sv-fuel-mode')); }
   if (!idProv && !nearby) { showToast('Selecciona una provincia primero', 'warning'); return false; }
   var key = cacheKey(nearby ? 'near' : idProv, '');
   var cached = getCache(key);

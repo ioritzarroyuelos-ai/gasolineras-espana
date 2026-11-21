@@ -4,6 +4,7 @@ import { mastheadHtml } from './masthead'
 import { escapeHtml, jsonLdSafe } from './html'
 import { BRAND } from '../lib/brand'
 import { ICON_SPRITE, icon } from './icons'
+import { serviciosPanelHtml, serviciosMapStyles } from './servicios-mapa'
 
 export interface SeoContext {
   // Contexto SEO por ruta (provincia/municipio). Si falta, page genera la
@@ -76,6 +77,7 @@ export interface BuildPageOpts {
   // indexar; el SEO lo llevan la portada y las paginas provincia/municipio).
   // No afecta a las rutas SEO (provincia/municipio), que no pasan este flag.
   mapTool?: boolean
+  servicesTool?: boolean
   // Origen canónico (PUBLIC_ORIGIN-aware) para canonical/OG. Si se pasa, se usa en
   // vez del host del request → en previews la página apunta a producción.
   canonicalOrigin?: string
@@ -97,7 +99,7 @@ export function buildPage(
   // La URL canonica siempre refleja el nivel mas fino disponible.
   // Ship 26: la raíz del mapa pasó de `/` a `/gasolineras/` — `/` redirige 301
   // al portal España Útil (aún futuro), así que la canónica apunta al nuevo root.
-  let pathname = opts.mapTool ? '/gasolineras/mapa' : '/gasolineras/'
+  let pathname = opts.servicesTool ? '/cerca' : opts.mapTool ? '/gasolineras/mapa' : '/gasolineras/'
   if (seo?.provinciaSlug) pathname = '/gasolineras/' + seo.provinciaSlug
   if (seo?.provinciaSlug && seo?.municipioSlug) pathname = '/gasolineras/' + seo.provinciaSlug + '/' + seo.municipioSlug
   const canonical = origin + pathname
@@ -113,14 +115,14 @@ export function buildPage(
     && ((seo.stats['95'] && seo.stats['95'].count >= 3) || (seo.stats['diesel'] && seo.stats['diesel'].count >= 3)))
   // Title: "Gasolineras en X: precios | España Útil" — mantiene el intent
   // ("precios") y añade la marca al final (coherente con el resto de verticales).
-  const pageTitle = geoLabel
+  const pageTitle = opts.servicesTool ? 'Servicios cerca de ti · Mapa | ' + BRAND : geoLabel
     ? 'Gasolineras en ' + geoLabel + ': precios | ' + BRAND
     : BRAND + ' · Precios oficiales publicados'
   // Description enriquecida cuando hay stats: incluye precio min de 95 y numero
   // de estaciones — mejora CTR en SERP y da a Google material ranqueable
   // ("precio gasolina madrid"). Recortada a <=~155 car. para no truncarse en SERP.
   const stats95 = seo?.stats?.['95']
-  const pageDesc = geoLabel
+  const pageDesc = opts.servicesTool ? 'Encuentra servicios cercanos en un mismo mapa: gasolineras, recarga, baños, agua, aparcamientos y más. Filtros, favoritos, fuentes y fechas.' : geoLabel
     ? (stats95 && stats95.count >= 3
         ? 'Precios de gasolina y diésel en ' + geoLabel +
           '. Gasolina 95 desde ' + stats95.min.toFixed(3) + '€' +
@@ -129,10 +131,10 @@ export function buildPage(
         : 'Precios actualizados de gasolina y diésel en ' + geoLabel + '. Mapa, comparador y favoritos con datos oficiales del Ministerio.'
       )
     : 'Precios publicados de gasolineras en España. Mapa, comparador de ahorro y favoritos. Datos oficiales del Ministerio.'
-  const ogTitle = geoLabel
+  const ogTitle = opts.servicesTool ? '¿Qué tengo cerca? · ' + BRAND : geoLabel
     ? 'Gasolineras en ' + geoLabel + ' · Precios oficiales'
     : BRAND + ' · Precios publicados'
-  const ogDesc = geoLabel
+  const ogDesc = opts.servicesTool ? pageDesc : geoLabel
     ? 'Mapa de precios de combustible en ' + geoLabel + ', actualizados a diario. Datos oficiales.'
     : 'Encuentra la gasolinera más barata cerca de ti. Datos oficiales del Ministerio, actualizados a diario.'
   // Los crawlers de Twitter/Facebook/LinkedIn no renderizan SVG en previews: usamos PNG 1200x630.
@@ -439,20 +441,21 @@ window.__onTsExpired=function(){ window.__TS_TOKEN__ = ''; };
   ${turnstileScripts}
 
   ${getStyles(nonce)}
+  ${opts.servicesTool ? serviciosMapStyles(nonce) : ''}
 </head>
-<body class="fuel-map-page">
+<body class="fuel-map-page${opts.servicesTool ? ' services-map-page' : ''}">
 ${ICON_SPRITE}
 
 <!-- Cabecera y cuenta comunes a todo el portal. Los controles del mapa
      están junto al mapa y los filtros, sin una segunda cabecera. -->
-${mastheadHtml('gasolineras', { hideMunicipioSearch: true, compact: true })}
+${mastheadHtml(opts.servicesTool ? 'cerca' : 'gasolineras', { hideMunicipioSearch: true, compact: true })}
 
 <!-- H1 semantico. En SEO pages (provincia/municipio) el <section class="seo-summary">
      duplica un H1 visible con el mismo texto — acceptable para SEO moderno y da
      al usuario un heading visible cuando scrollea al contenido SEO. En la home
      solo queda este H1 como sr-only, bastante para a11y y crawlers.
      sr-only: la misma regla que usamos en el resto del CSS (1x1 clipped). -->
-${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND} — precios oficiales publicados</h1>` : ''}
+${!hasSeoSummary ? `<h1 class="sr-only">${opts.servicesTool ? 'Servicios cerca de ti · ' + BRAND : (geoLabel ? 'Gasolineras en ' + geoLabelH : BRAND) + ' — precios oficiales publicados'}</h1>` : ''}
 
 <!-- Banner offline -->
 <div id="offline-banner" role="status" aria-live="polite">
@@ -481,13 +484,14 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
 <div id="app-body">
 
   <!-- ======= SIDEBAR ======= -->
-  <aside id="sidebar" aria-label="Buscar gasolineras y ver resultados">
+  <aside id="sidebar" aria-label="${opts.servicesTool ? 'Buscar servicios y ver resultados' : 'Buscar gasolineras y ver resultados'}">
     <button id="btn-sheet-toggle" class="sheet-handle" type="button" aria-controls="sidebar-content" aria-expanded="false">
       <span class="sheet-grip" aria-hidden="true"></span>
       <span id="sheet-toggle-label">Ver lista y filtros</span>
       <span class="sheet-chevron" aria-hidden="true">⌃</span>
     </button>
     <div id="sidebar-content" class="sidebar-content">
+    ${opts.servicesTool ? serviciosPanelHtml() + '<div id="fuel-content" hidden>' : ''}
 
     <!-- FILTROS -->
     <div id="sidebar-filters">
@@ -585,16 +589,17 @@ ${!hasSeoSummary ? `<h1 class="sr-only">${geoLabel ? 'Gasolineras en ' + geoLabe
       </div>
     </div>
 
+    ${opts.servicesTool ? '</div>' : ''}
     </div><!-- sidebar-content -->
   </aside>
 
   <!-- ======= MAPA ======= -->
   <div id="map-container">
-    <div id="map" role="region" aria-label="Mapa de gasolineras"></div>
+    <div id="map" role="region" aria-label="${opts.servicesTool ? 'Mapa de servicios cercanos' : 'Mapa de gasolineras'}"></div>
 
     <div id="map-navigation" class="map-navigation" role="group" aria-label="Controles del mapa">
       <button id="btn-toggle-sidebar" class="map-location-btn" type="button" title="Mostrar u ocultar filtros y lista" aria-label="Ocultar filtros y lista" aria-controls="sidebar" aria-expanded="true">${icon('chevron-left')}</button>
-      <button id="btn-map-location" class="map-location-btn" type="button" aria-label="Buscar gasolineras cerca de mi ubicación" title="Mi ubicación">
+      <button id="btn-map-location" class="map-location-btn" type="button" aria-label="${opts.servicesTool ? 'Buscar servicios cerca de mi ubicación' : 'Buscar gasolineras cerca de mi ubicación'}" title="Mi ubicación">
         <svg class="location-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/></svg>
       </button>
       <div id="map-zoom-controls"></div>
@@ -934,6 +939,7 @@ ${seo?.provinciaName && opts.municipios && opts.municipios.length > 0 ? `
      Ventaja: HTML mas pequeno, el JS se cachea entre navegaciones y el SW lo
      precachea. defer -> corre tras el parse y tras los vendors del mapa. -->
 <script defer src="/static/app.js?v=${APP_VERSION}" nonce="${nonce}"></script>
+${opts.servicesTool ? `<script defer src="/static/servicios.js?v=${APP_VERSION}"></script>` : ''}
 </body>
 </html>`
 }

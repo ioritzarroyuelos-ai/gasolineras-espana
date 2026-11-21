@@ -48,6 +48,16 @@ describe('rutas META/SEO tras extraer a src/routes/meta.ts (B1)', () => {
     const body = await res.text()
     expect(body).toContain('Si inicias sesión con Google')
     expect(body).toContain('Alertas de precios por Telegram')
+    expect(body).toContain('Historial de consultas de servicios (opcional)')
+    expect(body).toContain('no equivale a borrar por completo una cuenta')
+  })
+
+  it('la fecha de privacidad refleja la edición, no la fecha de cada visita', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2027-02-01T12:00:00Z'))
+    try {
+      const res = await app.request('/privacidad', {}, { ASSETS: assets404() })
+      expect(await res.text()).toContain('<strong>Última actualización:</strong> 21 de noviembre de 2026')
+    } finally { vi.useRealTimers() }
   })
 
   it('sitemap: los hubs semi-estáticos NO emiten lastmod (evita lastmod falso)', async () => {
@@ -75,6 +85,12 @@ describe('rutas META/SEO tras extraer a src/routes/meta.ts (B1)', () => {
     const res = await app.request('/sitemap.xml', {}, { ASSETS: assets404() })
     const body = await res.text()
     expect(body).toContain('/acerca</loc>')
+  })
+  it('sitemap incluye el directorio de servicios, sin indexar el mapa interactivo', async () => {
+    const res = await app.request('/sitemap.xml', {}, { ASSETS: assets404() })
+    const body = await res.text()
+    expect(body).toMatch(/\/servicios\/<\/loc><changefreq>/)
+    expect(body).not.toContain('/cerca</loc>')
   })
 
   it('sitemap-tiempo: municipios con changefreq weekly y sin lastmod global', async () => {

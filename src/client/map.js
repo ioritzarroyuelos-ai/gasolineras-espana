@@ -159,7 +159,7 @@ function initMap() {
     // Una búsqueda o un enlace a una estación ya ha elegido su encuadre.
     // Este ajuste de tamaño no debe cerrar su ficha ni devolverlo al país entero.
     var provinceControl = document.getElementById('sel-provincia');
-    var hasSelection = hasSeo || searchOrigin || (provinceControl && provinceControl.value);
+    var hasSelection = hasSeo || searchOrigin || (provinceControl && provinceControl.value) || document.body.classList.contains('services-map-page');
     var activeBounds = mapRegion === 'canarias' ? CANARIAS_VIEW : ESPANA_BOUNDS;
     if (!hasSelection && !allStations.length) map.fitBounds(activeBounds, { padding: [6, 6], animate: false });
     // minZoom = nivel al que Espana llena la pantalla (no dejar alejarse mas).
@@ -174,7 +174,7 @@ function initMap() {
     map.setMinZoom(z);
     // Restaurar la capa de electrolineras si el usuario la dejo activada.
     try {
-      if (localStorage.getItem('gs_chargers') === '1') {
+      if (!document.body.classList.contains('services-map-page') && localStorage.getItem('gs_chargers') === '1') {
         loadChargers(function() { setChargersVisible(true); });
       }
     } catch (_) {}
@@ -1798,6 +1798,7 @@ function buildPopup(s) {
 
 // ---- RENDER MARKERS ----
 function renderMarkers(stations) {
+  if (document.body.classList.contains('services-map-page') && !document.body.classList.contains('sv-fuel-mode')) return;
   // Si initMap fallo (typeof L === 'undefined' por adblocker/red), 'map'
   // es undefined y llamar map.removeLayer tumbaria el render de la lista.
   // Bailamos silenciosamente: el banner de fallo del mapa ya esta visible,

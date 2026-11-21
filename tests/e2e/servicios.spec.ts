@@ -77,3 +77,38 @@ test('favorito compartido abre su ficha y no expone HTML de datos', async ({ pag
   await page.goto('/cerca?lat=43.169&lon=-2.632&servicio=osm-node-1&categorias=banos')
   await expect(page.locator('.leaflet-popup')).toContainText('Baño de prueba abierto')
 })
+
+for (const width of [390, 1280]) for (const late of [false, true]) test('conserva zona al alternar carburantes a ' + width + (late ? ' con descarga tardía' : ' con precios cargados'), async ({ page }, info) => {
+  test.skip(info.config.metadata.live === true, 'Descarga de precios controlada para comprobar el cambio de vista.')
+  await page.setViewportSize({ width, height: 900 }); await fixture(page)
+  let release!: () => void, requested!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { requested = resolve })
+  await page.route('**/data/stations.json', async route => {
+    requested(); await gate
+    await route.fulfill({ json: { Fecha: '21/11/2026 09:00:00', ListaEESSPrecio: [43.169, 43.24].map((lat, n) => ({
+      IDEESS: String(n + 1001), IDProvincia: '48', IDMunicipio: '48027', Municipio: 'Durango', Provincia: 'BIZKAIA',
+      Latitud: String(lat).replace('.', ','), 'Longitud (WGS84)': '-2,632', 'Rótulo': 'Estación de prueba ' + n,
+      'Precio Gasolina 95 E5': '1,500', Horario: 'L-D: 24H',
+    })) } })
+  })
+  await page.goto('/cerca?municipio=48027&categorias=banos'); await openPanel(page)
+  await expect(page.locator('.sv-card')).toHaveCount(3)
+  await page.evaluate(() => document.fonts.ready)
+  await page.locator('#sv-view-fuel').click({ trial: true })
+  const before = await page.evaluate(() => { const m = (window as any).map; const p = m.getCenter(); return { lat:p.lat, lng:p.lng, zoom:m.getZoom() } })
+  await page.locator('#sv-view-fuel').click(); await started
+  await expect(page.locator('#fuel-content')).toBeVisible()
+  if (!late) { release(); await expect(page.locator('.station-card').first()).toBeVisible() }
+  await page.locator('#sv-view-services').click()
+  if (late) { const response = page.waitForResponse('**/data/stations.json'); release(); await response }
+  await expect(page.locator('.sv-card')).toHaveCount(3)
+  await expect.poll(() => page.evaluate(expected => {
+    const m = (window as any).map
+    // Al redimensionar el panel, Leaflet desplaza algunos píxeles el centro;
+    // la zona y el zoom deben conservarse, sin volver al encuadre de carburantes.
+    return { zoom:m.getZoom(), cerca:m.getCenter().distanceTo([expected.lat, expected.lng]) < 150 }
+  }, before)).toEqual({ zoom:before.zoom, cerca:true })
+  await expect(page.locator('#fuel-content')).toBeHidden()
+  await expect(page.locator('#map .sv-pin, #map .sv-cluster')).not.toHaveCount(0)
+})

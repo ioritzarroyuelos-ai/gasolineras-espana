@@ -25,6 +25,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
   let categories = [], selected = new Set(), records = new Map(), nextPages = new Map(), source = null, itvSource = null, availableZones = [];
   let origin = null, originLabel = 'desde el centro del mapa', town = '', favoritesOnly = url.searchParams.get('favoritos') === '1';
   let revision = 0, controller, mapTimer, searchTimer, searchController, loadKey = '', shown = 60, partial = false, loading = false, fuelMode = false;
+  let servicesView = null;
   let layer = null, markerById = new Map(), focusedId = url.searchParams.get('servicio') || '', services, navigation = 0, chargingEnabled = false;
   let catalogPromise, lastCatalogCheck = 0;
   let biciSource = null, biciPromise, biciError = false, biciExpiryTimer;
@@ -261,7 +262,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     else if (loadKey) notice((items.length ? items.length + ' lugares cargados dentro del mapa' : 'No hay coincidencias entre los lugares cargados') + (partial || nextPages.size ? '. La lista está incompleta: carga más o acerca el mapa.' : '. El directorio puede no recoger todos los lugares.') + (loading ? ' Cargando…' : ''));
     if (items.length > shown) box.append(el('p', 'Mostrando ' + shown + ' de ' + items.length + ' lugares cargados.', 'sv-meta'));
     const m = mapInstance();
-    if (!m || !window.L) return;
+    if (!m || !window.L || fuelMode) return;
     if (!layer) {
       layer = window.L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, iconCreateFunction: cluster => window.L.divIcon({ className: 'sv-cluster', html: String(cluster.getChildCount()), iconSize: [40, 40] }) });
       m.addLayer(layer);
@@ -321,6 +322,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     if (failed) notice('No se han podido comprobar todas las zonas. Los resultados están incompletos; puedes volver a intentar cargar más.');
   }
   function load(force = false) {
+    if (fuelMode) return;
     if (favoritesOnly) { controller?.abort(); revision++; clearTimeout(guardiaExpiryTimer); loading = false; $('sv-results').setAttribute('aria-busy', 'false'); render(); sourceText(); return; }
     const bounds = viewport(), bases = zonasServicios(bounds), zones = osmZones(bounds, bases), key = zones.join(',') + ':' + bases.join(',') + ':' + chosen().join(',') + ':' + guardiaTurno();
     if (!force && key === loadKey) { render(); return; }
@@ -345,13 +347,14 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     origin = { lat: p.lat, lon: p.lon }; originLabel = name;
     const m = mapInstance();
     if (m) { window.setMapRegion?.(p.lat < 30 && p.lon < -13 ? 'canarias' : 'peninsula'); m.setView([p.lat, p.lon], 15); }
-    if (fuelMode) { window.setSearchOrigin?.({ lat: p.lat, lng: p.lon }); window.loadStations?.(); }
+    if (fuelMode) { servicesView = { center: { lat: p.lat, lng: p.lon }, zoom: 15 }; window.setSearchOrigin?.({ lat: p.lat, lng: p.lon }); window.loadStations?.(); }
     load(true);
   }
   function showCataluna() {
     navigation++; town = ''; origin = null; originLabel = 'desde el centro del mapa';
     $('sv-local-official').replaceChildren(); updateUrl();
     window.setMapRegion?.('peninsula'); mapInstance()?.fitBounds([[40.5, .1], [42.9, 3.4]]);
+    if (fuelMode && mapInstance()) servicesView = { center: mapInstance().getCenter(), zoom: mapInstance().getZoom() };
     load(true);
   }
   async function focusPoi(poi) {
@@ -445,16 +448,31 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     }, () => { b.disabled = false; if (currentNavigation === navigation) notice('No se ha podido obtener tu ubicación. Puedes buscar tu municipio sin dar permiso.'); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 });
   }
   function showFuel(show) {
+    if (show === fuelMode) return;
+    const m = mapInstance();
+    if (show && m) servicesView = { center: m.getCenter(), zoom: m.getZoom() };
+    controller?.abort(); revision++; loading = false;
+    $('sv-results').setAttribute('aria-busy', 'false');
     fuelMode = show; $('fuel-content').hidden = !show;
     document.body.classList.toggle('sv-fuel-mode', show);
     $('sv-view-fuel').setAttribute('aria-pressed', String(show)); $('sv-view-services').setAttribute('aria-pressed', String(!show));
     $('sv-results').hidden = show;
     if (!show) { $('loading')?.classList.remove('show'); window.closeStationDetail?.(); }
-    const m = mapInstance();
+    if (m && layer) show ? m.removeLayer(layer) : m.addLayer(layer);
     if (m && window.clusterGroup) show ? m.addLayer(window.clusterGroup) : m.removeLayer(window.clusterGroup);
     if (show) {
       const p = reference(); if (p) { window.setSearchOrigin?.({ lat: p.lat, lng: p.lon }); window.loadStations?.(); }
       $('fuel-content').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } else {
+      // La búsqueda de carburantes encuadra sus propios resultados. Al volver,
+      // conservar la zona de servicios, incluso si terminó una descarga lenta.
+      if (m && servicesView) {
+        const p = servicesView.center;
+        window.setMapRegion?.(p.lat < 30 && p.lng < -13 ? 'canarias' : 'peninsula');
+        m.setView(p, servicesView.zoom, { animate: false });
+      }
+      servicesView = null;
+      load(true);
     }
   }
   async function findAddress(event) {
@@ -708,7 +726,7 @@ import { servicioTileId } from '../../scripts/lib/servicios.mjs';
     return catalogPromise;
   }
   async function refreshVisible() {
-    if (document.hidden) return;
+    if (document.hidden || fuelMode) return;
     // Los temporizadores pueden suspenderse en una pestaña oculta. Retirar
     // primero las cifras caducadas, sin esperar a ninguna respuesta de red.
     render(); sourceText();

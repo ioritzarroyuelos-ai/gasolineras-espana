@@ -1868,7 +1868,7 @@ function renderMarkers(stations) {
   if (selectedStationId && !keepSelection) closeStationDetail(false);
   if (keepSelection) openStationDetailById(selectedStationId, { focus: false, pan: false });
 
-  if (bounds.length > 0) {
+  if (bounds.length > 0 && (!document.body.classList.contains('services-map-page') || document.body.classList.contains('sv-fuel-mode'))) {
     // animate:false a proposito: un fitBounds ANIMADO a un area grande (una
     // provincia entera) con maxBounds activo acaba en el minZoom (nivel pais) en
     // vez del zoom correcto — bug de Leaflet con maxBoundsViscosity. El encuadre

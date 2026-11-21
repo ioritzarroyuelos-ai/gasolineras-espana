@@ -48,8 +48,12 @@ function coordinates(row, source, bici) {
 }
 function selected(data, source, input, now) {
   const bici = input.fuente === 'bicis-zaragoza', evaluated = timestamp(data?.evaluadoEn), checked = timestamp(data?.consultado)
-  if (!object(data) || (bici ? data.schema !== 1 || data.redId !== source.city : data.fuenteId !== source.city) || data.fuenteUrl !== source.url || !['actual', 'parcial', 'sin_actualizar'].includes(data.estado) || evaluated === null || evaluated > now || !Array.isArray(data.items) || data.items.length > source.maxItems || data.total !== data.items.length) return fail('respuesta_invalida')
+  // Los dos servidores pueden diferir unos milisegundos. Sólo evaluadoEn,
+  // calculado por nuestra API, admite hasta1s: jamás las fechas de la fuente.
+  if (!object(data) || (bici ? data.schema !== 1 || data.redId !== source.city : data.fuenteId !== source.city) || data.fuenteUrl !== source.url || !['actual', 'parcial', 'sin_actualizar'].includes(data.estado) || evaluated === null || evaluated > now + 1000 || !Array.isArray(data.items) || data.items.length > source.maxItems || data.total !== data.items.length) return fail('respuesta_invalida')
+  // consultado usa ese mismo reloj propio y sigue acotado por evaluadoEn.
   if (data.consultado !== null && (checked === null || checked > evaluated)) return fail('respuesta_invalida')
+  const expiryClock = Math.max(now, evaluated)
   const ids = new Set()
   let row
   for (const item of data.items) {
@@ -65,8 +69,9 @@ function selected(data, source, input, now) {
   const date = timestamp(bici ? row.actualizado : row.fechaOcupacion), expiry = timestamp(row.caduca), feedDate = bici ? timestamp(data.fechaDatos) : date
   // Una consulta reciente no renueva el dato individual; los tres relojes
   // (parte, ficha y recepción) se comprueban después de terminar la descarga.
-  const datesValid = date !== null && feedDate !== null && checked !== null && date <= evaluated && feedDate <= checked && date <= checked && expiry !== null && expiry > date && expiry <= Math.min(date, feedDate) + source.ttl
-  const temporal = datesValid && expiry > now && now - evaluated < source.ttl && data.estado !== 'sin_actualizar'
+  const datesValid = date !== null && feedDate !== null && checked !== null && date <= now && feedDate <= now && date <= evaluated && feedDate <= checked && date <= checked && expiry !== null && expiry > date && expiry <= Math.min(date, feedDate) + source.ttl
+  // Elegir el reloj más adelantado sólo acorta vigencia, nunca la prolonga.
+  const temporal = datesValid && expiry > expiryClock && expiryClock - evaluated < source.ttl && data.estado !== 'sin_actualizar'
   let quantity = null
   if (bici) {
     const countsValid = count(row.capacidad, 10000) && count(row.bicis, 10000) && count(row.anclajes, 10000) && row.bicis + row.anclajes <= row.capacidad

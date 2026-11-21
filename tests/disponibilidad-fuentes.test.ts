@@ -93,7 +93,7 @@ describe('datos ambiguos y cuerpos no verificables no habilitan avisos',()=>{
   })
   it.each(['evaluado-futuro','consulta-futura','total','doble-id','otra-red','fuente-ajena','coordenada','nombre-control','id-ajeno'])('rechaza una respuesta incoherente: %s',async mode=>{
     const data:any=bizi()
-    if(mode==='evaluado-futuro')data.evaluadoEn=stamp(-1)
+    if(mode==='evaluado-futuro')data.evaluadoEn=new Date(now+1001).toISOString()
     if(mode==='consulta-futura')data.consultado=stamp(-1)
     if(mode==='total')data.total=2
     if(mode==='doble-id'){data.items.push({...data.items[0]});data.total=2}
@@ -124,5 +124,41 @@ describe('datos ambiguos y cuerpos no verificables no habilitan avisos',()=>{
     const result=cargaDisponibilidad(consultas.bizi,{fetch:fetcher,now,timeoutMs:20})
     const assertion=expect(result).rejects.toMatchObject({codigo:'fuente_no_disponible'})
     await vi.advanceTimersByTimeAsync(21);await assertion;expect(signal?.aborted).toBe(true)
+  })
+})
+
+describe('desfase limitado del reloj de evaluación sin rejuvenecer fuentes',()=>{
+  it.each(['madrid','vigo','bizi'])('acepta74ms de evaluación adelantada en %s, sin cambiar fechas',async city=>{
+    const data=city==='bizi'?bizi():parking(city);data.evaluadoEn=new Date(now+74).toISOString()
+    const point=await load(consultas[city],data)
+    expect(point).toMatchObject({estado:'actual',fechaDato:stamp(60),caduca:data.items[0].caduca})
+  })
+  it.each(['madrid','vigo','bizi'])('no confirma %s si caduca entre recepción y evaluación',async city=>{
+    const data=city==='bizi'?bizi():parking(city),item:any=data.items[0],ttl=city==='vigo'?360000:300000
+    data.evaluadoEn=new Date(now+74).toISOString();item.caduca=new Date(now+50).toISOString()
+    if(city==='bizi'){item.actualizado=new Date(now+50-ttl).toISOString();(data as ReturnType<typeof bizi>).fechaDatos=item.actualizado}else item.fechaOcupacion=new Date(now+50-ttl).toISOString()
+    expect(await load(consultas[city],data)).toMatchObject({cantidad:null,estado:'sin_confirmar',caduca:item.caduca})
+  })
+  it('tolera exactamente1s de evaluación pero rechaza1s+1ms',async()=>{
+    const data=parking();data.evaluadoEn=new Date(now+1000).toISOString()
+    expect((await load(consultas.madrid,data)).estado).toBe('actual')
+    data.evaluadoEn=new Date(now+1001).toISOString()
+    await expect(load(consultas.madrid,data)).rejects.toMatchObject({codigo:'respuesta_invalida'})
+  })
+  it.each(['madrid','bizi'])('la tolerancia no habilita una fecha individual futura en %s',async city=>{
+    const data=city==='bizi'?bizi():parking(city),item:any=data.items[0]
+    data.evaluadoEn=new Date(now+74).toISOString();data.consultado=new Date(now+70).toISOString()
+    if(city==='bizi')item.actualizado=new Date(now+1).toISOString();else item.fechaOcupacion=new Date(now+1).toISOString()
+    expect(await load(consultas[city],data)).toMatchObject({cantidad:null,estado:'sin_confirmar',fechaDato:null})
+  })
+  it('un parte Bizi futuro tampoco se confirma por tener consulta y evaluación adelantadas',async()=>{
+    const data=bizi();data.evaluadoEn=new Date(now+74).toISOString();data.consultado=new Date(now+70).toISOString();data.fechaDatos=new Date(now+1).toISOString()
+    expect(await load(consultas.bizi,data)).toMatchObject({cantidad:null,estado:'sin_confirmar',fechaDato:stamp(60)})
+  })
+  it('consulta propia queda acotada por evaluación, sin margen independiente',async()=>{
+    const data=parking();data.evaluadoEn=new Date(now+74).toISOString();data.consultado=new Date(now+70).toISOString()
+    expect((await load(consultas.madrid,data)).estado).toBe('actual')
+    data.consultado=new Date(now+75).toISOString()
+    await expect(load(consultas.madrid,data)).rejects.toMatchObject({codigo:'respuesta_invalida'})
   })
 })

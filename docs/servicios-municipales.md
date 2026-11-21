@@ -1,6 +1,6 @@
 # Servicios cerca de un municipio
 
-Estado: implementación I en validación local, pendiente de publicación y de medir una preview real de Cloudflare. Todas las rutas devuelven `noindex,follow` y `X-Robots-Tag: noindex, follow`. No se añaden al sitemap ni se habilita indexación mediante una variable.
+Estado: implementación I validada en una preview real de Cloudflare, pendiente de publicación y del primer ciclo del robot. Todas las rutas devuelven `noindex,follow` y `X-Robots-Tag: noindex, follow`. No se añaden al sitemap ni se habilita indexación mediante una variable.
 
 ## Alcance del contenido
 
@@ -44,7 +44,7 @@ Las pruebas cubren el borde de 5 km, pueblos vecinos, duplicados, fechas imposib
 
 Las cinco pruebas de navegador con casos controlados pasaron a 1.280, 390 y 320 píxeles, incluyendo accesibilidad automática, texto antiguo y funcionamiento sin JavaScript. Un smoke separado con datos reales pasó para Madrid, Durango y Ceuta. La revisión independiente del productor, lector y automatización no detectó fallos materiales.
 
-El perfil de la petición Pages completa en workerd local incluye el adaptador local de recursos, las reglas de enrutamiento, el framework y el render. Dio estimaciones de 54–62 ms por petición caliente, con muestras frías muy variables; **no demuestra compatibilidad con el límite de CPU del plan gratuito**. El perfil reducido anterior tampoco la demuestra. Antes de fusionar se necesita una preview real de Cloudflare con la salida del robot y medir peticiones frías y calientes; si excede el límite, hay que reducir el trabajo o cambiar la forma de servir las páginas. No se declarará este requisito verificado sólo porque el servidor local responda 200.
+El perfil de la petición Pages completa en workerd local incluye el adaptador local de recursos, las reglas de enrutamiento, el framework y el render. Dio estimaciones de 54–62 ms por petición caliente y no acreditaba la cuota gratuita. Se sustituyó esa comprobación por una medición real en `https://e66e4a95.webapp-3ft.pages.dev`, artefacto del commit `1d48305f20841a294e58b34be8ac81ce50631087`: el 21 de noviembre de 2026, de 11:28:20.743 a 11:28:23.089 UTC, se consultaron 12 rutas del índice, provincias y municipios en dos vueltas consecutivas. Todas devolvieron 200. La consulta GraphQL `pagesFunctionsInvocationsAdaptiveGroups`, limitada a ese intervalo y al Worker de preview, registró exactamente 24 peticiones, cero errores, CPU P50 de 0,975 ms y P99 de 6,781 ms, por debajo de los 10 ms del plan gratuito. Es una muestra real acotada, no una garantía sobre cualquier carga futura. El ensayo de navegador remoto también pasó para Madrid, Durango y Ceuta, incluyendo Durango a 390 píxeles sin desbordamiento.
 
 La primera consulta autenticada del nuevo productor AEMET también se comprobará mediante el robot; no se ha simulado un éxito real a partir de las pruebas con respuestas controladas.
 

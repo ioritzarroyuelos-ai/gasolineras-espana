@@ -1,6 +1,6 @@
 // Derivación diaria de datos comprobados. No consulta ni registra GPS de usuarios.
 import {open,mkdir,writeFile,rename,readdir,rm,lstat} from 'node:fs/promises'
-import {resolve,dirname,join,sep} from 'node:path'
+import {resolve,dirname,sep} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {createHash,randomUUID} from 'node:crypto'
 import {validaServiciosIndex,validaServiciosTile,SERVICIOS_MAX_TILE_BYTES} from './lib/servicios.mjs'

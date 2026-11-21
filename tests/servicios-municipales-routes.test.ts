@@ -35,6 +35,18 @@ describe('lectura municipal acotada y consistente',()=>{
     f.packed.files.set(key,new TextEncoder().encode('[]') as any)
     await expect(cargaResumenMunicipal(f.assets,'28079',now)).rejects.toThrow()
   })
+  it('comparte una descarga entre consultas y permite reintentar el bloque que falló',async()=>{
+    const f=fixture();let fail=true
+    const fetch=vi.fn(async(req:Request)=>{if(fail&&new URL(req.url).pathname.includes('/bloques/'))throw Error('caída del bloque');return f.fetch(req)})
+    const assets={fetch}
+    const results=await Promise.allSettled([cargaResumenMunicipal(assets,'28079',now),cargaResumenMunicipal(assets,'28079',now)])
+    expect(results.every(result=>result.status==='rejected')).toBe(true)
+    expect(fetch.mock.calls.filter(([r])=>new URL(r.url).pathname.includes('/bloques/'))).toHaveLength(1)
+    fail=false
+    expect((await cargaResumenMunicipal(assets,'28079',now))?.resumen.total).toBe(1)
+    await cargaResumenMunicipal(assets,'28079',now)
+    expect(fetch.mock.calls.filter(([r])=>new URL(r.url).pathname.includes('/bloques/'))).toHaveLength(2)
+  })
   it('frena un cuerpo demasiado grande sin confiar en su cabecera',async()=>{
     const get=vi.fn(async()=>new Response('x'.repeat(128*1024+1)))
     await expect(cargaCatalogoMunicipal({fetch:get},now)).rejects.toThrow()

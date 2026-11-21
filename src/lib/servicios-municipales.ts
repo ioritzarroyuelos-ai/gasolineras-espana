@@ -5,7 +5,8 @@ type Descriptor={archivo:string;bytes:number;sha256:string}
 export class MunicipalesError extends Error {}
 const fail=():never=>{throw new MunicipalesError('No se puede comprobar este directorio de proximidad')}
 const roots=new WeakMap<Assets,{at:number;promise:Promise<CatalogoMunicipal>}>()
-const chunks=new WeakMap<Assets,Map<string,Promise<unknown>>>()
+type CachedChunk={promise:Promise<unknown>}
+const chunks=new WeakMap<Assets,Map<string,CachedChunk>>()
 
 async function readAsset(assets:Assets|undefined,path:string,max:number){
   if(!assets)return fail()
@@ -28,10 +29,10 @@ export async function cargaCatalogoMunicipal(assets:Assets|undefined,now=Date.no
 async function cargaBloque(assets:Assets|undefined,desc:Descriptor,max:number):Promise<unknown>{
   if(!assets)return fail()
   let cache=chunks.get(assets);if(!cache){cache=new Map();chunks.set(assets,cache)}
-  const key=desc.archivo+'|'+desc.bytes,old=cache.get(key);if(old){cache.delete(key);cache.set(key,old);return old}
+  const key=desc.archivo+'|'+desc.bytes,old=cache.get(key);if(old){cache.delete(key);cache.set(key,old);return old.promise}
   const promise=(async()=>{const bytes=await readAsset(assets,desc.archivo,max);if(bytes.byteLength!==desc.bytes)return fail();const sha=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes as BufferSource))].map(n=>n.toString(16).padStart(2,'0')).join('');if(sha!==desc.sha256)return fail();return parse(bytes)})()
-  cache.set(key,promise);while(cache.size>16)cache.delete(cache.keys().next().value!)
-  try{return await promise}catch(error){if(cache.get(key)===promise)cache.delete(key);throw error}
+  const entry={promise};cache.set(key,entry);while(cache.size>16)cache.delete(cache.keys().next().value!)
+  try{return await promise}catch(error){if(cache.get(key)===entry)cache.delete(key);throw error}
 }
 export async function cargaProvinciaMunicipal(assets:Assets|undefined,provincia:string,now=Date.now()){
   if(!/^\d{2}$/.test(provincia))return null

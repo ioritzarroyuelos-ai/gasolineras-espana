@@ -7,6 +7,9 @@ const TOKEN = 'fixture-only-not-a-real-telegram-credential'
 const LINK_TOKEN = 'a'.repeat(32)
 const LOCAL = { version: 1, recordatorio: { id: '11111111-1111-4111-8111-111111111111', fecha: '2028-02-29', nombre: 'Mi vehículo de prueba' } }
 async function fixture(page: Page, context: BrowserContext, linked = true) {
+  // Las fechas de 2028 prueban febrero bisiesto desde una fecha de partida
+  // estable; no caducan por el paso real de los años en CI.
+  await page.clock.setFixedTime(new Date('2026-11-21T09:00:00Z'))
   const state = { available: true, confirmed: false, recordatorio: null as null | { fecha: string; consentimiento: string }, failure: 0, error: 'fixture_failure', uncertain: false,
     writes: [] as Array<{ method: string; body: unknown }>, links: [] as unknown[], errors: [] as string[] }
   page.on('pageerror', error => state.errors.push(error.message))
@@ -49,6 +52,7 @@ for (const width of [390, 1280]) test('Telegram ITV requiere permiso, usa la fec
   await page.goto('/itv/')
   const panel = page.locator('#itv-telegram'), activate = page.locator('#itv-telegram-activar'), consent = page.locator('#itv-telegram-permiso')
   await expect(panel).toBeVisible(); await expect(activate).toBeDisabled(); expect(state.writes).toEqual([])
+  expect((await activate.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await consent.check(); await expect(activate).toBeEnabled()
   await page.locator('#itv-recordatorio-fecha').fill('2028-03-01')
   await expect(consent).not.toBeChecked(); await consent.check(); await expect(activate).toBeDisabled()
@@ -59,6 +63,7 @@ for (const width of [390, 1280]) test('Telegram ITV requiere permiso, usa la fec
   expect(state.writes).toEqual([{ method: 'PUT', body: { fecha: '2028-03-01', consentimiento: 'itv-telegram-v1' } }])
   await expect(page.locator('#itv-recordatorio-calendario')).toBeVisible()
   await page.reload(); await expect(page.locator('#itv-telegram-cancelar')).toBeVisible()
+  expect((await page.locator('#itv-telegram-cancelar').boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await panel.scrollIntoViewIfNeeded(); await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
   const audit = await new AxeBuilder({ page }).include('#itv-recordatorio').withTags(['wcag2a', 'wcag2aa', 'wcag21aa']).analyze()
   expect(audit.violations).toEqual([])
@@ -72,8 +77,10 @@ for (const width of [390, 1280]) test('Telegram ITV requiere permiso, usa la fec
 test('vincula sin Google, abre el enlace explícito y no activa ITV ni gasolina por vincular', async ({ page, context }) => {
   const state = await fixture(page, context, false)
   await page.goto('/itv/')
+  expect((await page.locator('#itv-telegram-vincular').boundingBox())!.height).toBeGreaterThanOrEqual(44)
   await page.getByRole('button', { name: 'Vincular Telegram', exact: true }).click()
   const link = page.locator('#itv-telegram-abrir'); await expect(link).toBeVisible(); expect(state.links).toEqual([{ favs: [] }])
+  expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(44)
   const opened = context.waitForEvent('page'); await link.click(); const telegram = await opened
   await telegram.getByRole('button', { name: 'Iniciar (prueba local)' }).click(); state.confirmed = true
   await expect(page.locator('#itv-telegram-estado')).toContainText('Todavía no has activado', { timeout: 12000 })

@@ -41,6 +41,8 @@ Antes de cualquier creación, secreto o despliegue de Cloudflare con activación
 
 El diagnóstico identifica la etapa `WEB_CONFIG` o `BOT_GETME` y una causa cerrada: rechazo HTTP (400/401/403/404/429, otros o servidor), redirección, red, timeout, JSON inválido, respuesta no válida o identidad diferente. Por ejemplo, `BOT_GETME_IDENTITY_MISMATCH` significa que la respuesta válida identifica otro username; `WEB_CONFIG_JSON_INVALID` no permite siquiera consultar Telegram. Los códigos se eligen en el helper: no se copian claves, URL, cuerpos, identidades ni mensajes/códigos/causas de excepciones externas. El plazo total sigue siendo diez segundos, sin reintentos automáticos de esta comprobación.
 
+El workflow manual `check-disponibilidad-bot.yml` ejecuta únicamente `node scripts/deploy-disponibilidad.mjs --check-bot` sobre el commit de main solicitado, en el repositorio previsto. Tiene lectura del repositorio y sólo recibe el secreto del bot: no tiene credenciales de Cloudflare, chats ni secretos administrativos. No instala herramientas de despliegue, no modifica la bandera, no crea objetos ni envía mensajes. Permite diagnosticar mientras disponibilidad permanece pausada; un éxito sólo confirma identidad, nunca activa avisos.
+
 ## Presupuesto gratuito y comprobaciones
 
 El 21 de noviembre de 2026 se comprobó en la cuenta que el plan activo es Gratuito y no había namespaces DO. Cloudflare incluye DO SQLite: 100.000 solicitudes/día, 13.000 GB-s/día, cinco millones de filas leídas/día, cien mil escritas/día y cinco GB de almacenamiento. Son límites compartidos; agotarlos hace fallar operaciones en Free. No se activa una ampliación de pago.

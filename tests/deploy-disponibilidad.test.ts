@@ -233,6 +233,48 @@ describe('Comprobaciones remotas acotadas, sin invocar objetos de usuario', () =
   })
 })
 describe('Aislamiento de configuración y orden del despliegue', () => {
+  it.each([{ valid: true, accidental: false }, { valid: true, accidental: true }, { valid: false, accidental: true }])('el CLI sólo consulta identidad sin usar configuración de despliegue: %j', ({ valid, accidental }) => {
+    const require = createRequire(import.meta.url), { spawnSync } = require('node:child_process'), runtime = require('node:process')
+    const preload = `
+      let calls = 0;
+      globalThis.fetch = async (url, options) => {
+        if (++calls > 2 || options.method !== 'GET') throw Error('Consulta no prevista');
+        if (url === 'https://webapp-3ft.pages.dev/api/telegram/config') return Response.json({ok:true,username:'GasolinerasAlertasBot'});
+        if (url === 'https://api.telegram.org/bot' + process.env.TELEGRAM_BOT_TOKEN + '/getMe') return ${valid
+          ? "Response.json({ok:true,result:{id:123456,is_bot:true,username:'GasolinerasAlertasBot'}})"
+          : "new Response(process.env.TELEGRAM_BOT_TOKEN,{status:401})"};
+        throw Error('Origen no previsto');
+      };
+      process.on('exit', () => { if(calls !== 2) process.exitCode = 90; });
+    `
+    const result = spawnSync(runtime.execPath, ['--import', 'data:text/javascript,' + encodeURIComponent(preload),
+      'scripts/deploy-disponibilidad.mjs', '--check-bot'], {
+      cwd: runtime.cwd(), encoding: 'utf8', timeout: 10000,
+      env: { ...(accidental ? env() : {}), SystemRoot: runtime.env.SystemRoot, TELEGRAM_BOT_TOKEN: botFixture },
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.status).toBe(valid ? 0 : 1)
+    if (valid) expect(JSON.parse(result.stdout)).toEqual({ event: 'disponibilidad-bot-check', ok: true })
+    else expect(result.stderr).toContain('[BOT_GETME_HTTP_401]')
+    expect(result.stdout + result.stderr).not.toContain(botFixture)
+    expect(result.stdout + result.stderr).not.toContain('api.telegram.org')
+    expect(result.stdout + result.stderr).not.toMatch(/wrangler|cloudflare\.com|GitHub no confirmó/)
+  })
+  it('el diagnóstico manual sólo recibe el secreto del bot y nunca ejecuta el despliegue', () => {
+    const yaml = createRequire(import.meta.url)('js-yaml')
+    const raw = readFileSync('.github/workflows/check-disponibilidad-bot.yml', 'utf8'), workflow = yaml.load(raw)
+    expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch'])
+    expect(workflow.permissions).toEqual({ contents: 'read' })
+    expect(workflow.jobs.check.if).toBe("github.repository == 'ioritzarroyuelos-ai/gasolineras-espana' && github.ref == 'refs/heads/main'")
+    const steps = workflow.jobs.check.steps, commands = steps.filter((step: any) => step.run)
+    expect(steps[0].with).toMatchObject({ ref: '${{ github.sha }}', 'persist-credentials': false })
+    expect(commands).toHaveLength(2)
+    expect(commands[0].run).toContain('git rev-parse HEAD')
+    expect(commands[1]).toMatchObject({ env: { TELEGRAM_BOT_TOKEN: '${{ secrets.TELEGRAM_BOT_TOKEN }}' },
+      run: 'node scripts/deploy-disponibilidad.mjs --check-bot' })
+    expect(raw.match(/secrets\.[A-Z_]+/g)).toEqual(['secrets.TELEGRAM_BOT_TOKEN'])
+    expect(raw).not.toMatch(/CLOUDFLARE_|GH_TOKEN|GITHUB_TOKEN|DISPONIBILIDAD_ENABLED|wrangler|sendMessage/)
+  })
   it('preview no tiene servicio ni clave del bot, y ambos entornos conservan los bindings previos', () => {
     const pages = config('wrangler.jsonc'), worker = config('wrangler.disponibilidad.jsonc')
     expect(pages.services).toEqual([])

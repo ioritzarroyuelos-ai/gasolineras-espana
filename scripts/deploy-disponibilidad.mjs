@@ -165,7 +165,10 @@ export async function verificaDisponibilidad(env = process.env, versionId, io = 
   throw Error('Pages no confirma la versión y el estado esperados de disponibilidad')
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  if (process.argv[2] === '--verify' && process.argv.length === 4) {
+  if (process.argv[2] === '--check-bot' && process.argv.length === 3) {
+    await verificaBotDisponibilidad(process.env)
+    console.log(JSON.stringify({ event: 'disponibilidad-bot-check', ok: true }))
+  } else if (process.argv[2] === '--verify' && process.argv.length === 4) {
     const result = await verificaDisponibilidad(process.env, process.argv[3])
     console.log(JSON.stringify({ event: 'disponibilidad-health', ...result }))
   } else if (process.argv.length === 2) {

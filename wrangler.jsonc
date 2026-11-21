@@ -16,13 +16,14 @@
   // este razonablemente fresco (lo esta: GHA commitea 2 veces/dia).
   "vars": {
     "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev",
-    "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com"
+    "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com",
+    "DISPONIBILIDAD_ENABLED": "false"
   },
+  "services": [],
 
   // ---- KV (login + sincronizacion cross-device) ----
-  // USER_DATA guarda, por usuario autenticado con Google, los datos que deben
-  // sincronizarse entre dispositivos: favoritas, diario de repostajes, perfil
-  // de coche, rutas guardadas, etc. (ver SYNCABLE_KEYS en src/lib/auth.ts).
+  // USER_DATA guarda favoritos y preferencias por usuario de Google para
+  // sincronizarlos entre dispositivos (ver SYNCABLE_KEYS en src/lib/auth.ts).
   // SESSION_SECRET (secret, `wrangler pages secret put`) firma los JWT de sesion.
   "kv_namespaces": [
     {
@@ -40,11 +41,8 @@
   //   # El comando imprime un `database_id` — pegarlo abajo.
   //   npx wrangler d1 migrations apply gasolineras-history --remote
   //
-  // El `database_id` es un UUID publico (aparece en el dashboard); no es un
-  // secret, pero al estar en el repo permite que cualquier clone haga
-  // `wrangler d1 execute` contra la misma BD — eso es lo que queremos en un
-  // proyecto con deploys desde CI. Si algun dia abrimos forks, se crea una BD
-  // aparte por environment.
+  // El database_id es un identificador público, no una autorización: ejecutar
+  // operaciones remotas exige además una credencial Cloudflare con permisos.
   "d1_databases": [
     {
       "binding": "DB",
@@ -54,13 +52,41 @@
     }
   ],
 
+  // Pages requiere repetir todas las claves no heredables al separarlas por
+  // entorno. Se conservan los bindings previos; disponibilidad sólo se enlaza
+  // en producción. Las pruebas usan mocks/SQLite local, nunca el DO real.
+  "env": {
+    "production": {
+      "vars": {
+        "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev",
+        "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com",
+        "DISPONIBILIDAD_ENABLED": "true"
+      },
+      "kv_namespaces": [{ "binding": "USER_DATA", "id": "ddf3b7cfded545bb9201acb42ad2ee73" }],
+      "d1_databases": [{ "binding": "DB", "database_name": "gasolineras-history", "database_id": "cb93f064-b1cb-42ff-ac24-ed1f3235fb77", "migrations_dir": "migrations" }],
+      "services": [{ "binding": "DISPONIBILIDAD", "service": "espana-util-disponibilidad" }]
+    },
+    "preview": {
+      "vars": {
+        "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev",
+        "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com",
+        "DISPONIBILIDAD_ENABLED": "false",
+        "TELEGRAM_BOT_TOKEN": "",
+        "TELEGRAM_WEBHOOK_SECRET": ""
+      },
+      "kv_namespaces": [{ "binding": "USER_DATA", "id": "ddf3b7cfded545bb9201acb42ad2ee73" }],
+      "d1_databases": [{ "binding": "DB", "database_name": "gasolineras-history", "database_id": "cb93f064-b1cb-42ff-ac24-ed1f3235fb77", "migrations_dir": "migrations" }],
+      "services": []
+    }
+  }
+
   // ---- Cron ----
   // Cloudflare Pages NO soporta "triggers.crons" (es una feature solo de
   // Workers puros). Asi que los crons se disparan desde GitHub Actions:
   //
-  //   .github/workflows/cron-ingest.yml         → `0 20 * * *`   → POST /api/cron/ingest
-  //   .github/workflows/cron-purge.yml          → `0 3 * * 0`    → POST /api/cron/purge
-  //   .github/workflows/cron-telegram-check.yml → `30 */2 * * *` → POST /api/cron/telegram-check (Ship 25)
+  // El calendario vigente está en scripts/lib/data-recovery.mjs y en
+  // .github/workflows/data-recovery.yml. Los workflows conservan sus entradas
+  // manuales. Las alarmas de disponibilidad viven en su Worker independiente.
   //
   // Todos los endpoints exigen `Authorization: Bearer <CRON_TOKEN>`. El token vive
   // en dos sitios:

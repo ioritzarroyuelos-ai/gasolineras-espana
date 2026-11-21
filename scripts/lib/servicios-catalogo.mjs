@@ -20,6 +20,7 @@ export const SERVICIOS_CATEGORIAS = [
   ['correos','Oficinas postales','cotidiano'], ['paqueteria','Recogida de paquetes','cotidiano'],
   ['taquillas-paquetes','Taquillas de paquetes','cotidiano'], ['puntos-limpios','Puntos limpios','cotidiano'],
   ['reciclaje','Puntos de reciclaje','cotidiano'], ['donacion-ropa','Donación de ropa','cotidiano'],
+  ['reciclaje-pilas','Reciclaje de pilas domésticas','cotidiano'], ['reciclaje-aceite','Reciclaje de aceite de cocina','cotidiano'],
   ['policia','Comisarías','publicos'], ['guardia-civil','Guardia Civil','publicos'],
   ['bomberos','Parques de bomberos','publicos'], ['sepe','Oficinas públicas de empleo','publicos'],
   ['seguridad-social','Seguridad Social','publicos'], ['hacienda','Hacienda','publicos'],
@@ -36,7 +37,8 @@ export const SERVICIOS_IDS = new Set(SERVICIOS_CATEGORIAS.map(c=>c.id))
 // final exige todas las condiciones en categoriasServicio (incluidas las AND).
 export const OSM_TAG_FILTERS = [
   ...['parking','car_wash','bicycle_parking','bicycle_rental','bicycle_repair_station','bus_station','taxi','pharmacy','hospital','clinic','doctors','veterinary','blood_donation','toilets','drinking_water','atm','marketplace','post_office','parcel_locker','recycling','police','fire_station','townhall','library','community_centre','arts_centre','luggage_locker','public_bath'].map(v=>['amenity',v]),
-  ...['car_repair','tyres','gas','supermarket','parcel'].map(v=>['shop',v]),
+  ...['car_repair','tyres','gas','supermarket'].map(v=>['shop',v]),
+  ['post_office:parcel_pickup','yes'],
   ...['park','playground','dog_park','swimming_pool','sports_centre','swimming_area'].map(v=>['leisure',v]),
   ...['camp_site','caravan_site'].map(v=>['tourism',v]),
   ...['services','rest_area','bus_stop','elevator'].map(v=>['highway',v]),
@@ -65,9 +67,15 @@ export function categoriasServicio(t) {
   add(t.shelter_type==='climate_shelter','refugios-climaticos'); add(highway==='elevator','ascensores')
   add(a==='toilets','banos'); add((a==='drinking_water'||t.drinking_water==='yes')&&t.drinking_water!=='no','agua-potable')
   add(a==='atm','cajeros'); add(shop==='supermarket','supermercados'); add(a==='marketplace','mercados')
-  add(a==='post_office','correos'); add(shop==='parcel','paqueteria'); add(a==='parcel_locker','taquillas-paquetes')
+  add(a==='post_office','correos')
+  // Un comercio colaborador puede ofrecer sólo envío o cartas. Recogida de
+  // paquetes requiere la etiqueta específica, también en tiendas corrientes.
+  add(t['post_office:parcel_pickup']==='yes'&&!t['post_office:parcel_pickup:conditional'],'paqueteria')
+  add(a==='parcel_locker','taquillas-paquetes')
   add(a==='recycling'&&t.recycling_type==='centre','puntos-limpios'); add(a==='recycling','reciclaje')
   add(a==='recycling'&&t['recycling:clothes']==='yes','donacion-ropa')
+  add(a==='recycling'&&t['recycling:batteries']==='yes'&&!t['recycling:batteries:conditional'],'reciclaje-pilas')
+  add(a==='recycling'&&t['recycling:cooking_oil']==='yes'&&!t['recycling:cooking_oil:conditional'],'reciclaje-aceite')
   const civil=a==='police'&&/guardia civil/i.test([t.operator,t.name,t['operator:wikidata']].filter(Boolean).join(' '))
   add(a==='police'&&!civil,'policia');add(civil,'guardia-civil'); add(a==='fire_station','bomberos')
   add(t.office==='government'&&t.government==='employment_agency','sepe')

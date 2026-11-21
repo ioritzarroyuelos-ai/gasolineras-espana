@@ -3,16 +3,18 @@
 // Pensado para ejecutarse desde GitHub Actions 2 veces al dia.
 // Si la descarga falla, NO sobrescribe el snapshot anterior (termina con exit 1).
 
-import { writeFileSync, readFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { construyeObservatorio } from './lib/observatorio-precalculo.mjs'
 import { construyeGasolineras } from './lib/gasolineras-precalculo.mjs'
 import { buildFuelTrends } from './lib/fuel-trends.mjs'
+import { construyePreciosComparacion } from './lib/precios-comparacion.mjs'
+import { leeComparacionPrevia, guardaComparacionPrecios } from './lib/precios-comparacion-disco.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
-const DATA_DIR = resolve(ROOT, 'public', 'data')
+const DATA_DIR = process.env.PRICES_DATA_DIR ? resolve(process.env.PRICES_DATA_DIR) : resolve(ROOT, 'public', 'data')
 const BASE = 'https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes'
 
 async function fetchJsonWithRetry(url, attempts = 5) {
@@ -45,13 +47,16 @@ async function main() {
   function previousJson(name) {
     try { return JSON.parse(readFileSync(resolve(DATA_DIR, name), 'utf8')) } catch { return null }
   }
-  const trends = buildFuelTrends(all, {
-    previous: previousJson('trends.json'),
-    previousSnapshot: previousJson('stations.json'),
-    previousMeta: previousJson('snapshot-meta.json'),
-  })
+  const now = new Date(), previousSnapshot = previousJson('stations.json'), previousMeta = previousJson('snapshot-meta.json')
+  const trends = buildFuelTrends(all, {now, previous: previousJson('trends.json'),previousSnapshot,previousMeta})
+  const comparisonDir = resolve(DATA_DIR,'precios-comparacion')
+  const previousBundle = leeComparacionPrevia(comparisonDir)
+  // Se prepara y valida antes de reemplazar la foto general. Ninguna cifra
+  // del navegador o de una mediana se usa como precio anterior de una estación.
+  const comparison = await construyePreciosComparacion(all,{now,previousSnapshot,previousMeta,previousBundle})
 
   mkdirSync(DATA_DIR, { recursive: true })
+  guardaComparacionPrecios(comparisonDir,comparison,previousBundle?.index.snapshotId)
 
   // 1) Snapshot completo de estaciones
   const stationsPath = resolve(DATA_DIR, 'stations.json')
@@ -79,7 +84,7 @@ async function main() {
   // 3) Metadata con timestamp
   const metaPath = resolve(DATA_DIR, 'snapshot-meta.json')
   writeFileSync(metaPath, JSON.stringify({
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: now.toISOString(),
     ministryDate: all.Fecha,
     stationCount: stations.length
   }, null, 2))

@@ -1,3 +1,4 @@
+export function sourceTime(value: unknown): number
 export interface FuelCapture {
   ts: string
   sourceAt: string

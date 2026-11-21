@@ -10,6 +10,7 @@ import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
 import { borrarItvTelegram } from '../lib/telegram-itv'
 import { borrarPreferenciaPrecios, cargaPreciosComparacion, mensajesPrecios, enviarPreciosTelegram, PRECIOS_COMBUSTIBLES } from '../lib/telegram-precios'
 import { registerTelegramPreciosRoutes } from './telegram-precios'
+import { escapeHtml } from '../html/html'
 
 const TELEGRAM_SUBSCRIPTION_LIMIT = 100
 const LIMIT_MESSAGE = 'Puedes tener hasta 100 avisos de gasolineras y combustibles. Desactiva alguno antes de añadir otro.'
@@ -270,7 +271,7 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
     //    telegram-check purga filas con expires_at caducado (+1h grace).
     // La confirmación cuenta las altas confirmadas por D1. No descarga el
     // catálogo nacional sólo para decorar el mensaje con nombres.
-    const accountUrl = tgEscapeHtml((c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin) + '/gasolineras/')
+    const accountUrl = escapeHtml((c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin) + '/gasolineras/')
     const reply = accepted.length > 0
       ? `🔔 <b>Alertas activas</b>\n\n` +
         `${inserted} avisos añadidos y ${alreadyActive} que ya estaban activos.\n` +

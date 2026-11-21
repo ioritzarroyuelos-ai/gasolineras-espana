@@ -6,6 +6,7 @@ import type { Env } from '../src/index'
 import { signTelegramToken } from '../src/lib/auth'
 import { registerTelegramRoutes } from '../src/routes/telegram'
 import { construyePreciosComparacion } from '../scripts/lib/precios-comparacion.mjs'
+import { parse } from 'node-html-parser'
 
 const NOW = Date.parse('2026-11-21T09:00:00.000Z'), databases: Array<{ close: () => void }> = []
 function fixture(count = 0) {
@@ -82,6 +83,24 @@ describe('límite atómico de avisos por chat, con SQL real', () => {
   })
 })
 describe('identificadores y cola de vinculación', () => {
+  it('la confirmación conserva el enlace propio como único atributo aunque haya comillas o HTML', async () => {
+    const f = fixture()
+    f.env.PUBLIC_ORIGIN = `https://local.test/" data-inyectado="sí"><b>falso</b>&'`
+    const response = await f.bind([{ station_id: '100', fuel_code: '95' }])
+    expect(response.status).toBe(200)
+    const html = parse(f.messages[0]), links = html.querySelectorAll('a')
+    expect(links).toHaveLength(1)
+    expect(links[0].attributes).toEqual({ href: f.env.PUBLIC_ORIGIN + '/gasolineras/' })
+    expect(links[0].text).toBe('Consulta la lista completa en la web')
+    expect(html.querySelector('[data-inyectado]')).toBeNull()
+    expect(html.querySelectorAll('b').map(node => node.text)).toEqual(['Alertas activas'])
+    expect(f.fetcher).toHaveBeenCalledTimes(1)
+  })
+  it('la confirmación mantiene el destino normal de gasolineras', async () => {
+    const f = fixture()
+    expect((await f.bind([{ station_id: '100', fuel_code: '95' }])).status).toBe(200)
+    expect(parse(f.messages[0]).querySelector('a')?.getAttribute('href')).toBe('https://local.test/gasolineras/')
+  })
   it('toggle lee sólo índice y un cubo validado, sin cargar el catálogo completo', async () => {
     const f = fixture(), bundle = await construyePreciosComparacion({ Fecha: '21/11/2026 10:00:00', ListaEESSPrecio: [{ IDEESS: '100', 'Rótulo': 'Nombre oficial <seguro>', Municipio: 'Bilbao', 'Precio Gasolina 95 E5': '1,399' }] }, { now: new Date(NOW) })
     const files = new Map([['index.json', JSON.stringify(bundle.index)], ...bundle.artifacts.map(a => [a.archivo, a.content] as [string, string])])

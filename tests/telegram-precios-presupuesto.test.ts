@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Env } from '../src/index'
 import { registerTelegramPreciosRoutes } from '../src/routes/telegram-precios'
-import { cargaPreciosComparacion, PRECIOS_CONSENTIMIENTO, PRECIOS_PREFIX, preciosPreferenciaKey, preciosUsuario } from '../src/lib/telegram-precios'
+import { PRECIOS_CONSENTIMIENTO, PRECIOS_PREFIX, preciosPreferenciaKey, preciosUsuario } from '../src/lib/telegram-precios'
 import { construyePreciosComparacion } from '../scripts/lib/precios-comparacion.mjs'
 
 // Presupuesto conservador propio de50 operaciones mixtas. No equivale al

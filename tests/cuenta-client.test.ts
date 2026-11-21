@@ -66,6 +66,17 @@ function client(initial: Record<string, string> = {}, account: any = a, cloud: R
 describe('shared account favorites', () => {
   const serviceStorageName = 'eu-servicios-favoritos-v1', prefsStorageName = 'eu-servicios-preferencias-v1'
   const place = { id: 'osm-node-123', nombre: 'Fuente pública', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }
+  it('sincroniza aparcamientos sin guardar plazas y mantiene su proveedor y ciudad', async () => {
+    const c = client({}, a); await c.window.EUCuenta.ready
+    const madrid = { id: 'parking-madrid-72', nombre: 'Aparcamiento de prueba', categoria: 'aparcamientos-madrid', lat: 40.4, lon: -3.6 }
+    const vigo = { id: 'parking-vigo-4763', nombre: 'Aparcamiento de prueba Vigo', categoria: 'aparcamientos-vigo', lat: 42.22, lon: -8.73 }
+    for (const item of [madrid, vigo]) await c.window.EUCuenta.servicios.alternarFavorito({ ...item, plazasLibres: 0, fechaOcupacion: '2026-11-21T12:00:00Z' })
+    expect(c.remote.A[serviceStorageName]).toEqual([madrid, vigo])
+    for (const item of [{ ...madrid, id: 'osm-node-72' }, { ...madrid, categoria: vigo.categoria }, { ...madrid, lat: vigo.lat }, { ...vigo, categoria: 'aparcamientos' }]) expect(c.window.EUCuenta.servicios.urlFavorito(item)).toBeNull()
+    expect(c.window.EUCuenta.servicios.urlFavorito(vigo)).toBe('/cerca?lat=42.22&lon=-8.73&servicio=parking-vigo-4763&categorias=aparcamientos-vigo')
+    c.setUser(b); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([])
+    c.setUser(a); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([madrid, vigo])
+  })
   it('sincroniza lugares por separado, conserva gasolineras y construye enlaces internos', async () => {
     const c = client({}, a, { [fav]: [station('saved')] }); await c.window.EUCuenta.ready
     await c.window.EUCuenta.servicios.alternarFavorito({ ...place, url: 'https://evil.test', gps: { lat: 1, lon: 2 } })

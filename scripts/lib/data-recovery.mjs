@@ -11,6 +11,7 @@ export const DATA_JOBS = [
   {kind:'servicios', service:'servicios', item:'Comprobación del directorio', maxHours:30, scheduleUtc:['08:17']},
   {kind:'transporte', service:'transporte', item:'Comprobación de movilidad', maxHours:30, scheduleUtc:['08:47']},
   {kind:'servicios-publicos', service:'servicios', item:'Servicios públicos oficiales', maxHours:30, scheduleUtc:['08:57']},
+  {kind:'aparcamientos', service:'servicios', item:'Catálogos de aparcamientos oficiales', maxHours:30, scheduleUtc:['09:07']},
   {kind:'telegram', workflow:'cron-telegram-check.yml', scheduleLocal:{zone:'Europe/Madrid',startHour:8,endHour:12}, runTitle:'Telegram · resumen diario'},
   {kind:'telegram-itv', workflow:'cron-telegram-itv.yml', scheduleLocal:{zone:'Europe/Madrid',startHour:8,endHour:12}, intervalHours:1, runTitle:'Telegram · recordatorios ITV'},
 ]

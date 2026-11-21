@@ -25,6 +25,7 @@ import { registerTraficoRoutes } from './routes/trafico'
 import { registerCamarasRoutes } from './routes/camaras'
 import { registerTransporteRoutes } from './routes/transporte'
 import { registerServiciosPublicosRoutes } from './routes/servicios-publicos'
+import { registerAparcamientosRoutes } from './routes/aparcamientos'
 import { registerTelegramItvRoutes } from './routes/telegram-itv'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
@@ -167,6 +168,7 @@ registerTraficoRoutes(app)
 registerCamarasRoutes(app)
 registerTransporteRoutes(app)
 registerServiciosPublicosRoutes(app)
+registerAparcamientosRoutes(app)
 registerCercaRoutes(app)
 
 // ---- Gasolineras (precios del Ministerio) ----

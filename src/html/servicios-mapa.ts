@@ -31,6 +31,7 @@ export function serviciosMapStyles(nonce: string): string {
   .sv-panel button.sv-primary:hover{background:#20492e;color:#fff}
   .services-map-page:not(.sv-fuel-mode) #stale-banner{display:none!important}
   .sv-pin-traffic{background:#8d4514}
+  .sv-parking-availability{font-size:20px;font-weight:750;color:#285738}
   #sv-guardias-control select{width:100%;min-height:44px;margin-top:6px;padding:9px;border:1px solid #a6b7ab;border-radius:10px;background:#fff;color:#24332b;font:inherit}#sv-guardias-sources summary{line-height:1.45;padding:5px 0}#sv-guardias-sources .sv-action{margin:4px 4px 0 0}
   @media(max-width:1023px){.services-map-page #sidebar{width:100%}.sv-panel{padding:14px}.sv-panel h2{font-size:22px}.services-map-page #sidebar.collapsed{width:100%}.sv-heading{gap:6px}.sv-heading button{font-size:12px}.services-map-page #sidebar-content{max-height:100%}.sv-popup{max-width:235px}}
   </style>`

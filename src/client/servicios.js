@@ -2,6 +2,8 @@ import { abiertoServicio, distanciaServicio, enlacesServicio, zonasServicios, bi
 import { servicioTileId } from '../../scripts/lib/servicios.mjs';
 import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMetro } from '../../scripts/lib/metro-ui.mjs';
 import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos.mjs';
+import { APARCAMIENTOS_MAPA, fuenteAparcamiento } from '../../scripts/lib/aparcamientos-ui.mjs';
+import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
 
 // El motor cartográfico y las gasolineras siguen siendo los del mapa original.
 // Las consultas públicas llevan cuadrículas; nunca la posición GPS del visitante.
@@ -45,6 +47,11 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
   const METRO_CATEGORY = { id: 'metro-bilbao', nombre: 'Metro Bilbao · próximas llegadas', grupo: 'transporte', grupoNombre: 'Transporte público', disponibilidad: true };
   const PUBLIC_CATEGORIES = SERVICIOS_PUBLICOS_FUENTES.map(f => ({ id: f.id, nombre: f.nombre + ' · catálogo oficial', grupo: f.id === 'refugios-cataluna' ? 'salud' : 'publicos', grupoNombre: f.id === 'refugios-cataluna' ? 'Salud' : 'Servicios públicos', disponibilidad: true }));
   const PUBLIC_IDS = new Set(PUBLIC_CATEGORIES.map(c => c.id));
+  const PARKING_CATEGORIES = APARCAMIENTOS_MAPA.map(f => ({ id: f.id, nombre: f.nombre, grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true }));
+  const parking = crearAparcamientosMapa({ el, link, button, favoriteButton, focusPoi, reference, originLabel: () => originLabel,
+    active: city => !fuelMode && !favoritesOnly && !document.hidden && selected.has('aparcamientos-' + city),
+    changed: () => { if (!fuelMode && !document.hidden) { render(); sourceText(); } },
+  });
   const townCache = new Map();
   function townInfo(ine) {
     if (!townCache.has(ine)) townCache.set(ine, json('/api/localidad/' + ine).catch(error => { townCache.delete(ine); throw error; }));
@@ -58,7 +65,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
   const notice = text => { $('sv-status').textContent = text; };
   const coords = poi => enlacesServicio(poi) !== null;
   const chosen = () => [...selected].sort();
-  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(id) && !PUBLIC_IDS.has(id));
+  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(id) && !PUBLIC_IDS.has(id) && !fuenteAparcamiento(id));
   const guardiaTurno = () => $('sv-guardias-turno')?.value || 'todas';
   const guardiaCurrent = poi => Number.isFinite(poi._guardiaDeadline) && poi._guardiaDeadline > Date.now() && !guardiaSources.get(poi._guardiaZona)?.failed;
   const trafficCurrent = () => !trafficError && trafficSource?.estado === 'actual' && vigenteServicio(trafficSource._plazo);
@@ -91,6 +98,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
   function sourceText() {
     const box = $('sv-source'); box.replaceChildren();
     guardiasSourceText();
+    parking.appendSources(box, selected);
     if (source && osmChosen().length) {
       box.append(el('span', 'Directorio consultado: ' + date(source.consultado) + '. Extracto de datos: ' + date(source.fechaDatos) + '. '));
       box.append(link('© OpenStreetMap · ODbL', 'https://www.openstreetmap.org/copyright'));
@@ -171,6 +179,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
         navigation++; favoritesOnly = false; focusedId = ''; updateUrl(); syncControls(); saveCategories(); load(true);
         if (input.checked && category.id === 'bicis-zaragoza') chooseTown('50297');
         if (input.checked && category.id === METRO_CATEGORY.id) chooseTown('48020');
+        if (input.checked && fuenteAparcamiento(category.id)) chooseTown(fuenteAparcamiento(category.id).municipio);
         if (input.checked && PUBLIC_IDS.has(category.id)) chooseTown(category.id === 'refugios-cataluna' ? '08019' : '28079');
         if (input.checked && ['trafico-cataluna', 'camaras-cataluna'].includes(category.id)) showCataluna();
         remember();
@@ -232,6 +241,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
     if (poi.proveedor === 'camara-sct') return cameraDetails(poi, popup);
     if (poi.proveedor === 'metro-bilbao') return metroDetails(poi, popup);
     if (poi.proveedor === 'servicios-publicos') return publicDetails(poi, popup);
+    if (poi.proveedor === 'aparcamientos-oficiales') return parking.details(poi, popup);
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
     card.append(el('p', (poi.categorias || [poi.categoria]).map(catalogName).join(' · '), 'sv-kind'), el('h3', poi.nombre));
     const distance = distanciaServicio(reference(), poi);
@@ -290,7 +300,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
   }
   function filteredRecords() {
     if (favoritesOnly) return (services?.favoritos() || []).filter(coords);
-    return [...records.values()].filter(p => p.categorias?.some(id => selected.has(id)) && inView(p)
+    return [...records.values()].filter(p => p.categorias?.some(id => selected.has(id)) && (p.proveedor === 'aparcamientos-oficiales' && p.lat === null || inView(p))
       && (p.proveedor !== 'guardias-oficiales' || guardiaTurno() === 'todas' || guardiaCurrent(p) && p.estado === 'activa' && (guardiaTurno() !== '24h' || p.todoElDia))
       && (p.proveedor === 'sct' ? trafficCurrent() : p.proveedor === 'servicios-publicos' ? !$('sv-accessible').checked || p.accesibilidad === 'si' : ['camara-sct', 'metro-bilbao'].includes(p.proveedor) || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
   }
@@ -311,9 +321,9 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       layer = window.L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, iconCreateFunction: cluster => window.L.divIcon({ className: 'sv-cluster', html: String(cluster.getChildCount()), iconSize: [40, 40] }) });
       m.addLayer(layer);
     }
-    const visibleIds = new Set(items.map(p => p.id));
+    const visibleIds = new Set(items.filter(coords).map(p => p.id));
     for (const [id, marker] of markerById) if (!visibleIds.has(id)) { layer.removeLayer(marker); markerById.delete(id); }
-    for (const poi of items) {
+    for (const poi of items.filter(coords)) {
       const existing = markerById.get(poi.id);
       if (existing) {
         const point = existing.getLatLng();
@@ -321,8 +331,8 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
         if (existing.isPopupOpen()) existing.setPopupContent(details(poi, true));
         continue;
       }
-      const category = poi.categorias?.[0] || poi.categoria;
-      const marker = window.L.marker([poi.lat, poi.lon], { title: poi.nombre, icon: window.L.divIcon({ className: 'sv-pin' + (poi.proveedor === 'sct' ? ' sv-pin-traffic' : poi.proveedor === 'metro-bilbao' ? ' sv-pin-metro' : ''), html: poi.proveedor === 'sct' ? '!' : poi.proveedor === 'metro-bilbao' ? 'M' : glyphs[category] || '•', iconSize: [38, 38], iconAnchor: [19, 19] }) });
+      const category = poi.categorias?.find(id => selected.has(id)) || poi.categorias?.[0] || poi.categoria;
+      const marker = window.L.marker([poi.lat, poi.lon], { title: poi.nombre, icon: window.L.divIcon({ className: 'sv-pin' + (poi.proveedor === 'sct' ? ' sv-pin-traffic' : poi.proveedor === 'metro-bilbao' ? ' sv-pin-metro' : ''), html: poi.proveedor === 'sct' ? '!' : poi.proveedor === 'metro-bilbao' ? 'M' : poi.proveedor === 'aparcamientos-oficiales' ? 'P' : glyphs[category] || '•', iconSize: [38, 38], iconAnchor: [19, 19] }) });
       marker.bindPopup(() => details(records.get(poi.id) || poi, true)); layer.addLayer(marker); markerById.set(poi.id, marker);
     }
     if (focusedId && markerById.has(focusedId)) { const marker = markerById.get(focusedId); layer.zoomToShowLayer(marker, () => marker.openPopup()); focusedId = ''; }
@@ -338,9 +348,10 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
           const traffic = zone === 'sct:cataluna';
           const camera = zone === 'camaras:cataluna';
           const metro = zone === 'metro:bilbao';
+          const parkingCity = zone.startsWith('parking:') ? zone.slice(8) : null;
           const publico = zone.startsWith('publicos:') ? zone.split(':') : null;
           const guardia = zone.startsWith('guardias:');
-          const data = guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : metro ? await fetchMetro() : publico ? await json('/api/servicios/publicos/' + publico[1] + '?zona=' + publico[2] + '&pagina=' + page, signal) : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
+          const data = parkingCity ? await parking.fetch(parkingCity) : guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : metro ? await fetchMetro() : publico ? await json('/api/servicios/publicos/' + publico[1] + '?zona=' + publico[2] + '&pagina=' + page, signal) : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
           if (serial !== revision) return;
           if (guardia && round !== guardiaRound) continue;
           if (!Array.isArray(data.items)) throw Error('invalid');
@@ -355,11 +366,11 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
               }
             }
           }
-          if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else if (metro) acceptMetro(data); else if (publico) acceptPublicos(data, publico[1]); else data.items.filter(coords).forEach(p => records.set(p.id, p));
-          if (itv) itvSource = data; else if (!guardia && !bike && !traffic && !camera && !metro && !publico) source = data;
+          if (parkingCity) parking.accept(data, records); else if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else if (metro) acceptMetro(data); else if (publico) acceptPublicos(data, publico[1]); else data.items.filter(coords).forEach(p => records.set(p.id, p));
+          if (itv) itvSource = data; else if (!parkingCity && !guardia && !bike && !traffic && !camera && !metro && !publico) source = data;
           if (data.siguientePagina != null) nextPages.set(zone, data.siguientePagina); else nextPages.delete(zone);
           if (guardia && data._failed) { failed++; nextPages.set(zone, page); }
-        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone === 'metro:bilbao') metroError = true; if (zone.startsWith('publicos:')) publicErrors.add(zone.split(':')[1]); if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); } }
+        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone === 'metro:bilbao') metroError = true; if (zone.startsWith('publicos:')) publicErrors.add(zone.split(':')[1]); if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); if (zone.startsWith('parking:')) parking.fail(zone.slice(8)); } }
       }
     }
     await Promise.all([worker(), worker(), worker()]);
@@ -387,6 +398,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
     if (selected.has('trafico-cataluna')) pages.push(['sct:cataluna', 0]);
     if (selected.has('camaras-cataluna')) pages.push(['camaras:cataluna', 0]);
     if (selected.has(METRO_CATEGORY.id)) pages.push(['metro:bilbao', 0]);
+    for (const source of APARCAMIENTOS_MAPA) if (selected.has(source.id)) pages.push(['parking:' + source.ciudad, 0]);
     for (const id of PUBLIC_IDS) if (selected.has(id)) pages.push(...bases.map(zone => ['publicos:' + id + ':' + zone, 0]));
     fetchPages(pages, controller.signal, serial);
   }
@@ -414,10 +426,11 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       try {
         const zone = poi.categoria === 'itv' ? servicioTileId(poi.lat, poi.lon) : pointZone(poi);
         const bike = poi.categoria === 'bicis-zaragoza', metro = poi.categoria === METRO_CATEGORY.id, camera = poi.categoria === CAMERA_CATEGORY.id;
-        const data = bike ? await fetchBicis() : metro ? await fetchMetro() : camera ? await fetchCameras() : await json('/api/servicios/' + (poi.categoria === 'itv' ? 'itv/' : 'lugar/') + encodeURIComponent(poi.id) + '?zona=' + zone);
+        const parkingSource = fuenteAparcamiento(poi.categoria);
+        const data = parkingSource ? await parking.fetch(parkingSource.ciudad) : bike ? await fetchBicis() : metro ? await fetchMetro() : camera ? await fetchCameras() : await json('/api/servicios/' + (poi.categoria === 'itv' ? 'itv/' : 'lugar/') + encodeURIComponent(poi.id) + '?zona=' + zone);
         if (currentNavigation !== navigation || currentRevision !== revision) return;
-        if (metro || camera) {
-          metro ? acceptMetro(data) : acceptCameras(data);
+        if (metro || camera || parkingSource) {
+          parkingSource ? parking.accept(data, records) : metro ? acceptMetro(data) : acceptCameras(data);
           const found = records.get(poi.id);
           if (!found || !coords(found)) {
             favoriteLookupMessage = { navigation, text: 'Este lugar guardado ya no aparece con ubicación comprobable en el catálogo actual. Puedes conservarlo o quitarlo desde Favoritos.' };
@@ -460,7 +473,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
     const box = $('sv-suggestions'); box.replaceChildren(); if (text.length < 2) return;
     const foundCategories = categories.filter(c => (c.total > 0 || c.disponibilidad) && fold(c.nombre).includes(fold(text))).slice(0, 6);
     for (const category of foundCategories) {
-      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else if (category.id === METRO_CATEGORY.id) chooseTown('48020'); else if (PUBLIC_IDS.has(category.id)) chooseTown(category.id === 'refugios-cataluna' ? '08019' : '28079'); else load(true); })); box.append(row);
+      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else if (category.id === METRO_CATEGORY.id) chooseTown('48020'); else if (fuenteAparcamiento(category.id)) chooseTown(fuenteAparcamiento(category.id).municipio); else if (PUBLIC_IDS.has(category.id)) chooseTown(category.id === 'refugios-cataluna' ? '08019' : '28079'); else load(true); })); box.append(row);
     }
     try {
       const towns = await json('/api/localidades?q=' + encodeURIComponent(text), pending.signal);
@@ -852,6 +865,21 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       biciError = true; render(); sourceText();
     }
   }
+  async function refreshParking() {
+    if (document.hidden || fuelMode || favoritesOnly) return;
+    const serial = revision;
+    await Promise.all(APARCAMIENTOS_MAPA.filter(f => selected.has(f.id)).map(async source => {
+      try {
+        const data = await parking.fetch(source.ciudad);
+        if (serial !== revision || document.hidden || fuelMode || favoritesOnly || !selected.has(source.id)) return;
+        parking.accept(data, records);
+      } catch {
+        if (serial !== revision || !selected.has(source.id)) return;
+        parking.fail(source.ciudad);
+      }
+      render(); sourceText();
+    }));
+  }
   async function refreshCatalogs() {
     if (catalogPromise) return catalogPromise;
     catalogPromise = (async () => {
@@ -860,8 +888,8 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       if (results[0].status === 'fulfilled') {
         source = results[0].value; categories = [...(source.categorias || [])]; availableZones = source.zonas || []; ok = true;
       }
-      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id, METRO_CATEGORY.id].includes(c.id) && !PUBLIC_IDS.has(c.id));
-      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY, METRO_CATEGORY, ...PUBLIC_CATEGORIES);
+      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id, METRO_CATEGORY.id].includes(c.id) && !PUBLIC_IDS.has(c.id) && !fuenteAparcamiento(c.id));
+      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY, METRO_CATEGORY, ...PUBLIC_CATEGORIES, ...PARKING_CATEGORIES);
       if (results[1].status === 'fulfilled') {
         itvSource = results[1].value; ok = true;
         categories = categories.filter(c => c.id !== 'itv');
@@ -882,7 +910,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       if (await refreshCatalogs()) { renderCategories(); sourceText(); if (!favoritesOnly) load(true); }
     }
     render(); sourceText();
-    await Promise.all([refreshBicis(), refreshTraffic(), refreshCameras(), refreshMetro(true), guardias]);
+    await Promise.all([refreshBicis(), refreshTraffic(), refreshCameras(), refreshMetro(true), refreshParking(), guardias]);
   }
   async function init() {
     if (!$('sv-results')) return;
@@ -939,6 +967,7 @@ import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos
       else if (near) setCenter({ lat: near.lat, lon: near.lng }, 'desde tu ubicación guardada en este enlace');
       else if (selected.size === 1 && selected.has('bicis-zaragoza')) await chooseTown('50297');
       else if (selected.size === 1 && selected.has(METRO_CATEGORY.id)) await chooseTown('48020');
+      else if (selected.size === 1 && fuenteAparcamiento(chosen()[0])) await chooseTown(fuenteAparcamiento(chosen()[0]).municipio);
       else if (selected.size === 1 && chosen().some(id => PUBLIC_IDS.has(id))) await chooseTown(selected.has('refugios-cataluna') ? '08019' : '28079');
       else if (selected.size && chosen().every(id => ['trafico-cataluna', 'camaras-cataluna'].includes(id))) showCataluna();
       else load();

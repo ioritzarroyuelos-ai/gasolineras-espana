@@ -1,11 +1,12 @@
 import { desplazaFecha, rangoGuardia } from './guardias-fetch.mjs'
+import { guardiaPermanenteSantaCruz } from './guardias-tenerife-permanente.mjs'
 
 const canon = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase()
 const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre']
 
-export function turnosEspeciales(paginas, zona, fecha) {
+export function turnosEspeciales(paginas, zona, fecha, directorio = []) {
   const nombre = canon(zona)
-  if (nombre==='25' || nombre==='SANTA CRUZ DE TENERIFE') return [] // Cartel mixto sin día de guardia.
+  if (nombre==='25' || nombre==='SANTA CRUZ DE TENERIFE') return guardiaPermanenteSantaCruz(paginas, fecha, directorio)
   if (!['16','17'].includes(nombre) && !/^LA MATANZA|^LA OROTAVA/.test(nombre)) return null
   const zonaImpresa = nombre === '16' || nombre.startsWith('LA MATANZA')
     ? 'LA MATANZA, LA VICTORIA, SANTA URSULA, TACORONTE Y EL SAUZAL' : 'LA OROTAVA - LOS REALEJOS'

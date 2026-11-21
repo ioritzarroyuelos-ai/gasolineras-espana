@@ -135,7 +135,7 @@ async function main() {
     throw new Error(`Solo ${dedupe.size} farmacias validas. Abortamos.`)
   }
 
-  const calendario = await consultarCalendarios(fecha)
+  const calendario = await consultarCalendarios(fecha, [...directorio.values()].flatMap(oficinas => [...oficinas.values()]))
   const guardias = [], conGuardiaHoy = new Set(), vistos = new Set()
   const pendientes = new Set(calendario.pendientes)
   const avisosMunicipales = {}

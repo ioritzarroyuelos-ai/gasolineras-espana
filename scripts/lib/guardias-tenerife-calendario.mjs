@@ -75,7 +75,7 @@ function urlDelColegio(valor, base = calendarioTenerife) {
   return url
 }
 
-export async function consultarCalendarios(fecha) {
+export async function consultarCalendarios(fecha, directorio = []) {
   const ayer = desplazaFecha(fecha,-1)
   const porMes = new Map()
   for (const dia of [fecha,ayer]) {
@@ -103,8 +103,10 @@ export async function consultarCalendarios(fecha) {
         if (!destino) throw Error('Falta el documento')
         const paginas=await paginasConPosicion(await (await descargar(urlDelColegio(destino,visor))).arrayBuffer())
         for (const dia of diasCalendario) {
-          const filas=turnosEspeciales(paginas,zona,dia) ?? turnosDeUnaColumna(paginas[0],zona,dia)
-          if (!filas.length) pendientes.add(zona)
+          const filas=turnosEspeciales(paginas,zona,dia,directorio) ?? turnosDeUnaColumna(paginas[0],zona,dia)
+          // El cartel mixto de Santa Cruz sólo permite corroborar la guardia
+          // explícita. Las demás aperturas no se anuncian como guardias.
+          if (!filas.length || zona==='SANTA CRUZ DE TENERIFE' || zona==='25') pendientes.add(zona)
           // Un cierre condicional sin fecha de fin no se traslada al día siguiente.
           turnos.push(...filas.filter(f => dia===fecha || /^\d{4}-\d\d-\d\d /.test(f.horario)).map(f => ({...f,zona,dia})))
         }

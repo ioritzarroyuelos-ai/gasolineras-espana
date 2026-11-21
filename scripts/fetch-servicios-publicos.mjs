@@ -3,8 +3,8 @@ import { readFile, mkdir, writeFile, rename, rm, readdir, lstat, realpath } from
 import { dirname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
-import { SERVICIOS_PUBLICOS_FUENTES, normalizaRefugios, normalizaSalasMadrid, validaFuentePublica, validaIndicePublicos, validaManifestPublicos, validaBusquedaPublicos, normalizaBusquedaPublica, leeJsonPublico,
-  SERVICIOS_PUBLICOS_LISTA_FILAS, SERVICIOS_PUBLICOS_MAPA_FILAS, SERVICIOS_PUBLICOS_MAX_SHARD_BYTES, SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES, SERVICIOS_PUBLICOS_MAX_MANIFEST_BYTES } from './lib/servicios-publicos.mjs'
+import { SERVICIOS_PUBLICOS_FUENTES, normalizaRefugios, normalizaSalasMadrid, validaFuentePublica, validaIndicePublicos, validaManifestPublicos, validaBusquedaPublicos, validaIdentidadesPublicas, normalizaBusquedaPublica, leeJsonPublico,
+  SERVICIOS_PUBLICOS_LISTA_FILAS, SERVICIOS_PUBLICOS_MAPA_FILAS, SERVICIOS_PUBLICOS_MAX_SHARD_BYTES, SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES, SERVICIOS_PUBLICOS_MAX_MANIFEST_BYTES, SERVICIOS_PUBLICOS_IDENTIDADES_FILAS, SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES } from './lib/servicios-publicos.mjs'
 import { servicioTileId } from './lib/servicios.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -128,13 +128,19 @@ function pages(items, limit) {
 export function particionaFuentePublica(data, now = Date.now()) {
   validaFuentePublica(data, now)
   const sorted = [...data.items].sort((a, b) => a.municipio.localeCompare(b.municipio, 'es') || a.nombre.localeCompare(b.nombre, 'es') || a.id.localeCompare(b.id))
-  const version = integrity(JSON.stringify({ particion: 3, listaFilas: SERVICIOS_PUBLICOS_LISTA_FILAS, mapaFilas: MAPA_TARGET_FILAS, maxBytes: SERVICIOS_PUBLICOS_MAX_SHARD_BYTES, items: sorted })).sha256
-  const artifacts = [], lists = [], search = [], byZone = new Map(), map = {}
+  const version = integrity(JSON.stringify({ particion: 4, listaFilas: SERVICIOS_PUBLICOS_LISTA_FILAS, mapaFilas: MAPA_TARGET_FILAS, identidadFilas: SERVICIOS_PUBLICOS_IDENTIDADES_FILAS, maxBytes: SERVICIOS_PUBLICOS_MAX_SHARD_BYTES, items: sorted })).sha256
+  const artifacts = [], lists = [], search = [], references = [], identities = [], byZone = new Map(), map = {}
   function add(archivo, raw, total) { artifacts.push({ archivo, raw }); return { archivo, total, ...integrity(raw) } }
   pages(sorted, SERVICIOS_PUBLICOS_LISTA_FILAS).forEach((page, i) => {
     lists.push(add(`listas/${i}.json`, page.raw, page.rows.length))
-    page.rows.forEach(p => search.push(normalizaBusquedaPublica(p.nombre + ' ' + p.municipio)))
+    page.rows.forEach((p, position) => { search.push(normalizaBusquedaPublica(p.nombre + ' ' + p.municipio)); references.push([p.id, i, position]) })
   })
+  references.sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)
+  for (let start = 0; start < references.length; start += SERVICIOS_PUBLICOS_IDENTIDADES_FILAS) {
+    const rows = references.slice(start, start + SERVICIOS_PUBLICOS_IDENTIDADES_FILAS), raw = JSON.stringify(rows)
+    if (Buffer.byteLength(raw) > SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES) fail()
+    identities.push({ ...add(`identidades/${identities.length}.json`, raw, rows.length), desde: rows[0][0], hasta: rows.at(-1)[0] })
+  }
   for (const item of sorted) if (item.lat !== null) {
     const zone = servicioTileId(item.lat, item.lon), rows = byZone.get(zone) || []
     rows.push(item); byZone.set(zone, rows)
@@ -143,8 +149,9 @@ export function particionaFuentePublica(data, now = Date.now()) {
   const searchRaw = JSON.stringify(search)
   if (Buffer.byteLength(searchRaw) > SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES) fail()
   const { items: _, ...meta } = data
-  const manifest = validaManifestPublicos({ ...meta, version, listas: lists, mapa: map, busqueda: add('busqueda.json', searchRaw, search.length) }, now)
+  const manifest = validaManifestPublicos({ ...meta, version, listas: lists, mapa: map, busqueda: add('busqueda.json', searchRaw, search.length), identidades: identities }, now)
   validaBusquedaPublicos(search, manifest)
+  identities.forEach((d, i) => validaIdentidadesPublicas(references.slice(i * SERVICIOS_PUBLICOS_IDENTIDADES_FILAS, (i + 1) * SERVICIOS_PUBLICOS_IDENTIDADES_FILAS), manifest, d))
   if (Buffer.byteLength(JSON.stringify(manifest)) > SERVICIOS_PUBLICOS_MAX_MANIFEST_BYTES) fail()
   return { manifest, artifacts }
 }

@@ -18,6 +18,8 @@ export const SERVICIOS_PUBLICOS_MAX_SHARD_BYTES = 128 * 1024
 export const SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES = 1024 * 1024
 export const SERVICIOS_PUBLICOS_LISTA_FILAS = 50
 export const SERVICIOS_PUBLICOS_MAPA_FILAS = 200
+export const SERVICIOS_PUBLICOS_IDENTIDADES_FILAS = 100
+export const SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES = 16 * 1024
 const source = id => SERVICIOS_PUBLICOS_FUENTES.find(f => f.id === id)
 const fail = () => { throw Error('Servicios públicos: datos incompletos, incoherentes o fuera de los límites admitidos.') }
 const object = x => !!x && typeof x === 'object' && !Array.isArray(x)
@@ -119,10 +121,13 @@ function snapshot(f, items, fechaDatos, now, avisos) {
   return data
 }
 const ITEM_FIELDS = new Set(['id', 'nombre', 'categoria', 'lat', 'lon', 'direccion', 'municipio', 'cp', 'web', 'horarioTexto', 'fechaFicha', 'accesibilidad', 'accesibilidadTexto', 'tipo', 'aguaPotable', 'lavabos', 'climatizacion', 'descanso'])
+export function identidadPublicaValida(id, fuenteId) {
+  return typeof id === 'string' && (fuenteId === 'refugios-cataluna' ? /^refugio-cat-[a-f0-9]{64}$/.test(id) : fuenteId === 'salas-estudio-madrid' && /^estudio-madrid-[1-9]\d{0,15}$/.test(id))
+}
 export function validaServicioPublico(p, fuenteId, now = Date.now()) {
   const f = source(fuenteId)
   if (!f || !Number.isFinite(now) || !object(p) || Object.keys(p).length !== ITEM_FIELDS.size || Object.keys(p).some(k => !ITEM_FIELDS.has(k)) || typeof p.id !== 'string' || p.categoria !== f.categoria) fail()
-  if (!(f.id === 'refugios-cataluna' ? /^refugio-cat-[a-f0-9]{64}$/ : /^estudio-madrid-[1-9]\d{0,15}$/).test(p.id)) fail()
+  if (!identidadPublicaValida(p.id, f.id)) fail()
   for (const key of ['nombre', 'municipio']) if (typeof p[key] !== 'string' || !p[key] || text(p[key]) !== p[key]) fail()
   for (const key of ['direccion', 'cp', 'horarioTexto', 'accesibilidadTexto', 'tipo']) if (p[key] !== null && (typeof p[key] !== 'string' || !p[key] || text(p[key], key === 'horarioTexto' ? 10000 : 600) !== p[key])) fail()
   if (p.cp !== null && !/^\d{5}$/.test(p.cp) || p.web !== null && webServicio(p.web) !== p.web || !['si', 'no', 'limitado', 'desconocido'].includes(p.accesibilidad)) fail()
@@ -170,7 +175,33 @@ export function validaManifestPublicos(data, now = Date.now()) {
   }
   descriptor(data.busqueda, 'busqueda.json', data.total, SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES)
   if (listTotal !== data.total || mapTotal !== data.conCoordenadas || data.busqueda.total !== data.total) fail()
+  // Opcional para leer snapshots anteriores. Las nuevas referencias son sólo
+  // posiciones dentro de páginas ya comprobadas, nunca URLs ni coordenadas.
+  if (data.identidades !== undefined) {
+    if (!Array.isArray(data.identidades) || data.identidades.length !== Math.ceil(data.total / SERVICIOS_PUBLICOS_IDENTIDADES_FILAS)) fail()
+    let total = 0, previous = ''
+    data.identidades.forEach((d, i) => {
+      descriptor(d, `identidades/${i}.json`, SERVICIOS_PUBLICOS_IDENTIDADES_FILAS, SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES)
+      if (!identidadPublicaValida(d.desde, data.id) || !identidadPublicaValida(d.hasta, data.id) || d.desde > d.hasta || previous && previous >= d.desde
+        || d.total !== Math.min(SERVICIOS_PUBLICOS_IDENTIDADES_FILAS, data.total - total)) fail()
+      previous = d.hasta; total += d.total
+    })
+    if (total !== data.total) fail()
+  }
   return data
+}
+export function validaIdentidadesPublicas(rows, manifest, descriptor) {
+  if (!Array.isArray(rows) || rows.length !== descriptor.total || !rows.length) fail()
+  let previous = ''; const positions = new Set()
+  for (const row of rows) {
+    if (!Array.isArray(row) || row.length !== 3 || !identidadPublicaValida(row[0], manifest.id) || previous && previous >= row[0]
+      || !Number.isInteger(row[1]) || row[1] < 0 || row[1] >= manifest.listas.length || !Number.isInteger(row[2]) || row[2] < 0 || row[2] >= manifest.listas[row[1]].total) fail()
+    const position = row[1] + ':' + row[2]
+    if (positions.has(position)) fail()
+    positions.add(position); previous = row[0]
+  }
+  if (rows[0][0] !== descriptor.desde || rows.at(-1)[0] !== descriptor.hasta) fail()
+  return rows
 }
 export function validaBusquedaPublicos(data, manifest) {
   if (!Array.isArray(data) || data.length !== manifest.total) fail()

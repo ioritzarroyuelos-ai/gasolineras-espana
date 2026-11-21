@@ -11,6 +11,7 @@
 import { SERVICIOS_IDS } from '../../scripts/lib/servicios-catalogo.mjs'
 import { recordatorioItvValido } from './itv-recordatorio'
 import { SERVICIO_ITV_ID } from './servicios-itv'
+import { identidadPublicaValida, coordenadasPublicas } from '../../scripts/lib/servicios-publicos.mjs'
 
 export const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 export const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com'])
@@ -372,6 +373,8 @@ function serviceFavoriteProvider(item: Record<string, unknown>): boolean {
   if (/^(?:camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2})$/.test(id)) return categoria === 'camaras-cataluna' && inBounds(40.4, 42.9, 0.1, 3.4)
   if (/^parking-madrid-[1-9]\d{0,8}$/.test(id)) return categoria === 'aparcamientos-madrid' && inBounds(40.2, 40.7, -3.9, -3.4)
   if (/^parking-vigo-[1-9]\d{0,8}$/.test(id)) return categoria === 'aparcamientos-vigo' && inBounds(42.1, 42.4, -8.9, -8.5)
+  if (identidadPublicaValida(id, 'refugios-cataluna')) return categoria === 'refugios-cataluna' && coordenadasPublicas('refugios-cataluna', lat, lon)
+  if (identidadPublicaValida(id, 'salas-estudio-madrid')) return categoria === 'salas-estudio-madrid' && coordenadasPublicas('salas-estudio-madrid', lat, lon)
   return /^osm-(?:node|way|relation)-[1-9]\d{0,15}$/.test(id) && SERVICIOS_IDS.has(categoria)
 }
 function record(value: unknown): value is Record<string, unknown> {

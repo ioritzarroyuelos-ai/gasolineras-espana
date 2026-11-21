@@ -111,6 +111,8 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     ['eu-servicios-favoritos-v1', [{ id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'camara-sct-N340_1', nombre: 'Cámara SCT', categoria: 'camaras-cataluna', lat: 41.4, lon: 2.1 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'camara-terrassa-cam14', nombre: 'Cámara Terrassa', categoria: 'camaras-cataluna', lat: 41.56, lon: 2.01 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'refugio-cat-' + 'a'.repeat(64), nombre: 'Refugio registrado', categoria: 'refugios-cataluna', lat: 41.4, lon: 2.1 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'estudio-madrid-123', nombre: 'Sala registrada', categoria: 'salas-estudio-madrid', lat: 40.4, lon: -3.7 }]],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable'], municipios: ['28079'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable', 'itv'], municipios: ['28079'] }],
     ['eu-servicios-preferencias-v1', { version: 1, categorias: ['bicis-zaragoza'], municipios: ['50297'] }],
@@ -147,8 +149,16 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
       ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 41.65, lon: -0.88 }]] as [string, unknown])),
     ...['farmacias-guardia', 'metro-bilbao'].flatMap(categoria => ['osm-node-123', 'guardia-prueba-123', 'metro-bilbao-prueba'].map(id =>
       ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 43.26, lon: -2.93 }]] as [string, unknown])),
-    ...['refugios-cataluna', 'salas-estudio-madrid'].flatMap(categoria => ['osm-node-123', 'refugio-cat-' + 'a'.repeat(64), 'estudio-madrid-123'].map(id =>
-      ['eu-servicios-favoritos-v1', [{ id, nombre: 'Directorio sin favoritos', categoria, lat: 40.4, lon: -3.7 }]] as [string, unknown])),
+    ...['refugios-cataluna', 'salas-estudio-madrid'].flatMap(categoria => ['osm-node-123', 'refugio-cat-' + 'a'.repeat(64), 'estudio-madrid-123'].filter(id => !(categoria === 'salas-estudio-madrid' && id === 'estudio-madrid-123')).map(id =>
+      ['eu-servicios-favoritos-v1', [{ id, nombre: 'Identidad o coordenadas incompatibles', categoria, lat: 40.4, lon: -3.7 }]] as [string, unknown])),
+    ...[
+      { id: 'refugio-cat-' + 'a'.repeat(63), nombre: 'ID incompleto', categoria: 'refugios-cataluna', lat: 41.4, lon: 2.1 },
+      { id: 'refugio-cat-' + 'a'.repeat(64), nombre: 'Sin punto', categoria: 'refugios-cataluna', lat: null, lon: null },
+      { id: 'refugio-cat-' + 'a'.repeat(64), nombre: 'Estado no guardable', categoria: 'refugios-cataluna', lat: 41.4, lon: 2.1, activado: true },
+      { id: 'estudio-madrid-001', nombre: 'ID no canónico', categoria: 'salas-estudio-madrid', lat: 40.4, lon: -3.7 },
+      { id: 'estudio-madrid-123', nombre: 'Fuera de ciudad', categoria: 'salas-estudio-madrid', lat: 41.4, lon: 2.1 },
+      { id: 'estudio-madrid-123', nombre: 'Plazas no guardables', categoria: 'salas-estudio-madrid', lat: 40.4, lon: -3.7, plazasLibres: 1 },
+    ].map(item => ['eu-servicios-favoritos-v1', [item]] as [string, unknown]),
     ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 40.4, lon: -3.7 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88, bicis: 3 }]],
     ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 90, lon: -3.7 }]],

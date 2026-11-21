@@ -2,6 +2,7 @@ import { APP_VERSION } from './version'
 import { zonaValida } from './servicios'
 import { servicioTileBbox } from '../../scripts/lib/servicios.mjs'
 import { SERVICIOS_PUBLICOS_FUENTES, SERVICIOS_PUBLICOS_MAX_MANIFEST_BYTES, SERVICIOS_PUBLICOS_MAX_SHARD_BYTES, SERVICIOS_PUBLICOS_MAX_BUSQUEDA_BYTES, validaManifestPublicos, validaBusquedaPublicos, normalizaBusquedaPublica, validaIndicePublicos, validaServicioPublico, type ManifestPublicos, type DescriptorPublico, type FuentePublicaId, type IndicePublicos, type ServicioPublico } from '../../scripts/lib/servicios-publicos.mjs'
+import { identidadPublicaValida, validaIdentidadesPublicas, SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES } from '../../scripts/lib/servicios-publicos.mjs'
 
 export type PublicosAssets = { fetch: (request: Request) => Promise<Response> }
 export const PUBLICOS_PAGE_SIZE = 50
@@ -9,6 +10,7 @@ export const PUBLICOS_MAP_SIZE = 200
 const SEARCH_PAGE_SIZE = 25
 const definitions = new Map(SERVICIOS_PUBLICOS_FUENTES.map(f => [f.id, f]))
 const fail = (): never => { throw Error('No se puede comprobar el directorio oficial') }
+export class PublicosLookupPendiente extends Error {}
 const indexCache = new WeakMap<PublicosAssets, { version: string; until: number; pending: Promise<IndicePublicos> }>()
 // Acotada por binding y despliegue: los bloques nunca crecen con el número de
 // zonas visitadas. La identidad incluye el hash del contenido inmutable.
@@ -79,6 +81,7 @@ export function estadoPublicos(data: ManifestPublicos, index: IndicePublicos, no
   return { schema: 1, proveedor: 'servicios-publicos' as const, fuenteId: data.id, nombre: data.nombre, consultado: data.consultado, ultimoIntento: index.consultado, fechaDatos: data.fechaDatos,
     fuenteUrl: data.fuenteUrl, licenciaUrl: data.licenciaUrl, atribucion: data.atribucion, totalDirectorio: data.total, conCoordenadas: data.conCoordenadas, sinCoordenadas: data.sinCoordenadas,
     estado: desactualizado ? 'conservada' as const : 'actual' as const, desactualizado,
+    favoritosDisponibles: data.identidades !== undefined,
     avisos: [...(desactualizado ? ['No se ha podido renovar este directorio. Se conserva la última copia comprobada y su fecha original.'] : []), ...data.avisos] }
 }
 async function cargaFilas(assets: PublicosAssets, manifest: ManifestPublicos, descriptor: DescriptorPublico, now: number): Promise<unknown[]> {
@@ -136,3 +139,22 @@ export async function consultaDirectorioPublico(assets: PublicosAssets | undefin
   return { ...estadoPublicos(data, index, now), ...await seleccionaPublicos(assets, data, query, now), zona: query.zona, q: query.q }
 }
 export type ConsultaDirectorioPublico = Awaited<ReturnType<typeof consultaDirectorioPublico>>
+
+export async function consultaLugarPublico(assets: PublicosAssets | undefined, fuente: FuentePublicaId, id: string, now = Date.now()) {
+  if (!assets || !identidadPublicaValida(id, fuente)) return fail()
+  const index = await cargaIndicePublicos(assets, now), manifest = await cargaManifest(assets, fuente, index, now)
+  if (!manifest.identidades) throw new PublicosLookupPendiente('La consulta individual se está preparando. Vuelve a intentarlo más tarde.')
+  const metadata = estadoPublicos(manifest, index, now)
+  const descriptor = manifest.identidades.find(d => d.desde <= id && id <= d.hasta)
+  if (!descriptor) return { ...metadata, item: null }
+  const rows = await checkedAsset(assets, fuente + '/' + manifest.version + '/' + descriptor.archivo, descriptor, SERVICIOS_PUBLICOS_MAX_IDENTIDADES_BYTES,
+    raw => validaIdentidadesPublicas(raw, manifest, descriptor), now)
+  const reference = rows.find(row => row[0] === id)
+  if (!reference) return { ...metadata, item: null }
+  const page = await cargaFilas(assets, manifest, manifest.listas[reference[1]], now)
+  const item = validaServicioPublico(page[reference[2]], fuente, now)
+  // Una referencia mal enlazada o un bloque de otra versión es un fallo de
+  // integridad, no prueba de que la ficha haya desaparecido.
+  if (item.id !== id) return fail()
+  return { ...metadata, item }
+}

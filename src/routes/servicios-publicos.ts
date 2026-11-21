@@ -2,12 +2,22 @@ import type { Hono } from 'hono'
 import type { Env } from '../index'
 import { canonicalBase, genNonce } from '../lib/runtime'
 import { landingHeaders } from '../html/landing'
-import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos.mjs'
-import { cargaIndicePublicos, consultaDirectorioPublico, consultaPublicos, fuentePublicaId } from '../lib/servicios-publicos'
+import { SERVICIOS_PUBLICOS_FUENTES, identidadPublicaValida } from '../../scripts/lib/servicios-publicos.mjs'
+import { cargaIndicePublicos, consultaDirectorioPublico, consultaLugarPublico, consultaPublicos, fuentePublicaId, PublicosLookupPendiente } from '../lib/servicios-publicos'
 import { buildPublicosPage } from '../html/servicios-publicos'
 const HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }
 
 export function registerServiciosPublicosRoutes(app: Hono<{ Bindings: Env }>): void {
+  app.get('/api/servicios/publicos/:fuente/lugar/:id', async c => {
+    const fuente = fuentePublicaId(c.req.param('fuente')), id = c.req.param('id')
+    if (!fuente || !identidadPublicaValida(id, fuente) || new URL(c.req.url).search) return c.json({ error: 'Indica una fuente y una ficha válidas. No se necesitan coordenadas ni otros parámetros.' }, 400, HEADERS)
+    try {
+      const result = await consultaLugarPublico(c.env.ASSETS, fuente, id)
+      return c.json(result.item ? result : { ...result, error: 'La ficha ya no aparece en esta copia del directorio.' }, result.item ? 200 : 404, HEADERS)
+    } catch (error) {
+      return c.json({ error: error instanceof PublicosLookupPendiente ? error.message : 'No se puede comprobar ahora esta ficha. Consulta su fuente oficial.', fuenteUrl: SERVICIOS_PUBLICOS_FUENTES.find(f => f.id === fuente)!.fuenteUrl }, 503, HEADERS)
+    }
+  })
   app.get('/api/servicios/publicos', async c => {
     if (new URL(c.req.url).search) return c.json({ error: 'El catálogo de fuentes no necesita parámetros.' }, 400, HEADERS)
     try { return c.json(await cargaIndicePublicos(c.env.ASSETS), 200, HEADERS) }

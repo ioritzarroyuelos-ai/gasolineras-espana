@@ -18,7 +18,7 @@ Fuentes y condiciones:
 
 No requieren clave, cuenta nueva ni proveedor de pago. Son directorios, no partes de funcionamiento en tiempo real: una ficha no acredita activación de un refugio, apertura, gratuidad ni plazas libres. La accesibilidad sólo se filtra si está indicada expresamente. Las excepciones de los horarios se conservan completas. Una fecha de consulta nueva no modifica la fecha del archivo ni las fechas individuales. Las fechas de ficha de Cataluña carecen de zona horaria y se muestran como texto original, sin convertirlas a UTC.
 
-Las fichas sin coordenadas permanecen en el listado; nunca se colocan en el centro municipal. Un equipamiento compartido puede tener una ficha por municipio según la fuente. Se pueden recordar las capas en las preferencias, pero este bloque no habilita favoritos de sus fichas.
+Las fichas sin coordenadas permanecen en el listado; nunca se colocan en el centro municipal. Un equipamiento compartido puede tener una ficha por municipio según la fuente. Se pueden recordar las capas en las preferencias. La ampliación K permite guardar fichas con coordenadas cuando el robot ya ha preparado su índice de identidades; los catálogos anteriores siguen funcionando sin estrella. Véase [favoritos de estos directorios](servicios-publicos-favoritos.md).
 
 ## Actualización y conservación
 

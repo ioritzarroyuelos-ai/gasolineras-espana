@@ -229,11 +229,12 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
         const name = poi.nombre.length > 250 ? poi.nombre.slice(0, 249) + '…' : poi.nombre;
         await services.alternarFavorito({ id: poi.id, nombre: name, categoria: poi.categorias?.[0] || poi.categoria, lat: poi.lat, lon: poi.lon });
         const saved = services.esFavorito(poi.id); b.textContent = saved ? '★ Guardado' : '☆ Guardar'; b.setAttribute('aria-pressed', String(saved));
+        b.setAttribute('aria-label', (saved ? 'Guardado. Quitar de favoritos: ' : 'Guardar favorito: ') + poi.nombre);
         if (favoritesOnly) render();
       } catch { notice('No se pudo guardar el cambio. Comprueba la conexión y vuelve a intentarlo.'); }
       finally { b.disabled = false; }
     });
-    b.setAttribute('aria-pressed', String(active)); b.setAttribute('aria-label', (active ? 'Quitar de favoritos: ' : 'Guardar favorito: ') + poi.nombre);
+    b.setAttribute('aria-pressed', String(active)); b.setAttribute('aria-label', (active ? 'Guardado. Quitar de favoritos: ' : 'Guardar favorito: ') + poi.nombre);
     return b;
   }
   function details(poi, popup = false) {
@@ -420,6 +421,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
     load(true);
   }
   async function focusPoi(poi) {
+    if (!poi.categorias && PUBLIC_IDS.has(poi.categoria)) return focusPublicFavorite(poi);
     if (!poi.categorias) {
       town = ''; $('sv-local-official').replaceChildren();
       favoritesOnly = false; selected = new Set([poi.categoria]); focusedId = poi.id; renderCategories(); syncControls();
@@ -450,6 +452,39 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
       }
     } else { focusedId = poi.id; const m = mapInstance(); if (m) { m.setView([poi.lat, poi.lon], Math.max(m.getZoom(), 16)); render(); } }
     if (window.isMobile?.()) window.closeMobileSidebar?.();
+  }
+  async function focusPublicFavorite(poi) {
+    const account = window.EUCuenta?.user?.sub || null, wasSaved = services?.esFavorito(poi.id);
+    navigation++; controller?.abort(); controller = new AbortController(); const serial = ++revision, nav = navigation, signal = controller.signal;
+    clearTimeout(mapTimer); town = ''; favoritesOnly = false; focusedId = ''; records.clear(); nextPages.clear(); publicErrors.clear();
+    selected = new Set([poi.categoria]); $('sv-local-official').replaceChildren(); renderCategories(); syncControls(); updateUrl(); render();
+    loading = true; $('sv-results').setAttribute('aria-busy', 'true'); notice('Comprobando la ficha actual del lugar guardado…');
+    const timeout = setTimeout(() => { if (serial === revision) controller?.abort(); }, 8000);
+    const current = () => serial === revision && nav === navigation && account === (window.EUCuenta?.user?.sub || null) && (!wasSaved || services?.esFavorito(poi.id));
+    try {
+      const data = await json('/api/servicios/publicos/' + poi.categoria + '/lugar/' + encodeURIComponent(poi.id), signal);
+      if (!current()) return;
+      if (data.proveedor !== 'servicios-publicos' || data.fuenteId !== poi.categoria || data.favoritosDisponibles !== true || data.item?.id !== poi.id) throw Error('invalid_publico');
+      if (!coords(data.item)) {
+        favoriteLookupMessage = { navigation, text: 'Esta ficha ya no tiene una ubicación comprobable. Puedes conservar el favorito o quitarlo desde Favoritos.' };
+        render(); sourceText(); return;
+      }
+      focusedId = poi.id;
+      // El lookup por ID encuentra también traslados. Sólo la ubicación actual
+      // de la fuente centra el mapa; no se reescribe el favorito en segundo plano.
+      setCenter(data.item, 'desde el lugar elegido');
+      const targetUrl = '/cerca?' + new URLSearchParams({ categorias: poi.categoria, servicio: poi.id, lat: String(data.item.lat), lon: String(data.item.lon) });
+      history.replaceState(null, '', targetUrl);
+      acceptPublicos({ ...data, items: [data.item] }, poi.categoria); render(); sourceText();
+      if (window.isMobile?.()) window.closeMobileSidebar?.();
+    } catch (error) {
+      if (!current()) return;
+      favoriteLookupMessage = { navigation, text: error.status === 404 ? 'Esta ficha ya no aparece en el directorio actual. Puedes conservar el favorito o quitarlo desde Favoritos.' : 'No se puede comprobar ahora la ficha de este favorito. Vuelve a intentarlo o consulta su fuente oficial.' };
+      publicErrors.add(poi.categoria); focusedId = ''; render(); sourceText();
+    } finally {
+      clearTimeout(timeout);
+      if (serial === revision) { loading = false; $('sv-results').setAttribute('aria-busy', 'false'); }
+    }
   }
   async function chooseTown(ine) {
     const currentNavigation = ++navigation;
@@ -684,7 +719,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
   function acceptPublicos(data, id) {
     if (data.proveedor !== 'servicios-publicos' || data.fuenteId !== id || !PUBLIC_IDS.has(id)) throw Error('invalid_publicos');
     const { items, ...metadata } = data; publicSources.set(id, metadata);
-    for (const poi of items.filter(coords)) records.set(poi.id, { ...poi, proveedor: 'servicios-publicos', fuenteId: id, categorias: [id], guardable: false });
+    for (const poi of items.filter(coords)) records.set(poi.id, { ...poi, proveedor: 'servicios-publicos', fuenteId: id, categorias: [id], guardable: data.favoritosDisponibles === true });
   }
   function publicDetails(poi, popup) {
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
@@ -709,6 +744,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
     if (directions) actions.append(link('Google Maps', directions.google), link('Apple Maps', directions.apple), link('Waze', directions.waze));
     if (safeWeb(poi.web)) actions.append(link('Consultar el equipamiento', poi.web));
     actions.append(link('Listado completo y fuente', '/servicios/' + poi.fuenteId));
+    if (poi.guardable && coords(poi)) actions.append(favoriteButton(poi));
     if (!popup) actions.append(button('Ver en el mapa', () => focusPoi(poi)));
     card.append(actions); return card;
   }

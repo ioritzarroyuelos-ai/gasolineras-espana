@@ -8,7 +8,7 @@ import {resolve,sep} from 'node:path'
 // @ts-expect-error Las pruebas usan Node; la aplicación conserva tipos de Workers.
 import {createHash} from 'node:crypto'
 import {construyePreciosComparacion,validaIndicePreciosComparacion,validaBloquePreciosComparacion,cuboPrecio} from '../scripts/lib/precios-comparacion.mjs'
-import {leeComparacionPrevia,guardaComparacionPrecios} from '../scripts/lib/precios-comparacion-disco.mjs'
+import {leeComparacionPrevia,guardaComparacionPrecios,preparaComparacionPrecios} from '../scripts/lib/precios-comparacion-disco.mjs'
 import workflow from '../.github/workflows/fetch-prices.yml?raw'
 
 const date = '21/11/2026 09:00:05', now = new Date('2026-11-21T08:10:00.000Z')
@@ -106,5 +106,25 @@ describe('capturas por gasolinera para avisos de precios',()=>{
   })
   it('incluye todos los bloques en la misma publicación automática de precios',()=>{
     expect(workflow.split('\n').find(line=>line.trim().startsWith('git add '))).toContain('public/data/precios-comparacion')
+  })
+  it('reconstruye un archivo de comparación corrupto sin bloquear precios nuevos válidos',async()=>{
+    const dir=temp(),old=await previous();guardaComparacionPrecios(dir,old)
+    writeFileSync(resolve(dir,old.artifacts[0].archivo),'dañado')
+    const prepared=await preparaComparacionPrecios(snapshot(),dir,{now,previousSnapshot:snapshot(beforeDate,[station('100','1,520')]),previousMeta:{ministryDate:beforeDate,fetchedAt:beforeNow.toISOString()}})
+    expect(prepared.recuperada).toBe(true);expect(prepared.previousId).toBeNull()
+    expect(prepared.comparison.index.actual.fechaMinisterio).toBe(date);expect(filas(prepared.comparison)[0][4][0]).toBe(1520)
+    guardaComparacionPrecios(dir,prepared.comparison,prepared.previousId)
+    expect(leeComparacionPrevia(dir)?.index.actual.fechaMinisterio).toBe(date)
+  })
+  it('sin referencia independiente válida recupera precios actuales con anterior nulo',async()=>{
+    const dir=temp();writeFileSync(resolve(dir,'index.json'),'{roto')
+    const prepared=await preparaComparacionPrecios(snapshot(),dir,{now,previousSnapshot:snapshot(beforeDate,[station(),station()]),previousMeta:{ministryDate:beforeDate,fetchedAt:beforeNow.toISOString()}})
+    expect(prepared.recuperada).toBe(true);expect(prepared.comparison.index.anterior).toBeNull()
+    expect(filas(prepared.comparison)[0][3][0]).toBe(1500);expect(filas(prepared.comparison)[0][4]).toEqual([null,null,null,null])
+  })
+  it('recuperar una referencia no permite publicar una captura actual inválida',async()=>{
+    const dir=temp();writeFileSync(resolve(dir,'index.json'),'{roto')
+    await expect(preparaComparacionPrecios(snapshot('19/11/2026 09:00:05'),dir,{now})).rejects.toThrow(/fecha/)
+    expect(readFileSync(resolve(dir,'index.json'),'utf8')).toBe('{roto')
   })
 })

@@ -9,8 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { construyeObservatorio } from './lib/observatorio-precalculo.mjs'
 import { construyeGasolineras } from './lib/gasolineras-precalculo.mjs'
 import { buildFuelTrends } from './lib/fuel-trends.mjs'
-import { construyePreciosComparacion } from './lib/precios-comparacion.mjs'
-import { leeComparacionPrevia, guardaComparacionPrecios } from './lib/precios-comparacion-disco.mjs'
+import { preparaComparacionPrecios, guardaComparacionPrecios } from './lib/precios-comparacion-disco.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
@@ -50,13 +49,13 @@ async function main() {
   const now = new Date(), previousSnapshot = previousJson('stations.json'), previousMeta = previousJson('snapshot-meta.json')
   const trends = buildFuelTrends(all, {now, previous: previousJson('trends.json'),previousSnapshot,previousMeta})
   const comparisonDir = resolve(DATA_DIR,'precios-comparacion')
-  const previousBundle = leeComparacionPrevia(comparisonDir)
   // Se prepara y valida antes de reemplazar la foto general. Ninguna cifra
   // del navegador o de una mediana se usa como precio anterior de una estación.
-  const comparison = await construyePreciosComparacion(all,{now,previousSnapshot,previousMeta,previousBundle})
+  const {comparison,recuperada,previousId} = await preparaComparacionPrecios(all,comparisonDir,{now,previousSnapshot,previousMeta})
+  if (recuperada) console.warn('AVISO: se descartó el archivo de comparación anterior porque no se podía verificar; se reconstruye con capturas independientes válidas.')
 
   mkdirSync(DATA_DIR, { recursive: true })
-  guardaComparacionPrecios(comparisonDir,comparison,previousBundle?.index.snapshotId)
+  guardaComparacionPrecios(comparisonDir,comparison,previousId)
 
   // 1) Snapshot completo de estaciones
   const stationsPath = resolve(DATA_DIR, 'stations.json')
@@ -86,7 +85,8 @@ async function main() {
   writeFileSync(metaPath, JSON.stringify({
     fetchedAt: now.toISOString(),
     ministryDate: all.Fecha,
-    stationCount: stations.length
+    stationCount: stations.length,
+    comparisonArchiveRecovered: recuperada
   }, null, 2))
   console.log(`  escrito ${metaPath}`)
 

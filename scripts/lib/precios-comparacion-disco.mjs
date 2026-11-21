@@ -1,8 +1,17 @@
 import {readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,openSync,fstatSync,closeSync,constants,realpathSync,unlinkSync,rmdirSync} from 'node:fs'
 import {resolve,dirname,sep} from 'node:path'
 import {createHash} from 'node:crypto'
-import {validaIndicePreciosComparacion,validaBloquePreciosComparacion,MAX_BLOQUE_PRECIOS_BYTES} from './precios-comparacion.mjs'
+import {construyePreciosComparacion,validaIndicePreciosComparacion,validaBloquePreciosComparacion,MAX_BLOQUE_PRECIOS_BYTES} from './precios-comparacion.mjs'
 const sha = raw => createHash('sha256').update(raw).digest('hex')
+
+export async function preparaComparacionPrecios(snapshot, dir, options = {}) {
+  let previousBundle = null, recuperada = false
+  try { previousBundle = leeComparacionPrevia(dir) } catch { recuperada = true }
+  // Sólo la referencia dañada es prescindible. La captura nueva pasa por todas
+  // las validaciones: fechas, identidades, duplicados, tipos y tamaños.
+  const comparison = await construyePreciosComparacion(snapshot,{...options,previousBundle})
+  return {comparison,recuperada,previousId:previousBundle?.index.snapshotId || null}
+}
 
 export function leeComparacionPrevia(dir) {
   const path = resolve(dir,'index.json')

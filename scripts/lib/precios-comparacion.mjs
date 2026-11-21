@@ -100,7 +100,12 @@ export async function construyePreciosComparacion(snapshot, {now = new Date(), p
   } else if (oldActual && Date.parse(oldActual.meta.fechaFuente) > Date.parse(current.meta.fechaFuente)) {
     throw Error('La fuente ha devuelto una foto anterior a la ya publicada')
   }
-  const rawPrevious = previousMeta?.ministryDate === previousSnapshot?.Fecha ? captura(previousSnapshot, previousMeta?.fetchedAt) : null
+  let rawPrevious = null
+  if (previousMeta?.ministryDate === previousSnapshot?.Fecha) {
+    // Un archivo anterior dañado no invalida una captura nueva correcta.
+    // Se descarta esa referencia, nunca se rellenan sus huecos con precios supuestos.
+    try { rawPrevious = captura(previousSnapshot, previousMeta?.fetchedAt) } catch { rawPrevious = null }
+  }
   const candidates = [oldActual, deBundle(previousBundle, true), rawPrevious].filter(item => item && metaValida(item.meta,time,36)
     && Date.parse(item.meta.fechaFuente) < Date.parse(current.meta.fechaFuente)
     && Date.parse(current.meta.fechaFuente) - Date.parse(item.meta.fechaFuente) <= 26 * HORA

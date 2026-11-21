@@ -133,7 +133,7 @@ jobs:
       # por defecto, asi que la fijamos explicitamente antes de invocar wrangler.
       - name: Usar Node.js 22 (requerido por wrangler 4.x)
         if: steps.ci.outputs.current == 'true'
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
 

@@ -62,7 +62,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.data-token.outputs.token }}
         run: |
-          git add public/data/trends.json public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/gasolineras-resumen.json public/data/history
+          git add public/data/trends.json public/data/stations.json public/data/municipios.json public/data/snapshot-meta.json public/data/observatorio.json public/data/gasolineras-resumen.json public/data/history public/data/precios-comparacion
           node scripts/publish-data.mjs prices
 
       - name: Señalar histórico pendiente después de publicar precios válidos

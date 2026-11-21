@@ -36,7 +36,7 @@ export default defineConfig({
       apply: 'build',
       generateBundle() {
         // El código de deportes precede a su primera publicación automática de datos.
-        const exclude = [...new Set([...exclusionesEstaticas('public'), '/data/deportes/*', '/data/servicios/*'])].sort()
+        const exclude = [...new Set([...exclusionesEstaticas('public'), '/data/deportes/*', '/data/servicios/*', '/data/precios-comparacion/*'])].sort()
         this.emitFile({
           type: 'asset', fileName: '_routes.json',
           source: JSON.stringify({ version: 1, include: ['/*'], exclude }),

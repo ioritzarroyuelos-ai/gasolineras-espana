@@ -17,7 +17,7 @@ function median(values) {
 
 // La fecha del Ministerio no incluye zona. Convertimos su hora peninsular
 // usando Europe/Madrid para respetar también el cambio de hora de verano.
-function sourceTime(value) {
+export function sourceTime(value) {
   const m = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{1,2}):(\d{2}):(\d{2})$/.exec(value || '')
   if (!m) return NaN
   const parts = { year: +m[3], month: +m[2], day: +m[1], hour: +m[4], minute: +m[5], second: +m[6] }

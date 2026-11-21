@@ -1,6 +1,7 @@
 import { escapeHtml as esc } from './html'
 import { avisosDelMunicipio, avisoZonaAlustanteCheca, envoltorioIndice } from './guardia-municipio'
 import { slugifyMunicipio } from '../lib/municipios'
+import { slugsMunicipioGuardia } from '../lib/localidades'
 import type { ProvinciaEntry } from '../lib/provincias'
 import { fuenteGuardia, type GuardiasFile } from '../lib/guardias'
 
@@ -13,7 +14,10 @@ export function paginaSinTurno(nonce: string, canonical: string, provincia: Prov
   const enlace = fuente || 'https://www.farmaceuticos.com/farmacias-de-guardia/'
   const accion = fuente ? 'Consultar las guardias en la fuente oficial' : 'Buscar el colegio farmacéutico de la provincia'
   const mensaje = temporal ? 'Ahora no podemos comprobar los turnos de ' : 'Hoy no tenemos un turno confirmado en '
-  const avisos = municipio ? avisosDelMunicipio(provincia.slug, slugifyMunicipio(municipio), datos) : ''
+  // El INE escribe «Morera de Montsant, La» y el colegio «La Morera de
+  // Montsant». Reutilizamos las mismas equivalencias que el buscador.
+  const avisos = municipio ? [...new Set(slugsMunicipioGuardia({ ine: '', nombre: municipio })
+    .map(slug => avisosDelMunicipio(provincia.slug, slug, datos)).filter(Boolean))].join('') : ''
   const cuerpo = '<h1>' + esc(titulo) + '</h1>' + (avisos || '<p>' + mensaje + esc(lugar) + '.</p>')
     + (municipio ? avisoZonaAlustanteCheca(provincia.slug, slugifyMunicipio(municipio), false) : '')
     + '<p><a class="btn" href="' + esc(enlace) + '">' + accion + '</a></p>'

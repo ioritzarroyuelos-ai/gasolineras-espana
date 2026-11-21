@@ -46,6 +46,7 @@ export interface GuardiasFile {
   horariosCompletos?: boolean
   sourceUrl?: string
   cobertura?: string
+  consultadoFuente?: string
   incidencias?: string[]
   avisosMunicipales?: Record<string, string[]>
   coordenadasOficiales?: boolean
@@ -238,6 +239,7 @@ const FUENTES_RECUPERADAS: Record<string, string> = {
 }
 export function fuenteGuardia(provinciaSlug: string, file?: GuardiasFile, ahora = new Date()): string | null {
   const known = FUENTES_RECUPERADAS[GUARDIAS_TERRITORIO_BY_PROVINCIA[provinciaSlug] || provinciaSlug]
+  if (provinciaSlug === 'almeria' && file?.source === 'cofalmeria.com' && file.sourceUrl === 'https://guardias.cofalmeria.com/') return file.sourceUrl
   if (provinciaSlug === 'bizkaia') {
     // El colegio puede servir una copia de otro día cuando se abre la portada sin fecha.
     const ahoraLocal = fechaHoraLocal(ahora)

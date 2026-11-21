@@ -357,9 +357,9 @@ export function isSyncableKey(key: string): boolean {
 }
 
 const HOME_MODULES = new Set(['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'])
-// Las capas oficiales se pueden recordar sin convertir sus incidencias o
-// cámaras en lugares OSM ni permitir favoritos de identidad no confirmada.
-const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'])
+// Recordar una capa oficial no habilita sus favoritos: estos requieren un
+// identificador estable y un proveedor admitido por serviceFavoriteProvider.
+const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao', 'refugios-cataluna', 'salas-estudio-madrid'])
 function serviceFavoriteProvider(item: Record<string, unknown>): boolean {
   const { id, categoria, lat, lon } = item
   if (typeof id !== 'string' || typeof categoria !== 'string') return false

@@ -1,6 +1,7 @@
 import { abiertoServicio, distanciaServicio, enlacesServicio, zonasServicios, biciServicioActual, plazoServicio, vigenteServicio, restanteServicio } from '../../scripts/lib/servicios-ui.mjs';
 import { servicioTileId } from '../../scripts/lib/servicios.mjs';
 import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMetro } from '../../scripts/lib/metro-ui.mjs';
+import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos.mjs';
 
 // El motor cartográfico y las gasolineras siguen siendo los del mapa original.
 // Las consultas públicas llevan cuadrículas; nunca la posición GPS del visitante.
@@ -34,6 +35,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
   let trafficSource = null, trafficPromise, trafficError = false, trafficExpiryTimer;
   let cameraSource = null, cameraPromise, cameraError = false;
   let metroSource = null, metroPromise, metroError = false, metroExpiryTimer, metroCheckedAt = -Infinity;
+  const publicSources = new Map(), publicErrors = new Set();
   let guardiaRound = 0, guardiaExpiryTimer, guardiaRefreshPromise;
   const guardiaSources = new Map(), guardiaRequests = new Map();
   const GUARDIA_CATEGORY = { id: 'farmacias-guardia', nombre: 'Farmacias de guardia · fuentes oficiales', grupo: 'salud', grupoNombre: 'Salud', disponibilidad: true };
@@ -41,6 +43,8 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
   const TRAFFIC_CATEGORY = { id: 'trafico-cataluna', nombre: 'Tráfico en Cataluña · incidencias publicadas', grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true };
   const CAMERA_CATEGORY = { id: 'camaras-cataluna', nombre: 'Cámaras de tráfico · Cataluña', grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true };
   const METRO_CATEGORY = { id: 'metro-bilbao', nombre: 'Metro Bilbao · próximas llegadas', grupo: 'transporte', grupoNombre: 'Transporte público', disponibilidad: true };
+  const PUBLIC_CATEGORIES = SERVICIOS_PUBLICOS_FUENTES.map(f => ({ id: f.id, nombre: f.nombre + ' · catálogo oficial', grupo: f.id === 'refugios-cataluna' ? 'salud' : 'publicos', grupoNombre: f.id === 'refugios-cataluna' ? 'Salud' : 'Servicios públicos', disponibilidad: true }));
+  const PUBLIC_IDS = new Set(PUBLIC_CATEGORIES.map(c => c.id));
   const townCache = new Map();
   function townInfo(ine) {
     if (!townCache.has(ine)) townCache.set(ine, json('/api/localidad/' + ine).catch(error => { townCache.delete(ine); throw error; }));
@@ -54,7 +58,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
   const notice = text => { $('sv-status').textContent = text; };
   const coords = poi => enlacesServicio(poi) !== null;
   const chosen = () => [...selected].sort();
-  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(id));
+  const osmChosen = () => chosen().filter(id => !['itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(id) && !PUBLIC_IDS.has(id));
   const guardiaTurno = () => $('sv-guardias-turno')?.value || 'todas';
   const guardiaCurrent = poi => Number.isFinite(poi._guardiaDeadline) && poi._guardiaDeadline > Date.now() && !guardiaSources.get(poi._guardiaZona)?.failed;
   const trafficCurrent = () => !trafficError && trafficSource?.estado === 'actual' && vigenteServicio(trafficSource._plazo);
@@ -126,6 +130,20 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
       box.append(el('p', 'Los filtros de horario, gratuidad y accesibilidad no se aplican a estas llegadas. La fuente no confirma esos datos.'));
       box.append(link('Fuente oficial de llegadas · CTB', 'https://data.ctb.eus/dataset/metro-bilbao-online'), link('Licencia CC BY 4.0', 'https://creativecommons.org/licenses/by/4.0/'));
     }
+    for (const definition of SERVICIOS_PUBLICOS_FUENTES) if (selected.has(definition.id)) {
+      const data = publicSources.get(definition.id);
+      box.append(link('Listado completo · ' + definition.nombre, '/servicios/' + definition.id));
+      box.append(el('p', definition.atribucion));
+      if (data) {
+        box.append(el('p', data.totalDirectorio + ' fichas; ' + data.conCoordenadas + ' con ubicación y ' + data.sinCoordenadas + ' sin coordenadas comprobables. Las que no tienen punto permanecen en el listado.'));
+        box.append(el('p', 'Copia comprobada el ' + date(data.consultado) + '. Fecha original del archivo: ' + date(data.fechaDatos) + '.'));
+        if (data.desactualizado || Date.now() - Date.parse(data.consultado) >= 30 * 3600000) box.append(el('p', 'Directorio pendiente de renovar. Se conserva una copia anterior con su fecha original.', 'sv-warning'));
+      }
+      if (publicErrors.has(definition.id)) box.append(el('p', 'No se han podido comprobar todas las fichas de esta zona. Consulta el listado y la fuente oficial.', 'sv-warning'));
+      box.append(el('p', definition.id === 'refugios-cataluna' ? 'Este catálogo no confirma que un refugio esté activado ni abierto ahora.' : 'El catálogo no informa de plazas libres ni confirma apertura en este momento.'));
+      box.append(el('p', 'Los filtros de horario y gratuidad no se aplican a este catálogo. Accesible sólo incluye fichas que lo indican expresamente.'));
+      box.append(link('Consultar fuente oficial', definition.fuenteUrl), link('Condiciones de reutilización', definition.licenciaUrl));
+    }
   }
   function updateUrl() {
     const current = new URL(location.href);
@@ -153,6 +171,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
         navigation++; favoritesOnly = false; focusedId = ''; updateUrl(); syncControls(); saveCategories(); load(true);
         if (input.checked && category.id === 'bicis-zaragoza') chooseTown('50297');
         if (input.checked && category.id === METRO_CATEGORY.id) chooseTown('48020');
+        if (input.checked && PUBLIC_IDS.has(category.id)) chooseTown(category.id === 'refugios-cataluna' ? '08019' : '28079');
         if (input.checked && ['trafico-cataluna', 'camaras-cataluna'].includes(category.id)) showCataluna();
         remember();
       });
@@ -171,7 +190,12 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
   function syncControls() {
     $('sv-category-count').textContent = '(' + selected.size + ')';
     $('sv-favorites').setAttribute('aria-pressed', String(favoritesOnly));
-    $('sv-open').disabled = favoritesOnly; $('sv-free').disabled = favoritesOnly; $('sv-accessible').disabled = favoritesOnly;
+    const onlyPublic = selected.size > 0 && chosen().every(id => PUBLIC_IDS.has(id));
+    $('sv-open').disabled = favoritesOnly || onlyPublic; $('sv-free').disabled = favoritesOnly || onlyPublic; $('sv-accessible').disabled = favoritesOnly;
+    const filterHelp = $('sv-open').closest('.sv-filters')?.nextElementSibling;
+    if (filterHelp?.classList.contains('sv-help')) filterHelp.textContent = onlyPublic
+      ? 'Estos catálogos no confirman apertura ni gratuidad: esos filtros están desactivados. Accesible sólo incluye fichas que lo indican expresamente.'
+      : 'Los filtros sólo incluyen datos publicados. Un horario desconocido no cuenta como abierto.';
     $('sv-guardias-control').hidden = !selected.has(GUARDIA_CATEGORY.id) || favoritesOnly;
   }
   function openLabel(poi) {
@@ -207,6 +231,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     if (poi.proveedor === 'sct') return trafficDetails(poi, popup);
     if (poi.proveedor === 'camara-sct') return cameraDetails(poi, popup);
     if (poi.proveedor === 'metro-bilbao') return metroDetails(poi, popup);
+    if (poi.proveedor === 'servicios-publicos') return publicDetails(poi, popup);
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
     card.append(el('p', (poi.categorias || [poi.categoria]).map(catalogName).join(' · '), 'sv-kind'), el('h3', poi.nombre));
     const distance = distanciaServicio(reference(), poi);
@@ -267,7 +292,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     if (favoritesOnly) return (services?.favoritos() || []).filter(coords);
     return [...records.values()].filter(p => p.categorias?.some(id => selected.has(id)) && inView(p)
       && (p.proveedor !== 'guardias-oficiales' || guardiaTurno() === 'todas' || guardiaCurrent(p) && p.estado === 'activa' && (guardiaTurno() !== '24h' || p.todoElDia))
-      && (p.proveedor === 'sct' ? trafficCurrent() : ['camara-sct', 'metro-bilbao'].includes(p.proveedor) || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
+      && (p.proveedor === 'sct' ? trafficCurrent() : p.proveedor === 'servicios-publicos' ? !$('sv-accessible').checked || p.accesibilidad === 'si' : ['camara-sct', 'metro-bilbao'].includes(p.proveedor) || (!$('sv-open').checked || openLabel(p).open === true) && (!$('sv-free').checked || p.gratis === true) && (!$('sv-accessible').checked || p.accesible === 'si')));
   }
   function render() {
     const items = filteredRecords(), ref = reference();
@@ -313,8 +338,9 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
           const traffic = zone === 'sct:cataluna';
           const camera = zone === 'camaras:cataluna';
           const metro = zone === 'metro:bilbao';
+          const publico = zone.startsWith('publicos:') ? zone.split(':') : null;
           const guardia = zone.startsWith('guardias:');
-          const data = guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : metro ? await fetchMetro() : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
+          const data = guardia ? await fetchGuardias(zone.slice(9), page, signal, serial, round) : bike ? await fetchBicis() : traffic ? await fetchTraffic() : camera ? await fetchCameras() : metro ? await fetchMetro() : publico ? await json('/api/servicios/publicos/' + publico[1] + '?zona=' + publico[2] + '&pagina=' + page, signal) : await json(itv ? '/api/servicios/itv?zona=' + zone.slice(4) : '/api/servicios?zona=' + zone + '&categorias=' + encodeURIComponent(osmChosen().join(',')) + '&pagina=' + page, signal);
           if (serial !== revision) return;
           if (guardia && round !== guardiaRound) continue;
           if (!Array.isArray(data.items)) throw Error('invalid');
@@ -329,11 +355,11 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
               }
             }
           }
-          if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else if (metro) acceptMetro(data); else data.items.filter(coords).forEach(p => records.set(p.id, p));
-          if (itv) itvSource = data; else if (!guardia && !bike && !traffic && !camera && !metro) source = data;
+          if (guardia) acceptGuardias(data, zone.slice(9), page); else if (bike) acceptBicis(data); else if (traffic) acceptTraffic(data); else if (camera) acceptCameras(data); else if (metro) acceptMetro(data); else if (publico) acceptPublicos(data, publico[1]); else data.items.filter(coords).forEach(p => records.set(p.id, p));
+          if (itv) itvSource = data; else if (!guardia && !bike && !traffic && !camera && !metro && !publico) source = data;
           if (data.siguientePagina != null) nextPages.set(zone, data.siguientePagina); else nextPages.delete(zone);
           if (guardia && data._failed) { failed++; nextPages.set(zone, page); }
-        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone === 'metro:bilbao') metroError = true; if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); } }
+        } catch (error) { if (serial === revision && error.name !== 'AbortError' && (!zone.startsWith('guardias:') || round === guardiaRound)) { failed++; nextPages.set(zone, page); if (zone === 'sct:cataluna') trafficError = true; if (zone === 'gbfs:zaragoza') biciError = true; if (zone === 'camaras:cataluna') cameraError = true; if (zone === 'metro:bilbao') metroError = true; if (zone.startsWith('publicos:')) publicErrors.add(zone.split(':')[1]); if (zone.startsWith('guardias:')) failGuardias(zone.slice(9)); } }
       }
     }
     await Promise.all([worker(), worker(), worker()]);
@@ -348,10 +374,10 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     if (!force && key === loadKey) { render(); return; }
     controller?.abort(); controller = new AbortController(); const serial = ++revision;
     guardiaRound++; clearTimeout(guardiaExpiryTimer); guardiaSources.clear();
-    records.clear(); nextPages.clear(); loadKey = ''; partial = false; shown = 60; loading = false;
+    records.clear(); nextPages.clear(); publicErrors.clear(); loadKey = ''; partial = false; shown = 60; loading = false;
     render(); sourceText();
     if (!selected.size) { notice('Elige al menos un tipo de servicio para buscar en el mapa.'); return; }
-    const needsZones = osmChosen().length || selected.has('itv') || selected.has(GUARDIA_CATEGORY.id);
+    const needsZones = osmChosen().length || selected.has('itv') || selected.has(GUARDIA_CATEGORY.id) || chosen().some(id => PUBLIC_IDS.has(id));
     if (needsZones && (!bases.length || bases.length > 9 || osmChosen().length && zones.length > 16)) { notice('Busca un municipio o acerca el mapa para consultar sus servicios.'); return; }
     loadKey = key; loading = true; $('sv-results').setAttribute('aria-busy', 'true'); notice('Comprobando los servicios de esta zona…');
     const pages = osmChosen().length ? zones.map(zone => [zone, 0]) : [];
@@ -361,6 +387,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     if (selected.has('trafico-cataluna')) pages.push(['sct:cataluna', 0]);
     if (selected.has('camaras-cataluna')) pages.push(['camaras:cataluna', 0]);
     if (selected.has(METRO_CATEGORY.id)) pages.push(['metro:bilbao', 0]);
+    for (const id of PUBLIC_IDS) if (selected.has(id)) pages.push(...bases.map(zone => ['publicos:' + id + ':' + zone, 0]));
     fetchPages(pages, controller.signal, serial);
   }
   function setCenter(p, name) {
@@ -433,7 +460,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     const box = $('sv-suggestions'); box.replaceChildren(); if (text.length < 2) return;
     const foundCategories = categories.filter(c => (c.total > 0 || c.disponibilidad) && fold(c.nombre).includes(fold(text))).slice(0, 6);
     for (const category of foundCategories) {
-      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else if (category.id === METRO_CATEGORY.id) chooseTown('48020'); else load(true); })); box.append(row);
+      const row = el('li'); row.append(button('Servicio: ' + category.nombre, () => { navigation++; selected = new Set([category.id]); favoritesOnly = false; focusedId = ''; box.replaceChildren(); renderCategories(); updateUrl(); saveCategories(); if (category.id === 'bicis-zaragoza') chooseTown('50297'); else if (category.id === METRO_CATEGORY.id) chooseTown('48020'); else if (PUBLIC_IDS.has(category.id)) chooseTown(category.id === 'refugios-cataluna' ? '08019' : '28079'); else load(true); })); box.append(row);
     }
     try {
       const towns = await json('/api/localidades?q=' + encodeURIComponent(text), pending.signal);
@@ -639,6 +666,37 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
     guardiaRefreshPromise = fetchPages(zones.map(zone => ['guardias:' + zone, 0]), controller.signal, revision, round).finally(() => { guardiaRefreshPromise = null; scheduleGuardiasExpiry(); });
     return guardiaRefreshPromise;
   }
+  function acceptPublicos(data, id) {
+    if (data.proveedor !== 'servicios-publicos' || data.fuenteId !== id || !PUBLIC_IDS.has(id)) throw Error('invalid_publicos');
+    const { items, ...metadata } = data; publicSources.set(id, metadata);
+    for (const poi of items.filter(coords)) records.set(poi.id, { ...poi, proveedor: 'servicios-publicos', fuenteId: id, categorias: [id], guardable: false });
+  }
+  function publicDetails(poi, popup) {
+    const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
+    card.append(el('p', catalogName(poi.fuenteId), 'sv-kind'), el('h3', poi.nombre));
+    const distance = distanciaServicio(reference(), poi);
+    if (distance !== null) card.append(el('p', (distance < 1 ? Math.round(distance * 1000) + ' m' : distance.toLocaleString('es-ES', { maximumFractionDigits: 1 }) + ' km') + ' ' + originLabel + ' · en línea recta', 'sv-meta'));
+    card.append(el('p', [poi.direccion, poi.cp, poi.municipio].filter(Boolean).join(' · ')));
+    if (poi.tipo) card.append(el('p', poi.tipo, 'sv-meta'));
+    const features = [];
+    if (poi.aguaPotable === true) features.push('Agua potable indicada'); if (poi.lavabos === true) features.push('Lavabos indicados');
+    if (poi.climatizacion === true) features.push('Climatización indicada'); if (poi.descanso === true) features.push('Zona de descanso indicada');
+    if (features.length) card.append(el('p', features.join(' · ')));
+    card.append(el('p', poi.accesibilidadTexto ? 'Accesibilidad publicada: ' + poi.accesibilidadTexto : 'Accesibilidad sin información publicada.', 'sv-meta'));
+    if (poi.horarioTexto) { const more = el('details'); more.append(el('summary', 'Horario publicado y excepciones'), el('p', poi.horarioTexto)); card.append(more); }
+    else card.append(el('p', 'Horario sin confirmar. Consulta las condiciones del equipamiento.', 'sv-meta'));
+    if (poi.fechaFicha) card.append(el('p', 'Fecha literal de la ficha: ' + poi.fechaFicha.replace('T', ' · ') + ' (zona horaria no publicada).', 'sv-meta'));
+    else card.append(el('p', 'La fuente no publica una fecha individual de esta ficha.', 'sv-meta'));
+    card.append(el('p', poi.fuenteId === 'refugios-cataluna' ? 'El catálogo no confirma que esté activado como refugio ni abierto ahora.' : 'No se comprueban plazas libres ni apertura en este momento.', 'sv-warning'));
+    const data = publicSources.get(poi.fuenteId);
+    if (data?.desactualizado || Date.now() - Date.parse(data?.consultado) >= 30 * 3600000) card.append(el('p', 'Copia anterior: confirma la información en la fuente.', 'sv-warning'));
+    const actions = el('div', null, 'sv-actions'), directions = enlacesServicio(poi);
+    if (directions) actions.append(link('Google Maps', directions.google), link('Apple Maps', directions.apple), link('Waze', directions.waze));
+    if (safeWeb(poi.web)) actions.append(link('Consultar el equipamiento', poi.web));
+    actions.append(link('Listado completo y fuente', '/servicios/' + poi.fuenteId));
+    if (!popup) actions.append(button('Ver en el mapa', () => focusPoi(poi)));
+    card.append(actions); return card;
+  }
   function metroDetails(poi, popup) {
     const card = el(popup ? 'div' : 'article', null, popup ? 'sv-popup' : 'sv-card'); card.dataset.servicio = poi.id;
     card.append(el('p', 'Metro Bilbao · CTB', 'sv-kind'), el('h3', poi.nombre));
@@ -802,8 +860,8 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
       if (results[0].status === 'fulfilled') {
         source = results[0].value; categories = [...(source.categorias || [])]; availableZones = source.zonas || []; ok = true;
       }
-      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id, METRO_CATEGORY.id].includes(c.id));
-      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY, METRO_CATEGORY);
+      categories = categories.filter(c => ![BICI_CATEGORY.id, TRAFFIC_CATEGORY.id, CAMERA_CATEGORY.id, GUARDIA_CATEGORY.id, METRO_CATEGORY.id].includes(c.id) && !PUBLIC_IDS.has(c.id));
+      categories.push(BICI_CATEGORY, TRAFFIC_CATEGORY, CAMERA_CATEGORY, GUARDIA_CATEGORY, METRO_CATEGORY, ...PUBLIC_CATEGORIES);
       if (results[1].status === 'fulfilled') {
         itvSource = results[1].value; ok = true;
         categories = categories.filter(c => c.id !== 'itv');
@@ -881,6 +939,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
       else if (near) setCenter({ lat: near.lat, lon: near.lng }, 'desde tu ubicación guardada en este enlace');
       else if (selected.size === 1 && selected.has('bicis-zaragoza')) await chooseTown('50297');
       else if (selected.size === 1 && selected.has(METRO_CATEGORY.id)) await chooseTown('48020');
+      else if (selected.size === 1 && chosen().some(id => PUBLIC_IDS.has(id))) await chooseTown(selected.has('refugios-cataluna') ? '08019' : '28079');
       else if (selected.size && chosen().every(id => ['trafico-cataluna', 'camaras-cataluna'].includes(id))) showCataluna();
       else load();
     }

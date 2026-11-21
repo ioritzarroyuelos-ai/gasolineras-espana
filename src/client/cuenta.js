@@ -281,7 +281,7 @@
     if ((value.id.startsWith('gbfs-zaragoza-')) !== (value.categoria === 'bicis-zaragoza')) return null;
     if ((value.id.startsWith('metro-bilbao-')) !== (value.categoria === 'metro-bilbao')) return null;
     if ((value.id.startsWith('camara-')) !== (value.categoria === 'camaras-cataluna')) return null;
-    if (['trafico-cataluna', 'farmacias-guardia'].includes(value.categoria)) return null;
+    if (['trafico-cataluna', 'farmacias-guardia', 'refugios-cataluna', 'salas-estudio-madrid'].includes(value.categoria)) return null;
     if (value.categoria === 'bicis-zaragoza' && (value.lat < 41.4 || value.lat > 41.9 || value.lon < -1.2 || value.lon > -0.6)) return null;
     if (value.categoria === 'metro-bilbao' && (value.lat < 43.1 || value.lat > 43.5 || value.lon < -3.2 || value.lon > -2.7)) return null;
     if (value.categoria === 'camaras-cataluna' && (value.lat < 40.4 || value.lat > 42.9 || value.lon < 0.1 || value.lon > 3.4)) return null;

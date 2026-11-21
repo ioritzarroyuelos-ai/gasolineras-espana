@@ -1,7 +1,7 @@
 import { APARCAMIENTOS_MAPA, preparaParteAparcamientos, aparcamientoActual, formateaHorarioAparcamiento, cumpleFiltrosAparcamiento } from '../../scripts/lib/aparcamientos-ui.mjs';
 import { enlacesServicio, distanciaServicio, restanteServicio } from '../../scripts/lib/servicios-ui.mjs';
 
-export function crearAparcamientosMapa({ el, link, button, favoriteButton, focusPoi, reference, originLabel, changed, active }) {
+export function crearAparcamientosMapa({ el, link, button, favoriteButton, availabilityButton, focusPoi, reference, originLabel, changed, active }) {
   const sources = new Map(), failures = new Set(), pending = new Map();
   let expiryTimer;
   const definition = city => APARCAMIENTOS_MAPA.find(f => f.ciudad === city);
@@ -75,6 +75,7 @@ export function crearAparcamientosMapa({ el, link, button, favoriteButton, focus
       if (!popup) actions.append(button('Ver en el mapa', () => focusPoi(poi)));
     } else card.append(el('p', 'Ubicación sin comprobar: esta ficha no tiene pin ni indicaciones para llegar.', 'sv-warning'));
     actions.append(link('Fuente oficial del aparcamiento', source.fuenteUrl));
+    const alert = availabilityButton?.(poi); if (alert) actions.append(alert);
     card.append(actions);
     return card;
   }

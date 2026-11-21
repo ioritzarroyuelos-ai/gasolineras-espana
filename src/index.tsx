@@ -28,6 +28,8 @@ import { registerTransporteRoutes } from './routes/transporte'
 import { registerServiciosPublicosRoutes } from './routes/servicios-publicos'
 import { registerAparcamientosRoutes } from './routes/aparcamientos'
 import { registerTelegramItvRoutes } from './routes/telegram-itv'
+import { registerTelegramDisponibilidadRoutes } from './routes/telegram-disponibilidad'
+import type { DisponibilidadBinding } from './lib/disponibilidad-telegram'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
 import { registerDataRoutes } from './routes/data'
@@ -108,6 +110,8 @@ export type Env = {
   // perfil). Si falta, /api/sync/* responde 503 pero el login
   // sigue funcionando sin persistencia cross-device.
   USER_DATA?: KVNamespace
+  DISPONIBILIDAD?: DisponibilidadBinding
+  DISPONIBILIDAD_ENABLED?: string
 }
 // Shape minima de KVNamespace (solo lo que usamos). Evita dep en @cloudflare/workers-types.
 type KVNamespace = {
@@ -262,6 +266,7 @@ app.post('/api/cron/purge', async c => {
 // Rutas en src/routes/telegram.ts: /api/telegram/* (8) + /api/cron/telegram-check.
 registerTelegramRoutes(app)
 registerTelegramItvRoutes(app)
+registerTelegramDisponibilidadRoutes(app)
 
 // ---- Telemetría / Admin ----
 // Rutas en src/routes/admin.ts (csp-report, client-error, admin/*, reports/price,

@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "espana-util-disponibilidad",
+  "main": "workers/disponibilidad.mjs",
+  "compatibility_date": "2026-11-21",
+  "workers_dev": false,
+  "preview_urls": false,
+  "version_metadata": { "binding": "WORKER_VERSION" },
+  "vars": { "DISPONIBILIDAD_ENABLED": "false" },
+  "durable_objects": { "bindings": [{ "name": "DISPONIBILIDAD", "class_name": "DisponibilidadUsuario" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DisponibilidadUsuario"] }],
+  // Las trazas fetch registran url.path: Telegram lleva el secreto en esa ruta.
+  // Mantener logs sin cuerpos/IDs y desactivar estas trazas explícitamente.
+  "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 1 }, "traces": { "enabled": false } }
+}

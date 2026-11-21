@@ -4,6 +4,7 @@ import { ahoraParteMetro, metroParteActual, metroLlegadasActuales, validaParteMe
 import { SERVICIOS_PUBLICOS_FUENTES } from '../../scripts/lib/servicios-publicos.mjs';
 import { APARCAMIENTOS_MAPA, fuenteAparcamiento } from '../../scripts/lib/aparcamientos-ui.mjs';
 import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
+import { crearAvisosDisponibilidad } from './servicios-disponibilidad.js';
 
 // El motor cartográfico y las gasolineras siguen siendo los del mapa original.
 // Las consultas públicas llevan cuadrículas; nunca la posición GPS del visitante.
@@ -48,7 +49,8 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
   const PUBLIC_CATEGORIES = SERVICIOS_PUBLICOS_FUENTES.map(f => ({ id: f.id, nombre: f.nombre + ' · catálogo oficial', grupo: f.id === 'refugios-cataluna' ? 'salud' : 'publicos', grupoNombre: f.id === 'refugios-cataluna' ? 'Salud' : 'Servicios públicos', disponibilidad: true }));
   const PUBLIC_IDS = new Set(PUBLIC_CATEGORIES.map(c => c.id));
   const PARKING_CATEGORIES = APARCAMIENTOS_MAPA.map(f => ({ id: f.id, nombre: f.nombre, grupo: 'movilidad', grupoNombre: 'Movilidad', disponibilidad: true }));
-  const parking = crearAparcamientosMapa({ el, link, button, favoriteButton, focusPoi, reference, originLabel: () => originLabel,
+  const availability = crearAvisosDisponibilidad({ changed: () => render() });
+  const parking = crearAparcamientosMapa({ el, link, button, favoriteButton, availabilityButton: (poi) => availability.button('aparcamientos-' + poi.fuenteId, poi), focusPoi, reference, originLabel: () => originLabel,
     active: city => !fuelMode && !favoritesOnly && !document.hidden && selected.has('aparcamientos-' + city),
     changed: () => { if (!fuelMode && !document.hidden) { render(); sourceText(); } },
   });
@@ -287,6 +289,7 @@ import { crearAparcamientosMapa } from './servicios-aparcamientos.js';
       if (safeWeb(poi.tarifas?.url)) actions.append(link(poi.tarifas.desactualizada ? 'Consultar tarifas · revisión pendiente' : 'Tarifas oficiales', poi.tarifas.url));
     }
     if (poi.proveedor === 'gbfs-zaragoza') actions.append(link('Consultar Bizi y sus condiciones', 'https://bizi.zaragoza.es/es/mapa-de-disponibilidad'));
+    if (poi.proveedor === 'gbfs-zaragoza') { const alert = availability.button('bicis-zaragoza', poi); if (alert) actions.append(alert); }
     actions.append(favoriteButton(poi));
     if (!popup) actions.append(button(poi.categorias ? 'Ver en el mapa' : 'Abrir ficha', () => focusPoi(poi)));
     card.append(actions);

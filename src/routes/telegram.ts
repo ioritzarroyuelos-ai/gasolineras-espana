@@ -8,6 +8,7 @@ import { slog, authorizeCron, jsonBodyLimit } from '../lib/runtime'
 import { tokensEqualConstTime } from '../lib/pure'
 import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
 import { borrarItvTelegram } from '../lib/telegram-itv'
+import { borrarDisponibilidadTelegram } from '../lib/disponibilidad-telegram'
 import { borrarPreferenciaPrecios, cargaPreciosComparacion, mensajesPrecios, enviarPreciosTelegram, PRECIOS_COMBUSTIBLES } from '../lib/telegram-precios'
 import { registerTelegramPreciosRoutes } from './telegram-precios'
 import { escapeHtml } from '../html/html'
@@ -175,7 +176,6 @@ app.post('/api/telegram/start-link', jsonBodyLimit(16 * 1024), async c => {
 // Telegram no reintenta indefinidamente.
 app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
-  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   const got = c.req.header('x-telegram-bot-api-secret-token') || ''
   // tokensEqualConstTime para evitar timing attacks (el secret es relativamente corto).
   if (!tokensEqualConstTime(got, c.env.TELEGRAM_WEBHOOK_SECRET!)) {
@@ -193,6 +193,34 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
   if (!Number.isSafeInteger(chatId) || chatId <= 0) return c.json({ ok: true, ignored: 'invalid_chat' }, 200)
   const text = String(msg.text).trim()
   const { tgSendMessage, tgEscapeHtml } = await import('../lib/telegram')
+  // Cada baja es independiente: una avería de D1 o KV no deja sin intentar
+  // la cancelación de disponibilidad. Sólo confirmamos cuando terminan todas.
+  if (text === '/stop') {
+    const results = await Promise.allSettled([
+      (async () => {
+        if (!c.env.DB) throw Error('db_not_available')
+        return c.env.DB.prepare('DELETE FROM telegram_subscriptions WHERE chat_id = ?').bind(chatId).run()
+      })(),
+      borrarPreferenciaPrecios(c.env, chatId),
+      borrarItvTelegram(c.env, chatId),
+      borrarDisponibilidadTelegram(c.env, chatId),
+    ])
+    if (results.some(result => result.status === 'rejected')) {
+      slog('warn', 'telegram_stop_cancel_pending', {})
+      return c.json({ ok: false, error: 'cancel_pending' }, 503)
+    }
+    const prices = results[0], itv = results[2], disponibilidad = results[3]
+    const n = prices.status === 'fulfilled' ? prices.value.meta?.changes ?? 0 : 0
+    const itvRemoved = itv.status === 'fulfilled' && itv.value
+    const availabilityRemoved = disponibilidad.status === 'fulfilled' && disponibilidad.value
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
+      n > 0 || itvRemoved || availabilityRemoved
+        ? `🗑️ Cancelados tus avisos de precios, ITV y disponibilidad. Un mensaje que ya había empezado a enviarse podría llegar todavía. Para activarlos de nuevo, elígelos expresamente en la web.`
+        : `No tenías alertas activas. Nada que borrar.`)
+    slog('info', 'telegram_stop', { removed: n, itvRemoved })
+    return c.json({ ok: true }, 200)
+  }
+  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
   // Comandos soportados:
   //   /start <token> — vincula la web con este chat_id
   //   /start (sin token) — welcome con link a la web
@@ -296,7 +324,8 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       `3. Pulsa "Activar alerta"\n\n` +
       `Cada mañana revisamos los últimos precios publicados. Escribe /precios para verlos con su fecha.\n\n` +
       `📅 También puedes activar un recordatorio de ITV en https://webapp-3ft.pages.dev/itv/ con tu fecha y un permiso separado. No se activa al vincular el bot.\n` +
-      `/stop cancela tanto los avisos de precios como el recordatorio de ITV.`,
+      (c.env.DISPONIBILIDAD_ENABLED === 'true' && c.env.DISPONIBILIDAD ? `🚲 En Cerca de ti puedes elegir avisos de disponibilidad con otro permiso separado.\n` : '') +
+      `/stop cancela precios, ITV y disponibilidad.`,
     )
     return c.json({ ok: true }, 200)
   }
@@ -349,29 +378,11 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       `/precios — últimos precios publicados, con fecha\n` +
       `/precios 2 — siguiente página de tu lista\n` +
       `/start — volver a empezar\n` +
-      `/stop — cancelar avisos de precios y de ITV\n` +
+      `/stop — cancelar precios, ITV y disponibilidad\n` +
       `/help — esta ayuda\n\n` +
-      `📅 ITV: elige tu fecha y activa su permiso independiente en https://webapp-3ft.pages.dev/itv/. Vincular el bot no activa esos avisos.`,
+      `📅 ITV: elige tu fecha y activa su permiso independiente en https://webapp-3ft.pages.dev/itv/. Vincular el bot no activa el recordatorio.\n` +
+      (c.env.DISPONIBILIDAD_ENABLED === 'true' && c.env.DISPONIBILIDAD ? `🚲 Disponibilidad: elige lugar y modalidad en https://webapp-3ft.pages.dev/cerca. Vincular el bot no activa estos avisos.` : ''),
     )
-    return c.json({ ok: true }, 200)
-  }
-  if (text === '/stop') {
-    const r = await c.env.DB.prepare(
-      'DELETE FROM telegram_subscriptions WHERE chat_id = ?'
-    ).bind(chatId).run()
-    const n = r.meta?.changes ?? 0
-    let itv = false
-    try { await borrarPreferenciaPrecios(c.env, chatId); itv = await borrarItvTelegram(c.env, chatId) }
-    catch {
-      slog('warn', 'telegram_stop_itv_pending', {})
-      return c.json({ ok: false, error: 'itv_cancel_pending' }, 503)
-    }
-    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
-      n > 0 || itv
-        ? `🗑️ Cancelados tus avisos de precios y tu recordatorio de ITV. Para volver a activarlos, elígelos expresamente en la web.`
-        : `No tenias alertas activas. Nada que borrar.`,
-    )
-    slog('info', 'telegram_stop', { removed: n, itvRemoved: itv })
     return c.json({ ok: true }, 200)
   }
   // Cualquier otro texto — ayuda breve.

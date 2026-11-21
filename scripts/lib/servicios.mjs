@@ -35,9 +35,38 @@ export function servicioContienePunto(id,lat,lon) {const [west,south,east,north]
 export function coordenadasServicio(lat,lon) {
   return Number.isFinite(lat)&&Number.isFinite(lon)&&((lat>=35&&lat<=44.5&&lon>=-10&&lon<=4.5)||(lat>=27&&lat<=30&&lon>=-19&&lon<=-13))
 }
+const privateWebKeys=new Set(['key','keyid','accesskey','privatekey','clientkey','consumerkey','auth','authorization','authentication','authcode','authkey','authorizationcode','bearer','jwt','pwd','pass','sig','sid','phpsessid','samlresponse','assertion','awsaccesskeyid','token','accesstoken','refreshtoken','idtoken','csrftoken','secret','clientsecret','appsecret','password','passwd','passphrase','session','sessionid','jsessionid','credential','signature','apikey'])
+function parametroPrivado(value,exact=false) {
+  const key=value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]/g,'')
+  return privateWebKeys.has(key)||!exact&&(/token|secret|password|passwd|passphrase|session|credential|signature/.test(key)||/apikey$/.test(key))
+}
+function enlaceConDatosPrivados(value) {
+  // Se comprueba también el texto decodificado: redirect/returnUrl y el hash
+  // pueden contener otra URL o parámetros JSON, con varios niveles de escape.
+  // Se omite el enlace completo; quitar sólo un parámetro podría dejar una
+  // credencial en otra parte o cambiar el destino de una redirección firmada.
+  for(let depth=0;depth<8;depth++){
+    if(/(?:https?:)?\/\/[^/?#\s]*@/i.test(value))return true
+    // La búsqueda no consume el separador: «next=token%3D…» también tiene
+    // que comprobar su segundo parámetro al deshacer la codificación.
+    for(const match of value.matchAll(/(?=(?:^|[?&#;={\s"'(])([^=:#?&;/"'{}()]{1,80})["']?\s*(?:=|:))/g))if(parametroPrivado(match[1]))return true
+    // También se reconocen parámetros de ruta (p. ej. ;jsessionid=…) y los
+    // enlaces de acceso /token/valor, sin rechazar un ancla ordinaria #horario.
+    for(const match of value.matchAll(/\/([^/?#;]{1,80})(?=\/[^/?#\s])/g))if(parametroPrivado(match[1],true))return true
+    let decoded
+    try{decoded=decodeURIComponent(value)}catch{
+      // Un escape UTF-8 roto no debe ocultar el nombre ASCII de un parámetro.
+      decoded=value.replace(/%([a-f0-9]{2})/gi,(_,hex)=>String.fromCharCode(parseInt(hex,16)))
+    }
+    if(decoded===value)return false
+    value=decoded
+  }
+  // Un enlace anidado más profundamente no se puede verificar con este límite.
+  return true
+}
 export function webServicio(raw) {
   const value=completeText(raw,500)
-  if(!value)return undefined
+  if(!value||enlaceConDatosPrivados(value))return undefined
   try {
     const u=new URL(value)
     if(!['https:','http:'].includes(u.protocol)||u.username||u.password||!u.hostname.includes('.')||/^\d+(?:\.\d+){3}$/.test(u.hostname)||/(?:^|\.)(?:localhost|local|internal|test|invalid)$/i.test(u.hostname)||u.hostname.includes(':')||u.href.length>500)return undefined

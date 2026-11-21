@@ -69,6 +69,60 @@ describe('clasificación conservadora de servicios',()=>{
     expect(poi({}, {lat:28.1248,lon:-15.43}).id).toBe('osm-node-123')
   })
   it.each(['javascript:alert(1)','https://user:pass@example.com','http://127.0.0.1','http://2130706433','http://192.168.1.1','http://0.0.0.0','http://[::1]','http://site.local','https://evil.test'])('descarta enlaces inseguros %s',url=>expect(webServicio(url)).toBeUndefined())
+  it.each(['token','access_token','refreshToken','id-token','api_key','ApiKey','x-goog-api-key','key','password','passwd','pwd','session','PHPSESSID','JSESSIONID','session_id','signature','sig','client_secret','clientSecret','authorization','auth','bearer','jwt','X-Amz-Credential','X-Amz-Security-Token','AWSAccessKeyId'])('omite enlaces con el parámetro privado %s sin borrar el lugar',key=>{
+    const url='https://example.com/redir.php?'+encodeURIComponent(key)+'=demo'
+    expect(webServicio(url)).toBeUndefined()
+    const item=poi({website:url})
+    expect(item).toMatchObject({id:'osm-node-123',nombre:'Baños de la plaza'})
+    expect(item).not.toHaveProperty('web')
+    expect(()=>validaServicio({...item,web:url},now)).toThrow('web inválida')
+  })
+  it.each([
+    'https://example.com/?%74%6f%6b%65%6e=demo',
+    'https://example.com/?%2574%256f%256b%2565%256e=demo',
+    'https://example.com/?%E0%A4%A&%74oken=demo',
+    'https://example.com/?next=https%3A%2F%2Fother.example.com%2F%3Ftoken%3Ddemo',
+    'https://example.com/?next=https%253A%252F%252Fother.example.com%252F%253Fclient_secret%253Ddemo',
+    'https://example.com/?next=token%3Ddemo',
+    'https://example.com/?data=%7B%22token%22%3A%22demo%22%7D',
+    'https://example.com/?next=https%3A%2F%2Fuser%3Ademo%40other.example.com%2F',
+    'https://example.com/#access_token=demo',
+    'https://example.com/#/login?sessionId=demo',
+    'https://example.com/#token%253Ddemo',
+    'https://example.com/path;jsessionid=demo',
+    'https://example.com/token/demo',
+    'https://example.com/?session%20id=demo',
+    'https://example.com/?auth[token]=demo',
+    'https://example.com/?lang=es&token=',
+  ])('rechaza credenciales en codificación, redirección, ruta o fragmento: %s',url=>{
+    expect(webServicio(url)).toBeUndefined()
+    expect(poi({'contact:website':url})).not.toHaveProperty('web')
+    expect(()=>validaServicio({...poi(),web:url},now)).toThrow('web inválida')
+  })
+  it.each([
+    'https://example.com/?lang=es&id=12',
+    'https://example.com/?id=12&lang=ca#horarios',
+    'https://example.com/?keyword=parque&monkey=12',
+    'https://example.com/?q=token&lang=es',
+    'https://example.com/?q=password%20reset',
+    'https://example.com/?redirect=https%3A%2F%2Fother.example.com%2Fficha%3Fid%3D12%26lang%3Des',
+    'https://example.com/#/ficha?id=12&lang=es',
+    'https://example.com/ficha?nombre=Pe%C3%B1a',
+    'https://example.com/guia-del-token-de-transporte',
+    'https://secretosdelapalma.wordpress.com/rutas-de-la-isla/',
+    'https://secretosdelapalma.wordpress.com:443/rutas-de-la-isla/',
+    'https://example.com/sesiones-y-secretos-del-museo/visitas',
+  ])('conserva parámetros públicos y anclas normales: %s',url=>{
+    expect(webServicio(url)).toBe(new URL(url).href)
+    expect(()=>validaServicio(poi({website:url}),now)).not.toThrow()
+  })
+  it('el límite de decodificación falla cerrado y nunca filtra el valor por el error',()=>{
+    let value='token=demo'
+    for(let n=0;n<9;n++)value=encodeURIComponent(value)
+    const url='https://example.com/?next='+value
+    expect(webServicio(url)).toBeUndefined()
+    expect(()=>validaServicio({...poi(),web:url},now)).toThrow(/^Servicios: web inválida$/)
+  })
   it('valida también los textos al leer JSON ajeno al robot',()=>{
     expect(webServicio('https://www.madrid.es')).toBe('https://www.madrid.es/')
     expect(webServicio('https://www.madrid.es/'+'á'.repeat(100))).toBeUndefined()

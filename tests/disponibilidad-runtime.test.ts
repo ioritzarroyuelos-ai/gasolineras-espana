@@ -205,4 +205,16 @@ describe('alarmas con SQLite real, sin red real', () => {
     expect((await f.save('temporal', undefined, version)).status).toBe(409)
     expect(f.scenario.sends).toHaveLength(1)
   })
+  it('el primer GET tras30d entrega una revisión vigente que permite la siguiente alta', async () => {
+    const name = 'lectura-tras-retencion', f = await fixture(name), old = await f.get()
+    const later = start + 31 * 86400000
+    // Se adelanta el reloj sin ejecutar la alarma: GET encuentra la limpieza
+    // pendiente y no debe devolver una revisión que acaba de eliminar.
+    await call(name, 'setup', later, name)
+    const fresh = await f.get()
+    expect(fresh.avisos).toEqual([])
+    expect(await call(name, 'scheduled')).toBe(later + 30 * 86400000)
+    expect(await f.save('temporal', undefined, fresh.version)).toMatchObject({ status: 200, ok: true })
+    expect(fresh.version).not.toBe(old.version)
+  })
 })

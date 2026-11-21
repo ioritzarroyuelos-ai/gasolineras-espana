@@ -60,7 +60,14 @@ export class DisponibilidadUsuario extends DurableObject {
     this.ctx.storage.sql.exec("DELETE FROM estado WHERE clave LIKE 'recibo:%' AND json_extract(valor, '$.caduca') <= ?", this.now())
     this.ctx.storage.sql.exec("DELETE FROM estado WHERE clave LIKE 'aviso:%' AND json_extract(valor, '$.activo') = 0 AND COALESCE(json_extract(valor, '$.terminado'), json_extract(valor, '$.creado')) <= ?", this.now() - DISPONIBILIDAD_RETENCION)
   }
-  async leer(chat) { const meta = this.#meta(chat); await this.#schedule(); return this.#snapshot(meta) }
+  async leer(chat) {
+    this.#meta(chat); await this.#schedule()
+    // La limpieza puede haber borrado la revisión que acabamos de consultar.
+    // Crear/programar la vigente y releer tras los awaits evita devolver una
+    // versión obsoleta o ignorar un cambio concurrente del mismo chat.
+    if (!this.#meta(chat, false)) { this.#meta(chat); await this.#schedule() }
+    return this.#snapshot(this.#meta(chat, false))
+  }
   async guardar(chat, modo, input) {
     if (!this.#configured()) return failure('availability_disabled')
     if (!disponibilidadSolicitud(input, modo)) return failure('invalid_subscription', 400)

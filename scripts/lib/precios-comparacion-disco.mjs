@@ -1,4 +1,4 @@
-import {readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,lstatSync,realpathSync,unlinkSync,rmdirSync} from 'node:fs'
+import {readFileSync,writeFileSync,mkdirSync,renameSync,existsSync,readdirSync,openSync,fstatSync,closeSync,constants,realpathSync,unlinkSync,rmdirSync} from 'node:fs'
 import {resolve,dirname,sep} from 'node:path'
 import {createHash} from 'node:crypto'
 import {validaIndicePreciosComparacion,validaBloquePreciosComparacion,MAX_BLOQUE_PRECIOS_BYTES} from './precios-comparacion.mjs'
@@ -13,9 +13,16 @@ export function leeComparacionPrevia(dir) {
   if (!validaIndicePreciosComparacion(index,Date.parse(index.consultado))) throw Error('Índice anterior de precios inválido')
   const bloques = []
   for (const [bucket,descriptor] of Object.entries(index.shards).sort(([a],[b])=>a.localeCompare(b))) {
-    const path = resolve(dir,descriptor.archivo), stat = lstatSync(path)
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== descriptor.bytes || stat.size > MAX_BLOQUE_PRECIOS_BYTES) throw Error('Bloque anterior de precios inválido')
-    const raw = readFileSync(path)
+    const path = resolve(dir,descriptor.archivo)
+    // Inspecciona y lee el mismo descriptor abierto: un cambio de ruta entre
+    // ambas operaciones no puede sustituir el archivo validado por otro.
+    const fd = openSync(path,constants.O_RDONLY | (constants.O_NOFOLLOW || 0))
+    let raw
+    try {
+      const stat = fstatSync(fd)
+      if (!stat.isFile() || stat.size !== descriptor.bytes || stat.size > MAX_BLOQUE_PRECIOS_BYTES) throw Error('Bloque anterior de precios inválido')
+      raw = readFileSync(fd)
+    } finally { closeSync(fd) }
     if (sha(raw) !== descriptor.sha256) throw Error('La integridad de los precios anteriores no coincide')
     const block = JSON.parse(raw.toString('utf8'))
     if (!validaBloquePreciosComparacion(block,index,bucket)) throw Error('Contenido anterior de precios inválido')

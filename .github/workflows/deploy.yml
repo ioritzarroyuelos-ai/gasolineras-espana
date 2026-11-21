@@ -200,7 +200,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VALIDATED_SHA: ${{ steps.ci.outputs.head_sha }}
           DISPONIBILIDAD_ENABLED: ${{ vars.DISPONIBILIDAD_ENABLED }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: node scripts/deploy-disponibilidad.mjs
@@ -239,8 +239,10 @@ jobs:
       - name: Verificar servicio privado sin crear avisos ni enviar mensajes
         if: success() && steps.ci.outputs.current == 'true'
         env:
-          DISPONIBILIDAD_ENABLED: ${{ vars.DISPONIBILIDAD_ENABLED }}
+          DISPONIBILIDAD_ENABLED: ${{ steps.disponibilidad.outputs.enabled }}
+          DISPONIBILIDAD_STATE: ${{ steps.disponibilidad.outputs.state }}
           DISPONIBILIDAD_VERSION_ID: ${{ steps.disponibilidad.outputs.version_id }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
         run: node scripts/deploy-disponibilidad.mjs --verify "$DISPONIBILIDAD_VERSION_ID"
 
       - name: Resumen

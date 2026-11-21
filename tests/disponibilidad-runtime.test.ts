@@ -14,18 +14,18 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const start = Date.parse('2099-11-21T07:00:00Z'), minute = 60000
-type Scenario = { quantity?: number | null; fresh?: boolean; result?: { estado: string; espera?: number; crash?: boolean }; gate?: Promise<void>; sourceCalls: number; sends: Array<{ text: string; chat: number }> }
+type Scenario = { quantity?: number | null; fresh?: boolean; result?: { estado: string; espera?: number; crash?: boolean }; gate?: Promise<void>; sendGate?: Promise<void>; sourceCalls: number; sends: Array<{ text: string; chat: number }> }
 const cases = new Map<string, Scenario>()
 let mf: { dispatchFetch: (url: string, options: RequestInit) => Promise<Response>; dispose: () => Promise<void> }, script: string, persist: string
 async function runtime() {
-  return new Miniflare({ ...convertV4MiniflareOptions({ name: 'availability-test', modules: true, script, compatibilityDate: '2026-11-21', bindings: { DISPONIBILIDAD_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'simulado-sin-uso' },
+  return new Miniflare({ ...convertV4MiniflareOptions({ name: 'availability-test', modules: true, script, compatibilityDate: '2026-11-21', bindings: { DISPONIBILIDAD_ENABLED: 'true', DISPONIBILIDAD_GATEWAY_KEY: 'a'.repeat(64), WORKER_VERSION: { id: '10000000-0000-4000-8000-000000000001' } },
     durableObjects: { DISPONIBILIDAD: { className: 'DisponibilidadPrueba', useSQLite: true } },
     serviceBindings: { CONTROL: { name: 'availability-test', entrypoint: 'DisponibilidadServicio' } },
     outboundService: async (request: Request) => {
       const url = new URL(request.url)
       if (url.origin !== 'https://availability-test.invalid') throw Error('Red no autorizada en la prueba')
       const body = await request.json() as any, test = cases.get(body.testId)!
-      if (url.pathname === '/send') { test.sends.push({ text: body.text, chat: body.chat }); return Response.json(test.result || { estado: 'enviado' }) }
+      if (url.pathname === '/send') { test.sends.push({ text: body.text, chat: body.chat }); if (test.sendGate) await test.sendGate; return Response.json(test.result || { estado: 'enviado' }) }
       test.sourceCalls++
       if (test.gate) await test.gate
       const point = { id: body.item.lugarId, fuente: body.item.fuente, objetivo: body.item.objetivo, nombre: 'Lugar de prueba', lat: 40.4, lon: -3.7,
@@ -150,6 +150,27 @@ describe('alarmas con SQLite real, sin red real', () => {
     await mf.dispose(); mf = await runtime(); await f.tick(start + 6 * minute)
     expect(f.scenario.sends).toHaveLength(1); expect((await f.get()).avisos[0].estado).toBe('incierto')
   }, 15000)
+  it('un rechazo de baja tardío conserva el nuevo consentimiento y el otro modo', async () => {
+    const f = await fixture('baja-tardia'); await f.save()
+    let release!: () => void; f.scenario.sendGate = new Promise(resolve => { release = resolve }); f.scenario.result = { estado: 'baja' }
+    const pending = f.tick(start + 1000)
+    while (f.scenario.sends.length < 1) await new Promise(resolve => setTimeout(resolve, 5))
+    await f.cancel('temporal'); await f.save(); await f.save('diario', '18:00')
+    const consent = (await f.get()).avisos.map((item: any) => ({ id: item.id, modo: item.modo, activo: item.activo }))
+    release(); await pending
+    expect((await f.get()).avisos.map((item: any) => ({ id: item.id, modo: item.modo, activo: item.activo }))).toEqual(consent)
+    expect(consent).toHaveLength(2); expect(consent.every((item: any) => item.activo)).toBe(true)
+  })
+  it('una respuesta tardía no sobreescribe el recibo de otro intento', async () => {
+    const name = 'resultado-otro-intento', f = await fixture(name); await f.save()
+    let release!: () => void; f.scenario.sendGate = new Promise(resolve => { release = resolve })
+    const pending = f.tick(start + 1000)
+    while (f.scenario.sends.length < 1) await new Promise(resolve => setTimeout(resolve, 5))
+    const replaced = await call(name, 'replaceAttempt')
+    release(); await pending
+    expect((await f.inspect()).find(([key]: [string]) => key === replaced.key)[1]).toEqual(replaced.receipt)
+    expect((await f.get()).avisos[0].estado).toBe('comprobando')
+  })
   it('Retry-After largo no mueve un diario reprogramado a otra hora', async () => {
     const f = await fixture('rechazado'); f.scenario.result = { estado: 'reintentar', espera: 86400 }; await f.save('diario', '08:01'); await f.tick(start + minute)
     await f.save('diario', '08:10'); await f.tick(start + 10 * minute)

@@ -71,6 +71,8 @@
         "PUBLIC_ORIGIN": "https://webapp-3ft.pages.dev",
         "GOOGLE_CLIENT_ID": "554597813307-ho2q9h68c9ad8si34ijs0o0muvrn0n8q.apps.googleusercontent.com",
         "DISPONIBILIDAD_ENABLED": "false",
+        "CRON_TOKEN": "",
+        "DISPONIBILIDAD_GATEWAY_KEY": "",
         "TELEGRAM_BOT_TOKEN": "",
         "TELEGRAM_WEBHOOK_SECRET": ""
       },

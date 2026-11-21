@@ -1,7 +1,7 @@
 name: Disponibilidad · comprobar identidad del bot
 
 # Diagnóstico manual de sólo lectura. No publica ni habilita avisos y no
-# recibe credenciales de Cloudflare, chats ni secretos de otros servicios.
+# recibe credenciales de Cloudflare, claves de bots ni chats.
 on:
   workflow_dispatch:
 
@@ -37,5 +37,5 @@ jobs:
 
       - name: Comprobar identidad sin activar ni enviar mensajes
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
         run: node scripts/deploy-disponibilidad.mjs --check-bot

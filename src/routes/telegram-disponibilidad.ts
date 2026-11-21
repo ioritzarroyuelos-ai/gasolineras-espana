@@ -12,9 +12,10 @@ export function registerTelegramDisponibilidadRoutes(app: Hono<{ Bindings: Env }
     let service = null
     try { service = c.env.DISPONIBILIDAD ? await c.env.DISPONIBILIDAD.estado() : null } catch {}
     const reachable = service?.schema === 1 && service.revision === 'disponibilidad-v1'
-    const healthy = reachable && service?.habilitado && service?.configurado
+    const healthy = reachable && service?.gatewayRevision === 'disponibilidad-gateway-v1' && service?.habilitado && service?.configurado
     return c.json({ manageAvailable: reachable, available: !!(healthy && c.env.DISPONIBILIDAD_ENABLED === 'true' && c.env.TELEGRAM_BOT_TOKEN && c.env.TELEGRAM_BOT_USERNAME && c.env.TELEGRAM_WEBHOOK_SECRET),
-      serviceVersion: service?.versionId || null, linkAvailable: !!c.env.DB, modos: ['diario', 'temporal'], zona: 'Europe/Madrid', intervaloMinutos: 5, temporalMinutos: 60, maximoPorModo: 1 })
+      serviceVersion: service?.versionId || null, serviceEnabled: reachable && typeof service?.habilitado === 'boolean' ? service.habilitado : null,
+      linkAvailable: !!c.env.DB, modos: ['diario', 'temporal'], zona: 'Europe/Madrid', intervaloMinutos: 5, temporalMinutos: 60, maximoPorModo: 1 })
   })
   const respond = (result: DisponibilidadRespuesta) => {
     const { status, ...body } = result

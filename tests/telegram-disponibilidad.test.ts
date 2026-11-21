@@ -13,7 +13,7 @@ beforeEach(async () => { auth = await signTelegramToken(10, 'prueba-local'); })
 function fixture() {
   const stub = { leer: vi.fn(async () => ({ status: 200, ok: true, version, avisos: [] })), guardar: vi.fn(async (_chat: number, _mode: string, _input: unknown) => ({ status: 200, ok: true, version, avisos: [] })),
     cancelar: vi.fn(async (_chat: number, _mode?: string | null) => ({ status: 200, ok: true, avisos: [] })), comprobar: vi.fn(async () => ({ status: 200, ok: true, dryRun: true, enviados: 0 })) }
-  const binding = { ...stub, estado: vi.fn(async () => ({ schema: 1, revision: 'disponibilidad-v1', versionId: 'version-de-prueba', habilitado: true, configurado: true })) }
+  const binding = { ...stub, estado: vi.fn(async () => ({ schema: 1, revision: 'disponibilidad-v1', gatewayRevision: 'disponibilidad-gateway-v1', versionId: 'version-de-prueba', habilitado: true, configurado: true })) }
   const env = { SESSION_SECRET: 'prueba-local', DISPONIBILIDAD: binding, DISPONIBILIDAD_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'prueba', TELEGRAM_BOT_USERNAME: 'prueba_bot', TELEGRAM_WEBHOOK_SECRET: 'prueba-webhook' } satisfies Env
   const app = new Hono<{ Bindings: Env }>(); registerTelegramDisponibilidadRoutes(app)
   const call = (method = 'GET', suffix = '', body?: unknown, token = auth) => app.request('https://webapp-3ft.pages.dev/api/telegram/disponibilidad' + suffix, { method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }, env)
@@ -28,8 +28,8 @@ describe('API de disponibilidad vinculada al Telegram firmado', () => {
     }
     expect((await (await f.call('GET', '/config')).json()).available).toBe(true)
     f.env.DISPONIBILIDAD_ENABLED = 'false'
-    f.binding.estado.mockResolvedValue({ schema: 1, revision: 'disponibilidad-v1', versionId: 'version-de-prueba', habilitado: false, configurado: false })
-    expect(await (await f.call('GET', '/config')).json()).toMatchObject({ available: false, manageAvailable: true })
+    f.binding.estado.mockResolvedValue({ schema: 1, revision: 'disponibilidad-v1', gatewayRevision: 'disponibilidad-gateway-v1', versionId: 'version-de-prueba', habilitado: false, configurado: false })
+    expect(await (await f.call('GET', '/config')).json()).toMatchObject({ available: false, manageAvailable: true, serviceEnabled: false })
     expect(f.stub.leer).not.toHaveBeenCalled(); expect(f.stub.guardar).not.toHaveBeenCalled()
     f.binding.estado.mockRejectedValue(Error('caído'))
     expect((await (await f.call('GET', '/config')).json()).available).toBe(false)

@@ -80,13 +80,17 @@ export async function disponibilidadEnviar(bot, chat, text, request = fetch) {
     const abort = () => { void reader.cancel().catch(() => {}) }
     signal.addEventListener('abort', abort, { once: true })
     try {
-      for (;;) { if (signal.aborted) return { estado: 'incierto' }; const { done, value } = await reader.read(); if (signal.aborted) return { estado: 'incierto' }; if (done) break; size += value.byteLength; if (size > 16384) { await reader.cancel(); return { estado: 'incierto' } }; raw += decoder.decode(value, { stream: true }) }
+      for (;;) { if (signal.aborted) { abort(); return { estado: 'incierto' } }; const { done, value } = await reader.read(); if (signal.aborted) { abort(); return { estado: 'incierto' } }; if (done) break; size += value.byteLength; if (size > 16384) { abort(); return { estado: 'incierto' } }; raw += decoder.decode(value, { stream: true }) }
+    } catch { abort(); return { estado: 'incierto' }
     } finally { signal.removeEventListener('abort', abort); reader.releaseLock() }
     const data = JSON.parse(raw + decoder.decode())
-    if (response.ok && data.ok === true && object(data.result) && Number.isSafeInteger(data.result.message_id) && data.result.message_id > 0 && object(data.result.chat) && data.result.chat.id === chat) return { estado: 'enviado' }
-    if (data.ok !== false || !Number.isInteger(data.error_code)) return { estado: 'incierto' }
-    if (data.error_code === 403 || data.error_code === 400 && /chat not found|user is deactivated/i.test(data.description || '')) return { estado: 'baja' }
+    if (response.status === 200 && data.ok === true && object(data.result) && Number.isSafeInteger(data.result.message_id) && data.result.message_id > 0 && object(data.result.chat) && data.result.chat.id === chat) return { estado: 'enviado' }
+    // Esta función sólo consulta el endpoint fijo de Telegram. Un error del
+    // gateway nunca pasa por aquí: su HTTP409 no demuestra rechazo del bot.
+    // Ni un 5xx ni un cuerpo que contradiga HTTP permiten repetir el mensaje.
+    if (response.status < 400 || response.status >= 500 || data.ok !== false || data.error_code !== response.status) return { estado: 'incierto' }
+    if (data.error_code === 403 || data.error_code === 400 && typeof data.description === 'string' && /chat not found|user is deactivated/i.test(data.description)) return { estado: 'baja' }
     const delay = data.parameters?.retry_after
-    return { estado: 'reintentar', espera: typeof delay === 'number' && Number.isFinite(delay) ? Math.max(60, Math.min(delay, 86400)) : 300 }
+    return { estado: 'reintentar', espera: Number.isSafeInteger(delay) && delay > 0 ? Math.max(60, Math.min(delay, 86400)) : 300 }
   } catch { return { estado: 'incierto' } }
 }

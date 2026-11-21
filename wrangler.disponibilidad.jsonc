@@ -9,7 +9,7 @@
   "vars": { "DISPONIBILIDAD_ENABLED": "false" },
   "durable_objects": { "bindings": [{ "name": "DISPONIBILIDAD", "class_name": "DisponibilidadUsuario" }] },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DisponibilidadUsuario"] }],
-  // Las trazas fetch registran url.path: Telegram lleva el secreto en esa ruta.
-  // Mantener logs sin cuerpos/IDs y desactivar estas trazas explícitamente.
+  // La pasarela transporta un intento privado firmado: no registrar sus trazas.
+  // Mantener sólo logs sin cuerpos, credenciales ni identificadores personales.
   "observability": { "enabled": true, "logs": { "enabled": true, "head_sampling_rate": 1 }, "traces": { "enabled": false } }
 }

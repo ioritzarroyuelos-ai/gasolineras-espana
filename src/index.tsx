@@ -29,6 +29,7 @@ import { registerServiciosPublicosRoutes } from './routes/servicios-publicos'
 import { registerAparcamientosRoutes } from './routes/aparcamientos'
 import { registerTelegramItvRoutes } from './routes/telegram-itv'
 import { registerTelegramDisponibilidadRoutes } from './routes/telegram-disponibilidad'
+import { registerDisponibilidadGatewayRoutes } from './routes/disponibilidad-gateway'
 import type { DisponibilidadBinding } from './lib/disponibilidad-telegram'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
@@ -126,6 +127,11 @@ const app = new Hono<{ Bindings: Env }>()
 // APP_VERSION se importa desde ./lib/version para romper el ciclo de imports
 // con ./html/shell. Se expone via /api/health.
 export { APP_VERSION }
+
+// Dos POST internos exactos, autenticados por HMAC y autorización duradera.
+// Los Workers pueden compartir IP: no deben consumir el cupo de visitantes.
+// Cada ruta conserva cuerpo acotado, caducidad, firma y respuesta no-store.
+registerDisponibilidadGatewayRoutes(app)
 
 app.use('/api/*', async (c, next) => {
   // Even origin/rate-limit errors must not cache a personal session response.

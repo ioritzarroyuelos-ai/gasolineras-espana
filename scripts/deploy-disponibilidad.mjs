@@ -5,16 +5,19 @@ import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { DATA_REPOSITORY } from './lib/data-clock-protocol.mjs'
 import { githubDataRequest } from './lib/github-data-api.mjs'
+import { derivaGatewayKey, gatewayCanonico, gatewayDigest, gatewayFirma, gatewayVerifica, gatewayValidaRespuesta, gatewayValidaChallenge, GATEWAY_PATH_CHECK, GATEWAY_SIGNATURE_HEADER } from './lib/disponibilidad-gateway.mjs'
 
 const WORKER = 'espana-util-disponibilidad'
 const ORIGIN = 'https://webapp-3ft.pages.dev'
 const uuid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)
 const flag = value => { if (!['true', 'false'].includes(value)) throw Error('Falta una decisión explícita de activación de disponibilidad'); return value === 'true' }
+const gatewayReasons = new Set(['CREDENTIAL_INVALID', 'NETWORK', 'REDIRECT', 'HTTP_400', 'HTTP_401', 'HTTP_403', 'HTTP_409', 'HTTP_429', 'HTTP_503', 'HTTP_OTHER', 'RESPONSE_INVALID', 'SIGNATURE_INVALID', 'WORKER_PROOF_INVALID', 'TIMEOUT'])
+const safeReason = error => typeof error?.code === 'string' && error.code.startsWith('GATEWAY_') && gatewayReasons.has(error.code.slice(8)) ? error.code : 'GATEWAY_UNCONFIRMED'
 // Estos archivos admiten comentarios de línea completa; cualquier otra sintaxis
 // no JSON falla antes de ejecutar Wrangler. No se evalúa código del archivo.
 const readConfig = file => JSON.parse(readFileSync(file, 'utf8').split(/\r?\n/).filter(line => !line.trimStart().startsWith('//')).join('\n'))
 
-async function readJson(response, max, signal) {
+async function readJson(response, max, signal, raw = false) {
   if (!response.ok || !response.body || Number(response.headers.get('content-length') || 0) > max) { await response.body?.cancel(); throw Error('Respuesta de comprobación no válida') }
   const reader = response.body.getReader(), decoder = new TextDecoder('utf-8', { fatal: true })
   const abort = () => { void reader.cancel().catch(() => {}) }
@@ -30,47 +33,45 @@ async function readJson(response, max, signal) {
       if (size > max) { abort(); throw Error('Respuesta demasiado grande') }
       text += decoder.decode(next.value, { stream: true })
     }
-    return JSON.parse(text + decoder.decode())
+    const complete = text + decoder.decode()
+    return raw ? complete : JSON.parse(complete)
   } finally { signal.removeEventListener('abort', abort); reader.releaseLock() }
 }
 export async function verificaBotDisponibilidad(env, io = {}) {
-  const fetcher = io.fetch || fetch, signal = AbortSignal.timeout(io.timeoutMs ?? 10000)
-  const username = value => typeof value === 'string' && /^[A-Za-z0-9_]{5,32}$/.test(value)
-  let phase = 'CREDENTIAL', reason = 'INVALID'
-  const consult = async (stage, url, max) => {
-    phase = stage; reason = 'NETWORK'
-    const response = await fetcher(url, { method: 'GET', cache: 'no-store', redirect: 'manual', signal })
-    if (!response.ok) {
+  const signal = AbortSignal.timeout(io.timeoutMs ?? 15000), fetcher = io.fetch || fetch
+  const now = () => typeof io.now === 'function' ? io.now() : Date.now()
+  let reason = 'CREDENTIAL_INVALID'
+  try {
+    const key = await derivaGatewayKey(env.CRON_TOKEN)
+    const issuedAt = now()
+    const body = { schema: 1, environment: 'production', op: 'check', nonce: crypto.randomUUID(), issuedAt, expiresAt: issuedAt + 30000 }
+    const raw = gatewayCanonico(body), digest = await gatewayDigest(raw)
+    const signature = await gatewayFirma(key, GATEWAY_PATH_CHECK, raw)
+    reason = 'NETWORK'
+    const response = await fetcher(ORIGIN + GATEWAY_PATH_CHECK, { method: 'POST', redirect: 'manual', cache: 'no-store', signal,
+      headers: { 'Content-Type': 'application/json', [GATEWAY_SIGNATURE_HEADER]: signature }, body: raw })
+    if (response.status !== 200) {
       const status = response.status
-      reason = status >= 300 && status < 400 ? 'REDIRECT'
-        : [400, 401, 403, 404, 429].includes(status) ? 'HTTP_' + status
-          : status >= 500 && status < 600 ? 'HTTP_5XX' : 'HTTP_OTHER'
-      await response.body?.cancel()
-      throw Error('Consulta rechazada')
+      reason = status >= 300 && status < 400 ? 'REDIRECT' : [400, 401, 403, 409, 429, 503].includes(status) ? 'HTTP_' + status : 'HTTP_OTHER'
+      await response.body?.cancel(); throw Error('Pasarela no confirmada')
     }
     reason = 'RESPONSE_INVALID'
-    try { return await readJson(response, max, signal) }
-    catch (error) { if (error instanceof SyntaxError) reason = 'JSON_INVALID'; throw error }
-  }
-  try {
-    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN || '')) throw Error('Credencial no válida')
-    const config = await consult('WEB_CONFIG', ORIGIN + '/api/telegram/config', 8192)
-    if (config.ok !== true || !username(config.username)) throw Error('Configuración no válida')
-    // getMe sólo identifica la credencial. No consulta chats ni envía mensajes.
-    // El token va en la URL exigida por Telegram; nunca se imprime ni se propaga
-    // a redirecciones, a excepciones o a un proceso hijo.
-    const bot = await consult('BOT_GETME', 'https://api.telegram.org/bot' + env.TELEGRAM_BOT_TOKEN + '/getMe', 16384)
-    if (bot.ok !== true || bot.result?.is_bot !== true || !Number.isSafeInteger(bot.result?.id) || bot.result.id <= 0 ||
-      !username(bot.result.username)) throw Error('Identidad no válida')
-    // Sólo el diagnóstico explícito recibe estos dos nombres públicos validados.
-    // El despliegue normal no pasa este callback ni imprime metadatos del bot.
-    io.publicIdentity?.({ expectedUsername: config.username, credentialUsername: bot.result.username })
-    if (bot.result.username.toLowerCase() !== config.username.toLowerCase()) { reason = 'IDENTITY_MISMATCH'; throw Error('Identidad distinta') }
-    return true
+    if (!/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') || '')) throw Error('Formato no confirmado')
+    const received = await readJson(response, 4096, signal, true)
+    reason = 'SIGNATURE_INVALID'
+    if (!await gatewayVerifica(key, GATEWAY_PATH_CHECK, received, response.headers.get(GATEWAY_SIGNATURE_HEADER), 'response')) throw Error('Firma no confirmada')
+    reason = 'RESPONSE_INVALID'
+    const data = JSON.parse(received)
+    if (received !== gatewayCanonico(data)) throw Error('Respuesta no canónica')
+    const checked = gatewayValidaRespuesta(data, body, digest, now())
+    if (!checked || checked.op !== 'check') throw Error('Respuesta no confirmada')
+    reason = 'WORKER_PROOF_INVALID'
+    if (!await gatewayValidaChallenge(key, checked.worker, body.nonce, io.expectedVersion, now()) || checked.worker.workerVersion !== checked.workerVersion) throw Error('Worker no confirmado')
+    io.publicIdentity?.({ expectedUsername: checked.bot.expectedUsername, credentialUsername: checked.bot.credentialUsername })
+    return { ok: true, versionId: checked.workerVersion, revision: checked.revision }
   } catch {
-    // Sólo se incluyen códigos elegidos aquí: ninguna excepción, URL, respuesta
-    // o identidad recibida se incorpora al mensaje, al stack ni a cause.
-    throw Error('No se pudo confirmar que la credencial de CI pertenece al bot de la web [' + phase + '_' + (signal.aborted ? 'TIMEOUT' : reason) + ']')
+    const code = 'GATEWAY_' + (signal.aborted ? 'TIMEOUT' : reason)
+    throw Object.assign(Error('No se pudo confirmar la pasarela del bot de la web [' + code + ']'), { code })
   }
 }
 async function cloudflare(env, path, fetcher) {
@@ -105,9 +106,10 @@ function checkConfig(raw) {
     JSON.stringify(raw.migrations) !== JSON.stringify([{ tag: 'v1', new_sqlite_classes: ['DisponibilidadUsuario'] }])) throw Error('Configuración privada SQLite de disponibilidad no válida')
 }
 export async function deployDisponibilidad(env = process.env, io = {}) {
-  const enabled = flag(env.DISPONIBILIDAD_ENABLED)
+  const requestedEnabled = flag(env.DISPONIBILIDAD_ENABLED)
+  let enabled = requestedEnabled, state = requestedEnabled ? 'ready' : 'paused', reason = null
   if (env.GITHUB_ACTIONS !== 'true' || env.GITHUB_REPOSITORY !== DATA_REPOSITORY || !/^[a-f0-9]{40}$/.test(env.VALIDATED_SHA || '')) throw Error('Despliegue de disponibilidad fuera del CI autorizado')
-  if (enabled && !/^\d+:[A-Za-z0-9_-]{20,}$/.test(env.TELEGRAM_BOT_TOKEN || '')) throw Error('Falta la credencial del bot para activar disponibilidad')
+  let gatewayKey
   const root = resolve(import.meta.dirname, '..'), config = resolve(root, 'wrangler.disponibilidad.jsonc'), raw = readConfig(config)
   checkConfig(raw)
   let checkout
@@ -121,11 +123,18 @@ export async function deployDisponibilidad(env = process.env, io = {}) {
   await assertMain()
   const ci = await api('/repos/' + DATA_REPOSITORY + '/actions/workflows/ci.yml/runs?branch=main&status=success&head_sha=' + env.VALIDATED_SHA + '&per_page=10', { token: env.GH_TOKEN })
   if (!ci.workflow_runs?.some(run => run.head_sha === env.VALIDATED_SHA && run.head_branch === 'main' && run.conclusion === 'success' && ['push', 'workflow_run', 'workflow_dispatch'].includes(run.event))) throw Error('Falta CI verde del commit exacto')
-  if (enabled) await (io.bot || verificaBotDisponibilidad)(env, { fetch: io.fetch })
+  if (requestedEnabled) {
+    try { await (io.bot || verificaBotDisponibilidad)(env, { fetch: io.fetch }) }
+    catch (error) { enabled = false; state = 'degraded'; reason = safeReason(error) }
+  }
+  if (state !== 'degraded') {
+    try { gatewayKey = await derivaGatewayKey(env.CRON_TOKEN) }
+    catch { enabled = false; state = 'degraded'; reason = 'GATEWAY_CREDENTIAL_INVALID' }
+  }
   const exists = await (io.exists || disponibilidadExiste)(env)
   const cli = resolve(dirname(createRequire(import.meta.url).resolve('wrangler/package.json')), 'bin/wrangler.js')
   const childEnv = { ...env, CI: 'true', WRANGLER_SEND_METRICS: 'false', WRANGLER_LOG: 'warn', WRANGLER_WRITE_LOGS: 'false' }
-  for (const name of ['TELEGRAM_BOT_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN', 'DATA_APP_PRIVATE_KEY']) delete childEnv[name]
+  for (const name of ['CRON_TOKEN', 'DISPONIBILIDAD_GATEWAY_KEY', 'TELEGRAM_BOT_TOKEN', 'GH_TOKEN', 'GITHUB_TOKEN', 'DATA_APP_PRIVATE_KEY']) delete childEnv[name]
   const run = io.run || spawnSync
   const command = (args, input) => {
     let result
@@ -141,19 +150,24 @@ export async function deployDisponibilidad(env = process.env, io = {}) {
     // Una primera instalación no recibe secretos ni puede enviar mensajes.
     // En actualizaciones no se apaga el Worker previo como paso intermedio.
     if (!exists) { await assertMain(); write('false'); command(['deploy', '--config', temp]) }
-    if (enabled) {
-      write(exists ? 'true' : 'false')
-      command(['secret', 'bulk', '--config', temp], JSON.stringify({ TELEGRAM_BOT_TOKEN: env.TELEGRAM_BOT_TOKEN }))
+    // La fase pausada prepara sólo la clave derivada, nunca la clave del bot.
+    // Para activar, el preflight anterior debe probar la misma clave en Pages y Worker.
+    if (state !== 'degraded') {
+      await assertMain()
+      write(exists ? String(enabled) : 'false')
+      command(['secret', 'bulk', '--config', temp], JSON.stringify({ DISPONIBILIDAD_GATEWAY_KEY: gatewayKey }))
     }
     await assertMain()
     if (exists || enabled) { write(String(enabled)); command(['deploy', '--config', temp]) }
     const versionId = await (io.version || disponibilidadVersion)(env)
     if (!uuid(versionId)) throw Error('Versión de disponibilidad no válida')
-    return { worker: WORKER, revision: env.VALIDATED_SHA, enabled, versionId }
+    return { worker: WORKER, revision: env.VALIDATED_SHA, requestedEnabled, enabled, state, reason, versionId }
   } finally { try { unlinkSync(temp) } catch (error) { if (error.code !== 'ENOENT') throw error } }
 }
 export async function verificaDisponibilidad(env = process.env, versionId, io = {}) {
   const enabled = flag(env.DISPONIBILIDAD_ENABLED)
+  const state = env.DISPONIBILIDAD_STATE || (enabled ? 'ready' : 'paused')
+  if (!['ready', 'paused', 'degraded'].includes(state) || enabled && state !== 'ready' || !enabled && state === 'ready') throw Error('Estado efectivo de disponibilidad no válido')
   if (!uuid(versionId)) throw Error('Versión esperada de disponibilidad no válida')
   const fetcher = io.fetch || fetch, sleep = io.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)))
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -161,7 +175,18 @@ export async function verificaDisponibilidad(env = process.env, versionId, io = 
       const signal = AbortSignal.timeout(10000)
       const response = await fetcher(ORIGIN + '/api/telegram/disponibilidad/config', { cache: 'no-store', redirect: 'manual', signal })
       const data = await readJson(response, 8192, signal)
-      if (data.serviceVersion === versionId && data.manageAvailable === true && data.available === enabled) return { versionId, enabled }
+      if (data.serviceVersion === versionId && data.manageAvailable === true && data.serviceEnabled === enabled && data.available === enabled) {
+        if (state === 'degraded') return { versionId, enabled, state, reason: 'GATEWAY_UNCONFIRMED' }
+        try {
+          await (io.bot || verificaBotDisponibilidad)(env, { fetch: fetcher, expectedVersion: versionId })
+          return { versionId, enabled, state, reason: null }
+        } catch (error) {
+          // A paused, version-confirmed service cannot send. Keep independent
+          // data publications flowing and report that its connection is unready.
+          if (!enabled) return { versionId, enabled, state: 'degraded', reason: safeReason(error) }
+          throw error
+        }
+      }
     } catch { /* Se espera la propagación, sin crear objetos ni enviar mensajes. */ }
     if (attempt < 5) await sleep(10000)
   }
@@ -173,10 +198,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     console.log(JSON.stringify({ event: 'disponibilidad-bot-check', ok: true }))
   } else if (process.argv[2] === '--verify' && process.argv.length === 4) {
     const result = await verificaDisponibilidad(process.env, process.argv[3])
+    if (result.state === 'degraded') console.log('::warning::Disponibilidad pausada: conexión no confirmada [' + result.reason + ']. El resto de datos puede actualizarse.')
     console.log(JSON.stringify({ event: 'disponibilidad-health', ...result }))
   } else if (process.argv.length === 2) {
     const result = await deployDisponibilidad()
-    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'version_id=' + result.versionId + '\n')
+    if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, 'version_id=' + result.versionId + '\nenabled=' + result.enabled + '\nstate=' + result.state + '\n')
+    if (result.state === 'degraded') console.log('::warning::Disponibilidad pausada: conexión no confirmada [' + result.reason + ']. Se conserva la clave existente y no se habilitan envíos.')
     console.log(JSON.stringify({ event: 'disponibilidad-deploy', ...result }))
   } else throw Error('Argumentos de publicación de disponibilidad no válidos')
 }

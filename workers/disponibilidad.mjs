@@ -1,11 +1,17 @@
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers'
 import { DISPONIBILIDAD_CONSENTIMIENTO, DISPONIBILIDAD_INTERVALO, DISPONIBILIDAD_VENTANA, DISPONIBILIDAD_DIARIO_ESPERA, DISPONIBILIDAD_CAMBIOS_DIA, DISPONIBILIDAD_RETENCION,
-  disponibilidadSolicitud, disponibilidadMadrid, disponibilidadProximoDiario, disponibilidadClaveEvento, disponibilidadCifraVigente, disponibilidadMensaje, disponibilidadEnviar, disponibilidadSeudonimo } from '../scripts/lib/disponibilidad.mjs'
+  disponibilidadSolicitud, disponibilidadMadrid, disponibilidadProximoDiario, disponibilidadClaveEvento, disponibilidadCifraVigente, disponibilidadSeudonimo } from '../scripts/lib/disponibilidad.mjs'
 import { cargaDisponibilidad } from '../scripts/lib/disponibilidad-fuentes.mjs'
+import { gatewayDigest, gatewayValidaSolicitud, gatewayEnviar, gatewayChallenge as pruebaGateway } from '../scripts/lib/disponibilidad-gateway.mjs'
 
 const modes = ['diario', 'temporal']
 const answer = (status, data) => ({ status, ...data })
 const failure = (error, status = 503) => answer(status, { ok: false, error })
+const keyReady = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value)
+const versionReady = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value)
+const gatewayFields = ['chat', 'modo', 'avisoId', 'version', 'event', 'attempt', 'workerVersion', 'nonce', 'issuedAt', 'expiresAt', 'digest']
+const claimValid = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === gatewayFields.length && Object.keys(value).every(key => gatewayFields.includes(key)) &&
+  Number.isSafeInteger(value.chat) && value.chat > 0 && modes.includes(value.modo) && typeof value.event === 'string' && value.event.length <= 50 && typeof value.digest === 'string' && /^[a-f0-9]{64}$/.test(value.digest)
 
 /** Un objeto por chat: consentimiento, baja y reserva se coordinan juntos.
  * No utiliza KV como cerrojo ni mantiene un bloqueo durante las descargas. */
@@ -18,11 +24,11 @@ export class DisponibilidadUsuario extends DurableObject {
   }
   now() { return Date.now() }
   source(item) { return cargaDisponibilidad(item) }
-  send(chat, text) { return disponibilidadEnviar(this.env.TELEGRAM_BOT_TOKEN, chat, text) }
+  send(body) { return gatewayEnviar(this.env.DISPONIBILIDAD_GATEWAY_KEY, body) }
   #read(key) { const row = this.ctx.storage.sql.exec('SELECT valor FROM estado WHERE clave = ?', key).toArray()[0]; return row ? JSON.parse(row.valor) : null }
   #put(key, value) { this.ctx.storage.sql.exec('INSERT INTO estado (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor', key, JSON.stringify(value)) }
   #delete(key) { this.ctx.storage.sql.exec('DELETE FROM estado WHERE clave = ?', key) }
-  #configured() { return this.env.DISPONIBILIDAD_ENABLED === 'true' && typeof this.env.TELEGRAM_BOT_TOKEN === 'string' && this.env.TELEGRAM_BOT_TOKEN.length > 0 }
+  #configured() { return this.env.DISPONIBILIDAD_ENABLED === 'true' && keyReady(this.env.DISPONIBILIDAD_GATEWAY_KEY) && versionReady(this.env.WORKER_VERSION?.id) }
   #meta(chat, create = true) {
     if (!Number.isSafeInteger(chat) || chat <= 0) throw Error('invalid_chat')
     let meta = this.#read('meta')
@@ -121,6 +127,21 @@ export class DisponibilidadUsuario extends DurableObject {
     }
     return answer(200, { ok: true, dryRun: true, revisados, vigentes, disponibles, errores, enviados: 0 })
   }
+  claimGateway(input) {
+    if (!this.#configured() || !claimValid(input)) return false
+    return this.ctx.storage.transactionSync(() => {
+      const now = this.now(), meta = this.#meta(input.chat, false), item = this.#read('aviso:' + input.modo), receipt = this.#read('recibo:' + input.event)
+      if (!meta || !item?.activo || item.id !== input.avisoId || item.id !== input.version || item.consentimiento !== DISPONIBILIDAD_CONSENTIMIENTO ||
+        input.workerVersion !== this.env.WORKER_VERSION.id || receipt?.estado !== 'intento' || receipt.claimed || !receipt.gateway ||
+        gatewayFields.some(key => receipt.gateway[key] !== input[key]) || now >= input.expiresAt || input.issuedAt > now + 1000 ||
+        input.expiresAt - input.issuedAt > 30000 || input.expiresAt <= input.issuedAt ||
+        input.event !== disponibilidadClaveEvento(item, now) || now >= (input.modo === 'temporal' ? item.hasta : item.limite)) return false
+      // Punto de autorización duradero. Un reintento HTTP o una segunda llamada
+      // concurrente nunca obtiene otra autorización para el mismo intento.
+      this.#put('recibo:' + input.event, { ...receipt, claimed: true })
+      return true
+    })
+  }
   #finish(item, state, now) {
     const current = this.#read('aviso:' + item.modo)
     if (!current || current.id !== item.id) return
@@ -132,6 +153,9 @@ export class DisponibilidadUsuario extends DurableObject {
     if (!item?.activo || item.proxima > now) return
     if (mode === 'temporal' && (now >= item.hasta || item.comprobaciones >= 12)) { this.#finish(item, 'vencido', now); return }
     const key = disponibilidadClaveEvento(item, now), receipt = this.#read('recibo:' + key)
+    // Otra alarma puede observar el HTTP aún en vuelo. No cancelar el aviso
+    // mientras Pages está a tiempo de reclamar su único intento reservado.
+    if (receipt?.estado === 'intento' && receipt.gateway && now < receipt.gateway.expiresAt) return
     if (receipt && ['intento', 'incierto', 'enviado'].includes(receipt.estado)) { this.#finish(item, receipt.estado === 'enviado' ? 'enviado' : 'incierto', now); return }
     const day = disponibilidadMadrid(now).fecha
     // No recupera un resumen de ayer ni prolonga la ventana al reiniciar.
@@ -153,20 +177,40 @@ export class DisponibilidadUsuario extends DurableObject {
     if (after >= limit) { this.#finish(item, mode === 'temporal' ? 'vencido' : 'fuente_no_disponible', after); return }
     if (!point || point.id !== item.lugarId || point.fuente !== item.fuente || point.objetivo !== item.objetivo || !disponibilidadCifraVigente(point, after)) { this.#put('aviso:' + mode, { ...current, estado: 'fuente_no_disponible' }); return }
     if (mode === 'temporal' && point.cantidad === 0) { this.#put('aviso:' + mode, { ...current, estado: 'sin_disponibilidad' }); return }
-    // No hay await entre esta reserva duradera y el comienzo de sendMessage.
-    // La cancelación durante una descarga sí puede intercalarse y queda
-    // comprobada arriba. Un mensaje ya iniciado no puede retirarse.
+    const meta = this.#read('meta')
+    const body = { schema: 1, environment: 'production', op: 'send', nonce: crypto.randomUUID(), issuedAt: after,
+      expiresAt: Math.min(after + 30000, limit, Date.parse(point.caduca)), chat: meta.chat, modo: mode, avisoId: item.id, version: item.id,
+      event: key, attempt: crypto.randomUUID(), workerVersion: this.env.WORKER_VERSION.id, fuente: item.fuente, lugarId: item.lugarId, objetivo: item.objetivo,
+      ficha: { nombre: point.nombre, lat: point.lat, lon: point.lon, cantidad: point.cantidad, fechaDato: point.fechaDato, caduca: point.caduca } }
+    if (!gatewayValidaSolicitud(body, 'send', after)) return
+    const digest = await gatewayDigest(body), gateway = Object.fromEntries(gatewayFields.map(field => [field, field === 'digest' ? digest : body[field]]))
+    // El hash puede ceder el turno: repetir las comprobaciones antes de reservar.
+    // Pages deberá reclamar además esta autorización exacta en el mismo objeto.
     let reserved = false
     this.ctx.storage.transactionSync(() => {
-      const active = this.#read('aviso:' + mode), saved = this.#read('recibo:' + key)
-      if (!active?.activo || active.id !== item.id || saved && ['intento', 'enviado', 'incierto'].includes(saved.estado)) return
-      this.#put('recibo:' + key, { estado: 'intento', intento: after, caduca: after + DISPONIBILIDAD_RETENCION }); reserved = true
+      const active = this.#read('aviso:' + mode), saved = this.#read('recibo:' + key), latest = this.#read('meta'), ready = this.now()
+      if (!this.#configured() || !active?.activo || active.id !== item.id || latest?.chat !== meta.chat || ready >= body.expiresAt ||
+        !disponibilidadCifraVigente(point, ready) || saved && ['intento', 'enviado', 'incierto'].includes(saved.estado)) return
+      this.#put('recibo:' + key, { estado: 'intento', intento: after, caduca: after + DISPONIBILIDAD_RETENCION, gateway, claimed: false }); reserved = true
     })
     if (!reserved) return
-    const meta = this.#read('meta'), result = await this.send(meta.chat, disponibilidadMensaje(item, point)), finished = this.now()
-    this.#put('recibo:' + key, { estado: result.estado === 'reintentar' ? 'rechazado' : result.estado, intento: after, caduca: after + DISPONIBILIDAD_RETENCION,
-      ...(result.estado === 'reintentar' ? { reintentarDesde: finished + Math.max(DISPONIBILIDAD_INTERVALO, (result.espera || 300) * 1000) } : {}) })
-    if (result.estado === 'baja') { await this.cancelar(meta.chat); return }
+    const delivered = await this.send(body), finished = this.now()
+    let result = null
+    this.ctx.storage.transactionSync(() => {
+      const saved = this.#read('recibo:' + key)
+      if (saved?.gateway?.attempt !== body.attempt || saved.gateway.digest !== digest) return
+      result = saved.claimed === true ? delivered : { estado: 'incierto' }
+      this.#put('recibo:' + key, { estado: result.estado === 'reintentar' ? 'rechazado' : result.estado, intento: after, caduca: after + DISPONIBILIDAD_RETENCION,
+        gateway, claimed: saved.claimed === true,
+        ...(result.estado === 'reintentar' ? { reintentarDesde: finished + Math.max(DISPONIBILIDAD_INTERVALO, (result.espera || 300) * 1000) } : {}) })
+      // Un rechazo antiguo no borra un consentimiento posterior ni el otro modo.
+      if (result.estado === 'baja' && this.#read('aviso:' + mode)?.id === item.id) {
+        this.#delete('aviso:' + mode)
+        const latest = this.#read('meta')
+        if (latest) this.#put('meta', { ...latest, version: crypto.randomUUID(), cambiado: finished })
+      }
+    })
+    if (!result || result.estado === 'baja') return
     if (result.estado === 'reintentar') {
       const active = this.#read('aviso:' + mode)
       if (active?.id === item.id) {
@@ -196,12 +240,14 @@ export class DisponibilidadUsuario extends DurableObject {
 export default class DisponibilidadServicio extends WorkerEntrypoint {
   estado() {
     return { schema: 1, revision: 'disponibilidad-v1', versionId: this.env.WORKER_VERSION?.id || null,
-      habilitado: this.env.DISPONIBILIDAD_ENABLED === 'true', configurado: !!(this.env.DISPONIBILIDAD && this.env.TELEGRAM_BOT_TOKEN) }
+      gatewayRevision: 'disponibilidad-gateway-v1', habilitado: this.env.DISPONIBILIDAD_ENABLED === 'true', configurado: !!(this.env.DISPONIBILIDAD && keyReady(this.env.DISPONIBILIDAD_GATEWAY_KEY) && versionReady(this.env.WORKER_VERSION?.id)) }
   }
+  async gatewayChallenge(input) { return pruebaGateway(this.env.DISPONIBILIDAD_GATEWAY_KEY, input, this.env.WORKER_VERSION?.id) }
   async #usuario(chat) { return this.env.DISPONIBILIDAD.getByName(await disponibilidadSeudonimo(chat)) }
   async leer(chat) { return (await this.#usuario(chat)).leer(chat) }
   async guardar(chat, mode, input) { return (await this.#usuario(chat)).guardar(chat, mode, input) }
   async cancelar(chat, mode = null) { return (await this.#usuario(chat)).cancelar(chat, mode) }
   async comprobar(chat) { return (await this.#usuario(chat)).comprobar(chat) }
+  async claimGateway(input) { return claimValid(input) ? (await this.#usuario(input.chat)).claimGateway(input) : false }
   fetch() { return new Response('Not found', { status: 404 }) }
 }

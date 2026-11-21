@@ -59,6 +59,23 @@ describe('cifra y entrega', () => {
   it('timeout, redirección y cuerpo grande son inciertos', async () => {
     for (const request of [async () => { throw Error('timeout') }, async () => new Response('', { status: 302, headers: { location: 'https://evil.invalid' } }), async () => new Response('a'.repeat(16385))]) expect((await disponibilidadEnviar('prueba', 10, 'texto', request)).estado).toBe('incierto')
   })
+  it.each([
+    [200, { ok: false, error_code: 429 }], [201, { ok: true, result: { message_id: 1, chat: { id: 10 } } }],
+    [429, { ok: false, error_code: 403 }], [403, { ok: true, error_code: 403 }],
+    [500, { ok: false, error_code: 500 }], [502, { ok: false, error_code: 429 }],
+    [200, { ok: true, result: { message_id: 1.5, chat: { id: 10 } } }],
+    [200, { ok: true, result: { message_id: 1, chat: { id: '10' } } }],
+  ])('HTTP%s o una respuesta contradictoria nunca abre reintento', async (status, body) => {
+    expect(await disponibilidadEnviar('prueba', 10, 'texto', async () => Response.json(body, { status: Number(status) }))).toEqual({ estado: 'incierto' })
+  })
+  it.each([undefined, -1, 1.5, '90', Number.MAX_SAFE_INTEGER + 1])('un retry_after inválido usa la espera conservadora: %s', async delay => {
+    const response = async () => Response.json({ ok: false, error_code: 429, parameters: { retry_after: delay } }, { status: 429 })
+    expect(await disponibilidadEnviar('prueba', 10, 'texto', response)).toEqual({ estado: 'reintentar', espera: 300 })
+  })
+  it('sólo Telegram puede confirmar la baja; un 400 distinto conserva el aviso', async () => {
+    for (const description of ['chat not found', 'user is deactivated']) expect(await disponibilidadEnviar('prueba', 10, 'texto', async () => Response.json({ ok: false, error_code: 400, description }, { status: 400 }))).toEqual({ estado: 'baja' })
+    expect(await disponibilidadEnviar('prueba', 10, 'texto', async () => Response.json({ ok: false, error_code: 400, description: 'Bad Request: message is too long' }, { status: 400 }))).toEqual({ estado: 'reintentar', espera: 300 })
+  })
   it('el límite también cancela un cuerpo que deja de llegar tras las cabeceras', async () => {
     const controller = new AbortController(), cancel = vi.fn(), timeout = vi.spyOn(AbortSignal, 'timeout').mockReturnValue(controller.signal)
     const timer = setTimeout(() => controller.abort(), 10)

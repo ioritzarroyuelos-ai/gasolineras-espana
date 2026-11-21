@@ -96,9 +96,15 @@ export async function enviarItvTelegram(bot: string, aviso: ItvAviso, dias: numb
   const text = `📅 <b>Recordatorio de ITV</b>\n\nLa fecha que tú indicaste es el <b>${aviso.fecha.split('-').reverse().join('/')}</b>: quedan ${dias === 1 ? '1 día' : '7 días'}.\n\nComprueba tu documentación y pide cita en tu estación. Esto no es una cita ni un cálculo del plazo legal.\nhttps://webapp-3ft.pages.dev/itv/\n\nPara cancelar todos los avisos del bot: /stop`
   try {
     const response = await fetch(`https://api.telegram.org/bot${encodeURIComponent(bot)}/sendMessage`, {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000), headers: { 'Content-Type': 'application/json' },
+      method: 'POST', redirect: 'manual', signal: AbortSignal.timeout(10000), headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chat_id: aviso.chat, text, parse_mode: 'HTML', disable_web_page_preview: true }),
     })
+    // Workers no admite redirect:'error'. No seguir el destino ni interpretar
+    // su cuerpo como confirmación de Telegram; tampoco repetir un envío dudoso.
+    if (response.status >= 300 && response.status < 400) {
+      await response.body?.cancel()
+      return { estado: 'incierto' }
+    }
     const data = await response.json() as { ok?: boolean; error_code?: number; parameters?: { retry_after?: number }; description?: string }
     if (response.ok && data.ok === true) return { estado: 'enviado' }
     if (data.ok !== false) return { estado: 'incierto' }

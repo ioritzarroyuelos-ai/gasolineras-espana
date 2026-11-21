@@ -163,6 +163,7 @@ describe('cron ITV separado, sin tocar datos o mensajes reales', () => {
     vi.setSystemTime(Date.parse('2027-11-21T07:15:00Z'))
     expect(await (await f.cron()).json()).toMatchObject({ ok: true, sent: 0 })
     expect(f.send).toHaveBeenCalledTimes(2)
+    expect(f.send.mock.calls[0][1]).toMatchObject({ method: 'POST', redirect: 'manual' })
   })
   it('el tope de una corrida no deja bloqueados los siguientes usuarios', async () => {
     const f = fixture(); for (let i = 1; i <= 12; i++) expect((await f.save(DATE, i)).status).toBe(200)
@@ -188,6 +189,23 @@ describe('cron ITV separado, sin tocar datos o mensajes reales', () => {
     expect(await (await f.cron()).json()).toMatchObject({ ok: false, uncertain: 1, sent: 0 })
     vi.setSystemTime(NOW + 3600000)
     expect(await (await f.cron()).json()).toMatchObject({ ok: false, uncertain: 1, sent: 0 }); expect(f.send).toHaveBeenCalledOnce()
+  })
+  it.each([301, 302, 303, 307, 308])('no sigue una redirección %s ni acepta su cuerpo como éxito, baja o permiso para reintentar', async status => {
+    for (const body of [{ ok: true }, { ok: false, error_code: 429 }, { ok: false, error_code: 403 }]) {
+      const f = fixture(); await f.save()
+      const response = new Response(JSON.stringify(body), { status, headers: { Location: 'https://example.invalid/no-enviar' } })
+      const read = vi.spyOn(response, 'json')
+      f.send.mockResolvedValueOnce(response)
+      expect(await (await f.cron()).json()).toMatchObject({ ok: false, uncertain: 1, sent: 0, errors: 0 })
+      expect(read).not.toHaveBeenCalled()
+      expect(response.body!.locked || response.bodyUsed).toBe(true)
+      expect(f.send.mock.calls[0][1]).toMatchObject({ method: 'POST', redirect: 'manual' })
+      expect(await (await f.request('GET')).json()).toMatchObject({ recordatorio: { fecha: DATE } })
+      vi.setSystemTime(NOW + 3600000)
+      expect(await (await f.cron()).json()).toMatchObject({ ok: false, uncertain: 1, sent: 0 })
+      expect(f.send).toHaveBeenCalledOnce()
+      vi.restoreAllMocks(); vi.setSystemTime(NOW)
+    }
   })
   it('si se pierde el recibo tras el envío, conserva intención y evita duplicar', async () => {
     const f = fixture(); await f.save()

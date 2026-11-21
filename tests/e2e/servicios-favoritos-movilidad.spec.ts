@@ -5,7 +5,10 @@ const scripts: Record<string, string> = {}
 test.beforeAll(async () => { for (const name of ['servicios', 'cuenta']) scripts[name] = (await build({ entryPoints: ['src/client/' + name + '.js'], bundle: true, write: false, format: 'iife', target: 'es2020' })).outputFiles[0].text })
 for (const kind of ['metro', 'camara']) test('favorito ' + kind + ' guarda sólo ubicación y comprueba que aún existe al abrirlo', async ({ page }, info) => {
   test.skip(info.config.metadata.live === true, 'Favoritos anónimos y respuestas locales de prueba.')
-  await page.setViewportSize({ width: 1280, height: 900 }); await page.clock.install({ time: NOW })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  // El servidor simulado avanza aunque la navegación sustituya el documento.
+  const serverStarted = performance.now()
+  await page.clock.install({ time: NOW })
   const metro = kind === 'metro', id = metro ? 'metro-bilbao-7' : 'camara-sct-test001', category = metro ? 'metro-bilbao' : 'camaras-cataluna'
   const town = metro ? { ine: '48020', nombre: 'Bilbao', provinciaNombre: 'Bizkaia', lat: 43.26, lng: -2.93, servicios: [] } : { ine: '08019', nombre: 'Barcelona', provinciaNombre: 'Barcelona', lat: 41.385, lng: 2.17, servicios: [] }
   const name = metro ? 'Abando' : 'Cámara de prueba', api = metro ? '/api/transporte/metro-bilbao' : '/api/camaras/cataluna'
@@ -22,7 +25,7 @@ for (const kind of ['metro', 'camara']) test('favorito ' + kind + ' guarda sólo
     if (u.pathname === '/api/localidad/' + town.ine) return route.fulfill({ json: town })
     if (u.pathname === api) {
       requests++
-      const evaluated = NOW + await page.evaluate(() => performance.now())
+      const evaluated = NOW + performance.now() - serverStarted
       const item = metro ? { id, nombre: name, lat: town.lat, lon: town.lng, limitado: false, avisos: [], llegadas: [{ llegada: iso(NOW + 60000), destino: 'Etxebarri', tipo: 'llegada_estimada', fechaParte: iso() }] } : { id, nombre: name, lat: town.lat, lon: town.lng, urlCamara: 'https://mct.gencat.cat/mct2bo/RenderService?sctidcam=test001.gif', fuenteImagen: 'SCT', horaImagen: null }
       return route.fulfill({ json: { schema: 1, redId: 'metro-bilbao', total: missing ? 0 : 1, conCoordenadas: missing ? 0 : 1, evaluadoEn: iso(evaluated), consultado: iso(), fechaDatos: iso(), caduca: iso(NOW + (metro ? 120000 : 108000000)), fechaDirectorio: iso(NOW - 3600000), estado: 'actual', directorioActual: true, warnings: [], avisos: [], items: missing ? [] : [item] } })
     }

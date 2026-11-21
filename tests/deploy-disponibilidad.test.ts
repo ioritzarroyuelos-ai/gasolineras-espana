@@ -96,6 +96,13 @@ describe('Identidad del bot antes de cualquier cambio en Cloudflare', () => {
   const identity = (changes: Record<string, unknown> = {}) => Response.json({ ok: true, result: { id: 123456, is_bot: true, username: 'espana_util_bot', ...changes } })
   const mocked = (response: () => Response) => vi.fn(async (url: string, _options: RequestInit) => url === 'https://webapp-3ft.pages.dev/api/telegram/config' ? publicConfig() : response())
   const message = 'No se pudo confirmar que la credencial de CI pertenece al bot de la web'
+  const safeError = (error: Error, code: string) => {
+    expect(error.message).toBe(message + ' [' + code + ']')
+    expect(error.cause).toBeUndefined()
+    expect(error.stack).not.toContain(botFixture)
+    expect(error.stack).not.toContain('api.telegram.org')
+    expect(JSON.stringify(error)).not.toContain(botFixture)
+  }
 
   it('compara username sin distinguir mayúsculas con dos GET de sólo lectura', async () => {
     const fetcher = mocked(() => identity())
@@ -109,35 +116,47 @@ describe('Identidad del bot antes de cualquier cambio en Cloudflare', () => {
       expect(options).not.toHaveProperty('body'); expect(options).not.toHaveProperty('headers')
     }
   })
+  it('admite el nombre público real y campos opcionales de la respuesta oficial sin cambiarlos', async () => {
+    const fetcher = vi.fn(async (url: string) => url === 'https://webapp-3ft.pages.dev/api/telegram/config'
+      ? Response.json({ ok: true, username: 'GasolinerasAlertasBot' })
+      : Response.json({ ok: true, result: { id: 1234567890123, is_bot: true, username: 'GasolinerasAlertasBot',
+        first_name: 'Gasolineras', can_join_groups: true, can_read_all_group_messages: false,
+        supports_inline_queries: false, can_connect_to_business: false, has_main_web_app: false } }))
+    expect(await verificaBotDisponibilidad(env(), { fetch: fetcher })).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
   it.each([
     { username: 'Otro_Bot' }, { username: '' }, { is_bot: false },
     { id: 0 }, { id: -1 }, { id: Number.MAX_SAFE_INTEGER + 1 }, { id: '123456' },
   ])('rechaza una identidad distinta o inválida sin crear ni actualizar recursos: %j', async changes => {
     const io = fixture(), fetcher = mocked(() => identity(changes))
-    await expect(deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher })).rejects.toThrow(message)
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
+    safeError(error, changes.username === 'Otro_Bot' ? 'BOT_GETME_IDENTITY_MISMATCH' : 'BOT_GETME_RESPONSE_INVALID')
     expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled(); expect(io.version).not.toHaveBeenCalled()
   })
   it.each([401, 302])('rechaza HTTP %s del bot sin reenviar credenciales ni reflejar respuesta', async status => {
     const io = fixture(), fetcher = mocked(() => new Response(botFixture, { status, headers: { location: 'https://example.invalid/' } }))
     const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
-    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+    safeError(error, status === 302 ? 'BOT_GETME_REDIRECT' : 'BOT_GETME_HTTP_401')
     expect(fetcher).toHaveBeenCalledTimes(2)
     expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled()
   })
   it.each(['redireccion', 'sin-configurar', 'username-invalido'])('no consulta la clave si la web devuelve %s', async mode => {
     const fetcher = vi.fn(async () => mode === 'redireccion' ? new Response(null, { status: 302, headers: { location: 'https://example.invalid/' } })
       : Response.json(mode === 'sin-configurar' ? { ok: false } : { ok: true, username: '../otro' }))
-    await expect(verificaBotDisponibilidad(env(), { fetch: fetcher })).rejects.toThrow(message)
+    const error = await verificaBotDisponibilidad(env(), { fetch: fetcher }).catch((caught: Error) => caught)
+    safeError(error, mode === 'redireccion' ? 'WEB_CONFIG_REDIRECT' : 'WEB_CONFIG_RESPONSE_INVALID')
     expect(fetcher).toHaveBeenCalledOnce()
   })
-  it('acota la espera y transforma excepciones que contengan la URL secreta', async () => {
-    const fetcher = vi.fn((_url: string, options: RequestInit) => new Promise<Response>((_resolve, reject) => {
+  it.each(['WEB_CONFIG', 'BOT_GETME'])('acota la espera de %s y transforma excepciones con la URL secreta', async phase => {
+    const fetcher = vi.fn((url: string, options: RequestInit) => phase === 'BOT_GETME' && url === 'https://webapp-3ft.pages.dev/api/telegram/config'
+      ? Promise.resolve(publicConfig()) : new Promise<Response>((_resolve, reject) => {
       options.signal!.addEventListener('abort', () => reject(Error('https://api.telegram.org/bot' + botFixture + '/getMe')), { once: true })
     }))
     const error = await verificaBotDisponibilidad(env(), { fetch: fetcher, timeoutMs: 20 }).catch((caught: Error) => caught)
-    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+    safeError(error, phase + '_TIMEOUT')
     expect(fetcher.mock.calls[0][1].signal!.aborted).toBe(true)
-    expect(fetcher).toHaveBeenCalledOnce()
+    expect(fetcher).toHaveBeenCalledTimes(phase === 'WEB_CONFIG' ? 1 : 2)
   })
   it.each(['cabecera', 'cuerpo', 'json', 'ok-false'])('rechaza una respuesta %s no verificable y acotada', async mode => {
     const fetcher = mocked(() => mode === 'cabecera' ? new Response('{}', { headers: { 'content-length': '999999999' } })
@@ -145,7 +164,37 @@ describe('Identidad del bot antes de cualquier cambio en Cloudflare', () => {
         : mode === 'json' ? new Response(botFixture)
           : Response.json({ ok: false, description: botFixture }))
     const error = await verificaBotDisponibilidad(env(), { fetch: fetcher }).catch((caught: Error) => caught)
-    expect(error.message).toBe(message); expect(error.message).not.toContain(botFixture)
+    safeError(error, mode === 'json' ? 'BOT_GETME_JSON_INVALID' : 'BOT_GETME_RESPONSE_INVALID')
+  })
+  it.each(['WEB_CONFIG', 'BOT_GETME'])('no copia mensajes, causas ni códigos externos de un fallo de red en %s', async phase => {
+    const io = fixture(), fetcher = vi.fn(async (url: string) => {
+      if (phase === 'BOT_GETME' && url === 'https://webapp-3ft.pages.dev/api/telegram/config') return publicConfig()
+      throw Object.assign(Error('https://api.telegram.org/bot' + botFixture + '/getMe', { cause: botFixture }), { code: botFixture })
+    })
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
+    safeError(error, phase + '_NETWORK')
+    expect(fetcher).toHaveBeenCalledTimes(phase === 'WEB_CONFIG' ? 1 : 2)
+    expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled(); expect(io.version).not.toHaveBeenCalled()
+  })
+  it.each([
+    ['WEB_CONFIG', 401, 'HTTP_401'], ['WEB_CONFIG', 503, 'HTTP_5XX'], ['WEB_CONFIG', 307, 'REDIRECT'],
+    ['BOT_GETME', 400, 'HTTP_400'], ['BOT_GETME', 403, 'HTTP_403'], ['BOT_GETME', 404, 'HTTP_404'],
+    ['BOT_GETME', 429, 'HTTP_429'], ['BOT_GETME', 502, 'HTTP_5XX'], ['BOT_GETME', 418, 'HTTP_OTHER'],
+  ])('clasifica %s HTTP %s sin copiar cabeceras ni cuerpo y sin tocar Cloudflare', async (phase, status, code) => {
+    const io = fixture(), fetcher = vi.fn(async (url: string) => phase === 'BOT_GETME' && url === 'https://webapp-3ft.pages.dev/api/telegram/config'
+      ? publicConfig() : new Response(botFixture, { status: Number(status), statusText: botFixture,
+        headers: { location: 'https://example.invalid/' + botFixture } }))
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
+    safeError(error, phase + '_' + code)
+    expect(fetcher).toHaveBeenCalledTimes(phase === 'WEB_CONFIG' ? 1 : 2)
+    expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled(); expect(io.version).not.toHaveBeenCalled()
+  })
+  it('distingue JSON inválido de la web sin consultar Telegram ni tocar Cloudflare', async () => {
+    const io = fixture(), fetcher = vi.fn(async () => new Response(botFixture))
+    const error = await deployDisponibilidad(env(), { ...io, bot: undefined, fetch: fetcher }).catch((caught: Error) => caught)
+    safeError(error, 'WEB_CONFIG_JSON_INVALID')
+    expect(fetcher).toHaveBeenCalledOnce()
+    expect(io.exists).not.toHaveBeenCalled(); expect(io.run).not.toHaveBeenCalled(); expect(io.version).not.toHaveBeenCalled()
   })
 })
 

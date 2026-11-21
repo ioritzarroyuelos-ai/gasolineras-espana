@@ -20,6 +20,7 @@ nacional ni que cada establecimiento haya sido comprobado personalmente.
 | H | Integrado con F, J y K; pendiente de publicación conjunta. | Accesos visibles a fuentes implementadas y separación de sus coberturas respecto de OSM. |
 | J | Integrado con F; pendiente de publicación conjunta. | Filtros de plazas libres vigentes y existencia de capacidad PMR publicada. |
 | K | Integrado con F; pendiente de publicación y primer ciclo del nuevo índice. | Favoritos de refugios y salas con identidad actual verificada. |
+| I | Integrado con F/H/J/K; pendiente de vista previa remota, publicación y primeros ciclos automáticos. | Servicios a 5 km del punto de referencia municipal de AEMET, hasta 12 fichas cercanas y recuentos por categoría; no se atribuyen al término municipal. |
 
 Este estado es una fotografía de la revisión, no un monitor de despliegues.
 Para dar por publicada una entrega hay que registrar su versión y comprobar la
@@ -168,3 +169,12 @@ equipamientos, listados completos, cuentas, navegación y respuestas tardías.
 Incluyen vistas de 320, 390 y 1.280 píxeles. El análisis local de secretos del
 cambio no detectó filtraciones. Estas pruebas no sustituyen el primer ciclo
 real de aparcamientos ni la regeneración de identidades tras publicar.
+
+Con I incorporado, la suite conjunta pasa 2.718 pruebas en 172 archivos, con
+TypeScript y compilación correctos. Sus cinco recorridos controlados y el
+ensayo real de Madrid, Durango y Ceuta pasan; los cuatro recorridos del
+directorio se repitieron para comprobar el nuevo acceso municipal. La salida
+del productor de prueba tiene 8.107 fichas y 15 centros sin resultados, sin
+editar los datos públicos. La medición local completa incluye infraestructura
+de desarrollo y no acredita el límite gratuito: se exige comprobar la vista
+previa remota antes de publicar. Véase [servicios-municipales.md](servicios-municipales.md).

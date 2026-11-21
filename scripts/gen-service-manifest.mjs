@@ -8,6 +8,7 @@ import { validaServiciosIndex } from './lib/servicios.mjs'
 import { movilidadItems } from './lib/movilidad-estado.mjs'
 import { serviciosPublicosItems } from './lib/servicios-publicos-estado.mjs'
 import { aparcamientosItems } from './lib/aparcamientos-estado.mjs'
+import { estadoDerivacionMunicipal, estadoMaestroMunicipal } from './lib/servicios-municipales-estado.mjs'
 const root = resolve(import.meta.dirname, '..', 'public', 'data')
 function read(file) { try { return JSON.parse(readFileSync(resolve(root, file), 'utf8')) } catch { return null } }
 const item = (name, updatedAt, count, issue) => ({ name, updatedAt: updatedAt || null, count: count || 0, ...(issue ? { issue } : {}) })
@@ -63,6 +64,8 @@ const elecciones = ELECCIONES.map(e => {
   return item(e.nombre, p?.ultimaComprobacionOk, p ? 1 : 0, avisos.join('; ') || undefined)
 })
 const services = [
+  { id: 'municipios', name: 'Puntos de referencia de municipios', maxAgeHours: 30, items: estadoMaestroMunicipal(read('tiempo/municipios-estado.json'), read('tiempo/municipios.json')) },
+  { id: 'servicios-municipales', name: 'Servicios por municipio', maxAgeHours: 30, items: estadoDerivacionMunicipal(read('servicios-municipales/index.json')) },
   { id: 'transporte', name: 'Transporte y tráfico', maxAgeHours: 30, items: movilidadItems(read('transporte/fuentes.json'), read('transporte/metro-bilbao.json')) },
   { id: 'servicios', name: 'Servicios cerca de ti', maxAgeHours: 30, items: [item('Comprobación del directorio', directorio?.ts, directorio?.total, directorio && Date.now() - Date.parse(directorio.fechaDatos) > 72 * 3600000 ? 'El extracto de OpenStreetMap tiene más de 72 horas: ' + directorio.fechaDatos : undefined), ...serviciosPublicosItems(read('servicios-publicos/index.json')), ...aparcamientosItems(read('aparcamientos/index.json'))] },
   { id: 'gasolineras', name: 'Gasolineras', maxAgeHours: 24, items: [item('Precios del Ministerio', gas?.fetchedAt, gas?.stationCount), item('Histórico de precios', history?.generated_at, history?.days, historyGaps.length ? 'Sin captura comprobada: '+historyGaps.join(', ') : undefined), item('Directorio de recarga eléctrica', chargers?.ts, chargers?.count)] },

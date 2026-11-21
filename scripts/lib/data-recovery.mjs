@@ -9,6 +9,8 @@ export const DATA_JOBS = [
   {kind:'politica', service:'politica', maxHours:30, scheduleUtc:['04:20']},
   {kind:'deportes', service:'deportes', maxHours:24, intervalHours:1},
   {kind:'servicios', service:'servicios', item:'Comprobación del directorio', maxHours:30, scheduleUtc:['08:17']},
+  {kind:'municipios', workflow:'gen-tiempo-municipios.yml', service:'municipios', item:'Maestro de AEMET', maxHours:30, scheduleUtc:['08:07']},
+  {kind:'servicios-municipales', service:'servicios-municipales', item:'Derivación del directorio', maxHours:30, scheduleUtc:['09:27']},
   {kind:'transporte', service:'transporte', item:'Comprobación de movilidad', maxHours:30, scheduleUtc:['08:47']},
   {kind:'servicios-publicos', service:'servicios', item:'Servicios públicos oficiales', maxHours:30, scheduleUtc:['08:57']},
   {kind:'aparcamientos', service:'servicios', item:'Catálogos de aparcamientos oficiales', maxHours:30, scheduleUtc:['09:07']},

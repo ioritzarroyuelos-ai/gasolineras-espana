@@ -18,6 +18,7 @@ import { registerAuthRoutes } from './routes/auth'
 import { registerHomeRoutes } from './routes/home'
 import { registerCercaRoutes } from './routes/cerca'
 import { registerServiciosRoutes } from './routes/servicios'
+import { registerServiciosMunicipalesRoutes } from './routes/servicios-municipales'
 import { registerServiciosItvRoutes } from './routes/servicios-itv'
 import { registerServiciosGuardiasRoutes } from './routes/servicios-guardias'
 import { registerBicisRoutes } from './routes/bicis'
@@ -161,6 +162,7 @@ app.use('/api/*', async (c, next) => {
 // hay shadowing con las rutas namespaced de los verticales.
 registerHomeRoutes(app)
 registerServiciosRoutes(app)
+registerServiciosMunicipalesRoutes(app)
 registerServiciosItvRoutes(app)
 registerServiciosGuardiasRoutes(app)
 registerBicisRoutes(app)

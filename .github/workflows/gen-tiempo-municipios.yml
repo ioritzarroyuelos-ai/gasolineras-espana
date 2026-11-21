@@ -1,7 +1,7 @@
 name: Gen tiempo municipios
 
 # Regenera public/data/tiempo/municipios.json desde el maestro de AEMET.
-# Manual (workflow_dispatch): se lanza cuando cambia el maestro (casi nunca).
+# Revisión diaria a las08:07UTC mediante el reloj autenticado.
 # Usa el secreto AEMET_API_KEY y publica mediante PR y comprobaciones obligatorias.
 
 on:
@@ -19,11 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: main
           persist-credentials: false
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
       - name: Generar municipios.json
+        id: maestro
+        continue-on-error: true
         env:
           AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
         run: node scripts/gen-tiempo-municipios.mjs
@@ -37,5 +40,10 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.data-token.outputs.token }}
         run: |
-          git add public/data/tiempo/municipios.json
+          git add public/data/tiempo/municipios.json public/data/tiempo/municipios-estado.json
           node scripts/publish-data.mjs municipios
+      - name: Mantener el reintento si no se pudo comprobar el maestro
+        if: steps.maestro.outcome != 'success'
+        run: |
+          echo 'Se conserva el catálogo válido. El reloj reintentará la comprobación de AEMET.'
+          exit 1

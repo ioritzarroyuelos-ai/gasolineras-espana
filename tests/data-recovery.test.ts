@@ -91,7 +91,7 @@ describe('cadencia única entre dos relojes',()=>{
         if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){counts[j.kind]++;runs=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t).toISOString()}]}
       }
     }
-    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24,servicios:1,transporte:1,'servicios-publicos':1,aparcamientos:1})
+    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24,servicios:1,transporte:1,'servicios-publicos':1,aparcamientos:1,municipios:1,'servicios-municipales':1})
   })
   it('mantiene24pasadas deportivas con colas20min y jitter de±15s',()=>{
     const j=lookup('deportes');let previous:any,count=0

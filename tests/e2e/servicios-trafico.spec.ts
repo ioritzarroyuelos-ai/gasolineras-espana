@@ -90,7 +90,7 @@ for (const width of [1280, 390]) test('capas oficiales legibles y accesibles a '
   await expect(cam).toContainText('Hora de imagen sin publicar')
   await expect(cam).toContainText('No se confirma vídeo ni imagen en directo')
   await expect(cam.locator('img,video,iframe')).toHaveCount(0)
-  await expect(cam.getByRole('button', { name: /favorito|guardar/i })).toHaveCount(0)
+  await expect(cam.getByRole('button', { name: /Guardar favorito:/i })).toHaveCount(1)
   const external = cam.getByRole('link', { name: 'Ver cámara oficial', exact: true })
   await expect(external).toHaveAttribute('href', camera.urlCamara)
   await expect(external).toHaveAttribute('target', '_blank')

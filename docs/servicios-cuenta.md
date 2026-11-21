@@ -79,8 +79,9 @@ ejecuta un envío de prueba a personas.
   evento de día completo, identificador estable y avisos 7 y 1 días antes,
   siguiendo [RFC 5545](https://www.rfc-editor.org/rfc/rfc5545). Debe importarse
   en el calendario y comprobar allí sus notificaciones. Modificarlo en la web
-  no modifica la copia importada. El bot actual sólo vincula chats con
-  gasolineras: Telegram para ITV necesita consentimiento y vínculo nuevos.
+  no modifica la copia importada. El paquete C incorpora el permiso separado
+  de Telegram para ITV, reutilizando el vínculo seguro del bot sin Google;
+  su contrato, límites y comprobaciones figuran en [telegram-itv.md](telegram-itv.md).
 - No hay cuenta AdSense, acuerdos de afiliación o reservas de pago. No se
   generan anuncios, enlaces comerciales inventados ni un panel de ingresos
   con cifras falsas. La aportación existente sólo aparece si `SUPPORT_URL` está

@@ -360,6 +360,18 @@ const HOME_MODULES = new Set(['tiempo', 'gasolineras', 'deportes', 'farmacias', 
 // Las capas oficiales se pueden recordar sin convertir sus incidencias o
 // cámaras en lugares OSM ni permitir favoritos de identidad no confirmada.
 const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'])
+function serviceFavoriteProvider(item: Record<string, unknown>): boolean {
+  const { id, categoria, lat, lon } = item
+  if (typeof id !== 'string' || typeof categoria !== 'string') return false
+  if (SERVICIO_ITV_ID.test(id)) return categoria === 'itv'
+  const inBounds = (south: number, north: number, west: number, east: number) => typeof lat === 'number' && lat >= south && lat <= north && typeof lon === 'number' && lon >= west && lon <= east
+  if (/^gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}$/.test(id)) return categoria === 'bicis-zaragoza' && inBounds(41.4, 41.9, -1.2, -0.6)
+  // Stable station/camera identities only. Platforms, departures, incident IDs
+  // and temporary guard shifts are not locations that can be synchronized.
+  if (/^metro-bilbao-\d{1,6}$/.test(id)) return categoria === 'metro-bilbao' && inBounds(43.1, 43.5, -3.2, -2.7)
+  if (/^(?:camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2})$/.test(id)) return categoria === 'camaras-cataluna' && inBounds(40.4, 42.9, 0.1, 3.4)
+  return /^osm-(?:node|way|relation)-[1-9]\d{0,15}$/.test(id) && SERVICIOS_IDS.has(categoria)
+}
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -381,10 +393,7 @@ export function isValidSyncValue(key: string, value: unknown): boolean {
         record(item) && Object.keys(item).every(field => ['id', 'nombre', 'categoria', 'lat', 'lon'].includes(field)) &&
         typeof item.id === 'string' &&
         shortText(item.nombre, 250) && item.nombre.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(item.nombre) &&
-        typeof item.categoria === 'string' && (SERVICIO_ITV_ID.test(item.id) ? item.categoria === 'itv' :
-          /^gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}$/.test(item.id) ? item.categoria === 'bicis-zaragoza' &&
-            typeof item.lat === 'number' && item.lat >= 41.4 && item.lat <= 41.9 && typeof item.lon === 'number' && item.lon >= -1.2 && item.lon <= -0.6 :
-            /^osm-(?:node|way|relation)-[1-9]\d{0,15}$/.test(item.id) && SERVICIOS_IDS.has(item.categoria)) &&
+        serviceFavoriteProvider(item) &&
         typeof item.lat === 'number' && Number.isFinite(item.lat) && item.lat >= 27 && item.lat <= 44 &&
         typeof item.lon === 'number' && Number.isFinite(item.lon) && item.lon >= -19 && item.lon <= 5) &&
         new Set(value.map(item => item.id)).size === value.length

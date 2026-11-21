@@ -1,4 +1,5 @@
 import { calendarioItv, fechaItvValida } from '../lib/itv-recordatorio.ts';
+import { iniciarItvTelegram } from './itv-telegram.js';
 
 (async () => {
   const form = document.getElementById('itv-recordatorio-form');
@@ -16,6 +17,7 @@ import { calendarioItv, fechaItvValida } from '../lib/itv-recordatorio.ts';
     download.hidden = remove.hidden = !item; download.disabled = dirty;
     summary.textContent = item ? item.nombre + ' · Fecha que indicaste: ' + new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(item.fecha + 'T12:00:00Z')) + '.' : 'Todavía no has guardado una fecha.';
     if (!dirty) message(!item ? '' : !window.EUCuenta.user ? 'Guardado en este navegador.' : window.EUCuenta.status === 'saved' ? 'Guardado en tu cuenta.' : 'Guardado en este navegador. La sincronización con tu cuenta está pendiente.');
+    window.dispatchEvent(new CustomEvent('eu:itv-fecha'));
   }
   form.addEventListener('input', () => { dirty = true; download.disabled = true; message('Guarda los cambios antes de descargar el calendario.'); });
   form.addEventListener('submit', async event => {
@@ -45,4 +47,5 @@ import { calendarioItv, fechaItvValida } from '../lib/itv-recordatorio.ts';
   window.addEventListener('storage', event => { if (event.key === 'eu-itv-recordatorio-v1' || event.key === null) draw(); });
   document.getElementById('itv-recordatorio-controles').hidden = false;
   draw();
+  void iniciarItvTelegram(api, () => dirty);
 })();

@@ -274,13 +274,17 @@
   const array = key => { try { const value = JSON.parse(read(key) || '[]'); return Array.isArray(value) ? value : []; } catch { return []; } };
   const category = value => typeof value === 'string' && /^[a-z][a-z0-9-]{0,59}$/.test(value);
   function serviceFavorite(value) {
-    if (!record(value) || typeof value.id !== 'string' || !(/^(?:osm-(?:node|way|relation)-[1-9]\d{0,15}|itv-(?:0[1-9]|[1-4]\d|5[0-2])-(?!0000)\d{4}|gbfs-zaragoza-[a-zA-Z0-9_-]{1,100})$/.test(value.id)) ||
+    if (!record(value) || typeof value.id !== 'string' || !(/^(?:osm-(?:node|way|relation)-[1-9]\d{0,15}|itv-(?:0[1-9]|[1-4]\d|5[0-2])-(?!0000)\d{4}|gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}|metro-bilbao-\d{1,6}|camara-sct-[a-zA-Z0-9_-]{1,40}|camara-terrassa-cam\d{2})$/.test(value.id)) ||
       typeof value.nombre !== 'string' || !value.nombre.trim() || value.nombre.length > 250 || /[\u0000-\u001f\u007f]/.test(value.nombre) || !category(value.categoria) ||
       !Number.isFinite(value.lat) || value.lat < 27 || value.lat > 44 || !Number.isFinite(value.lon) || value.lon < -19 || value.lon > 5) return null;
     if ((value.id.startsWith('itv-')) !== (value.categoria === 'itv')) return null;
     if ((value.id.startsWith('gbfs-zaragoza-')) !== (value.categoria === 'bicis-zaragoza')) return null;
-    if (['trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'].includes(value.categoria)) return null;
+    if ((value.id.startsWith('metro-bilbao-')) !== (value.categoria === 'metro-bilbao')) return null;
+    if ((value.id.startsWith('camara-')) !== (value.categoria === 'camaras-cataluna')) return null;
+    if (['trafico-cataluna', 'farmacias-guardia'].includes(value.categoria)) return null;
     if (value.categoria === 'bicis-zaragoza' && (value.lat < 41.4 || value.lat > 41.9 || value.lon < -1.2 || value.lon > -0.6)) return null;
+    if (value.categoria === 'metro-bilbao' && (value.lat < 43.1 || value.lat > 43.5 || value.lon < -3.2 || value.lon > -2.7)) return null;
+    if (value.categoria === 'camaras-cataluna' && (value.lat < 40.4 || value.lat > 42.9 || value.lon < 0.1 || value.lon > 3.4)) return null;
     // Sólo coordenadas públicas del lugar elegido; nunca incorporamos GPS, URLs,
     // precios u horarios del visitante a una copia sincronizada.
     return { id: value.id, nombre: value.nombre.trim(), categoria: value.categoria, lat: value.lat, lon: value.lon };

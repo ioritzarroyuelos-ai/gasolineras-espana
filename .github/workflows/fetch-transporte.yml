@@ -1,0 +1,53 @@
+name: Fetch transporte snapshot
+
+on:
+  # El reloj autenticado solicita la revisión diaria a las 08:47 UTC.
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-transporte
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Comprobar el directorio oficial de transporte
+        id: directorio
+        continue-on-error: true
+        run: node scripts/fetch-transporte.mjs
+      - name: Comprobar por separado las fuentes de movilidad
+        id: fuentes
+        continue-on-error: true
+        run: node scripts/check-fuentes-movilidad.mjs
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar datos e incidencias mediante PR validado
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+        run: |
+          git add public/data/transporte
+          node scripts/publish-data.mjs transporte
+      - name: Mantener el reintento si una fuente no respondió bien
+        if: steps.directorio.outcome != 'success' || steps.fuentes.outcome != 'success'
+        run: |
+          echo 'Una fuente sigue pendiente. Se conserva su copia válida y el reloj reintentará la consulta.'
+          exit 1

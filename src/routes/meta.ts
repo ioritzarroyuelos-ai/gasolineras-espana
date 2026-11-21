@@ -459,7 +459,7 @@ vigilar y el umbral de aviso. Con eso te enviamos el resumen diario y el listado
 cuando escribes <code>/precios</code>.</p>
 <p><strong>Base legal:</strong> tu consentimiento (lo activas tú).</p>
 <p><strong>Cómo darte de baja:</strong> escribe <code>/stop</code> al bot y
-borramos todas tus alertas al instante. Si bloqueas el bot, también dejamos de
+borramos tus suscripciones. Una entrega que ya haya empezado puede llegar todavía. Si bloqueas el bot, también dejamos de
 enviarte mensajes y limpiamos tu suscripción.</p>
 
 <h2>Reportar un precio incorrecto (opcional)</h2>
@@ -485,6 +485,8 @@ guardamos tus coordenadas asociadas a ti.</p>
 <h2>Recordatorio de ITV (opcional)</h2>
 <p>Si guardas un recordatorio, conservamos la fecha que tú indicas, un nombre corto para reconocer el vehículo y un identificador aleatorio. No pedimos matrícula ni calculamos el plazo legal. Sin sesión queda en este navegador; con Google se sincroniza en tu cuenta mediante Workers KV. Puedes quitarlo desde ITV o vaciar tus ajustes desde la cuenta.</p>
 <p>Descargar el archivo de calendario no lo envía a un proveedor. Tú decides si lo importas y activas las notificaciones. La copia importada se gestiona en tu calendario: cambiar o borrar el recordatorio aquí no modifica esa copia.</p>
+<p>Si eliges además recibir avisos de ITV por Telegram y marcas su permiso específico, guardamos en Workers KV la fecha elegida, el identificador del chat vinculado, la versión y fecha de ese consentimiento y un identificador aleatorio. No enviamos a Telegram el nombre del vehículo ni pedimos matrícula. La vinculación funciona sin Google y no activa resúmenes de gasolina. Los avisos se programan 7 días y 1 día antes, durante la mañana en horario de Madrid.</p>
+<p>Puedes cancelar sólo el aviso de ITV desde su apartado o todos los avisos con <code>/stop</code>. No se renueva al año siguiente. Los datos caducan como máximo 30 días después de la fecha indicada; las marcas técnicas de entrega, sin chat ni nombre en su contenido, caducan a los 30 días. Al cancelar quitamos la fecha y los índices pendientes; conservamos temporalmente esas marcas para evitar duplicados. Una entrega ya iniciada puede llegar y los cambios pueden tardar en propagarse entre servidores. Cambiar o quitar la fecha local o los ajustes de Google no cancela por sí solo este permiso separado de Telegram.</p>
 
 <h2>Datos técnicos y telemetría (anónimos)</h2>
 <p>Para mantener el servicio funcionando y detectar fallos recogemos información

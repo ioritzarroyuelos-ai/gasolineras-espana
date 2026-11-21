@@ -119,7 +119,7 @@ describe('shared account favorites', () => {
     }
     expect(c.remote.A[serviceStorageName]).toBeUndefined()
   })
-  it('recuerda guardias y Metro Bilbao sin guardar turnos o estaciones sin consulta individual', async () => {
+  it('recuerda guardias y Metro Bilbao sin guardar turnos o identificadores de otra fuente', async () => {
     const c = client(); await c.window.EUCuenta.ready
     const categorias = ['farmacias-guardia', 'metro-bilbao']
     await c.window.EUCuenta.servicios.guardarPreferencias({ categorias, municipios: ['48020'] })
@@ -128,6 +128,40 @@ describe('shared account favorites', () => {
       const unsupported = { ...place, id, categoria }
       expect(c.window.EUCuenta.servicios.urlFavorito(unsupported)).toBe(null)
       await expect(c.window.EUCuenta.servicios.alternarFavorito(unsupported)).rejects.toThrow()
+    }
+    expect(c.remote.A[serviceStorageName]).toBeUndefined()
+  })
+  it('guarda estaciones Metro y cámaras como lugares estables sin copiar llegadas ni imágenes', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const places = [
+      { id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 },
+      { id: 'camara-sct-N340_1', nombre: 'Cámara SCT', categoria: 'camaras-cataluna', lat: 41.4, lon: 2.1 },
+      { id: 'camara-terrassa-cam14', nombre: 'Cámara Terrassa', categoria: 'camaras-cataluna', lat: 41.56, lon: 2.01 },
+    ]
+    for (const place of places) await c.window.EUCuenta.servicios.alternarFavorito({ ...place, llegadas: ['test'], horaImagen: null, urlCamara: 'https://example.test', caduca: '2026-11-21T20:00Z' })
+    expect(c.remote.A[serviceStorageName]).toEqual(places)
+    for (const place of places) {
+      const url = new URL(c.window.EUCuenta.servicios.urlFavorito(place), 'https://webapp-3ft.pages.dev')
+      expect(url.pathname).toBe('/cerca'); expect(url.searchParams.get('servicio')).toBe(place.id); expect(url.searchParams.get('categorias')).toBe(place.categoria)
+      expect([...url.searchParams.keys()].sort()).toEqual(['categorias', 'lat', 'lon', 'servicio'])
+    }
+    c.setUser(b); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual([])
+    c.setUser(a); await c.window.EUCuenta.refresh(); expect(c.window.EUCuenta.servicios.favoritos()).toEqual(places)
+    c.failPut('network'); await c.window.EUCuenta.servicios.quitarFavorito(places[0].id)
+    c.failPut(0); await c.window.EUCuenta.refresh(); expect(c.remote.A[serviceStorageName]).toEqual(places.slice(1))
+  })
+  it('no convierte andenes, incidentes, imágenes o nombres arbitrarios en favoritos oficiales', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const metro = { id: 'metro-bilbao-7', nombre: 'Abando', categoria: 'metro-bilbao', lat: 43.261, lon: -2.927 }
+    const camera = { id: 'camara-sct-N340_1', nombre: 'Cámara', categoria: 'camaras-cataluna', lat: 41.4, lon: 2.1 }
+    const items = [
+      ...['metro-bilbao-7.1', 'metro-bilbao-1234567', 'metro-bilbao-prueba', 'osm-node-7', 'camara-sct-7'].map(id => ({ ...metro, id })),
+      ...['camara-sct-x.gif', 'camara-sct-' + 'a'.repeat(41), 'camara-terrassa-cam1', 'camara-terrassa-cam14.jpeg', 'camara-madrid-1', 'sct-123', 'osm-node-123'].map(id => ({ ...camera, id })),
+      { ...metro, categoria: 'agua-potable' }, { ...camera, categoria: 'trafico-cataluna' }, { ...camera, categoria: 'farmacias-guardia' }, { ...metro, lat: 41.4 }, { ...camera, lon: -2.9 }, { ...camera, lat: null },
+    ]
+    for (const item of items) {
+      expect(c.window.EUCuenta.servicios.urlFavorito(item)).toBeNull()
+      await expect(c.window.EUCuenta.servicios.alternarFavorito(item)).rejects.toThrow()
     }
     expect(c.remote.A[serviceStorageName]).toBeUndefined()
   })

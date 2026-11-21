@@ -1,0 +1,37 @@
+name: Telegram cron — recordatorios ITV
+run-name: "Telegram · ${{ inputs.dry_run && 'ITV comprobación sin envío' || 'recordatorios ITV' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Revisar los avisos sin enviar ni escribir nada
+        type: boolean
+        default: false
+      automatic:
+        description: Disparo del coordinador automático
+        type: boolean
+        default: false
+
+concurrency:
+  group: cron-telegram-itv
+  cancel-in-progress: false
+
+jobs:
+  recordatorios:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - name: Revisar los avisos consentidos sin forzar la entrega
+        env:
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/run-telegram-itv.mjs

@@ -57,7 +57,7 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     } finally { limited.mockRestore() }
   })
 
-  it('recupera las cinco claves de la cuenta, conservando null y sin listar KV', async () => {
+  it('recupera las ocho claves de la cuenta, conservando null y sin listar KV', async () => {
     const { env, headers, saved, kv } = await setup()
     const data = {
       gs_favs_v1: [{ id: '123', rotulo: 'Favorita' }],
@@ -72,7 +72,7 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     const res = await app.request('/api/sync', { headers }, env)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ data })
-    expect(kv.get).toHaveBeenCalledTimes(5)
+    expect(kv.get).toHaveBeenCalledTimes(8)
     expect(kv.list).not.toHaveBeenCalled()
     expect(res.headers.get('cache-control')).toBe('no-store')
   })
@@ -105,6 +105,16 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     ['espana-util-municipio', '28079'], ['espana-util-municipio', null],
     ['eu-mi-dia-v1', { version: 1, visible: [], order: ['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'] }],
     ['eu-deportes-favoritos-v1', [{ id: 'liga', nombre: 'La Liga', url: '/deportes/competicion/la-liga' }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'itv-28-2801', nombre: 'ITV Madrid', categoria: 'itv', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi Zaragoza', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88 }]],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable'], municipios: ['28079'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['agua-potable', 'itv'], municipios: ['28079'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['bicis-zaragoza'], municipios: ['50297'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['trafico-cataluna', 'camaras-cataluna'], municipios: ['08019'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['farmacias-guardia', 'metro-bilbao'], municipios: ['48020'] }],
+    ['eu-itv-recordatorio-v1', { version: 1, recordatorio: { id: '11111111-1111-4111-8111-111111111111', fecha: '2028-02-29', nombre: 'Mi coche' } }],
+    ['eu-itv-recordatorio-v1', { version: 1, recordatorio: null }],
   ])('guarda %s con su formato del cliente', async (key, value) => {
     const { env, headers, saved } = await setup()
     const res = await app.request('/api/sync/' + key, { method: 'PUT', headers, body: JSON.stringify(value) }, env)
@@ -120,6 +130,27 @@ describe('cuenta compartida y aislamiento de favoritos', () => {
     ['eu-deportes-favoritos-v1', [{ id: 'x', nombre: 'X', url: '/deportes/competicion/\\evil' }]],
     ['gs_favs_v1', { id: '123' }], ['gs_profile_v1', { litres: 0 }],
     ['gs_tg_chat_v1', '123'], ['gs_settings_v1', {}],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 40.4, lon: -3.7, url: 'https://evil.test' }]],
+    ['eu-servicios-favoritos-v1', [{ id: '../123', nombre: 'Fuente', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'inventada', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'ITV falsa', categoria: 'itv', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'itv-28-2801', nombre: 'Fuente falsa', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'itv-99-2801', nombre: 'Provincia falsa', categoria: 'itv', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'itv', lat: 41.65, lon: -0.88 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'itv-50-5001', nombre: 'ITV', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Bici', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88 }]],
+    ...['trafico-cataluna', 'camaras-cataluna'].flatMap(categoria => ['osm-node-123', 'itv-08-0801', 'gbfs-zaragoza-123', 'sct-123'].map(id =>
+      ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 41.65, lon: -0.88 }]] as [string, unknown])),
+    ...['farmacias-guardia', 'metro-bilbao'].flatMap(categoria => ['osm-node-123', 'guardia-prueba-123', 'metro-bilbao-prueba'].map(id =>
+      ['eu-servicios-favoritos-v1', [{ id, nombre: 'No es un lugar guardable', categoria, lat: 43.26, lon: -2.93 }]] as [string, unknown])),
+    ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 40.4, lon: -3.7 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'gbfs-zaragoza-123', nombre: 'Bizi', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88, bicis: 3 }]],
+    ['eu-servicios-favoritos-v1', [{ id: 'osm-node-123', nombre: 'Fuente', categoria: 'agua-potable', lat: 90, lon: -3.7 }]],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: ['inventada'], municipios: ['28079'] }],
+    ['eu-servicios-preferencias-v1', { version: 1, categorias: [], municipios: ['28079'], lat: 40.4, lon: -3.7 }],
+    ['eu-servicios-historial-v1', []],
+    ['eu-itv-recordatorio-v1', { version: 1, recordatorio: { id: '11111111-1111-4111-8111-111111111111', fecha: '2027-02-29', nombre: 'Mi coche' } }],
+    ['eu-itv-recordatorio-v1', { version: 1, recordatorio: { id: '11111111-1111-4111-8111-111111111111', fecha: '2028-02-29', nombre: 'Mi coche', matricula: 'no guardar' } }],
   ])('rechaza %s inválido sin sobrescribir lo anterior', async (key, value) => {
     const { env, headers, saved, kv } = await setup()
     saved.set('u:account-a:' + key, '"previous"')

@@ -11,7 +11,17 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { ministryFixture } from './ministry-fixture'
-test.beforeEach(async ({ page, request }, info) => { await ministryFixture(page, request, info.config.metadata.live === true) })
+test.beforeEach(async ({ page, request }, info) => {
+  // Cada navegador local representa un visitante: otras pruebas no consumen
+  // su cupo. El limitador sigue activo. Nunca enviar esta cabecera a la web real.
+  const target = new URL(String(info.project.use.baseURL))
+  if (info.config.metadata.live !== true && ['127.0.0.1', 'localhost', '[::1]'].includes(target.hostname)) {
+    await page.route(url => url.origin === target.origin && url.pathname.startsWith('/api/'), route => route.fallback({
+      headers: { ...route.request().headers(), 'cf-connecting-ip': `2001:db8:${info.parallelIndex}:${info.retry}::${info.line}` },
+    }))
+  }
+  await ministryFixture(page, request, info.config.metadata.live === true)
+})
 
 test.describe('Mapa (/gasolineras/mapa)', () => {
   test('carga el mapa con una sola cabecera común', async ({ page }) => {
@@ -100,6 +110,22 @@ test.describe('Portada gasolineras (/gasolineras/)', () => {
     const primera = page.locator('#sugs a').first()
     await expect(primera).toBeVisible({ timeout: 15_000 })
     await expect(primera).toHaveAttribute('href', /^\/gasolineras\/[a-z-]+\/[a-z0-9-]+$/)
+  })
+
+  test('el autocompletado explica un 429 y recupera la búsqueda al volver a escribir', async ({ page }) => {
+    await page.route('**/api/gasolineras/municipios', route => route.fulfill({
+      status: 429, headers: { 'Retry-After': '1' }, json: { error: 'rate limited' },
+    }), { times: 1 })
+    await page.goto('/gasolineras/')
+    // La primera consulta sale al enfocar, antes de escribir. Esperamos su
+    // mensaje para no convertir el segundo evento en un reintento simultáneo.
+    await page.locator('#q').focus()
+    await expect(page.locator('#sugs')).toContainText('Vuelve a escribir para reintentar')
+    await expect(page.locator('#sugs a')).toHaveCount(0)
+    await page.locator('#q').fill('alcorcon')
+    const primera = page.locator('#sugs a').first()
+    await expect(primera).toBeVisible({ timeout: 15_000 })
+    await expect(primera).toHaveAttribute('href', '/gasolineras/madrid/alcorcon')
   })
 
   test('sin violaciones criticas de accesibilidad (axe-core)', async ({ page }) => {

@@ -8,6 +8,10 @@
 //   3) Server emite sesion propia con signSessionJWT() -> cookie HttpOnly.
 //   4) Requests posteriores validan con verifySessionJWT().
 
+import { SERVICIOS_IDS } from '../../scripts/lib/servicios-catalogo.mjs'
+import { recordatorioItvValido } from './itv-recordatorio'
+import { SERVICIO_ITV_ID } from './servicios-itv'
+
 export const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 export const GOOGLE_ISSUERS = new Set(['https://accounts.google.com', 'accounts.google.com'])
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60  // 30 dias
@@ -343,6 +347,9 @@ export const SYNCABLE_KEYS = new Set<string>([
   'eu-deportes-favoritos-v1',
   'eu-mi-dia-v1',
   'espana-util-municipio',
+  'eu-servicios-favoritos-v1',
+  'eu-servicios-preferencias-v1',
+  'eu-itv-recordatorio-v1',
 ])
 
 export function isSyncableKey(key: string): boolean {
@@ -350,6 +357,9 @@ export function isSyncableKey(key: string): boolean {
 }
 
 const HOME_MODULES = new Set(['tiempo', 'gasolineras', 'deportes', 'farmacias', 'itv', 'politica'])
+// Las capas oficiales se pueden recordar sin convertir sus incidencias o
+// cámaras en lugares OSM ni permitir favoritos de identidad no confirmada.
+const SERVICE_PREFERENCE_CATEGORIES = new Set([...SERVICIOS_IDS, 'itv', 'bicis-zaragoza', 'trafico-cataluna', 'camaras-cataluna', 'farmacias-guardia', 'metro-bilbao'])
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -363,6 +373,27 @@ function favoriteId(value: unknown): boolean {
 /** Reject malformed snapshots without replacing the previously saved value. */
 export function isValidSyncValue(key: string, value: unknown): boolean {
   switch (key) {
+    case 'eu-itv-recordatorio-v1':
+      return record(value) && value.version === 1 && Object.keys(value).every(field => ['version', 'recordatorio'].includes(field)) &&
+        (value.recordatorio === null || recordatorioItvValido(value.recordatorio))
+    case 'eu-servicios-favoritos-v1':
+      return Array.isArray(value) && value.length <= 100 && value.every(item =>
+        record(item) && Object.keys(item).every(field => ['id', 'nombre', 'categoria', 'lat', 'lon'].includes(field)) &&
+        typeof item.id === 'string' &&
+        shortText(item.nombre, 250) && item.nombre.trim().length > 0 && !/[\u0000-\u001f\u007f]/.test(item.nombre) &&
+        typeof item.categoria === 'string' && (SERVICIO_ITV_ID.test(item.id) ? item.categoria === 'itv' :
+          /^gbfs-zaragoza-[a-zA-Z0-9_-]{1,100}$/.test(item.id) ? item.categoria === 'bicis-zaragoza' &&
+            typeof item.lat === 'number' && item.lat >= 41.4 && item.lat <= 41.9 && typeof item.lon === 'number' && item.lon >= -1.2 && item.lon <= -0.6 :
+            /^osm-(?:node|way|relation)-[1-9]\d{0,15}$/.test(item.id) && SERVICIOS_IDS.has(item.categoria)) &&
+        typeof item.lat === 'number' && Number.isFinite(item.lat) && item.lat >= 27 && item.lat <= 44 &&
+        typeof item.lon === 'number' && Number.isFinite(item.lon) && item.lon >= -19 && item.lon <= 5) &&
+        new Set(value.map(item => item.id)).size === value.length
+    case 'eu-servicios-preferencias-v1': {
+      if (!record(value) || value.version !== 1 || !Object.keys(value).every(field => ['version', 'categorias', 'municipios'].includes(field))) return false
+      const categories = value.categorias, towns = value.municipios
+      return Array.isArray(categories) && categories.length <= SERVICE_PREFERENCE_CATEGORIES.size && categories.every(id => typeof id === 'string' && SERVICE_PREFERENCE_CATEGORIES.has(id)) && new Set(categories).size === categories.length &&
+        Array.isArray(towns) && towns.length <= 12 && towns.every(id => typeof id === 'string' && /^\d{5}$/.test(id)) && new Set(towns).size === towns.length
+    }
     case 'espana-util-municipio':
       return value === null || (typeof value === 'string' && /^\d{5}$/.test(value))
     case 'eu-mi-dia-v1': {

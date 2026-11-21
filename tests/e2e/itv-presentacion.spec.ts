@@ -42,6 +42,15 @@ test('ITV móvil: cabecera compacta, precios legibles y sin desbordar', async ({
       // Google conserva su nombre completo; el municipio ocupa su propia fila.
       await expect(page.locator('#btn-login')).toBeVisible()
       expect(header!.height).toBeLessThan(200)
+      if (route === '/itv/') {
+        // Calendario y borrado sólo existen visualmente después de guardar:
+        // abrimos ese estado real antes de medir también sus áreas táctiles.
+        await expect(page.locator('#itv-recordatorio-controles')).toBeVisible()
+        await page.locator('#itv-recordatorio-fecha').fill((new Date().getUTCFullYear() + 1) + '-06-15')
+        await page.getByRole('button', { name: 'Guardar fecha', exact: true }).click()
+        await expect(page.locator('#itv-recordatorio-calendario')).toBeVisible()
+        await expect(page.locator('#itv-recordatorio-borrar')).toBeVisible()
+      }
       for (const boton of await page.locator('main .btn').all()) expect((await boton.boundingBox())!.height).toBeGreaterThanOrEqual(44)
       if (width === 390 && route === '/itv/precios') await page.screenshot({ path: test.info().outputPath('itv-precios-movil.png') })
     }
@@ -58,5 +67,28 @@ test('ITV: accesibilidad y ausencia de errores de navegador', async ({ page }) =
     expect(await page.locator('[style]').count()).toBe(0)
   }
   expect(errors).toEqual([])
+})
+
+test('la navegación móvil conserva las nueve secciones y las hace accesibles con teclado', async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.goto('/itv/')
+    const nav = page.getByRole('navigation', { name: 'Secciones' })
+    const links = nav.getByRole('link')
+    await expect(links).toHaveCount(9)
+    await expect(nav.locator('[aria-current="page"]')).toBeInViewport({ ratio: 1 })
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+    await links.first().focus()
+    for (let i = 0; i < await links.count(); i++) {
+      if (i) await page.keyboard.press('Tab')
+      await expect(links.nth(i)).toBeFocused()
+      await expect(links.nth(i)).toBeInViewport({ ratio: 1 })
+      expect((await links.nth(i).boundingBox())!.height).toBeGreaterThanOrEqual(44)
+    }
+    expect(await nav.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width)
+    expect((await page.locator('.masthead').boundingBox())!.height).toBeLessThan(200)
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
+  }
 })
 

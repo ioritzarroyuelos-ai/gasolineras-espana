@@ -1,6 +1,16 @@
 // Una sola preferencia municipal para todo el portal. El formulario conserva
 // su alternativa HTML y cada dato personalizado se vuelve a leer en servidor.
 (() => {
+  // En móvil todas las secciones caben en una sola fila desplazable. Situamos
+  // la actual a la vista sin desplazar verticalmente la página ni el mapa.
+  const nav = document.querySelector('.mh-nav');
+  function showNavSection(link) {
+    if (!nav || !link || nav.scrollWidth <= nav.clientWidth) return;
+    const bounds = nav.getBoundingClientRect(), activeBounds = link.getBoundingClientRect();
+    nav.scrollLeft += activeBounds.left - bounds.left - (nav.clientWidth - activeBounds.width) / 2;
+  }
+  showNavSection(nav?.querySelector('[aria-current="page"]'));
+  nav?.addEventListener('focusin', event => showNavSection(event.target.closest('a')));
   const key = 'espana-util-municipio';
   const form = document.getElementById('municipio-form');
   const input = form?.querySelector('input'), list = document.getElementById('municipio-resultados');

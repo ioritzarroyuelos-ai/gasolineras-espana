@@ -12,6 +12,7 @@ import { ogSocialTags, originFromCanonical, breadcrumbLd } from './seo'
 import { escapeHtml as esc } from './html'
 import { fechaHoraLocal, instanteLocal } from '../../scripts/lib/fechas.mjs'
 import { comprobacionItvReciente, tarifaComprobadaHoy, type EstadoTarifasItv } from '../lib/itv-tarifas-estado'
+import { recordatorioItvHtml, CSS_RECORDATORIO_ITV } from './itv-recordatorio'
 
 function fecha(value?: string): string {
   if (!value || !/^\d{4}-\d{2}(?:-\d{2}(?:T.*)?)?$/.test(value)) return ''
@@ -83,9 +84,9 @@ function envoltorio(m: Meta, cuerpo: string): string {
     + '<meta name="robots" content="' + (m.noindex ? 'noindex,follow' : 'index,follow,max-image-preview:large') + '">'
     + ogSocialTags(originFromCanonical(m.canonical)) + '<link rel="icon" href="/static/favicon-32.png" sizes="32x32">'
     + [m.jsonLd, m.breadcrumb].filter(Boolean).map(j => '<script type="application/ld+json" nonce="' + esc(m.nonce) + '">' + j + '</script>').join('')
-    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + CSS_BUSCADOR_ITV + '</style></head><body>'
+    + '<style nonce="' + esc(m.nonce) + '">' + CSS + MASTHEAD_CSS + CSS_BUSCADOR_ITV + CSS_RECORDATORIO_ITV + '</style></head><body>'
     + mastheadHtml('itv', { compact: true, hideMunicipioSearch: true }) + '<main>' + cuerpo
-    + '</main><footer>Directorio elaborado con fuentes oficiales. <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer></body></html>'
+    + recordatorioItvHtml() + '</main><footer>Directorio elaborado con fuentes oficiales. <a href="/">España Útil</a> · <a href="/privacidad">Privacidad</a></footer></body></html>'
 }
 
 export function tarjetaItv(e: EstacionITV, municipio: string, distanciaKm?: number): string {
@@ -145,7 +146,7 @@ export function buildItvIndexPage(nonce: string, provincias: ProvinciaITV[], tot
   return envoltorio({ title: 'Estaciones de ITV en España | España Útil', desc: 'Busca estaciones de ITV en tu municipio o cerca de él. Dirección, teléfonos, cita y precios con sus fuentes.', canonical, nonce, breadcrumb: migas(canonical) },
     '<h1>Encuentra tu ITV</h1><p class="sub">' + total + ' estaciones en ' + provincias.length + ' provincias</p>'
     + buscadorItv(nonce) + '<p class="hint">Busca tu municipio. Si no tenemos una estación allí, te mostramos las más cercanas que podemos localizar. No todas las estaciones publican ubicación, teléfono u horario: el directorio por provincias incluye también las que no podemos situar en el mapa.</p>'
-    + '<p><a class="btn" href="/itv/precios">Comparar precios de la ITV</a></p>' + avisoDirectorio(updatedAt, Date.now(), fuentesEstado)
+    + '<p class="acciones"><a class="btn" href="/itv/precios">Comparar precios de la ITV</a><a class="btn" href="#itv-recordatorio">Recordar mi próxima ITV</a></p>' + avisoDirectorio(updatedAt, Date.now(), fuentesEstado)
     + '<h2>Buscar por provincia</h2><nav class="lista" aria-label="Provincias"><ul>'
     + provincias.map(p => '<li><a href="/itv/' + esc(p.slug) + '">' + esc(p.name) + ' <b>' + p.count + '</b></a></li>').join('')
     + '</ul></nav>')

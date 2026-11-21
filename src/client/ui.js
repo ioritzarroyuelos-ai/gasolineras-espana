@@ -268,6 +268,7 @@ window.addEventListener('resize', function() {
   function message(text) { status.textContent = text; status.hidden = !text; }
   function finish() { button.disabled = false; button.removeAttribute('aria-busy'); }
   button.addEventListener('click', function() {
+    if (window.EUServiciosMap) { window.EUServiciosMap.locate(); return; }
     if (!navigator.geolocation) { message('Este navegador no permite usar tu ubicación. Puedes elegir un municipio en los filtros.'); return; }
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
@@ -381,7 +382,8 @@ function readQueryState() {
 }
 function writeQueryState() {
   try {
-    var p = new URLSearchParams();
+    var p = new URLSearchParams(document.body.classList.contains('services-map-page') ? location.search : '');
+    ['prov', 'mun', 'fuel', 'station', 'area'].forEach(function(key) { p.delete(key); });
     var prov  = document.getElementById('sel-provincia').value;
     var mun   = document.getElementById('sel-municipio').value;
     var fuel  = document.getElementById('sel-combustible').value;
@@ -492,6 +494,9 @@ async function bootApp() {
   // abrir el modal de favoritas las campanas esten ya sincronizadas con el
   // server. Si el bot no esta vinculado la funcion retorna inmediatamente.
   try { loadTelegramSubscriptions(); } catch(_) {}
+  // El mapa general tiene su propia búsqueda. No restaurar filtros antiguos
+  // de combustible ni cambiar su encuadre al terminar una petición anterior.
+  if (document.body.classList.contains('services-map-page')) return;
   var st = readQueryState();
   sharedStationId = st.station || '';
   setSearchOrigin(readNearLocation(location.hash));

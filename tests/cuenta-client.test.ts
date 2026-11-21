@@ -56,7 +56,7 @@ function client(initial: Record<string, string> = {}, account: any = a, cloud: R
   const window: any = { addEventListener: on, dispatchEvent: (event: any) => emit(event.type, event) }
   const context = createContext({ window, document: { getElementById: node, addEventListener() {} }, localStorage: {
     getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key),
-  }, fetch, crypto, navigator: { locks: shared?.locks }, AbortController, setTimeout: trackedTimeout, clearTimeout: trackedClear, CustomEvent: class { constructor(public type: string, public detail: any) { this.detail = detail.detail } } })
+  }, fetch, crypto, URLSearchParams, Date, navigator: { locks: shared?.locks }, AbortController, setTimeout: trackedTimeout, clearTimeout: trackedClear, CustomEvent: class { constructor(public type: string, public detail: any) { this.detail = detail.detail } } })
   runInContext(source, context)
   const writes = () => fetch.mock.calls.filter(([url, opts]) => url.startsWith('/api/sync/') && opts.method === 'PUT')
   return { storage, window, fetch, remote, node, emit, writes, setUser: (value: any) => { current = value }, failSync: (code: number) => { syncFailure = code },
@@ -64,6 +64,127 @@ function client(initial: Record<string, string> = {}, account: any = a, cloud: R
 }
 
 describe('shared account favorites', () => {
+  const serviceStorageName = 'eu-servicios-favoritos-v1', prefsStorageName = 'eu-servicios-preferencias-v1'
+  const place = { id: 'osm-node-123', nombre: 'Fuente pública', categoria: 'agua-potable', lat: 40.4, lon: -3.7 }
+  it('sincroniza lugares por separado, conserva gasolineras y construye enlaces internos', async () => {
+    const c = client({}, a, { [fav]: [station('saved')] }); await c.window.EUCuenta.ready
+    await c.window.EUCuenta.servicios.alternarFavorito({ ...place, url: 'https://evil.test', gps: { lat: 1, lon: 2 } })
+    expect(c.remote.A[serviceStorageName]).toEqual([place]); expect(c.remote.A[fav]).toEqual([station('saved')])
+    expect(c.window.EUCuenta.servicios.urlFavorito(place)).toBe('/cerca?lat=40.4&lon=-3.7&servicio=osm-node-123&categorias=agua-potable')
+    expect(c.window.EUCuenta.servicios.urlFavorito({ ...place, id: '//evil.test' })).toBe(null)
+    await c.window.EUCuenta.servicios.alternarFavorito(place)
+    expect(c.remote.A[serviceStorageName]).toEqual([])
+  })
+  it('conserva una eliminación de lugares sin conexión y la reintenta sin resucitarla', async () => {
+    const c = client({}, a, { [serviceStorageName]: [place] }); await c.window.EUCuenta.ready
+    c.failPut('network'); await c.window.EUCuenta.servicios.quitarFavorito(place.id)
+    expect(c.window.EUCuenta.servicios.favoritos()).toEqual([])
+    expect(JSON.parse(c.storage.get('eu-cuenta-pendientes-v1:A')!)[serviceStorageName].ops.remove).toEqual([place.id])
+    c.failPut(0); await c.window.EUCuenta.refresh()
+    expect(c.remote.A[serviceStorageName]).toEqual([])
+  })
+  it('guarda ITV oficial por separado de OSM y conserva su enlace interno', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const itv = { id: 'itv-28-2801', nombre: 'ITV Madrid', categoria: 'itv', lat: 40.4, lon: -3.7 }
+    await c.window.EUCuenta.servicios.alternarFavorito(itv)
+    expect(c.remote.A[serviceStorageName]).toEqual([itv])
+    expect(c.window.EUCuenta.servicios.urlFavorito(itv)).toContain('servicio=itv-28-2801&categorias=itv')
+    await expect(c.window.EUCuenta.servicios.alternarFavorito({ ...itv, id: 'osm-node-123' })).rejects.toThrow()
+    await expect(c.window.EUCuenta.servicios.alternarFavorito({ ...itv, categoria: 'agua-potable' })).rejects.toThrow()
+  })
+  it('guarda la estación fija GBFS sin copiar bicicletas disponibles ni cruzar categorías', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const bike = { id: 'gbfs-zaragoza-123', nombre: 'Bizi Zaragoza', categoria: 'bicis-zaragoza', lat: 41.65, lon: -0.88 }
+    await c.window.EUCuenta.servicios.alternarFavorito({ ...bike, bicis: 3, anclajes: 8, caduca: '2026-11-21T12:00:00Z' })
+    expect(c.remote.A[serviceStorageName]).toEqual([bike])
+    expect(c.window.EUCuenta.servicios.urlFavorito(bike)).toContain('servicio=gbfs-zaragoza-123&categorias=bicis-zaragoza')
+    await expect(c.window.EUCuenta.servicios.alternarFavorito({ ...bike, categoria: 'bicicletas-publicas' })).rejects.toThrow()
+    await expect(c.window.EUCuenta.servicios.alternarFavorito({ ...bike, id: 'osm-node-123' })).rejects.toThrow()
+    await expect(c.window.EUCuenta.servicios.alternarFavorito({ ...bike, lat: 40.4, lon: -3.7 })).rejects.toThrow()
+  })
+  it('guarda municipios y categorías sin copiar coordenadas ni búsquedas arbitrarias', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    await c.window.EUCuenta.servicios.guardarPreferencias({ categorias: ['agua-potable', 'agua-potable'], municipios: ['28079', '48027', 'dirección de casa'], lat: 40.123, lon: -3.123 })
+    expect(c.remote.A[prefsStorageName]).toEqual({ version: 1, categorias: ['agua-potable'], municipios: ['28079', '48027'] })
+  })
+  it('recuerda las capas SCT sin aceptar incidencias ni cámaras como favoritos de otro proveedor', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const categorias = ['trafico-cataluna', 'camaras-cataluna']
+    await c.window.EUCuenta.servicios.guardarPreferencias({ categorias, municipios: ['08019'] })
+    expect(c.remote.A[prefsStorageName]).toEqual({ version: 1, categorias, municipios: ['08019'] })
+    for (const categoria of categorias) for (const id of ['osm-node-123', 'itv-08-0801', 'gbfs-zaragoza-123', 'sct-123']) {
+      const unsupported = { ...place, id, categoria }
+      expect(c.window.EUCuenta.servicios.urlFavorito(unsupported)).toBe(null)
+      await expect(c.window.EUCuenta.servicios.alternarFavorito(unsupported)).rejects.toThrow()
+    }
+    expect(c.remote.A[serviceStorageName]).toBeUndefined()
+  })
+  it('recuerda guardias y Metro Bilbao sin guardar turnos o estaciones sin consulta individual', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const categorias = ['farmacias-guardia', 'metro-bilbao']
+    await c.window.EUCuenta.servicios.guardarPreferencias({ categorias, municipios: ['48020'] })
+    expect(c.remote.A[prefsStorageName]).toEqual({ version: 1, categorias, municipios: ['48020'] })
+    for (const categoria of categorias) for (const id of ['osm-node-123', 'guardia-prueba-123', 'metro-bilbao-prueba']) {
+      const unsupported = { ...place, id, categoria }
+      expect(c.window.EUCuenta.servicios.urlFavorito(unsupported)).toBe(null)
+      await expect(c.window.EUCuenta.servicios.alternarFavorito(unsupported)).rejects.toThrow()
+    }
+    expect(c.remote.A[serviceStorageName]).toBeUndefined()
+  })
+  it('el historial exige activar, es local, acotado, separado por cuenta y borrable', async () => {
+    const c = client(); await c.window.EUCuenta.ready
+    const services = c.window.EUCuenta.servicios
+    await services.registrarConsulta({ municipio: '28079', categorias: ['agua-potable'] })
+    expect(services.historial()).toEqual([])
+    await services.activarHistorial(true)
+    for (let i = 0; i < 25; i++) await services.registrarConsulta({ municipio: String(28000 + i), categorias: ['agua-potable'], lat: 40.123, lon: -3.123, texto: 'casa' })
+    expect(services.historial()).toHaveLength(20); expect(c.writes()).toHaveLength(0)
+    expect(Object.keys(services.historial()[0]).sort()).toEqual(['categorias', 'fecha', 'municipio'])
+    c.setUser(b); await c.window.EUCuenta.refresh()
+    expect(services.historial()).toEqual([]); expect(services.historialActivo()).toBe(false)
+    c.setUser(a); await c.window.EUCuenta.refresh()
+    expect(services.historial()).toHaveLength(20)
+    await services.borrarHistorial(); expect(services.historial()).toEqual([])
+    await services.registrarConsulta({ municipio: '28079', categorias: [] })
+    await services.activarHistorial(false)
+    expect(services.historial()).toEqual([]); expect(services.historialActivo()).toBe(false)
+  })
+  it('el historial omite entradas de más de 30 días y fechas futuras', async () => {
+    const item = { municipio: '28079', categorias: [] }, now = Date.now()
+    const c = client({ 'eu-servicios-historial-v1:A': JSON.stringify({ enabled: true, items: [
+      { ...item, fecha: now - 31 * 86400000 }, { ...item, fecha: now + 86400000 }, { ...item, fecha: now - 1000 },
+    ] }) }); await c.window.EUCuenta.ready
+    expect(c.window.EUCuenta.servicios.historial()).toHaveLength(1)
+    expect(JSON.parse(c.storage.get('eu-servicios-historial-v1:A')!).items).toHaveLength(1)
+  })
+  it('exporta sólo la cuenta actual, sin tokens y sin hacer escrituras', async () => {
+    const c = client({}, a, { [serviceStorageName]: [place], [fav]: [station('one')] }); await c.window.EUCuenta.ready
+    const data = await c.window.EUCuenta.exportarDatos()
+    expect(data.cuenta).toEqual({ correo: a.email }); expect(data.datos[serviceStorageName]).toEqual([place])
+    expect(JSON.stringify(data)).not.toContain('gs_session'); expect(c.writes()).toHaveLength(0)
+  })
+  it('guarda, edita y quita la fecha ITV sin mezclar cuentas ni inventar una fecha', async () => {
+    const key = 'eu-itv-recordatorio-v1', c = client(); await c.window.EUCuenta.ready
+    const api = c.window.EUCuenta.itv
+    expect(api.recordatorio()).toBe(null)
+    await expect(api.guardarRecordatorio({ fecha: '2027-02-29' })).rejects.toThrow('fecha válida')
+    const saved = await api.guardarRecordatorio({ fecha: '2028-02-29', nombre: 'Mi coche', matricula: 'no guardar' })
+    expect(c.remote.A[key]).toEqual({ version: 1, recordatorio: { id: saved.id, fecha: '2028-02-29', nombre: 'Mi coche' } })
+    expect((await api.guardarRecordatorio({ fecha: '2028-03-01', nombre: 'Mi coche' })).id).toBe(saved.id)
+    c.setUser(b); await c.window.EUCuenta.refresh(); expect(api.recordatorio()).toBe(null)
+    c.setUser(a); await c.window.EUCuenta.refresh(); expect(api.recordatorio().fecha).toBe('2028-03-01')
+    await api.borrarRecordatorio(); expect(c.remote.A[key]).toEqual({ version: 1, recordatorio: null })
+  })
+  it('vaciar exige confirmación y borra los favoritos mediante la cola de sincronización', async () => {
+    const c = client({}, a, { [serviceStorageName]: [place], [fav]: [station('one')] }); await c.window.EUCuenta.ready
+    c.window.confirm = vi.fn(() => false)
+    expect(await c.window.EUCuenta.vaciarPreferencias()).toBe(false); expect(c.writes()).toHaveLength(0)
+    c.window.confirm = vi.fn(() => true)
+    expect(await c.window.EUCuenta.vaciarPreferencias()).toBe(true)
+    expect(c.remote.A[serviceStorageName]).toEqual([]); expect(c.remote.A[fav]).toEqual([])
+    expect(c.remote.A[prefsStorageName]).toEqual({ version: 1, categorias: [], municipios: [] })
+    expect(c.window.EUCuenta.user.sub).toBe('A')
+  })
   it('uses cloud deletions and does not upload old browser favorites on login', async () => {
     const c = client({ [fav]: JSON.stringify([station('old')]) }, a, { [fav]: [] })
     await c.window.EUCuenta.ready

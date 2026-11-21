@@ -126,6 +126,8 @@ app.get('/sitemap.xml', async c => {
   // un lastmod poco fiable hace que ignore el lastmod de TODO el dominio. Mejor
   // omitirlo aqui y dejarlo solo donde tenemos fecha real (gasolineras, ITV, guardias).
   entries.push(`  <url><loc>${base}/farmacias/</loc><changefreq>daily</changefreq><priority>0.9</priority></url>`)
+  entries.push(`  <url><loc>${base}/servicios/</loc><changefreq>daily</changefreq><priority>0.8</priority></url>`)
+  entries.push(`  <url><loc>${base}/trafico/cataluna</loc><changefreq>hourly</changefreq><priority>0.7</priority></url>`)
 
   // Indice y provincias de guardia: son el camino de enlaces hasta las 1.289
   // paginas de municipio, que hasta ahora eran huerfanas.
@@ -345,7 +347,7 @@ app.get('/acerca', c => {
   const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
   const html = legalPage('Acerca de España Útil · metodología y fuentes', `
 <h1>Acerca de España Útil</h1>
-<p><strong>España Útil</strong> reúne en un solo sitio información práctica y oficial
+<p><strong>España Útil</strong> reúne en un solo sitio información práctica de fuentes públicas
 de España: el tiempo por municipio, los precios de las gasolineras, las farmacias de
 guardia, las estaciones de ITV y las elecciones con sus sondeos. Todo <strong>gratis,
 sin registro y sin publicidad</strong>.</p>
@@ -364,6 +366,10 @@ veces al día.</p>
   <li><strong>Estaciones de ITV</strong>: datos de la <a href="https://www.dgt.es/" rel="noopener">Dirección General de Tráfico</a> y de los organismos autonómicos competentes.</li>
   <li><strong>Farmacias de guardia</strong>: <a href="https://www.portalfarma.com/" rel="noopener">Colegios Oficiales de Farmacéuticos</a>, provincia por provincia. Los turnos los publica cada colegio y pueden cambiar.</li>
   <li><strong>Elecciones y sondeos</strong>: encuestas recopiladas de <a href="https://es.wikipedia.org/" rel="noopener">Wikipedia</a> (CC BY-SA), con el resultado oficial del <a href="https://infoelectoral.interior.gob.es/" rel="noopener">Ministerio del Interior</a> como referencia.</li>
+  <li><strong>Servicios cercanos</strong>: cartografía colaborativa de <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap, bajo ODbL</a>, mediante extractos de Geofabrik. El límite territorial procede de las Unidades Administrativas del IGN, CC-BY 4.0 ign.es. El directorio se comprueba diariamente; la fecha de edición de cada ficha no se cambia al descargarla. <a href="/servicios/">Cobertura y limitaciones del directorio</a>.</li>
+  <li><strong>Direcciones y códigos postales</strong>: <a href="https://www.scne.es/productos.html#CartoCiudad" rel="noopener">CartoCiudad, CC BY 4.0 SCNE</a>. El visitante elige la coincidencia; un código postal representa una zona aproximada.</li>
+  <li><strong>Bicicletas</strong>: <a href="https://bizi.zaragoza.es/es/mapa-de-disponibilidad" rel="noopener">Bizi Zaragoza</a>, con datos de disponibilidad que caducan por estación. No equivale a cobertura de todas las redes españolas.</li>
+  <li><strong>Tráfico y cámaras de Cataluña</strong>: Servei Català de Trànsit. <a href="/trafico/cataluna">Parte, fechas, condiciones de reutilización y límites</a>. Las cámaras enlazan a la fuente original; no copiamos sus imágenes ni atribuimos una hora que la fuente no publica.</li>
 </ul>
 
 <h2>Límites y avisos</h2>
@@ -392,7 +398,7 @@ app.get('/privacidad', c => {
   const site = canonicalSite(c.env.PUBLIC_ORIGIN, resolveScheme(c), resolveHost(c))
   const html = legalPage('Privacidad', `
 <h1>Política de privacidad</h1>
-<p><strong>Última actualización:</strong> ${new Date().toISOString().slice(0,10)}</p>
+<p><strong>Última actualización:</strong> 21 de noviembre de 2026</p>
 
 <p>Esta política cuenta, en lenguaje llano, qué datos tratamos y cuáles no.
 La idea de España Útil es simple: <strong>casi todo funciona sin cuenta y sin que
@@ -413,7 +419,7 @@ Telegram).</p>
 almacenamiento local (<code>localStorage</code>) de tu navegador. <strong>No se
 envían a ningún servidor</strong> y no salen de tu dispositivo. Si borras los
 datos del navegador, desaparecen.</p>
-<p>Sin sesión, esto incluye el municipio elegido, los bloques y el orden de «Mi día» y los favoritos de gasolineras y deportes. Puedes usar «Olvidar municipio», organizar «Mi día» o quitar favoritos con su estrella.</p>
+<p>Sin sesión, esto incluye el municipio elegido, los bloques y el orden de «Mi día», los favoritos de gasolineras, deportes y lugares, y tus categorías y municipios guardados. Puedes usar «Olvidar municipio», organizar «Mi día» o quitar favoritos con su estrella.</p>
 
 <h2>Si inicias sesión con Google (opcional)</h2>
 <p>El inicio de sesión sirve para tener tus favoritos y ajustes en varios
@@ -424,20 +430,24 @@ dispositivos. Es totalmente voluntario. Cuando inicias sesión:</p>
       mantenerte identificado; no rastrea tu navegación.</li>
   <li>Guardamos un identificador opaco de tu cuenta de Google, tu correo, tu
       nombre y tu foto de perfil, asociados a tu sesión.</li>
-  <li>Sincronizamos tus favoritos de gasolineras y deportes, combustible y litros,
-      municipio y selección y orden de bloques de «Mi día» en la base de datos de claves
+  <li>Sincronizamos tus favoritos de gasolineras, deportes y lugares, combustible y litros,
+      municipio, categorías y municipios guardados, el recordatorio de ITV que decidas crear, y selección y orden de bloques de «Mi día» en la base de datos de claves
       de Cloudflare (Workers KV), bajo una clave ligada a tu identificador de Google.</li>
 </ul>
 <p>Los favoritos de tu cuenta aparecen en Inicio. Las marcas que hiciste sin sesión
 se conservan por separado; puedes añadirlas a tu cuenta desde su menú. Guardamos
 una copia local y los cambios pendientes para poder reintentar si falla la conexión.
 El estado de la cuenta indica cuándo se han guardado en el servidor.</p>
+<p>Un lugar favorito contiene su identificador, nombre, categoría y coordenadas públicas del establecimiento. No guardamos el punto GPS desde el que lo buscaste ni copiamos sus horarios o precios como si siguieran vigentes.</p>
 <p><strong>Base legal:</strong> tu consentimiento y la prestación del servicio que
 tú pides (la sincronización).</p>
 <p><strong>Cómo borrarlos:</strong> al eliminar un favorito u olvidar el municipio con sesión iniciada,
 la app actualiza también tu cuenta cuando hay conexión. Cerrar sesión elimina la cookie de
 este dispositivo y vuelve a mostrar las marcas guardadas sin sesión; no borra los favoritos de tu cuenta.
 Puedes eliminar las copias locales borrando los datos del sitio en tu navegador.
+Desde el menú de tu cuenta puedes descargar una copia de tus favoritos y ajustes y vaciarlos con confirmación.
+El vaciado se sincroniza cuando hay conexión; el estado de la cuenta indica si queda pendiente.
+No cancela Telegram ni cierra otras sesiones de Google, y no equivale a borrar por completo una cuenta.
 Si quieres que borremos por completo tus datos sincronizados,
 escríbenos (ver <em>Contacto</em>).</p>
 
@@ -467,6 +477,14 @@ navegador</strong> para calcular distancias a las gasolineras. En algunas funcio
 para traducir tus coordenadas a una dirección, se envían al servidor de España Útil,
 que reenvía la consulta a OpenStreetMap <strong>sin tu dirección IP</strong>. No
 guardamos tus coordenadas asociadas a ti.</p>
+<p>En Servicios cerca de ti, tus municipios guardados son códigos municipales, sin dirección de casa ni GPS preciso. El servidor recibe la zona aproximada del mapa para devolver lugares; las coordenadas GPS precisas y el cálculo de distancias permanecen en el navegador. Si buscas una dirección o código postal, enviamos el texto a CartoCiudad a través de nuestro servidor para obtener los resultados. No incorporamos ese texto a tus preferencias ni al historial de consultas.</p>
+
+<h2>Historial de consultas de servicios (opcional)</h2>
+<p>Está desactivado al empezar. Si lo activas, este navegador recuerda hasta 20 consultas de municipios y categorías de los últimos 30 días. No almacena el GPS ni búsquedas de texto libre. El historial no se envía a tu cuenta ni a otros dispositivos y se mantiene separado para cada cuenta en este navegador. Puedes borrarlo o desactivarlo en Servicios cerca de ti; al desactivarlo se vacía.</p>
+
+<h2>Recordatorio de ITV (opcional)</h2>
+<p>Si guardas un recordatorio, conservamos la fecha que tú indicas, un nombre corto para reconocer el vehículo y un identificador aleatorio. No pedimos matrícula ni calculamos el plazo legal. Sin sesión queda en este navegador; con Google se sincroniza en tu cuenta mediante Workers KV. Puedes quitarlo desde ITV o vaciar tus ajustes desde la cuenta.</p>
+<p>Descargar el archivo de calendario no lo envía a un proveedor. Tú decides si lo importas y activas las notificaciones. La copia importada se gestiona en tu calendario: cambiar o borrar el recordatorio aquí no modifica esa copia.</p>
 
 <h2>Datos técnicos y telemetría (anónimos)</h2>
 <p>Para mantener el servicio funcionando y detectar fallos recogemos información
@@ -506,6 +524,7 @@ servicios:</p>
   <li><strong>OpenStreetMap, Ministerio (precios) y AEMET / Open-Meteo (tiempo)</strong>:
       sus datos llegan a través de nuestro servidor, <strong>sin exponer tu IP</strong>
       a esos servicios.</li>
+  <li><strong>CartoCiudad (IGN), fuentes oficiales de ITV y Bizi Zaragoza</strong>: las consultas pasan por nuestro servidor, sin enviarles tu IP. CartoCiudad recibe el texto de dirección o código postal que buscas; las consultas de disponibilidad de Bizi no necesitan tu posición.</li>
 </ul>
 <p>La infraestructura y las bases de datos son de Cloudflare (red global). Cloudflare
 es una empresa estadounidense adherida a los marcos de transferencia de datos vigentes.</p>

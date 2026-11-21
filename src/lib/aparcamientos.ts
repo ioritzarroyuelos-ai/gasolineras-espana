@@ -87,7 +87,9 @@ async function live(city: ParkingFuente, io: ParkingIO): Promise<Copy> {
     return copy
   })()
   entries.set(city, job)
-  try { return await job } finally { if (entries.get(city) === job) entries.delete(city) }
+  // Las llamadas concurrentes reutilizan waiting; no pueden sustituir este
+  // trabajo hasta que este único propietario retire la entrada al terminar.
+  try { return await job } finally { entries.delete(city) }
 }
 type CatalogueEntry = { value: ParkingCatalogo; sourceState: string; at: number; version: string }
 const catalogues = new WeakMap<ParkingAssets, Map<ParkingFuente, CatalogueEntry>>()

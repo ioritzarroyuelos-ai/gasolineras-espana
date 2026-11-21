@@ -1,5 +1,5 @@
 // Derivación diaria de datos comprobados. No consulta ni registra GPS de usuarios.
-import {open,mkdir,writeFile,rename,readFile,readdir,rm,lstat} from 'node:fs/promises'
+import {open,mkdir,writeFile,rename,readdir,rm,lstat} from 'node:fs/promises'
 import {resolve,dirname,join,sep} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {createHash,randomUUID} from 'node:crypto'

@@ -110,10 +110,22 @@ describe('Aparcamientos: red y respaldo limitado', () => {
     expect(result.consultado).toBe(stamp(30)); expect(result.evaluadoEn).toBe(stamp())
     expect(result.items[0].estado).toBe('caducado'); expect(fetcher).not.toHaveBeenCalled()
   })
-  it('coalesce consultas simultáneas a la misma ciudad', async () => {
-    const fetcher = vi.fn(async () => { await new Promise(resolve => setTimeout(resolve, 10)); return new Response(JSON.stringify([vigoRow()])) })
-    await Promise.all([cargaAparcamientos('vigo', undefined, { fetch: fetcher, now }), cargaAparcamientos('vigo', undefined, { fetch: fetcher, now })])
+  it.each([false, true])('comparte la descarga simultánea y permite consultar de nuevo tras un error=%s', async failed => {
+    let release!: () => void, free = 0
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const fetcher = vi.fn(async () => {
+      await gate
+      return failed ? new Response(null, { status: 503 }) : Response.json([{ ...vigoRow(), plazaslibres: free }])
+    })
+    const load = () => cargaAparcamientos('vigo', undefined, { fetch: fetcher, now })
+    const first = Promise.allSettled([load(), load()])
+    release()
+    expect((await first).map(result => result.status)).toEqual([failed ? 'rejected' : 'fulfilled', failed ? 'rejected' : 'fulfilled'])
     expect(fetcher).toHaveBeenCalledTimes(1)
+    failed = false; free = 7
+    const next = await Promise.all([load(), load()])
+    expect(next.map(result => result.items[0].plazasLibres)).toEqual([7, 7])
+    expect(fetcher).toHaveBeenCalledTimes(2)
   })
   it('API no acepta GPS, no almacena una respuesta HTTP y devuelve fuente si falla', async () => {
     const app = new Hono<{ Bindings: Env }>(); registerAparcamientosRoutes(app)

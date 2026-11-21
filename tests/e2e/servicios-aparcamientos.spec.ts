@@ -69,8 +69,8 @@ for (const width of [390, 1280]) test('cero, PMR y enlaces oficiales son claros 
   await expect(item).not.toContainText('[24 Horas]')
   await expect(item).toContainText('Apertura, gratuidad, accesibilidad y reservas sin confirmar')
   await expect(item.getByRole('link', { name: 'Google Maps', exact: true })).toHaveAttribute('href', /destination=40\.4168%2C-3\.7038/)
-  await expect(item.getByRole('link', { name: 'Apple Maps', exact: true })).toHaveAttribute('href', /maps\.apple\.com/)
-  await expect(item.getByRole('link', { name: 'Waze', exact: true })).toHaveAttribute('href', /waze\.com/)
+  await expect(item.getByRole('link', { name: 'Apple Maps', exact: true })).toHaveAttribute('href', /^https:\/\/maps\.apple\.com\//)
+  await expect(item.getByRole('link', { name: 'Waze', exact: true })).toHaveAttribute('href', /^https:\/\/www\.waze\.com\//)
   await expect(item.getByRole('link', { name: 'Fuente oficial del aparcamiento' })).toHaveAttribute('href', APARCAMIENTOS_MAPA[0].fuenteUrl)
   for (const id of ['sv-open', 'sv-free', 'sv-accessible']) { await page.locator('#' + id).check(); await expect(item).toHaveCount(0); await page.locator('#' + id).uncheck(); await expect(item).toHaveCount(1) }
   expect((await new AxeBuilder({ page }).include('.sv-panel').analyze()).violations).toEqual([])

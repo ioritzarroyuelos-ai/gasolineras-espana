@@ -13,7 +13,7 @@ afterEach(async () => { for (const path of directories.splice(0)) { if (!path.st
 async function temporary() { const path = await mkdtemp(join(tmpdir(), 'parking-tests-')); directories.push(path); return path }
 function fetchSources({ madridFails = false, vigoFails = false, detailFails = false, rows = 50 } = {}) {
   return vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
-    if (String(url).includes('datos.vigo.org')) return vigoFails ? new Response(null, { status: 503 }) : Response.json(Array.from({ length: 8 }, (_, n) => vigoRow(4763 + n)))
+    if (new URL(url instanceof Request ? url.url : url).hostname === 'datos.vigo.org') return vigoFails ? new Response(null, { status: 503 }) : Response.json(Array.from({ length: 8 }, (_, n) => vigoRow(4763 + n)))
     if (madridFails) return new Response(null, { status: 503 })
     const body = String(init?.body), detailId = /<i:id>(\d+)<\/i:id>/.exec(body)?.[1]
     if (detailId) return detailFails ? new Response(null, { status: 503 }) : new Response(madridDetail(Number(detailId)))

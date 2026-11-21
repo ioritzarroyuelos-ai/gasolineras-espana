@@ -20,6 +20,19 @@ if (history?.to && Number.isFinite(Date.parse(history.to))) {
 }
 const itv = read('itv.json')
 const tarifas = read('itv-tarifas-estado.json')
+const operadores = read('itv-fuentes/operadores.json')
+// La descarga del directorio no vuelve a comprobar las páginas de reserva.
+// Cada canal conserva la fecha de su último éxito, incluso si hoy se reintentó.
+const citas = operadores && typeof operadores === 'object' && !Array.isArray(operadores)
+  ? Object.values(operadores).map(p => {
+    const ultimo = Date.parse(p?.ultimoExito), consulta = Date.parse(p?.consultado)
+    const fechasValidas = Number.isFinite(ultimo) && Number.isFinite(consulta)
+      && ultimo <= consulta && consulta <= Date.now() + 5 * 60000
+    return item('Citas · ' + (typeof p?.nombre === 'string' && p.nombre.trim() ? p.nombre : 'Operador sin identificar'),
+      Number.isFinite(ultimo) ? p.ultimoExito : null, Number.isFinite(ultimo) ? 1 : 0,
+      !fechasValidas ? 'No se ha podido confirmar una comprobación de citas con fechas válidas.'
+        : p.estado !== 'actualizada' ? 'No se ha podido comprobar el canal oficial de citas. Se conserva su última comprobación válida.' : undefined)
+  }) : []
 const territories = 'alava alicante almeria asturias avila badajoz baleares barcelona bizkaia burgos caceres cadiz cantabria castellon ceuta clm cordoba coruna gipuzkoa girona granada huelva huesca jaen laspalmas leon lleida madrid malaga melilla murcia navarra ourense palencia pontevedra rioja salamanca segovia sevilla soria tarragona tenerife teruel valencia valladolid zamora zaragoza'.split(' ')
 const guardias = territories.map(t => { const g = read(`guardias-${t}.json`); return item(t, g?.ts, g?.guardias?.length, g?.incidencias?.join('; ')) })
 // El robot precarga los municipios importantes; el resto se consulta bajo demanda.
@@ -57,7 +70,8 @@ const services = [
     : [item('Directorio de estaciones', itv?.generatedAt, itv?.total)]),
     ...(tarifas?.fuentes?.length ? tarifas.fuentes.map(f => item('Tarifas · '+f.id, f.checkedAt, 1,
       f.estado !== 'verificada' ? 'Documento de tarifas pendiente de confirmar.' : undefined))
-      : [item('Comprobación de tarifas', null, 0)])] },
+      : [item('Comprobación de tarifas', null, 0)]),
+    ...(citas.length ? citas : [item('Comprobación de los canales de citas', null, 0)])] },
   { id: 'politica', name: 'Política', maxAgeHours: 30, items: [item('Índice de elecciones', politica?.generado, politica?.elecciones?.length), ...elecciones] },
   { id: 'deportes', name: 'Deportes', maxAgeHours: 24, items: (deportes?.competiciones || []).flatMap(c =>
     ['agenda', 'clasificacion'].filter(k => c[k]?.verificadoEn).map(k => item(c.nombre + (c.grupo ? ' · ' + c.grupo : '') + ' · ' + (k === 'agenda' ? 'calendario' : 'clasificación'), c[k].verificadoEn, Math.max(1, c[k].total),

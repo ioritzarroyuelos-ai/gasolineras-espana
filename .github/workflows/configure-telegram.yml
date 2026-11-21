@@ -56,7 +56,7 @@ jobs:
       PROJECT: webapp
       PUBLIC_ORIGIN: https://webapp-3ft.pages.dev
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v5
         with:

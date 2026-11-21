@@ -717,6 +717,7 @@ async function startTelegramLink(favs) {
       body: JSON.stringify(payload),
     });
     if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
+    if (res.status === 409) return { ok: false, error: 'subscription_limit' };
     if (!res.ok) return { ok: false, error: 'start_link_fallo' };
     var j = await res.json();
     if (!j || !j.ok) return { ok: false, error: 'start_link_fallo' };
@@ -782,7 +783,9 @@ async function enableTelegramAlerts(onDeepLink, seedFavs) {
   // del pending_token). La UI lo necesita para pintar las campanas como
   // activas en cuanto vuelva a abrir el modal de favoritas.
   try { await loadTelegramSubscriptions(); } catch(_) {}
-  return { ok: true, chat_id: confirmed.chat_id, subscribed: favs.length, deepLink: link.deepLink };
+  var fuel = fuelSelectorToCode();
+  var subscribed = favs.filter(function(f) { return isTelegramFavActive(String(Number(f.id)), fuel); }).length;
+  return { ok: true, chat_id: confirmed.chat_id, subscribed: subscribed, partial: subscribed < favs.length, deepLink: link.deepLink };
 }
 
 // Desactiva: borra todas las subs del chat y limpia localStorage.
@@ -880,6 +883,7 @@ async function toggleTelegramFav(stationId, fuelCode, enabled) {
       if (res.status === 401) { _tgClear(); return { ok: false, error: 'not_linked' }; }
       // 503 telegram_not_configured -> mismo trato que not_linked
       if (res.status === 503) return { ok: false, error: 'telegram_no_configurado' };
+      if (res.status === 409) return { ok: false, error: 'subscription_limit' };
       return { ok: false, error: 'toggle_fallo' };
     }
     var j = await res.json();

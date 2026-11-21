@@ -643,8 +643,8 @@ async function handlePopupAlertClick(btn) {
         try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
       }, [{ id: stId }]);
       if (res && res.ok) {
-        setPopupAlertBtnState(btn, true);
-        showToast('✅ Alerta activada — te aviso cada mañana a las 8:00', 'success');
+        setPopupAlertBtnState(btn, res.subscribed > 0);
+        showToast(res.subscribed > 0 ? 'Alerta activada. Se revisa por la mañana según tu elección.' : 'Telegram vinculado. No se ha confirmado esta alerta: comprueba su campana en Favoritas.', res.subscribed > 0 ? 'success' : 'warning');
       } else if (res && res.error === 'telegram_no_configurado') {
         showToast('Las alertas por Telegram no estan disponibles ahora', 'warning');
       } else if (res && res.error === 'timeout') {
@@ -661,10 +661,12 @@ async function handlePopupAlertClick(btn) {
       if (r && r.ok) {
         setPopupAlertBtnState(btn, want);
         showToast(want
-          ? '🔔 Alerta activada — aviso diario a las 8:00'
+          ? '🔔 Alerta activada. Se revisa por la mañana según tu elección.'
           : '🔕 Alerta quitada', want ? 'success' : 'info');
       } else if (r && r.error === 'telegram_no_configurado') {
         showToast('Las alertas por Telegram no estan disponibles ahora', 'warning');
+      } else if (r && r.error === 'subscription_limit') {
+        showToast('Puedes tener hasta 100 avisos de gasolineras y combustibles. Desactiva alguno para añadir otro.', 'warning');
       } else {
         showToast('No se pudo cambiar la alerta — intentalo mas tarde', 'error');
       }
@@ -1038,7 +1040,7 @@ function renderFavsModalList() {
         var res = await toggleTelegramFav(f.id, fuelCode, !currentlyOn);
         bellBtn.disabled = false;
         if (!res.ok) {
-          showToast('No se pudo actualizar la alerta', 'warning');
+          showToast(res.error === 'subscription_limit' ? 'Puedes tener hasta 100 avisos de gasolineras y combustibles. Desactiva alguno para añadir otro.' : 'No se pudo actualizar la alerta', 'warning');
           return;
         }
         if (!currentlyOn) {
@@ -1461,6 +1463,64 @@ function hideTelegramLinkPromptDialog() {
   if (!panel || !btn) return;
 
   var serverReady = null;  // Promise<boolean> — cached
+  var pricePanel = document.getElementById('tg-price-preferences');
+  var priceMode = document.getElementById('tg-price-mode');
+  var priceThreshold = document.getElementById('tg-price-threshold');
+  var priceSave = document.getElementById('tg-price-save');
+  var priceFeedback = document.getElementById('tg-price-feedback');
+  var priceLoadedToken = null, priceLoading = null, priceSaved = null;
+  function validPriceChoice(data) {
+    return !!(data && data.ok && data.preferencia && ['resumen', 'bajadas'].includes(data.preferencia.modo) && [10, 20, 50, 100].includes(data.preferencia.umbralMilesimas));
+  }
+
+  function priceChoiceChanged() {
+    var wrap = document.getElementById('tg-price-threshold-wrap');
+    if (wrap && priceMode) wrap.hidden = priceMode.value !== 'bajadas';
+    if (priceSave) priceSave.disabled = !priceSaved || priceSaved.modo === priceMode.value && priceSaved.umbralMilesimas === Number(priceThreshold.value);
+  }
+  async function refreshPriceChoice() {
+    if (!pricePanel || !priceMode || !priceThreshold || !priceSave) return;
+    var token = _tgAuth();
+    if (!token) { pricePanel.hidden = true; priceSaved = null; priceLoadedToken = null; return; }
+    pricePanel.hidden = false;
+    if (priceLoadedToken === token) return;
+    priceSaved = null; priceLoadedToken = null;
+    priceSave.disabled = true; priceMode.disabled = true; priceThreshold.disabled = true;
+    if (priceLoading) return;
+    priceFeedback.textContent = 'Comprobando tu elección guardada…';
+    priceLoading = (async function() {
+      try {
+        var response = await fetch('/api/telegram/precios', { headers: { Authorization: 'Bearer ' + token }, cache: 'no-store', signal: AbortSignal.timeout(15000) });
+        var data = await response.json();
+        if (_tgAuth() !== token) return;
+        if (!response.ok || !validPriceChoice(data)) throw Error('preferences_unavailable');
+        priceSaved = data.preferencia; priceLoadedToken = token;
+        priceMode.value = priceSaved.modo; priceThreshold.value = String(priceSaved.umbralMilesimas);
+        priceMode.disabled = false; priceThreshold.disabled = false; priceChoiceChanged();
+        priceFeedback.textContent = priceSaved.modo === 'bajadas' ? 'Guardado: sólo avisos de bajadas comprobadas.' : 'Guardado: resumen diario. No activamos avisos de bajadas sin que los elijas.';
+      } catch { if (_tgAuth() === token) { priceSaved = null; priceFeedback.textContent = 'No se ha podido comprobar tu elección. Cierra este panel y vuelve a abrirlo para reintentar. No hemos cambiado tus avisos.'; } }
+      finally { priceLoading = null; if (_tgAuth() !== token) refreshPriceChoice(); }
+    })();
+    await priceLoading;
+  }
+  priceMode?.addEventListener('change', priceChoiceChanged);
+  priceThreshold?.addEventListener('change', priceChoiceChanged);
+  priceSave?.addEventListener('click', async function() {
+    if (!priceSaved) return;
+    var token = _tgAuth();
+    if (!token || priceLoadedToken !== token) { await refreshPriceChoice(); return; }
+    priceSave.disabled = true; priceMode.disabled = true; priceThreshold.disabled = true;
+    var body = { modo: priceMode.value, umbralMilesimas: Number(priceThreshold.value), consentimiento: 'precios-telegram-v1' };
+    try {
+      var response = await fetch('/api/telegram/precios', { method: 'PUT', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15000) });
+      var data = await response.json();
+      if (_tgAuth() !== token) return;
+      if (!response.ok || !validPriceChoice(data) || data.preferencia.modo !== body.modo || data.preferencia.umbralMilesimas !== body.umbralMilesimas) throw Error('preferences_unavailable');
+      priceSaved = data.preferencia; priceLoadedToken = token;
+      priceFeedback.textContent = body.modo === 'bajadas' ? 'Elección guardada: sólo bajadas de al menos ' + (body.umbralMilesimas / 10) + ' céntimos por litro. No se envía ningún mensaje ahora.' : 'Elección guardada: resumen diario de precios. No se envía ningún mensaje ahora.';
+    } catch { if (_tgAuth() === token) { priceFeedback.textContent = 'No se ha podido confirmar el cambio. Vuelve a comprobar la elección antes de intentarlo de nuevo.'; priceSaved = null; priceLoadedToken = null; } }
+    finally { if (_tgAuth() === token) { priceMode.disabled = !priceSaved; priceThreshold.disabled = !priceSaved; priceChoiceChanged(); } else refreshPriceChoice(); }
+  });
 
   async function isServerReady() {
     if (!serverReady) {
@@ -1473,12 +1533,14 @@ function hideTelegramLinkPromptDialog() {
     var favs = (typeof getFavs === 'function') ? getFavs() : [];
     if (!favs.length) {
       panel.hidden = true;
+      if (pricePanel) pricePanel.hidden = true;
       return;
     }
     var ready = await isServerReady();
     if (!ready) {
       // Servidor sin bot configurado => ocultamos el panel sin ruido.
       panel.hidden = true;
+      if (pricePanel) pricePanel.hidden = true;
       return;
     }
     panel.hidden = false;
@@ -1486,12 +1548,13 @@ function hideTelegramLinkPromptDialog() {
     if (active) {
       panel.classList.add('active');
       btn.textContent = 'Desactivar avisos de precios';
-      if (statusEl) statusEl.textContent = 'Telegram vinculado. Activa la campana de las gasolineras que quieras incluir en el resumen de cada mañana, o consulta /precios. El recordatorio de ITV se gestiona por separado en ITV.';
+      if (statusEl) statusEl.textContent = 'Telegram vinculado. Activa la campana de las gasolineras que quieres seguir y elige aquí si prefieres el resumen diario o sólo bajadas. El recordatorio de ITV se gestiona por separado en ITV.';
     } else {
       panel.classList.remove('active');
       btn.textContent = 'Activar avisos de precios';
       if (statusEl) statusEl.textContent = 'Recibe cada mañana el resumen de precios de las gasolineras que actives, también con la web cerrada. El recordatorio de ITV tiene su propio permiso en ITV.';
     }
+    await refreshPriceChoice();
   }
 
   btn.addEventListener('click', async function() {
@@ -1516,7 +1579,9 @@ function hideTelegramLinkPromptDialog() {
           try { window.open(deepLink, '_blank', 'noopener'); } catch(_) {}
         });
         if (res2.ok) {
-          showToast('Avisos de precios activados: resumen cada mañana por Telegram.', 'success');
+          showToast(res2.partial ? 'Telegram vinculado. No se han confirmado todos los avisos: revisa las campanas de Favoritas.' : 'Avisos de precios activados. Se revisan por la mañana según tu elección.', res2.partial ? 'warning' : 'success');
+        } else if (res2.error === 'subscription_limit') {
+          showToast('Puedes tener hasta 100 avisos de gasolineras y combustibles. Desactiva alguno para añadir otro.', 'warning');
         } else if (res2.error === 'combustible_no_disponible') {
           showToast('Las alertas están disponibles para gasolina 95/98 y diésel', 'info');
         } else if (res2.error === 'sin_favoritos') {

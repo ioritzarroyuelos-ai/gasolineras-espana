@@ -1486,6 +1486,21 @@ export function getStyles(nonce: string = ''): string {
     body.dark .tg-alerts-text strong { color: #7dd3fc; }
     body.dark .tg-alerts-text small  { color: #94a3b8; }
     body.dark .tg-alerts-panel.active .tg-alerts-text strong { color: #86efac; }
+    @media (max-width: 480px) {
+      .tg-alerts-panel { flex-direction: column; align-items: stretch; }
+      .tg-alerts-info { align-items: flex-start; }
+      .tg-alerts-text small { font-size: 13px; line-height: 1.5; }
+      .tg-alerts-btn { width: 100%; min-height: 44px; }
+    }
+    .tg-price-preferences { padding: 16px; margin: 12px 0 20px; border: 1px solid #94a3b8; border-radius: 12px; background: #f8fafc; color: #1e293b; }
+    .tg-price-preferences h3 { font-size: 17px; margin: 0 0 14px; }
+    .tg-price-preferences label { display: block; margin: 12px 0 6px; font-weight: 600; font-size: 14px; }
+    .tg-price-preferences select { display: block; width: 100%; min-height: 44px; border: 1px solid #64748b; border-radius: 8px; padding: 10px; background: #fff; color: #172b20; font-size: 15px; }
+    .tg-price-preferences p { font-size: 13px; line-height: 1.5; margin: 12px 0; }
+    .tg-price-preferences button { min-height: 44px; }
+    .tg-price-preferences :focus-visible { outline: 3px solid #1462a1; outline-offset: 3px; }
+    body.dark .tg-price-preferences { background: #0f172a; color: #e2e8f0; border-color: #64748b; }
+    body.dark .tg-price-preferences select { background: #1e293b; color: #f8fafc; border-color: #94a3b8; }
     .favs-empty i { display: block; font-size: 22px; margin-bottom: 6px; color: #cbd5e1; }
     body.dark .favs-empty { background: #0f172a; border-color: #334155; color: #94a3b8; }
     body.dark .favs-empty i { color: #475569; }
@@ -1509,6 +1524,7 @@ export function getStyles(nonce: string = ''): string {
     .fav-row-sub { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     body.dark .fav-row-sub { color: #94a3b8; }
     .fav-row-price { font-size: 12px; font-weight: 700; }
+    .fav-row-price.badge-green { background: #166534; }
     .fav-row-remove {
       background: none;
       border: 0;

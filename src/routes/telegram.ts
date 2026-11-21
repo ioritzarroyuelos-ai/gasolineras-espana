@@ -8,9 +8,38 @@ import { slog, authorizeCron, jsonBodyLimit } from '../lib/runtime'
 import { tokensEqualConstTime } from '../lib/pure'
 import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
 import { borrarItvTelegram } from '../lib/telegram-itv'
-import { instanteLocal } from '../../scripts/lib/fechas.mjs'
+import { borrarPreferenciaPrecios, cargaPreciosComparacion, mensajesPrecios, enviarPreciosTelegram, PRECIOS_COMBUSTIBLES } from '../lib/telegram-precios'
+import { registerTelegramPreciosRoutes } from './telegram-precios'
+import { escapeHtml } from '../html/html'
+
+const TELEGRAM_SUBSCRIPTION_LIMIT = 100
+const LIMIT_MESSAGE = 'Puedes tener hasta 100 avisos de gasolineras y combustibles. Desactiva alguno antes de añadir otro.'
+function canonicalStationId(value: unknown): string | null {
+  if (typeof value !== 'string' || !/^\d{1,10}$/.test(value.trim())) return null
+  const id = String(Number(value.trim()))
+  return /^[1-9]\d{0,8}$/.test(id) ? id : null
+}
+function subscriptionStatement(env: Env, chat: number, station: string, fuel: string, threshold: number, now: number) {
+  // El límite y la inserción pertenecen a la misma sentencia SQLite. Dos
+  // peticiones concurrentes no pueden ocupar a la vez la última plaza.
+  return env.DB!.prepare(`INSERT INTO telegram_subscriptions
+    (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
+    SELECT ?, ?, ?, ?, NULL, ?
+    WHERE (SELECT COUNT(*) FROM telegram_subscriptions WHERE chat_id = ?) < ?
+    ON CONFLICT(chat_id, station_id, fuel_code) DO NOTHING`)
+    .bind(chat, station, fuel, threshold, now, chat, TELEGRAM_SUBSCRIPTION_LIMIT)
+}
+async function addSubscription(env: Env, chat: number, station: string, fuel: string, threshold: number, now: number): Promise<'added' | 'existing' | 'limit'> {
+  const result = await subscriptionStatement(env, chat, station, fuel, threshold, now).run()
+  if (result.success === false || ![0, 1].includes(result.meta?.changes as number)) throw Error('subscription_write_failed')
+  if (result.meta?.changes === 1) return 'added'
+  const existing = await env.DB!.prepare('SELECT 1 FROM telegram_subscriptions WHERE chat_id = ? AND station_id = ? AND fuel_code = ?').bind(chat, station, fuel).all()
+  if (!Array.isArray(existing.results)) throw Error('subscription_read_failed')
+  return existing.results.length ? 'existing' : 'limit'
+}
 
 export function registerTelegramRoutes(app: Hono<{ Bindings: Env }>): void {
+registerTelegramPreciosRoutes(app)
 // ============================================================
 // Ship 25: ALERTAS POR TELEGRAM — reemplaza Web Push (Ship 23, retirado).
 // ============================================================
@@ -34,10 +63,9 @@ export function registerTelegramRoutes(app: Hono<{ Bindings: Env }>): void {
 // Flow de alertas:
 //   - El reloj GHA (.github/workflows/cron-telegram-check.yml) invoca cada mañana
 //     POST /api/cron/telegram-check con Authorization Bearer CRON_TOKEN.
-//   - El worker lee el snapshot /data/stations.json una vez, indexa por
-//     station_id, y itera todas las filas de telegram_subscriptions.
-//   - Envía un resumen diario de precios vigentes, con deduplicación por chat.
-//     No es una alerta de bajada. ITV tiene consentimiento y cron separados.
+//   - El cron prepara cada chat por bloques de precios acotados y verificados.
+//   - Envía resumen o bajadas según el permiso separado, con deduplicación.
+//     ITV mantiene su propio consentimiento y cron.
 //
 // Si TELEGRAM_BOT_TOKEN no esta configurado los endpoints responden 503 y
 // el panel del UI se oculta — el resto de la app funciona igual.
@@ -61,7 +89,7 @@ app.get('/api/telegram/config', c => {
 // Menu de comandos del bot (la lista azul de sugerencias en Telegram). Unica
 // fuente de verdad, en codigo. Se aplica con /api/telegram/set-commands.
 const TELEGRAM_BOT_COMMANDS: Array<{ command: string; description: string }> = [
-  { command: 'precios', description: 'Precios de ahora de tus gasolineras' },
+  { command: 'precios', description: 'Últimos precios publicados, con fecha y páginas' },
   { command: 'start',   description: 'Empezar / volver a empezar' },
   { command: 'help',    description: 'Ayuda y comandos' },
   { command: 'stop',    description: 'Darte de baja (borra tus alertas)' },
@@ -78,7 +106,7 @@ app.post('/api/telegram/set-commands', async c => {
   const { tgSetMyCommands } = await import('../lib/telegram')
   const r = await tgSetMyCommands(c.env.TELEGRAM_BOT_TOKEN!, TELEGRAM_BOT_COMMANDS)
   if (!r.ok) {
-    slog('warn', 'telegram_set_commands_failed', { description: r.description })
+    slog('warn', 'telegram_set_commands_failed', {})
     return c.json({ ok: false, error: 'set_commands_failed', description: r.description }, 502, { 'Cache-Control': 'no-store' })
   }
   slog('info', 'telegram_set_commands_ok', { count: TELEGRAM_BOT_COMMANDS.length })
@@ -88,7 +116,7 @@ app.post('/api/telegram/set-commands', async c => {
 const PENDING_TOKEN_TTL_MS = 10 * 60 * 1000  // 10 min
 
 // POST /api/telegram/start-link — genera token + deepLink para iniciar el flow.
-// Body: { favs: [{station_id, fuel_code, baseline_cents?}], threshold_cents? }
+// Body: { favs: [{station_id, fuel_code}], threshold_cents? }
 // Almacenamos los favoritos serializados en el pending_token: asi el webhook
 // puede insertarlos en telegram_subscriptions y listarlos en el mensaje de
 // confirmacion en una sola transaccion (ver migracion 0008).
@@ -104,16 +132,19 @@ app.post('/api/telegram/start-link', jsonBodyLimit(16 * 1024), async c => {
   const thresholdCents = typeof body?.threshold_cents === 'number' && Number.isFinite(body.threshold_cents)
     ? Math.max(1, Math.min(200, Math.round(body.threshold_cents)))
     : 10
-  if (favsRaw.length > 100) return c.json({ ok: false, error: 'too_many_favs' }, 400)
+  if (favsRaw.length > TELEGRAM_SUBSCRIPTION_LIMIT) return c.json({ ok: false, error: 'subscription_limit', limit: TELEGRAM_SUBSCRIPTION_LIMIT, message: LIMIT_MESSAGE }, 409)
   // Sanitiza el array de favs antes de serializar (evita meter basura en D1).
   const favsClean: Array<{ station_id: string; fuel_code: string; baseline_cents: number | null }> = []
+  const identities = new Set<string>()
   for (const f of favsRaw) {
-    const stationId = typeof f?.station_id === 'string' ? f.station_id.trim() : ''
+    const stationId = canonicalStationId(f?.station_id)
     const fuelCode  = typeof f?.fuel_code  === 'string' ? f.fuel_code.trim()  : ''
-    const baselineCents = typeof f?.baseline_cents === 'number' && Number.isFinite(f.baseline_cents)
-      ? Math.round(f.baseline_cents) : null
-    if (!stationId || !['95', '98', 'diesel', 'diesel_plus'].includes(fuelCode)) continue
-    favsClean.push({ station_id: stationId, fuel_code: fuelCode, baseline_cents: baselineCents })
+    if (!stationId || !['95', '98', 'diesel', 'diesel_plus'].includes(fuelCode)) return c.json({ ok: false, error: 'invalid_favorite' }, 400)
+    const identity = stationId + ':' + fuelCode
+    if (identities.has(identity)) continue
+    identities.add(identity)
+    // La referencia sólo procede de dos capturas oficiales; nunca del navegador.
+    favsClean.push({ station_id: stationId, fuel_code: fuelCode, baseline_cents: null })
   }
   const { generateLinkToken } = await import('../lib/telegram')
   const token = generateLinkToken()
@@ -132,7 +163,7 @@ app.post('/api/telegram/start-link', jsonBodyLimit(16 * 1024), async c => {
       favs_queued: favsClean.length,
     }, 200, { 'Cache-Control': 'no-store' })
   } catch (e) {
-    slog('error', 'telegram_start_link_error', { message: (e as Error).message })
+    slog('error', 'telegram_start_link_error', {})
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
@@ -159,12 +190,13 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
     return c.json({ ok: true }, 200)
   }
   const chatId = Number(msg.chat.id)
+  if (!Number.isSafeInteger(chatId) || chatId <= 0) return c.json({ ok: true, ignored: 'invalid_chat' }, 200)
   const text = String(msg.text).trim()
-  const { tgSendMessage, tgEscapeHtml, buildPreciosMessages } = await import('../lib/telegram')
+  const { tgSendMessage, tgEscapeHtml } = await import('../lib/telegram')
   // Comandos soportados:
   //   /start <token> — vincula la web con este chat_id
   //   /start (sin token) — welcome con link a la web
-  //   /precios — lista bajo demanda de las gasolineras activadas + precio actual
+  //   /precios [página] — últimas cifras publicadas, con su fecha real
   //   /help — ayuda
   //   /stop — el user pide baja voluntaria (borramos todas sus subs)
   //   cualquier otra cosa — echo con ayuda basica
@@ -181,7 +213,7 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
     if (!ok) {
       await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
         '⚠️ <b>Token no valido o caducado</b> (>10 min desde que se genero).\n\nVuelve a la web y pulsa "Activar alertas" de nuevo.')
-      slog('info', 'telegram_bind', { ok: false, chat_id: chatId })
+      slog('info', 'telegram_bind', { ok: false })
       return c.json({ ok: true }, 200)
     }
     // 2) Recupera los favs que el cliente pre-cargo en /start-link.
@@ -199,66 +231,61 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       } catch { /* mantenemos favs=[] */ }
     }
     // 3) Inserta cada fav en telegram_subscriptions (chat_id ya confirmado).
-    let inserted = 0
-    for (const f of favs) {
-      if (!f.station_id || !f.fuel_code) continue
+    let inserted = 0, alreadyActive = 0, limited = 0, failed = 0
+    const accepted: typeof favs = [], candidates: typeof favs = [], identities = new Set<string>()
+    failed += Math.max(0, favs.length - TELEGRAM_SUBSCRIPTION_LIMIT)
+    for (const f of favs.slice(0, TELEGRAM_SUBSCRIPTION_LIMIT)) {
+      const stationId = canonicalStationId(f?.station_id)
+      if (!stationId || !['95', '98', 'diesel', 'diesel_plus'].includes(f?.fuel_code)) { failed++; continue }
+      const identity = stationId + ':' + f.fuel_code
+      if (identities.has(identity)) continue
+      identities.add(identity)
+      candidates.push({ station_id: stationId, fuel_code: f.fuel_code, baseline_cents: null })
+    }
+    if (candidates.length) {
       try {
-        await c.env.DB.prepare(
-          `INSERT OR REPLACE INTO telegram_subscriptions
-           (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        ).bind(chatId, f.station_id, f.fuel_code, thresholdCents, f.baseline_cents, now).run()
-        inserted++
+        // Un lote D1 mantiene el límite atómico sin consumir una subpetición
+        // por cada favorito. El lote completo se confirma o se revierte.
+        const raw = await c.env.DB.batch(candidates.map(f => subscriptionStatement(c.env, chatId, f.station_id, f.fuel_code, thresholdCents, now)))
+        const results = raw as Array<{ success?: boolean; meta?: { changes?: number } }>
+        if (results.length !== candidates.length || results.some(r => !r || r.success === false || ![0, 1].includes(r.meta?.changes as number))) throw Error('subscription_batch_failed')
+        const existing = results.some(r => r.meta?.changes === 0)
+          ? await c.env.DB.prepare('SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ? LIMIT 101').bind(chatId).all<{ station_id: string; fuel_code: string }>() : { results: [] }
+        if (!Array.isArray(existing.results)) throw Error('subscription_read_failed')
+        const active = new Set(existing.results.map(f => f.station_id + ':' + f.fuel_code))
+        for (let i = 0; i < candidates.length; i++) {
+          const f = candidates[i]
+          if (results[i].meta?.changes === 1) inserted++
+          else if (active.has(f.station_id + ':' + f.fuel_code)) alreadyActive++
+          else { limited++; continue }
+          accepted.push(f)
+        }
       } catch (e) {
-        slog('error', 'telegram_bind_insert_error', { message: (e as Error).message })
+        failed += candidates.length
+        slog('error', 'telegram_bind_insert_error', {})
       }
     }
     // 4) NO borramos el token aqui: el cliente sigue haciendo polling a
     //    /api/telegram/confirm?token=... durante unos segundos y necesita
     //    encontrar la fila con chat_id + confirmed_at seteados. El cron
     //    telegram-check purga filas con expires_at caducado (+1h grace).
-    // 5) Trae detalles de las estaciones del snapshot para pintarlas bonitas.
-    //    Si el snapshot no esta disponible mostramos un fallback generico.
-    const fuelLabel: Record<string, string> = {
-      '95': 'Gasolina 95', '98': 'Gasolina 98',
-      'diesel': 'Diesel', 'diesel_plus': 'Diesel Premium',
-    }
-    let favsListHtml = ''
-    if (inserted > 0) {
-      const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-      let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
-      try {
-        const rs = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
-        if (rs.ok) snap = await rs.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
-      } catch {/* no-op */}
-      const byStation = new Map<string, Record<string, string>>()
-      if (snap?.ListaEESSPrecio) {
-        for (const st of snap.ListaEESSPrecio) {
-          const id = st['IDEESS'] || st['IDEESS_'] || ''
-          if (id) byStation.set(String(id), st)
-        }
-      }
-      const lines: string[] = []
-      for (const f of favs) {
-        const st = byStation.get(f.station_id)
-        const rotulo = st ? tgEscapeHtml(String(st['Rotulo'] || 'Gasolinera')) : 'Gasolinera'
-        const municipio = st ? tgEscapeHtml(String(st['Municipio'] || '')) : ''
-        const lbl = fuelLabel[f.fuel_code] || f.fuel_code
-        lines.push(`• <b>${rotulo}</b>${municipio ? ' — ' + municipio : ''} <i>(${lbl})</i>`)
-      }
-      favsListHtml = lines.join('\n')
-    }
-    const reply = inserted > 0
-      ? `🔔 <b>¡Listo! Alertas activadas</b>\n\n` +
-        `${inserted === 1 ? 'Vigilo esta gasolinera' : `Vigilo estas <b>${inserted}</b> gasolineras`} para ti:\n${favsListHtml}\n\n` +
-        `📅 Cada manana a las 8:00 te mando su precio actual.\n` +
-        `⚡ Escribe /precios cuando quieras el listado al momento.\n\n` +
+    // La confirmación cuenta las altas confirmadas por D1. No descarga el
+    // catálogo nacional sólo para decorar el mensaje con nombres.
+    const accountUrl = escapeHtml((c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin) + '/gasolineras/')
+    const reply = accepted.length > 0
+      ? `🔔 <b>Alertas activas</b>\n\n` +
+        `${inserted} avisos añadidos y ${alreadyActive} que ya estaban activos.\n` +
+        `<a href="${accountUrl}">Consulta la lista completa en la web</a> o escribe /precios.\n\n` +
+        `📅 Revisamos los precios por la mañana, entre las 8:00 y las 11:59 (hora peninsular). En la web puedes elegir resumen diario o sólo bajadas comprobadas.\n` +
+        `⚡ /precios muestra la fecha de los últimos precios publicados.\n\n` +
         `<i>Para pararlas en cualquier momento: /stop</i>`
       : `✅ <b>Telegram vinculado</b>.\n\n` +
         `Vuelve a la página donde empezaste y elige los avisos que quieres activar. Vincular el bot no activa recordatorios de ITV por sí solo.`
-    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
-    slog('info', 'telegram_bind', { ok: true, chat_id: chatId, subscribed: inserted })
-    return c.json({ ok: true }, 200)
+    const notices = (limited ? `\n\n⚠️ No se han añadido ${limited} avisos porque alcanzaste el límite de 100. Desactiva alguno en la web antes de añadir otro.` : '') +
+      (failed ? `\n\n⚠️ No se ha podido confirmar la activación de ${failed} avisos. Revisa la lista en la web y vuelve a intentarlo.` : '')
+    await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply + notices)
+    slog('info', 'telegram_bind', { ok: true, subscribed: inserted, limited, failed })
+    return c.json({ ok: true, added: inserted, alreadyActive, limited, failed }, 200)
   }
   if (text === '/start') {
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
@@ -267,60 +294,60 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
       `1. Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}\n` +
       `2. Toca una gasolinera en el mapa\n` +
       `3. Pulsa "Activar alerta"\n\n` +
-      `Cada mañana intentamos enviar el precio actual. Escribe /precios para pedirlo cuando quieras.\n\n` +
+      `Cada mañana revisamos los últimos precios publicados. Escribe /precios para verlos con su fecha.\n\n` +
       `📅 También puedes activar un recordatorio de ITV en https://webapp-3ft.pages.dev/itv/ con tu fecha y un permiso separado. No se activa al vincular el bot.\n` +
       `/stop cancela tanto los avisos de precios como el recordatorio de ITV.`,
     )
     return c.json({ ok: true }, 200)
   }
-  if (text === '/precios') {
-    // Listado bajo demanda: mismas gasolineras del resumen diario, precio de ahora.
-    const subsR = await c.env.DB.prepare(
-      'SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ?'
-    ).bind(chatId).all<{ station_id: string; fuel_code: string }>()
-    const chatSubs = subsR.results || []
-    if (!chatSubs.length) {
-      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
-        `Todavia no vigilas ninguna gasolinera.\n\n` +
-        `Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}, toca una gasolinera en el mapa y pulsa <b>Activar alerta</b>.`)
-      return c.json({ ok: true }, 200)
-    }
-    const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-    let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
+  if (/^\/precios(?:\s|$)/.test(text)) {
+    const command = /^\/precios(?:\s+([1-9]\d{0,2}))?$/.exec(text)
+    const send = (message: string) => enviarPreciosTelegram(c.env.TELEGRAM_BOT_TOKEN!, chatId, message)
+    if (!command) { await send('Escribe /precios para empezar o /precios 2 para consultar la segunda página.'); return c.json({ ok: true }, 200) }
+    const page = Number(command[1] || 1)
     try {
-      const rs = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
-      if (rs.ok) snap = await rs.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
-    } catch {/* no-op */}
-    const snapLoaded = !!snap?.ListaEESSPrecio
-    const byStation = new Map<string, Record<string, string>>()
-    if (snap?.ListaEESSPrecio) {
-      for (const st of snap.ListaEESSPrecio) {
-        const id = st['IDEESS'] || st['IDEESS_'] || ''
-        if (id) byStation.set(String(id), st)
+      const subsR = await c.env.DB.prepare('SELECT station_id, fuel_code FROM telegram_subscriptions WHERE chat_id = ? LIMIT 101')
+        .bind(chatId).all<{ station_id: string; fuel_code: string }>()
+      if (!Array.isArray(subsR.results) || subsR.results.length > TELEGRAM_SUBSCRIPTION_LIMIT
+        || subsR.results.some(s => canonicalStationId(s.station_id) !== s.station_id || !PRECIOS_COMBUSTIBLES.includes(s.fuel_code as '95'))) {
+        await send('No puedo preparar toda tu lista de avisos. Revísala en la web; el máximo es 100. No he omitido avisos para mostrar una lista incompleta.')
+        return c.json({ ok: false, error: 'invalid_subscriptions' }, 200)
       }
+      const subscriptions = subsR.results.sort((a, b) => Number(a.station_id) % 32 - Number(b.station_id) % 32 || Number(a.station_id) - Number(b.station_id) || a.fuel_code.localeCompare(b.fuel_code))
+      if (!subscriptions.length) { await send('Todavía no tienes avisos de gasolineras activos. Elige una gasolinera en la web y pulsa Activar alerta.'); return c.json({ ok: true }, 200) }
+      // Todas las suscripciones tienen página: como máximo10 filas y2 cubos.
+      // Esto acota lectura y mensajes incluso si los100 avisos están dispersos.
+      const pages: typeof subscriptions[] = []; let part: typeof subscriptions = [], buckets = new Set<number>()
+      for (const sub of subscriptions) {
+        const bucket = Number(sub.station_id) % 32
+        if (part.length >= 10 || !buckets.has(bucket) && buckets.size >= 2) { pages.push(part); part = []; buckets = new Set() }
+        part.push(sub); buckets.add(bucket)
+      }
+      if (part.length) pages.push(part)
+      if (page > pages.length) { await send(`Tu lista tiene ${pages.length} páginas. Escribe /precios para empezar.`); return c.json({ ok: true, pages: pages.length }, 200) }
+      const selected = pages[page - 1], reader = await cargaPreciosComparacion(c.env), pair = await reader.estaciones(selected.map(s => s.station_id))
+      const known = new Set(pair.filas.map(row => row[0]))
+      for (const sub of selected) if (!known.has(sub.station_id)) {
+        known.add(sub.station_id)
+        pair.filas.push([sub.station_id, `Gasolinera ${sub.station_id} (sin ficha en la fuente)`, '', [null, null, null, null], [null, null, null, null]])
+      }
+      const first = pages.slice(0, page - 1).reduce((n, p) => n + p.length, 0) + 1
+      const heading = `Página ${page} de ${pages.length} · Avisos ${first}–${first + selected.length - 1} de ${subscriptions.length}.\n\n`
+      const navigation = (page < pages.length ? `\n\nSiguiente: /precios ${page + 1}` : '\n\nFin de la lista.') + (page > 1 ? `\nAnterior: /precios ${page - 1}` : '')
+      const messages = mensajesPrecios(pair, selected, null).map((m, i, all) => (i === 0 ? heading : '') + m + (i === all.length - 1 ? navigation : ''))
+      if (!messages.length || messages.length > 2 || messages.some(m => m.length > 4096)) throw Error('price_page_too_large')
+      for (const message of messages) if ((await send(message)).estado !== 'enviado') return c.json({ ok: false, error: 'telegram_send_failed' }, 200)
+      return c.json({ ok: true, page, pages: pages.length, subscriptions: subscriptions.length, shown: selected.length }, 200)
+    } catch {
+      await send('No puedo confirmar los últimos precios publicados. No mostraré una copia antigua como si fuera actual. Inténtalo en un rato con /precios' + (page > 1 ? ` ${page}` : '') + '.')
+      return c.json({ ok: false, error: 'prices_unavailable' }, 200)
     }
-    const { fecha } = spainDateParts(Date.now())
-    const messages = buildPreciosMessages(chatSubs, byStation, fecha)
-    if (!messages.length) {
-      // Dos causas distintas de lista vacia: (a) el snapshot no cargo (fallo
-      // transitorio -> reintentar sirve); (b) cargo bien pero ninguna de tus
-      // gasolineras sigue en los datos (cerraron / las quito el Ministerio ->
-      // reintentar no arregla nada, hay que activar otra).
-      await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
-        snapLoaded
-          ? `Ninguna de tus gasolineras aparece ya en los datos oficiales (puede que hayan cerrado).\n\n` +
-            `Abre ${tgEscapeHtml(c.env.PUBLIC_ORIGIN || 'la web')}, toca otra en el mapa y pulsa <b>Activar alerta</b>.`
-          : `No he podido leer los precios ahora mismo. Intentalo en un rato.`)
-      return c.json({ ok: true }, 200)
-    }
-    for (const m of messages) await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, m)
-    slog('info', 'telegram_precios', { chat_id: chatId, stations: chatSubs.length, msgs: messages.length })
-    return c.json({ ok: true }, 200)
   }
   if (text === '/help') {
     await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId,
       `<b>Comandos:</b>\n` +
-      `/precios — el precio de ahora de tus gasolineras\n` +
+      `/precios — últimos precios publicados, con fecha\n` +
+      `/precios 2 — siguiente página de tu lista\n` +
       `/start — volver a empezar\n` +
       `/stop — cancelar avisos de precios y de ITV\n` +
       `/help — esta ayuda\n\n` +
@@ -334,7 +361,7 @@ app.post('/api/telegram/webhook', jsonBodyLimit(64 * 1024), async c => {
     ).bind(chatId).run()
     const n = r.meta?.changes ?? 0
     let itv = false
-    try { itv = await borrarItvTelegram(c.env, chatId) }
+    try { await borrarPreferenciaPrecios(c.env, chatId); itv = await borrarItvTelegram(c.env, chatId) }
     catch {
       slog('warn', 'telegram_stop_itv_pending', {})
       return c.json({ ok: false, error: 'itv_cancel_pending' }, 503)
@@ -432,10 +459,11 @@ app.post('/api/telegram/unsubscribe', jsonBodyLimit(4 * 1024), async c => {
       await c.env.DB.prepare(
         'DELETE FROM telegram_subscriptions WHERE chat_id = ?'
       ).bind(chatId).run()
+      await borrarPreferenciaPrecios(c.env, chatId)
     }
     return c.json({ ok: true }, 200, { 'Cache-Control': 'no-store' })
   } catch (e) {
-    slog('error', 'telegram_unsubscribe_error', { message: (e as Error).message })
+    slog('error', 'telegram_unsubscribe_error', {})
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
@@ -452,7 +480,7 @@ app.get('/api/telegram/subscriptions', async c => {
     ).bind(chatId).all<{ station_id: string; fuel_code: string }>()
     return c.json({ ok: true, subscriptions: r.results || [] }, 200, { 'Cache-Control': 'no-store' })
   } catch (e) {
-    slog('error', 'telegram_list_subs_error', { message: (e as Error).message })
+    slog('error', 'telegram_list_subs_error', {})
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
@@ -466,9 +494,7 @@ app.get('/api/telegram/subscriptions', async c => {
 //                  duplicar mensaje.
 // - enabled=false: borra la sub y manda "🔕 Alerta pausada". Idempotente
 //                  igual (status=already_disabled si no existia).
-// El rotulo + municipio se resuelven contra /data/stations.json (cacheado
-// 60s en CF) para que el mensaje del bot sea descriptivo sin que el cliente
-// tenga que enviarlo.
+// El nombre procede de un único bloque validado del catálogo de precios.
 app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
   if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
   if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
@@ -476,10 +502,10 @@ app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
   if (chatId == null) return c.json({ ok: false, error: 'unauthorized' }, 401, { 'Cache-Control': 'no-store' })
   let body: any
   try { body = await c.req.json() } catch { return c.json({ ok: false, error: 'invalid_json' }, 400) }
-  const stationId = typeof body?.station_id === 'string' ? body.station_id.trim() : ''
+  const stationId = canonicalStationId(body?.station_id)
   const fuelCode = typeof body?.fuel_code === 'string' ? body.fuel_code.trim() : ''
   const enabled = !!body?.enabled
-  if (!stationId) return c.json({ ok: false, error: 'missing_station_id' }, 400)
+  if (!stationId) return c.json({ ok: false, error: 'invalid_station_id' }, 400)
   if (!['95', '98', 'diesel', 'diesel_plus'].includes(fuelCode)) {
     return c.json({ ok: false, error: 'invalid_fuel_code' }, 400)
   }
@@ -503,20 +529,13 @@ app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
       return c.json({ ok: true, status: 'already_disabled' }, 200, { 'Cache-Control': 'no-store' })
     }
 
-    // 2) Resuelve rotulo/municipio (para el mensaje del bot). Cacheado en CF.
-    let rotulo = 'gasolinera'
+    // 2) Un solo cubo. Si no se puede verificar, identifica el aviso por ID.
+    let rotulo = 'Gasolinera ' + stationId
     let municipio = ''
     try {
-      const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-      const rs = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
-      if (rs.ok) {
-        const snap = await rs.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
-        const st = snap.ListaEESSPrecio?.find(s => String(s['IDEESS'] || '') === stationId)
-        if (st) {
-          rotulo = String(st['Rotulo'] || 'Gasolinera')
-          municipio = String(st['Municipio'] || '')
-        }
-      }
+      const reader = await cargaPreciosComparacion(c.env), pair = await reader.estaciones([stationId])
+      const row = pair.filas.find(row => row[0] === stationId)
+      if (row) { rotulo = row[1].slice(0, 90); municipio = row[2].slice(0, 70) }
     } catch {/* degradamos a nombre generico */}
     const rotuloEsc = tgEscapeHtml(rotulo)
     const munEsc = municipio ? tgEscapeHtml(municipio) : ''
@@ -528,17 +547,15 @@ app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
         'SELECT threshold_cents FROM telegram_subscriptions WHERE chat_id = ? LIMIT 1'
       ).bind(chatId).all<{ threshold_cents: number }>()
       const threshold = chatSub.results?.[0]?.threshold_cents ?? 10
-      await c.env.DB.prepare(
-        `INSERT INTO telegram_subscriptions
-         (chat_id, station_id, fuel_code, threshold_cents, baseline_cents, created_at)
-         VALUES (?, ?, ?, ?, NULL, ?)`
-      ).bind(chatId, stationId, fuelCode, threshold, Date.now()).run()
+      const added = await addSubscription(c.env, chatId, stationId, fuelCode, threshold, Date.now())
+      if (added === 'limit') return c.json({ ok: false, error: 'subscription_limit', limit: TELEGRAM_SUBSCRIPTION_LIMIT, message: LIMIT_MESSAGE }, 409, { 'Cache-Control': 'no-store' })
+      if (added === 'existing') return c.json({ ok: true, status: 'already_enabled' }, 200, { 'Cache-Control': 'no-store' })
       const reply =
         `🔔 <b>Alerta activada</b>\n\n` +
         `Vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
-        `📅 Cada manana a las 8:00 te mando su precio. Pidelo cuando quieras con /precios.`
+        `📅 Revisamos los avisos por la mañana (8:00–11:59, hora peninsular), según tu elección de resumen o bajadas en la web. Pide el precio cuando quieras con /precios.`
       await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
-      slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: true, station_id: stationId })
+      slog('info', 'telegram_toggle_fav', { enabled: true })
       return c.json({ ok: true, status: 'enabled' }, 200, { 'Cache-Control': 'no-store' })
     } else {
       // 3b) Desactivar: borrar + notificar.
@@ -550,184 +567,13 @@ app.post('/api/telegram/toggle-fav', jsonBodyLimit(4 * 1024), async c => {
         `Ya no vigilo <b>${rotuloEsc}</b>${munEsc ? ' <i>(' + munEsc + ')</i>' : ''} — ${lbl}.\n\n` +
         `<i>Puedes reactivarla desde la web cuando quieras.</i>`
       await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, reply)
-      slog('info', 'telegram_toggle_fav', { chat_id: chatId, enabled: false, station_id: stationId })
+      slog('info', 'telegram_toggle_fav', { enabled: false })
       return c.json({ ok: true, status: 'disabled' }, 200, { 'Cache-Control': 'no-store' })
     }
   } catch (e) {
-    slog('error', 'telegram_toggle_fav_error', { message: (e as Error).message })
+    slog('error', 'telegram_toggle_fav_error', {})
     return c.json({ ok: false, error: 'db_error' }, 500)
   }
 })
 
-// Hora + fecha local de Espana (Europe/Madrid), robusto a DST via Intl.
-// El cron dispara a dos horas UTC (06:00 y 07:00) y solo enviamos cuando en
-// Espana son las 8:xx — asi acertamos las 8:00 tanto en horario de verano
-// (UTC+2) como de invierno (UTC+1) sin depender del offset fijo.
-function spainDateParts(nowMs: number): { hour: number; fecha: string } {
-  const d = new Date(nowMs)
-  let hour = 8
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Europe/Madrid', hour: '2-digit', hour12: false,
-    }).formatToParts(d)
-    const h = parts.find(p => p.type === 'hour')?.value
-    if (h != null) {
-      const n = parseInt(h, 10)
-      if (Number.isFinite(n)) hour = n
-    }
-  } catch { /* fallback hour=8 */ }
-  let fecha = ''
-  try {
-    fecha = new Intl.DateTimeFormat('es-ES', {
-      timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long',
-    }).format(d)
-  } catch { /* fecha vacia: buildPreciosMessages la omite del header */ }
-  return { hour, fecha }
-}
-
-// POST /api/cron/telegram-check — RESUMEN DIARIO (Ship 27).
-// Ya no compara precios contra baseline: cada manana a las 8:00 (Europe/Madrid)
-// manda UN mensaje por chat listando todas las gasolineras que el usuario
-// activo, con el precio ACTUAL del combustible elegido. Requiere CRON_TOKEN.
-// El reloj independiente coordina el workflow dentro de la ventana local.
-// Las comprobaciones usan dry_run=1: sin mensajes ni escrituras.
-app.post('/api/cron/telegram-check', async c => {
-  const authz = await authorizeCron(c)
-  if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
-  if (!isTelegramConfigured(c.env)) return c.json({ ok: false, error: 'telegram_not_configured' }, 503)
-  if (!c.env.DB) return c.json({ ok: false, error: 'db_not_available' }, 503)
-
-  const now = Date.now()
-  const force = c.req.query('force') === '1'
-  const dryRun = c.req.query('dry_run') === '1'
-  const { hour: spainHour, fecha } = spainDateParts(now)
-
-  // Housekeeping: purga pending_tokens caducados (1h de colchon). Se hace
-  // siempre, aunque hoy no toque mandar el resumen.
-  if (!dryRun) try {
-    await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?')
-      .bind(now - 60 * 60 * 1000).run()
-  } catch { /* no-op: un fallo aqui no debe bloquear el resto */ }
-
-  // Guarda por VENTANA matinal (8:00-11:59 Espana), no por hora exacta. El
-  // reloj independiente calcula Europe/Madrid, incluido el cambio de hora.
-  // Los reintentos de la misma mañana recuperan ejecuciones fallidas o demoradas.
-  // El dedup por chat (DIGEST_DEDUP_MS, mas abajo) evita
-  // que se envie mas de una vez al dia aunque disparen varias ejecuciones.
-  if (!force && !dryRun && (spainHour < 8 || spainHour > 11)) {
-    return c.json({ ok: true, skipped: 'not_digest_window', spainHour }, 200, { 'Cache-Control': 'no-store' })
-  }
-
-  // Snapshot actual de precios.
-  const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-  let snap: { Fecha?: string; ListaEESSPrecio?: Array<Record<string, string>> } | null = null
-  try {
-    const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 }, signal: AbortSignal.timeout(15000) } as RequestInit)
-    if (r.ok) snap = await r.json() as { Fecha?: string; ListaEESSPrecio?: Array<Record<string, string>> }
-  } catch {}
-  if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
-    return c.json({ ok: false, error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
-  }
-  // La descarga del robot no convierte una copia antigua en precios de hoy.
-  const published = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2})(?::\d{2})?$/.exec(snap.Fecha || '')
-  const publishedAt = published ? instanteLocal(`${published[3]}-${published[2]}-${published[1]} ${published[4]}`) : NaN
-  if (!Number.isFinite(publishedAt) || publishedAt > now + 300000 || now - publishedAt > 26 * 3600000) {
-    return c.json({ ok: false, error: 'snapshot_stale' }, 503, { 'Cache-Control': 'no-store' })
-  }
-  const byStation = new Map<string, Record<string, string>>()
-  for (const st of snap.ListaEESSPrecio) {
-    const id = st['IDEESS'] || st['IDEESS_'] || ''
-    if (id) byStation.set(String(id), st)
-  }
-
-  // Todas las subs, agrupadas por chat. ORDER BY last_notified_at ASC (NULLS
-  // primero en SQLite) -> los chats menos atendidos van al frente, para el
-  // reparto justo cuando el presupuesto de subrequests no llega a todos.
-  const all = await c.env.DB.prepare(
-    'SELECT chat_id, station_id, fuel_code, last_notified_at FROM telegram_subscriptions ORDER BY last_notified_at ASC'
-  ).all<{ chat_id: number; station_id: string; fuel_code: string; last_notified_at: number | null }>()
-  const subs = all.results || []
-  const byChat = new Map<number, Array<{ station_id: string; fuel_code: string }>>()
-  const lastByChat = new Map<number, number>()
-  for (const s of subs) {
-    let arr = byChat.get(s.chat_id)
-    if (!arr) { arr = []; byChat.set(s.chat_id, arr) }
-    arr.push({ station_id: s.station_id, fuel_code: s.fuel_code })
-    const prev = lastByChat.get(s.chat_id) || 0
-    if ((s.last_notified_at || 0) > prev) lastByChat.set(s.chat_id, s.last_notified_at || 0)
-  }
-
-  // Dedup: no repetir el resumen dentro de la misma manana (o en reruns
-  // manuales del workflow). last_notified_at pasa a significar "ultimo resumen".
-  // 20h < 24h: bloquea repeticiones entre los disparos de una misma manana pero
-  // deja elegible al chat al dia siguiente.
-  const DIGEST_DEDUP_MS = 20 * 60 * 60 * 1000
-  // Tope de subrequests por invocacion. El plan gratis de Cloudflare limita a
-  // ~50 (cada envio a Telegram y cada query D1 cuenta); si lo agotamos, el
-  // siguiente fetch revienta y la cola de chats se queda sin resumen. Cortamos
-  // con margen: los chats que no entren quedan sin sellar y los recoge otro
-  // disparo de la misma manana (por eso ORDER BY last_notified_at ASC arriba).
-  const SUBREQ_BUDGET = 40
-  let subreq = 3  // ya gastados: DELETE pending + fetch stations.json + SELECT subs
-  const { tgSendMessage, buildPreciosMessages } = await import('../lib/telegram')
-  const chatEntries = [...byChat.entries()]
-  if (dryRun) {
-    const eligible = chatEntries.filter(([id, rows]) =>
-      (!lastByChat.get(id) || now - lastByChat.get(id)! >= DIGEST_DEDUP_MS) && buildPreciosMessages(rows, byStation, fecha).length > 0).length
-    return c.json({ ok: true, dryRun: true, inWindow: spainHour >= 8 && spainHour <= 11, chats: byChat.size, eligible, sentChats: 0, sentMsgs: 0 }, 200, { 'Cache-Control': 'no-store' })
-  }
-  let sentChats = 0, sentMsgs = 0, purged = 0, skipped = 0, errors = 0, deferred = 0
-  for (let ci = 0; ci < chatEntries.length; ci++) {
-    const [chatId, chatSubs] = chatEntries[ci]
-    if (!force) {
-      const last = lastByChat.get(chatId) || 0
-      if (last && (now - last) < DIGEST_DEDUP_MS) { skipped++; continue }
-    }
-    const messages = buildPreciosMessages(chatSubs, byStation, fecha)
-    if (!messages.length) { skipped++; continue }  // ninguna estacion resoluble
-    // Presupuesto: coste del chat = envios (messages) + 1 UPDATE del sello. Si
-    // no cabe, paramos aqui en vez de reventar por "Too many subrequests".
-    if (subreq + messages.length + 1 > SUBREQ_BUDGET) {
-      deferred = chatEntries.length - ci
-      slog('info', 'telegram_digest_budget_hit', { deferred, subreq })
-      break
-    }
-    let ok = true
-    for (const m of messages) {
-      try {
-        const res = await tgSendMessage(c.env.TELEGRAM_BOT_TOKEN!, chatId, m)
-        subreq++
-        if (res.ok) {
-          sentMsgs++
-        } else if (res.gone) {
-          // User bloqueo al bot o borro el chat — purgar todas sus subs.
-          await c.env.DB.prepare('DELETE FROM telegram_subscriptions WHERE chat_id = ?').bind(chatId).run()
-          subreq++; purged++; ok = false; break
-        } else {
-          errors++; ok = false
-          slog('warn', 'telegram_digest_send_failed', { status: res.status, description: res.description })
-          break
-        }
-      } catch (e) {
-        errors++; ok = false
-        slog('error', 'telegram_digest_send_exception', { message: (e as Error).message })
-        break
-      }
-    }
-    if (ok) {
-      sentChats++
-      try {
-        await c.env.DB.prepare('UPDATE telegram_subscriptions SET last_notified_at = ? WHERE chat_id = ?')
-          .bind(now, chatId).run()
-        subreq++
-      } catch (e) {
-        errors++
-        slog('error', 'telegram_digest_stamp_error', { message: (e as Error).message })
-      }
-    }
-  }
-  slog('info', 'telegram_digest_done', { chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred, spainHour })
-  return c.json({ ok: errors === 0 && deferred === 0, chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred },
-    errors || deferred ? 503 : 200, { 'Cache-Control': 'no-store' })
-})
 }

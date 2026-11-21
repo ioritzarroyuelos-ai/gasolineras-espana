@@ -8,7 +8,29 @@ export const DATA_JOBS = [
   {kind:'itv', service:'itv', maxHours:30, scheduleUtc:['04:17']},
   {kind:'politica', service:'politica', maxHours:30, scheduleUtc:['04:20']},
   {kind:'deportes', service:'deportes', maxHours:24, intervalHours:1},
+  {kind:'servicios', service:'servicios', item:'Comprobación del directorio', maxHours:30, scheduleUtc:['08:17']},
+  {kind:'telegram', workflow:'cron-telegram-check.yml', scheduleLocal:{zone:'Europe/Madrid',startHour:8,endHour:12}, runTitle:'Telegram · resumen diario'},
 ]
+function localParts(time, zone) {
+  const p=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(time).map(p=>[p.type,p.value]))
+  return {day:p.year+'-'+p.month+'-'+p.day,hour:Number(p.hour)}
+}
+function telegramDecision(job,runs,now) {
+  const slot=job.scheduleLocal,today=localParts(now,slot.zone)
+  if(today.hour<slot.startHour||today.hour>=slot.endHour)return {retry:false,reason:'Fuera de la ventana diaria de Telegram (08:00–12:00, Madrid)'}
+  // Una comprobación sin envío nunca cubre el resumen. Tampoco lo cubre
+  // una pasada de otro día o iniciada fuera de la ventana de entrega.
+  const starts=r=>Date.parse(r.run_started_at||r.startedAt||r.createdAt||r.created_at)
+  const eligible=runs.filter(r=>r.display_title===job.runTitle&&r.conclusion!=='skipped').filter(r=>{
+    const t=starts(r)
+    if(!Number.isFinite(t)||t>now+300000)return false
+    const local=localParts(t,slot.zone)
+    return local.day===today.day&&local.hour>=slot.startHour&&local.hour<slot.endHour
+  }).sort((a,b)=>starts(b)-starts(a))
+  if(eligible.some(r=>r.conclusion==='success'))return {retry:false,reason:'El resumen de hoy ya se ha comprobado dentro de su ventana'}
+  if(eligible[0]&&now-starts(eligible[0])<3600000)return {retry:false,reason:'Se respeta una hora entre reintentos de Telegram'}
+  return {retry:true,reason:eligible.length?'Reintento del resumen diario dentro de su ventana':'Resumen diario pendiente dentro de su ventana'}
+}
 function latestScheduledSlot(job, now) {
   const day = Math.floor(now/86400000)*86400000
   return Math.max(...job.scheduleUtc.map(time=>{
@@ -18,6 +40,7 @@ function latestScheduledSlot(job, now) {
 }
 export function necesitaRecuperacion(job, manifest, runs, now = Date.now()) {
   if (runs.some(r => r.status !== 'completed')) return {retry:false, reason:'Ya hay una actualización en marcha o esperando'}
+  if (job.scheduleLocal) return telegramDecision(job,runs,now)
   // En prices sólo permanece el cron vigilante: no cuenta como descarga.
   const effective = runs.filter(r=>r.conclusion!=='skipped' && !(job.kind==='prices' && r.event==='schedule'))
   const started = r=>Date.parse(r.run_started_at || r.startedAt || r.createdAt || r.created_at)

@@ -1,0 +1,44 @@
+name: Fetch servicios snapshot
+
+on:
+  # El reloj autenticado solicita la actualización diaria a las 08:17 UTC.
+  workflow_dispatch:
+
+concurrency:
+  group: fetch-servicios
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Preparar lector de datos abiertos
+        run: |
+          python -m pip install --only-binary=:all: osmium==4.3.2 shapely==2.2.0
+      - name: Descargar y comprobar el directorio completo
+        run: node scripts/fetch-servicios.mjs
+      - name: Crear identidad temporal del robot
+        id: data-token
+        uses: ./.github/actions/data-token
+        with:
+          client-id: ${{ vars.DATA_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DATA_APP_PRIVATE_KEY }}
+      - name: Publicar datos mediante PR validado
+        env:
+          GH_TOKEN: ${{ steps.data-token.outputs.token }}
+        run: |
+          git add public/data/servicios
+          node scripts/publish-data.mjs servicios

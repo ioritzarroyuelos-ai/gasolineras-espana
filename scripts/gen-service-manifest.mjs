@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { ELECCIONES } from './lib/politica-catalogo.mjs'
 import { instanteLocal } from './lib/fechas.mjs'
+import { validaServiciosIndex } from './lib/servicios.mjs'
 const root = resolve(import.meta.dirname, '..', 'public', 'data')
 function read(file) { try { return JSON.parse(readFileSync(resolve(root, file), 'utf8')) } catch { return null } }
 const item = (name, updatedAt, count, issue) => ({ name, updatedAt: updatedAt || null, count: count || 0, ...(issue ? { issue } : {}) })
@@ -30,6 +31,8 @@ const tiempo = importantes.map(m => {
   const t = instanteLocal(p?.elaborado)
   return item(`${m.nombre} (${m.provinciaNombre})`, Number.isFinite(t) ? new Date(t).toISOString() : null, p?.dias?.length)
 })
+let directorio = null
+try { directorio = validaServiciosIndex(read('servicios/index.json')) } catch {}
 const politica = read('politica/index.json')
 const deportes = read('deportes/index.json')
 const elecciones = ELECCIONES.map(e => {
@@ -44,6 +47,7 @@ const elecciones = ELECCIONES.map(e => {
   return item(e.nombre, p?.ultimaComprobacionOk, p ? 1 : 0, avisos.join('; ') || undefined)
 })
 const services = [
+  { id: 'servicios', name: 'Servicios cerca de ti', maxAgeHours: 30, items: [item('Comprobación del directorio', directorio?.ts, directorio?.total, directorio && Date.now() - Date.parse(directorio.fechaDatos) > 72 * 3600000 ? 'El extracto de OpenStreetMap tiene más de 72 horas: ' + directorio.fechaDatos : undefined)] },
   { id: 'gasolineras', name: 'Gasolineras', maxAgeHours: 24, items: [item('Precios del Ministerio', gas?.fetchedAt, gas?.stationCount), item('Histórico de precios', history?.generated_at, history?.days, historyGaps.length ? 'Sin captura comprobada: '+historyGaps.join(', ') : undefined), item('Directorio de recarga eléctrica', chargers?.ts, chargers?.count)] },
   { id: 'farmacias', name: 'Farmacias', maxAgeHours: 30, items: guardias },
   { id: 'tiempo', name: 'Tiempo', maxAgeHours: 12, items: tiempo },

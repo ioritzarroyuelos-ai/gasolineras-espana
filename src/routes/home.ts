@@ -66,7 +66,10 @@ export function registerHomeRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get('/api/localidad/:ine', async c => {
     const m = await cargaLocalidad(c, c.req.param('ine'))
     if (!m) return c.json({ error: 'Municipio no encontrado' }, 404)
-    return c.json({ ine: m.ine, nombre: m.nombre, provinciaNombre: m.provinciaNombre, servicios: serviciosLocalidad(m) }, 200, { 'Cache-Control': 'no-store' })
+    const catalogo = await loadSnapshot<{ municipios: MunicipioLista[] }>(c.req.url, 'tiempo/municipios.json', c.env.ASSETS)
+    const punto = Array.isArray(catalogo?.municipios) ? catalogo.municipios.find(p => p.ine === m.ine) : undefined
+    const coords = punto && typeof punto.lat === 'number' && typeof punto.lng === 'number' && Number.isFinite(punto.lat) && Number.isFinite(punto.lng) && punto.lat >= 27 && punto.lat <= 44.5 && punto.lng >= -19 && punto.lng <= 4.5 ? { lat: punto.lat, lng: punto.lng } : {}
+    return c.json({ ine: m.ine, nombre: m.nombre, provinciaNombre: m.provinciaNombre, servicios: serviciosLocalidad(m), ...coords }, 200, { 'Cache-Control': 'no-store' })
   })
   // Un fallo parcial de una fuente no oculta los demás servicios.
   async function portada(c: Context<{ Bindings: Env }>, vista: 'inicio' | 'mi-dia') {

@@ -38,7 +38,7 @@ describe('cadencia única entre dos relojes',()=>{
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h-0.02)],now).retry).toBe(false)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(h)],now).retry).toBe(true)
   })
-  it.each([['prices','07:00'],['prices','19:00'],['chargers','05:15'],['guardias','05:45'],['itv','04:17'],['politica','04:20']])('respeta el horario UTC de %s a las %s',(kind,time)=>{
+  it.each([['prices','07:00'],['prices','19:00'],['chargers','05:15'],['guardias','05:45'],['itv','04:17'],['politica','04:20'],['servicios','08:17']])('respeta el horario UTC de %s a las %s',(kind,time)=>{
     const j=lookup(kind),t=Date.parse('2026-11-21T'+time+':00Z'),last={status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:'2026-11-20T21:00:00Z'}
     if(kind==='prices' && time==='19:00')last.run_started_at='2026-11-21T08:00:00Z'
     expect(necesitaRecuperacion(j,freshManifest(j,t),[last],t-1).retry).toBe(false)
@@ -60,7 +60,7 @@ describe('cadencia única entre dos relojes',()=>{
     expect(necesitaRecuperacion(j,freshManifest(j),[r],now).retry).toBe(true)
     expect(necesitaRecuperacion(j,freshManifest(j),[{...r,run_started_at:new Date(now-30*60000).toISOString()}],now).retry).toBe(false)
   })
-  it.each(['prices','chargers','guardias','tiempo','itv','politica'])('limita reintentos de %s a4h',kind=>{
+  it.each(['prices','chargers','guardias','tiempo','itv','politica','servicios'])('limita reintentos de %s a4h',kind=>{
     const j=lookup(kind)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(3.99,'failure')],now).retry).toBe(false)
     expect(necesitaRecuperacion(j,freshManifest(j),[completed(4,'failure')],now).retry).toBe(true)
@@ -83,15 +83,15 @@ describe('cadencia única entre dos relojes',()=>{
     const j=lookup('guardias')
     expect(necesitaRecuperacion(j,freshManifest(j),[{status:'completed',conclusion:'success',run_started_at:'bad'}],now).retry).toBe(false)
   })
-  it('96pulsos diarios no multiplican los siete robots',()=>{
+  it('96pulsos diarios no multiplican los robots de datos',()=>{
     const counts:Record<string,number>={}
     const midnight=Date.parse('2026-11-21T00:02:00Z')
-    for(const j of DATA_JOBS){let runs:any[]=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(j.scheduleUtc?midnight-4*3600000:midnight-j.intervalHours*3600000).toISOString()}];counts[j.kind]=0
+    for(const j of DATA_JOBS.filter((j:any)=>!j.scheduleLocal)){let runs:any[]=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(j.scheduleUtc?midnight-4*3600000:midnight-j.intervalHours*3600000).toISOString()}];counts[j.kind]=0
       for(let n=0;n<96;n++){const t=midnight+n*15*60000
         if(necesitaRecuperacion(j,freshManifest(j,t),runs,t).retry){counts[j.kind]++;runs=[{status:'completed',conclusion:'success',event:'workflow_dispatch',run_started_at:new Date(t).toISOString()}]}
       }
     }
-    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24})
+    expect(counts).toEqual({prices:2,chargers:1,guardias:1,tiempo:8,itv:1,politica:1,deportes:24,servicios:1})
   })
   it('mantiene24pasadas deportivas con colas20min y jitter de±15s',()=>{
     const j=lookup('deportes');let previous:any,count=0
@@ -106,5 +106,34 @@ describe('cadencia única entre dos relojes',()=>{
     const j=lookup('deportes'),t=Date.parse('2026-11-20T09:17:04Z'),r={status:'completed',conclusion:'success',run_started_at:'2026-11-20T08:17:05Z'}
     expect(necesitaRecuperacion(j,freshManifest(j,t),[r],t).retry).toBe(true)
     expect(necesitaRecuperacion(j,freshManifest(j,t),[r],Date.parse('2026-11-20T09:16:04Z')).retry).toBe(false)
+  })
+})
+
+describe('resumen de Telegram diario con cambio de hora',()=>{
+  const telegram=DATA_JOBS.find((j:{kind:string})=>j.kind==='telegram')
+  const normal=(at:string,conclusion='success',title='Telegram · resumen diario')=>({status:'completed',conclusion,display_title:title,run_started_at:at})
+  it.each([['2026-11-21T06:59:59Z',false],['2026-11-21T07:00:00Z',true],['2026-11-21T10:59:59Z',true],['2026-11-21T11:00:00Z',false],['2026-07-21T05:59:59Z',false],['2026-07-21T06:00:00Z',true],['2026-07-21T10:00:00Z',false]])('la ventana de Madrid en %s es %s',(at,due)=>{
+    expect(necesitaRecuperacion(telegram,{},[],Date.parse(String(at))).retry).toBe(due)
+  })
+  it('una comprobación sin envío o un envío de ayer no cubren hoy',()=>{
+    const t=Date.parse('2026-11-21T09:00:00Z')
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T08:00:00Z','success','Telegram · comprobación sin envío')],t).retry).toBe(true)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-20T08:00:00Z')],t).retry).toBe(true)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T06:00:00Z')],t).retry).toBe(true)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T08:00:00Z')],t).retry).toBe(false)
+  })
+  it('no duplica pendientes y limita los reintentos dentro de la ventana',()=>{
+    const t=Date.parse('2026-11-21T09:00:00Z')
+    expect(necesitaRecuperacion(telegram,{},[{status:'queued'}],t).retry).toBe(false)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T08:01:00Z','failure')],t).retry).toBe(false)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T08:00:00Z','failure')],t).retry).toBe(true)
+    expect(necesitaRecuperacion(telegram,{},[normal('2026-11-21T08:00:00Z','failure')],Date.parse('2026-11-21T11:00:00Z')).retry).toBe(false)
+  })
+  it('96 pulsos despachan una sola entrega diaria, incluyendo los días de cambio de hora',()=>{
+    for(const day of ['2026-03-29','2026-10-25','2026-11-21']) {
+      const start=Date.parse(day+'T00:00:00Z');let runs:any[]=[],count=0
+      for(let n=0;n<96;n++){const at=start+n*15*60000;if(necesitaRecuperacion(telegram,{},runs,at).retry){count++;runs=[normal(new Date(at).toISOString())]}}
+      expect(count).toBe(1)
+    }
   })
 })

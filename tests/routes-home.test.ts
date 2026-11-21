@@ -16,6 +16,17 @@ beforeEach(async () => {
 })
 
 describe('portada, Mi día y observatorio de precios', () => {
+  it.each(['validas', 'ausentes', 'nulas', 'fuera', 'malformadas'])('la API de localidad conserva accesos y sólo añade coordenadas municipales %s', async mode => {
+    const localidad: Localidad = { ine: '28079', nombre: 'Madrid', provinciaNombre: 'Madrid', gas: { url: '/gasolineras/madrid/madrid', count: 0 }, tiempo: { url: '/tiempo/madrid/madrid' }, farmacias: { url: '/farmacias/madrid/madrid', count: 0, zona: 'Europe/Madrid' }, itv: { url: '/itv/madrid/madrid', count: 0 } }
+    const puntos = mode === 'malformadas' ? {} : mode === 'ausentes' ? [] : [{ ine: '28079', lat: mode === 'nulas' ? null : mode === 'fuera' ? 90 : 40.4168, lng: -3.7038 }]
+    const assets = { fetch: async (req: Request) => Response.json(new URL(req.url).pathname === '/data/localidades/28.json' ? [localidad] : { municipios: puntos }) }
+    const res = await app.request('/api/localidad/28079', {}, { ASSETS: assets })
+    expect(res.status).toBe(200)
+    const body = await res.json() as any
+    expect(body.servicios).toHaveLength(4)
+    if (mode === 'validas') expect(body).toMatchObject({ lat: 40.4168, lng: -3.7038 })
+    else { expect(body).not.toHaveProperty('lat'); expect(body).not.toHaveProperty('lng') }
+  })
   it('/ responde 200 HTML (degradada sin datos)', async () => {
     const res = await app.request('/', {}, { ASSETS: assets404() })
     expect(res.status).toBe(200)

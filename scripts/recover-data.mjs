@@ -27,7 +27,7 @@ for (const status of ['queued','in_progress','waiting','pending','requested']) {
   }
 }
 for (const job of DATA_JOBS) {
-  const workflow='fetch-'+job.kind+'.yml', path='.github/workflows/'+workflow
+  const workflow=job.workflow||'fetch-'+job.kind+'.yml', path='.github/workflows/'+workflow
   const list=await request(prefix+'workflows/'+workflow+'/runs?branch=main&per_page=20')
   if (!Array.isArray(list.workflow_runs)) throw Error('Historial de robot inválido')
   const runs=[...active.filter(r=>r.path?.split('@')[0]===path),...list.workflow_runs]
@@ -36,7 +36,7 @@ for (const job of DATA_JOBS) {
   if (decision.retry) {
     // Destinos internos fijos y siempre main. Un POST ambiguo no se repite;
     // el siguiente pulso volverá a consultar los trabajos antes de decidir.
-    const result=await request(prefix+'workflows/'+workflow+'/dispatches',{method:'POST',body:{ref:'main'}})
+    const result=await request(prefix+'workflows/'+workflow+'/dispatches',{method:'POST',body:{ref:'main',...(job.kind==='telegram'?{inputs:{automatic:'true',dry_run:'false'}}:{})}})
     line+=' → solicitado'+(result?.workflow_run_id?' (run '+result.workflow_run_id+')':'')
     await new Promise(r=>setTimeout(r,1000))
   }

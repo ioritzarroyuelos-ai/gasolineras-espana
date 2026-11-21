@@ -7,6 +7,7 @@ import type { Env } from '../index'
 import { slog, authorizeCron, jsonBodyLimit } from '../lib/runtime'
 import { tokensEqualConstTime } from '../lib/pure'
 import { signTelegramToken, verifyTelegramToken } from '../lib/auth'
+import { instanteLocal } from '../../scripts/lib/fechas.mjs'
 
 export function registerTelegramRoutes(app: Hono<{ Bindings: Env }>): void {
 // ============================================================
@@ -582,9 +583,8 @@ function spainDateParts(nowMs: number): { hour: number; fecha: string } {
 // Ya no compara precios contra baseline: cada manana a las 8:00 (Europe/Madrid)
 // manda UN mensaje por chat listando todas las gasolineras que el usuario
 // activo, con el precio ACTUAL del combustible elegido. Requiere CRON_TOKEN.
-// El workflow (cron-telegram-check.yml) dispara a 06:00 y 07:00 UTC; la guarda
-// por hora hace no-op la que no cae en las 8:00 de Espana. ?force=1 salta la
-// guarda y el dedup (para pruebas manuales).
+// El reloj independiente coordina el workflow dentro de la ventana local.
+// Las comprobaciones usan dry_run=1: sin mensajes ni escrituras.
 app.post('/api/cron/telegram-check', async c => {
   const authz = await authorizeCron(c)
   if (!authz.ok) return c.json(authz.body, authz.status as 401 | 503, { 'Cache-Control': 'no-store' })
@@ -593,33 +593,40 @@ app.post('/api/cron/telegram-check', async c => {
 
   const now = Date.now()
   const force = c.req.query('force') === '1'
+  const dryRun = c.req.query('dry_run') === '1'
   const { hour: spainHour, fecha } = spainDateParts(now)
 
   // Housekeeping: purga pending_tokens caducados (1h de colchon). Se hace
   // siempre, aunque hoy no toque mandar el resumen.
-  try {
+  if (!dryRun) try {
     await c.env.DB.prepare('DELETE FROM telegram_pending_tokens WHERE expires_at < ?')
       .bind(now - 60 * 60 * 1000).run()
   } catch { /* no-op: un fallo aqui no debe bloquear el resto */ }
 
   // Guarda por VENTANA matinal (8:00-11:59 Espana), no por hora exacta. El
-  // workflow dispara a varias horas UTC (06/07/08/09) para cubrir el DST y dar
-  // redundancia: si GitHub Actions se retrasa o se salta un disparo, otro de la
-  // misma manana lo cubre. El dedup por chat (DIGEST_DEDUP_MS, mas abajo) evita
+  // reloj independiente calcula Europe/Madrid, incluido el cambio de hora.
+  // Los reintentos de la misma mañana recuperan ejecuciones fallidas o demoradas.
+  // El dedup por chat (DIGEST_DEDUP_MS, mas abajo) evita
   // que se envie mas de una vez al dia aunque disparen varias ejecuciones.
-  if (!force && (spainHour < 8 || spainHour > 11)) {
+  if (!force && !dryRun && (spainHour < 8 || spainHour > 11)) {
     return c.json({ ok: true, skipped: 'not_digest_window', spainHour }, 200, { 'Cache-Control': 'no-store' })
   }
 
   // Snapshot actual de precios.
   const origin = c.env.PUBLIC_ORIGIN || new URL(c.req.url).origin
-  let snap: { ListaEESSPrecio?: Array<Record<string, string>> } | null = null
+  let snap: { Fecha?: string; ListaEESSPrecio?: Array<Record<string, string>> } | null = null
   try {
-    const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 } } as RequestInit)
-    if (r.ok) snap = await r.json() as { ListaEESSPrecio?: Array<Record<string, string>> }
+    const r = await fetch(origin + '/data/stations.json', { cf: { cacheTtl: 60 }, signal: AbortSignal.timeout(15000) } as RequestInit)
+    if (r.ok) snap = await r.json() as { Fecha?: string; ListaEESSPrecio?: Array<Record<string, string>> }
   } catch {}
   if (!snap || !Array.isArray(snap.ListaEESSPrecio)) {
     return c.json({ ok: false, error: 'snapshot_unavailable' }, 503, { 'Cache-Control': 'no-store' })
+  }
+  // La descarga del robot no convierte una copia antigua en precios de hoy.
+  const published = /^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}:\d{2})(?::\d{2})?$/.exec(snap.Fecha || '')
+  const publishedAt = published ? instanteLocal(`${published[3]}-${published[2]}-${published[1]} ${published[4]}`) : NaN
+  if (!Number.isFinite(publishedAt) || publishedAt > now + 300000 || now - publishedAt > 26 * 3600000) {
+    return c.json({ ok: false, error: 'snapshot_stale' }, 503, { 'Cache-Control': 'no-store' })
   }
   const byStation = new Map<string, Record<string, string>>()
   for (const st of snap.ListaEESSPrecio) {
@@ -658,6 +665,11 @@ app.post('/api/cron/telegram-check', async c => {
   let subreq = 3  // ya gastados: DELETE pending + fetch stations.json + SELECT subs
   const { tgSendMessage, buildPreciosMessages } = await import('../lib/telegram')
   const chatEntries = [...byChat.entries()]
+  if (dryRun) {
+    const eligible = chatEntries.filter(([id, rows]) =>
+      (!lastByChat.get(id) || now - lastByChat.get(id)! >= DIGEST_DEDUP_MS) && buildPreciosMessages(rows, byStation, fecha).length > 0).length
+    return c.json({ ok: true, dryRun: true, inWindow: spainHour >= 8 && spainHour <= 11, chats: byChat.size, eligible, sentChats: 0, sentMsgs: 0 }, 200, { 'Cache-Control': 'no-store' })
+  }
   let sentChats = 0, sentMsgs = 0, purged = 0, skipped = 0, errors = 0, deferred = 0
   for (let ci = 0; ci < chatEntries.length; ci++) {
     const [chatId, chatSubs] = chatEntries[ci]
@@ -703,12 +715,13 @@ app.post('/api/cron/telegram-check', async c => {
           .bind(now, chatId).run()
         subreq++
       } catch (e) {
+        errors++
         slog('error', 'telegram_digest_stamp_error', { message: (e as Error).message })
       }
     }
   }
   slog('info', 'telegram_digest_done', { chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred, spainHour })
-  return c.json({ ok: true, chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred },
-    200, { 'Cache-Control': 'no-store' })
+  return c.json({ ok: errors === 0 && deferred === 0, chats: byChat.size, sentChats, sentMsgs, purged, skipped, errors, deferred },
+    errors || deferred ? 503 : 200, { 'Cache-Control': 'no-store' })
 })
 }

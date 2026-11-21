@@ -16,6 +16,7 @@ import { registerFarmaciasRoutes } from './routes/farmacias'
 import { registerGasolinerasRoutes } from './routes/gasolineras'
 import { registerAuthRoutes } from './routes/auth'
 import { registerHomeRoutes } from './routes/home'
+import { registerServiciosRoutes } from './routes/servicios'
 import { registerMetaRoutes } from './routes/meta'
 import { registerAdminRoutes } from './routes/admin'
 import { registerDataRoutes } from './routes/data'
@@ -149,6 +150,7 @@ app.use('/api/*', async (c, next) => {
 // para que `/` siga siendo la primera ruta. Ambas son paths estaticos exactos: no
 // hay shadowing con las rutas namespaced de los verticales.
 registerHomeRoutes(app)
+registerServiciosRoutes(app)
 
 // ---- Gasolineras (precios del Ministerio) ----
 // Rutas en src/routes/gasolineras.ts: /gasolineras (301), /api/gasolineras/municipios,

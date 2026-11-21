@@ -4,7 +4,7 @@ import { serviceStatusHtml } from '../src/html/service-status'
 import { monitorMessage } from '../scripts/lib/monitor-message.mjs'
 import { instanteLocal } from '../scripts/lib/fechas.mjs'
 const now = Date.parse('2026-11-03T20:00:00Z')
-function fixture(): ServiceManifest { return { schema: 1, services: (['gasolineras', 'farmacias', 'tiempo', 'itv', 'politica', 'deportes'] as ServiceId[]).map(id => ({ id, name: id, maxAgeHours: 99999, items: [{ name: 'Fuente', updatedAt: new Date(now - 3600000).toISOString(), count: 1 }] })) } }
+function fixture(): ServiceManifest { return { schema: 1, services: (['gasolineras', 'farmacias', 'tiempo', 'itv', 'politica', 'deportes', 'servicios'] as ServiceId[]).map(id => ({ id, name: id, maxAgeHours: 99999, items: [{ name: 'Fuente', updatedAt: new Date(now - 3600000).toISOString(), count: 1 }] })) } }
 describe('estado de los servicios', () => {
   it('no considera suficiente que solo gasolineras esté al día', () => {
     const m = fixture(); m.services[1].items[0].updatedAt = '2026-10-01T00:00:00Z'
@@ -55,7 +55,7 @@ describe('estado de los servicios', () => {
     const ASSETS = { fetch: async () => Response.json(m) }
     const api = await app.request('/api/status', {}, { ASSETS })
     expect(api.status).toBe(503)
-    expect((await api.json() as { services: unknown[] }).services).toHaveLength(6)
+    expect((await api.json() as { services: unknown[] }).services).toHaveLength(7)
     const page = await app.request('/status', {}, { ASSETS })
     expect(page.status).toBe(503)
     expect(await page.text()).toContain('Política: con incidencias')

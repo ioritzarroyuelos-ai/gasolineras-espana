@@ -5,7 +5,7 @@ import { setTimeout as pausa } from 'node:timers/promises'
 const repo = process.env.GITHUB_REPOSITORY
 const kind = process.argv[2]
 if (process.env.GITHUB_REF !== 'refs/heads/main') throw Error('Los robots solo pueden publicar partiendo de main')
-if (!repo || !['prices', 'guardias', 'politica', 'tiempo', 'itv', 'chargers', 'municipios', 'deportes'].includes(kind) || !/^\d+$/.test(process.env.GITHUB_RUN_ID || '')) throw Error('Contexto de publicación no válido')
+if (!repo || !['prices', 'guardias', 'politica', 'tiempo', 'itv', 'chargers', 'municipios', 'deportes', 'servicios'].includes(kind) || !/^\d+$/.test(process.env.GITHUB_RUN_ID || '')) throw Error('Contexto de publicación no válido')
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const git = args => run('git', args), gh = args => run('gh', [...args, '--repo', repo])
 const files = git(['diff', '--cached', '--name-only']).split('\n').filter(Boolean)
@@ -24,7 +24,7 @@ let sha = git(['rev-parse', 'HEAD'])
 // checkout no conserva GITHUB_TOKEN. Git y gh usan la misma identidad de la App.
 run('gh', ['auth', 'setup-git', '--hostname', 'github.com'])
 git(['push', '--set-upstream', 'origin', branch])
-const url = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body', 'Actualización automática de datos oficiales. Solo se incorpora tras superar CI (tipos, pruebas, navegador y rendimiento) y Security. Si falla una fuente, se conserva su última copia válida.'])
+const url = gh(['pr', 'create', '--base', 'main', '--head', branch, '--title', title, '--body', 'Actualización automática de los datos de las fuentes publicadas. Solo se incorpora tras superar CI (tipos, pruebas, navegador y rendimiento) y Security. Si falla una fuente, se conserva su última copia válida.'])
 console.log('Propuesta de datos: ' + url)
 let actualizacionesBase = 0
 async function actualizaBaseSiCambio(soloSiNecesario = false) {

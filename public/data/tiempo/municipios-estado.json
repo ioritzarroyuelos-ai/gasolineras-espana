@@ -1,1 +1,1 @@
-{"schema":1,"estado":"actual","consultado":"2026-11-21T11:46:06.766Z","ultimoExito":"2026-11-21T11:46:06.766Z","fechaDatos":null,"total":8122}
+{"schema":1,"estado":"conservada","consultado":"2026-11-22T20:33:43.904Z","ultimoExito":"2026-11-21T11:46:06.766Z","fechaDatos":null,"total":8122,"error":"No se ha podido comprobar el maestro de municipios de AEMET. Se conserva la última copia válida cuando existe."}

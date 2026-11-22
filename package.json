@@ -40,8 +40,8 @@
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0",
-    "wrangler": "^4.164.0"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.165.0"
   },
   "overrides": {
     "@hono/node-server": "^2.1.6",

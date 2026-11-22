@@ -22,7 +22,7 @@
     "postinstall": "node scripts/setup-hooks.mjs"
   },
   "dependencies": {
-    "gtfs-realtime-bindings": "2.2.0",
+    "gtfs-realtime-bindings": "3.0.0",
     "hono": "^4.13.19",
     "node-html-parser": "^9.0.7",
     "pdf-parse": "^2.4.5",

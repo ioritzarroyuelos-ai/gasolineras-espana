@@ -26,7 +26,7 @@
     "hono": "^4.13.19",
     "node-html-parser": "^9.0.7",
     "pdf-parse": "^2.4.5",
-    "read-excel-file": "^9.3.17",
+    "read-excel-file": "^9.3.20",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -40,8 +40,8 @@
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0",
-    "wrangler": "^4.164.0"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.165.0"
   },
   "overrides": {
     "@hono/node-server": "^2.1.6",

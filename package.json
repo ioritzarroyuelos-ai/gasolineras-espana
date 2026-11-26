@@ -23,10 +23,10 @@
   },
   "dependencies": {
     "gtfs-realtime-bindings": "2.2.0",
-    "hono": "^4.13.19",
+    "hono": "^4.13.20",
     "node-html-parser": "^9.0.7",
     "pdf-parse": "^2.4.5",
-    "read-excel-file": "^9.3.17",
+    "read-excel-file": "^9.3.20",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -34,14 +34,14 @@
     "@hono/vite-build": "^1.2.0",
     "@hono/vite-dev-server": "^0.26.1",
     "@lhci/cli": "^0.16.1",
-    "@napi-rs/canvas": "^1.1.1",
+    "@napi-rs/canvas": "^1.2.0",
     "@playwright/test": "^1.65.1",
     "@resvg/resvg-js": "^2.6.2",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0",
-    "wrangler": "^4.164.0"
+    "vitest": "^5.1.1",
+    "wrangler": "^4.166.0"
   },
   "overrides": {
     "@hono/node-server": "^2.1.6",
